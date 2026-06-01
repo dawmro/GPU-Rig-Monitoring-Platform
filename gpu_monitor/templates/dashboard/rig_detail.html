@@ -4,7 +4,34 @@
 <div class="max-w-6xl mx-auto">
     <div class="flex items-center justify-between mb-6">
         <div>
-            <h1 class="text-2xl font-bold">{{ rig.name }}</h1>
+            <!-- Editable rig name with inline rename -->
+            <div id="rig-name-wrapper" class="group">
+                <h1 class="text-2xl font-bold flex items-center gap-2">
+                    <span id="rig-name-text">{{ rig.name }}</span>
+                    <button id="rig-rename-btn"
+                            class="opacity-0 group-hover:opacity-50 hover:!opacity-100 transition-opacity p-1 rounded hover:bg-gray-700/50"
+                            title="Rename rig"
+                            onclick="toggleRenameForm()">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+                    </button>
+                </h1>
+                <!-- Hidden rename form -->
+                <form id="rig-rename-form"
+                      hx-post="{% url 'dashboard:rig-rename' rig.uuid %}"
+                      hx-target="#rig-name-text"
+                      hx-swap="outerHTML"
+                      class="hidden mt-1">
+                    <div class="flex items-center gap-2">
+                        <input type="text" name="name" value="{{ rig.name }}"
+                               class="text-xl font-bold bg-gray-700 border border-gray-600 rounded px-2 py-1 w-64"
+                               maxlength="128"
+                               required>
+                        <button type="submit" class="px-3 py-1 bg-blue-600 hover:bg-blue-500 rounded text-sm">Save</button>
+                        <button type="button" class="px-3 py-1 bg-gray-600 hover:bg-gray-500 rounded text-sm"
+                                onclick="toggleRenameForm()">Cancel</button>
+                    </div>
+                </form>
+            </div>
             <p class="text-gray-500 text-sm font-mono">{{ rig.uuid }}</p>
         </div>
         <div>
@@ -28,4 +55,32 @@
         {% include "dashboard/_metrics_cards.html" %}
     </div>
 </div>
+
+<script>
+function toggleRenameForm() {
+    var form = document.getElementById('rig-rename-form');
+    var text = document.getElementById('rig-name-text');
+    var btn = document.getElementById('rig-rename-btn');
+    if (form.classList.contains('hidden')) {
+        form.classList.remove('hidden');
+        text.classList.add('opacity-50');
+        btn.classList.add('hidden');
+        form.querySelector('input').focus();
+    } else {
+        form.classList.add('hidden');
+        text.classList.remove('opacity-50');
+        btn.classList.remove('hidden');
+    }
+}
+
+// After HTMX swaps the rig name back, hide the form
+document.body.addEventListener('htmx:afterSettle', function(evt) {
+    if (evt.detail.target && evt.detail.target.id === 'rig-name-text') {
+        var form = document.getElementById('rig-rename-form');
+        if (form && !form.classList.contains('hidden')) {
+            toggleRenameForm();
+        }
+    }
+});
+</script>
 {% endblock %}

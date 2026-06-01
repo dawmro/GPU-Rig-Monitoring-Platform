@@ -3,6 +3,7 @@ from django.contrib.auth.decorators import login_required
 from django.http import Http404
 from django.utils import timezone
 from datetime import timedelta
+from django.views.decorators.http import require_POST
 
 from rigs.models import Rig
 from metrics_app.models import LatestSnapshot
@@ -79,3 +80,22 @@ def htmx_metrics(request, uuid):
         'rig': rig,
         'snapshot': snapshot,
     })
+
+
+@login_required
+@require_POST
+def rig_rename(request, uuid):
+    """Rename a rig. Accepts both form POST and HTMX POST."""
+    rig = get_object_or_404(Rig, uuid=uuid)
+    if rig.owner_id != request.user.id and not request.user.is_staff:
+        raise Http404
+
+    new_name = request.POST.get('name', '').strip()
+    if new_name:
+        rig.name = new_name[:128]
+        rig.save(update_fields=['name'])
+
+    if request.headers.get('HX-Request'):
+        return render(request, 'dashboard/_rig_name.html', {'rig': rig})
+
+    return redirect('dashboard:rig-detail', uuid=uuid)

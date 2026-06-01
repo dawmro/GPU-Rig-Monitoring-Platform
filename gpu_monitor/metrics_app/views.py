@@ -47,13 +47,16 @@ class IngestView(APIView):
             return Response({'status': 'error', 'message': 'Missing rig_uuid'}, status=400)
 
         # Check ownership
+        rig_name = data.get('rig_name', '').strip()
         try:
             rig = Rig.objects.get(uuid=rig_uuid)
         except Rig.DoesNotExist:
-            # Auto-create rig on first seen
+            # Auto-create rig on first seen — use agent-suggested name or default
+            name = rig_name or 'Unnamed Rig'
             rig = Rig.objects.create(
                 uuid=rig_uuid,
                 owner=user,
+                name=name[:128],
                 expected_gpus=0,
             )
             log_audit_event(request, 'rig.enrolled', 'Rig', rig.uuid,
@@ -61,6 +64,10 @@ class IngestView(APIView):
         else:
             if rig.owner_id != user.id:
                 return Response({'status': 'error', 'message': 'UUID already claimed by another user'}, status=409)
+            # Note: rig_name from agent is intentionally NOT applied here.
+            # After initial creation, the rig name is managed exclusively
+            # via the dashboard rename API to prevent config.yaml from
+            # overwriting user-set names on every heartbeat.
 
         # Process the payload
         result, http_status = process_ingest(rig_uuid, data, user.id)

@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 class IngestSerializer(serializers.Serializer):
     rig_uuid = serializers.UUIDField()
+    rig_name = serializers.CharField(required=False, default='')
     schema_version = serializers.CharField(default='1.0')
     agent_version = serializers.CharField(default='1.0.0')
     timestamp = serializers.DateTimeField()

@@ -2,9 +2,13 @@
 # Place in the same directory as run.py
 
 rig_uuid: "auto"           # Generates UUID on first run, or set your own UUID
-api_key: ""                 # Your API key from the dashboard
+rig_name: ""               # Suggested initial name for this rig (e.g., "gpu-server-01").
+                           # Used ONLY once during first registration. Leave empty to
+                           # use the machine's hostname. After creation, rename via
+                           # the dashboard — this value is ignored on subsequent updates.
+api_key: ""                # Your API key from the dashboard
 server_endpoint: "https://monitor.example.com"  # Server URL (no trailing slash)
-expected_gpu_count: 0       # 0 = auto-detect; >0 = enforce GPU count validation
-collection_timeout_s: 45    # Hard timeout per collection cycle
-retry_attempts: 3           # Max retries on transient failures
-debug_mode: false           # Enable verbose logging and disable gzip
+expected_gpu_count: 0      # 0 = auto-detect; >0 = enforce GPU count validation
+collection_timeout_s: 45   # Hard timeout per collection cycle
+retry_attempts: 3          # Max retries on transient failures
+debug_mode: false          # Enable verbose logging and disable gzip

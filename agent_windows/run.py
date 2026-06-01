@@ -75,6 +75,10 @@ def load_config(path=None):
         except Exception:
             pass
 
+    # Set default rig_name from config or hostname
+    if not config.get('rig_name'):
+        config['rig_name'] = platform.node() or 'Unnamed Rig'
+
     return config
 
 
@@ -545,6 +549,7 @@ def build_payload(config):
 
     payload = {
         'rig_uuid': config['rig_uuid'],
+        'rig_name': config.get('rig_name', ''),
         'schema_version': __schema_version__,
         'agent_version': __version__,
         'timestamp': now,

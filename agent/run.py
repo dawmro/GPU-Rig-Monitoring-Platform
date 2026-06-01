@@ -47,8 +47,6 @@ def load_config(path=DEFAULT_CONFIG_PATH):
     # Auto-generate UUID on first run
     if config.get('rig_uuid') == 'auto' or not config.get('rig_uuid'):
         config['rig_uuid'] = str(uuid.uuid4())
-        # Persist the generated UUID
-        config['rig_uuid'] = config['rig_uuid']
         try:
             config_path = Path(path)
             existing = yaml.safe_load(config_path.read_text()) or {}
@@ -56,6 +54,10 @@ def load_config(path=DEFAULT_CONFIG_PATH):
             config_path.write_text(yaml.dump(existing))
         except Exception:
             pass
+
+    # Set default rig_name from config or hostname
+    if not config.get('rig_name'):
+        config['rig_name'] = platform.node() or 'Unnamed Rig'
 
     return config
 
@@ -389,6 +391,7 @@ def build_payload(config):
 
     payload = {
         'rig_uuid': config['rig_uuid'],
+        'rig_name': config.get('rig_name', ''),
         'schema_version': __schema_version__,
         'agent_version': __version__,
         'timestamp': now,

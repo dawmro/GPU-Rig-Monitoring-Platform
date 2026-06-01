@@ -41,7 +41,7 @@ Optional dependencies:
 
 ```powershell
 pip install docker          # For Docker container monitoring
-pip install nvidia-ml-py3   # For NVIDIA GPU monitoring (requires NVIDIA GPU with drivers)
+pip install pynvml         # For NVIDIA GPU monitoring (requires NVIDIA GPU with drivers)
 ```
 
 ### 1b. Freeze Dependencies (Optional)
@@ -72,12 +72,14 @@ Set these values:
 ```yaml
 rig_uuid: "auto"
 api_key: "your-api-key-from-dashboard"
-server_endpoint: "https://monitor.example.com"
+server_endpoint: "http://192.168.253.1"
 expected_gpu_count: 0
 collection_timeout_s: 45
 retry_attempts: 3
 debug_mode: true
 ```
+
+> **Important:** The `server_endpoint` must include the scheme — `http://` or `https://`. For example, if your server is at `192.168.253.1`, use `http://192.168.253.1` (not just `192.168.253.1`).
 
 **To get an API key:** Log in to the monitoring dashboard → click **API Keys** → create a new key → copy it immediately (shown only once).
 
@@ -209,7 +211,7 @@ curl https://monitor.example.com/api/v1/health/
 Install NVIDIA support:
 
 ```powershell
-pip install nvidia-ml-py3
+pip install pynvml
 ```
 
 Requires NVIDIA GPU with up-to-date drivers.
@@ -241,7 +243,7 @@ The agent collects CPU metrics with a 1-second `psutil.cpu_percent(interval=1)` 
 | **Network speed** | `/sys/class/net/*/speed` | WMI `Win32_NetworkAdapter.Speed` |
 | **Config path** | `/etc/monitoring-agent/config.yaml` | `./config.yaml` (alongside script) |
 | **Log path** | `/var/log/monitoring-agent/` | `./logs/` (alongside script) |
-| **Python deps** | `psutil py-cpuinfo requests pyyaml docker` | Same + `wmi` (+ `nvidia-ml-py3`, `docker` optional) |
+| **Python deps** | `psutil py-cpuinfo requests pyyaml docker` | Same + `wmi` (+ `pynvml`, `docker` optional) |
 
 ## Command-Line Options
 

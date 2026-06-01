@@ -15,7 +15,7 @@ Dependencies:
 
 Optional dependencies:
     pip install docker          # For Docker container monitoring
-    pip install nvidia-ml-py3   # For NVIDIA GPU monitoring (requires NVIDIA GPU)
+    pip install pynvml         # For NVIDIA GPU monitoring (requires NVIDIA GPU)
 """
 
 import os
@@ -59,6 +59,12 @@ def load_config(path=None):
         if not config.get(field):
             print(f"ERROR: Missing required config field: {field}", file=sys.stderr)
             sys.exit(2)
+
+    # Validate server_endpoint has a scheme
+    endpoint = config.get('server_endpoint', '')
+    if not endpoint.startswith(('http://', 'https://')):
+        print(f"ERROR: server_endpoint must start with http:// or https://. Got: {endpoint}", file=sys.stderr)
+        sys.exit(2)
 
     # Auto-generate UUID on first run
     if config.get('rig_uuid') == 'auto' or not config.get('rig_uuid'):
@@ -442,7 +448,8 @@ def collect_software():
     # NVIDIA driver
     try:
         out = subprocess.run(['nvidia-smi', '--query-gpu=driver_version', '--format=csv,noheader'],
-                           capture_output=True, text=True, timeout=5)
+                           capture_output=True, text=True, timeout=5,
+                           encoding='utf-8', errors='replace')
         if out.returncode == 0:
             result['nvidia_driver'] = out.stdout.strip().split('\n')[0]
     except Exception:
@@ -450,7 +457,8 @@ def collect_software():
     # Docker version
     try:
         out = subprocess.run(['docker', 'version', '--format', '{{.Server.Version}}'],
-                           capture_output=True, text=True, timeout=5)
+                           capture_output=True, text=True, timeout=5,
+                           encoding='utf-8', errors='replace')
         if out.returncode == 0:
             result['docker_version'] = out.stdout.strip()
     except Exception:
@@ -475,9 +483,10 @@ def collect_errors():
             )
             out = subprocess.run(
                 ['powershell', '-Command', ps_cmd],
-                capture_output=True, text=True, timeout=15
+                capture_output=True, text=True, timeout=15,
+                encoding='utf-8', errors='replace'
             )
-            if out.returncode == 0 and out.stdout.strip():
+            if out.returncode == 0 and out.stdout and out.stdout.strip():
                 seen = set()
                 for line in out.stdout.strip().splitlines():
                     if line not in seen and len(line.strip()) > 0:

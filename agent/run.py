@@ -14,7 +14,6 @@ Config file: /etc/monitoring-agent/config.yaml
 import os
 import sys
 import json
-import gzip
 import signal
 import logging
 import logging.handlers
@@ -408,17 +407,15 @@ def send_payload(config, payload):
     import random
 
     data = json.dumps(payload).encode('utf-8')
-    use_gzip = len(data) > 8192
-    if use_gzip:
-        data = gzip.compress(data)
+    # Django DRF does not auto-decompress gzip request bodies,
+    # so we always send uncompressed JSON.
+    use_gzip = False
 
     headers = {
         'Content-Type': 'application/json',
         'X-API-Key': config['api_key'],
         'User-Agent': f'rig-monitor-agent/{__version__}',
     }
-    if use_gzip:
-        headers['Content-Encoding'] = 'gzip'
 
     max_retries = config.get('retry_attempts', 3)
     timeout = (3.0, 10.0)

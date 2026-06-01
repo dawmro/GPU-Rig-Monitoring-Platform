@@ -21,13 +21,11 @@ Optional dependencies:
 import os
 import sys
 import json
-import gzip
 import logging
 import logging.handlers
 import platform
 import subprocess
 import uuid
-import ctypes
 from datetime import datetime, timezone
 from pathlib import Path
 

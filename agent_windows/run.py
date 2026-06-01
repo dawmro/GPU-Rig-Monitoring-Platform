@@ -562,9 +562,11 @@ def build_payload(config):
 def send_payload(config, payload):
     """Send payload to server with retry logic."""
     data = json.dumps(payload).encode('utf-8')
-    use_gzip = len(data) > 8192
-    if use_gzip:
-        data = gzip.compress(data)
+    # Only gzip if payload is large AND server supports it.
+    # Django DRF does not auto-decompress gzip request bodies,
+    # so we disable gzip by default. Set debug_mode=True to also
+    # disable gzip for easier debugging.
+    use_gzip = False  # Django doesn't support gzip request decompression
 
     headers = {
         'Content-Type': 'application/json',
@@ -572,6 +574,7 @@ def send_payload(config, payload):
         'User-Agent': f'rig-monitor-agent/{__version__}',
     }
     if use_gzip:
+        data = gzip.compress(data)
         headers['Content-Encoding'] = 'gzip'
 
     max_retries = config.get('retry_attempts', 3)

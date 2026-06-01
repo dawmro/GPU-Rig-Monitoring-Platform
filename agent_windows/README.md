@@ -206,6 +206,42 @@ type logs\agent.log
 curl https://monitor.example.com/api/v1/health/
 ```
 
+### Connection errors / WinError 10061 (Connection refused)
+
+The server is not reachable at the configured `server_endpoint`. Common causes:
+
+**Wrong IP address:** The VMware NAT gateway (`192.168.253.1`) is not the VM's IP. The VM gets a DHCP address in the `192.168.253.x` range (e.g., `192.168.253.131`).
+
+Use the auto-detect tool:
+
+```powershell
+python run.py --detect-server
+```
+
+Or find the VM's IP manually from the VM:
+
+```bash
+ip addr show | grep 'inet ' | awk '{print $2}'
+```
+
+Then update `config.yaml`:
+
+```yaml
+server_endpoint: "http://192.168.253.131"
+```
+
+**Server not running:** Check the server from the VM:
+
+```bash
+curl -s http://localhost/api/v1/health/ | python3 -m json.tool
+```
+
+**Firewall on VM:** Ensure port 80 is open:
+
+```bash
+sudo iptables -L INPUT -n | grep 80
+```
+
 ### GPU metrics empty
 
 Install NVIDIA support:
@@ -215,6 +251,8 @@ pip install pynvml
 ```
 
 Requires NVIDIA GPU with up-to-date drivers.
+
+> **Note:** You may see a `FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead.` This is harmless — both packages provide the same `pynvml` module. The warning comes from the `pynvml` package itself.
 
 ### SMART disk data unavailable
 
@@ -249,6 +287,7 @@ The agent collects CPU metrics with a 1-second `psutil.cpu_percent(interval=1)` 
 
 ```
 python run.py                 # Collect and send metrics
+python run.py --detect-server # Auto-detect server IP on local network
 python run.py --install-task  # Create Windows Task Scheduler entry (Admin required)
 python run.py --remove-task   # Remove Windows Task Scheduler entry (Admin required)
 python run.py --help-task     # Print Task Scheduler setup instructions

@@ -752,10 +752,92 @@ def remove_windows_task():
         print(f"Error removing task: {e}")
 
 
-# ── Main ────────────────────────────────────────────────────────────────────
+def _detect_server():
+    """Try to auto-detect the server on common local/test IP ranges."""
+    import socket
+
+    print()
+    print("=" * 60)
+    print("  Server Auto-Detection")
+    print("=" * 60)
+    print()
+
+    # Show local network info
+    hostname = socket.gethostname()
+    try:
+        local_ip = socket.gethostbyname(hostname)
+        print(f"  This machine: {hostname} ({local_ip})")
+    except Exception:
+        print(f"  This machine: {hostname}")
+
+    # Try common VM/test network gateways
+    candidates = [
+        # VMware NAT default gateway
+        ("192.168.253.1", "VMware NAT (VMnet8) gateway"),
+        ("192.168.40.1", "VMware Host-Only (VMnet1) gateway"),
+        # Common DHCP ranges — try .1 gateway
+        ("192.168.8.1", "Common gateway (192.168.8.x)"),
+        ("192.168.0.1", "Common gateway (192.168.0.x)"),
+        ("192.168.1.1", "Common gateway (192.168.1.x)"),
+        # Fallback: localhost
+        ("127.0.0.1", "Localhost (same machine)"),
+    ]
+
+    # Also try probing the local subnet's .1
+    try:
+        local_parts = local_ip.rsplit('.', 1)
+        if len(local_parts) == 2:
+            subnet_gw = f"{local_parts[0]}.1"
+            candidates.insert(0, (subnet_gw, f"Detected gateway (subnet {local_parts[0]}.x)"))
+    except Exception:
+        pass
+
+    print("  Probing candidates...")
+    found = []
+    for ip, label in candidates:
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(2)
+            result = sock.connect_ex((ip, 80))
+            sock.close()
+            if result == 0:
+                print(f"  ✅ {ip:20s} — {label} (port 80 open)")
+                found.append(ip)
+            else:
+                print(f"  ❌ {ip:20s} — {label} (no response)")
+        except Exception:
+            print(f"  ❌ {ip:20s} — {label} (error)")
+
+    if found:
+        best = found[0]
+        print()
+        print(f"  Recommended server_endpoint: http://{best}")
+        print(f"  Or try: https://{best}")
+        if best == "192.168.253.1":
+            print()
+            print("  NOTE: This is the VMware NAT gateway. The VM itself may use")
+            print("  a different IP like 192.168.253.xxx. Try probing higher IPs:")
+            for i in range(128, 140):
+                probe = f"192.168.253.{i}"
+                try:
+                    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    s.settimeout(0.5)
+                    r = s.connect_ex((probe, 80))
+                    s.close()
+                    if r == 0:
+                        print(f"  ✅ {probe} responds on port 80 — try: http://{probe}")
+                except Exception:
+                    pass
+    else:
+        print()
+        print("  No server found on common addresses.")
+        print("  Check that the server is running and the IP is correct.")
+
+    print()
+    print("=" * 60)
 
 def main():
-    # Handle command-line arguments for task management
+    # Handle command-line arguments for task management and diagnostics
     if '--install-task' in sys.argv:
         create_windows_task()
         return
@@ -764,6 +846,9 @@ def main():
         return
     if '--help-task' in sys.argv:
         print_task_scheduler_instructions()
+        return
+    if '--detect-server' in sys.argv:
+        _detect_server()
         return
 
     config = load_config()

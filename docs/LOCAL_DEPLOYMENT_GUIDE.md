@@ -1,0 +1,695 @@
+# GPU Rig Monitoring Platform — Local Deployment Guide
+
+**Version:** 1.0
+**Target OS:** Ubuntu 24.04 LTS (local testing, no domain name)
+
+This guide walks through deploying the complete GPU Rig Monitoring Platform on a **local Ubuntu machine** for development, testing, or evaluation before deploying to production hardware.
+
+By the end you will have:
+
+- A **Django dashboard** accessible at `http://localhost/` showing real-time rig telemetry
+- A **monitoring agent** running via cron that collects hardware metrics and sends them to the server
+- Live updating metrics with HTMX-powered 30-second polling
+
+---
+
+## Table of Contents
+
+1. [Architecture Overview](#1-architecture-overview)
+2. [Prerequisites](#2-prerequisites)
+3. [Server Setup](#3-server-setup)
+   - 3.1 [Install System Packages](#31-install-system-packages)
+   - 3.2 [Configure PostgreSQL](#32-configure-postgresql)
+   - 3.3 [Set Up the Django Project](#33-set-up-the-django-project)
+   - 3.4 [Run Migrations](#34-run-migrations)
+   - 3.5 [Create an Admin User](#35-create-an-admin-user)
+   - 3.6 [Configure Nginx](#36-configure-nginx)
+   - 3.7 [Start Gunicorn](#37-start-gunicorn)
+   - 3.8 [Quick Alternative: Django Dev Server](#38-quick-alternative-django-dev-server)
+4. [Agent Setup](#4-agent-setup)
+   - 4.1 [Create Agent User and Directories](#41-create-agent-user-and-directories)
+   - 4.2 [Install Agent Dependencies](#42-install-agent-dependencies)
+   - 4.3 [Copy Agent Files](#43-copy-agent-files)
+   - 4.4 [Configure the Agent](#44-configure-the-agent)
+   - 4.5 [Set Up Sudoers](#45-set-up-sudoers)
+   - 4.6 [Set Up Cron](#46-set-up-cron)
+   - 4.7 [Test the Agent](#47-test-the-agent)
+5. [First Run Verification](#5-first-run-verification)
+6. [Stopping and Restarting Services](#6-stopping-and-restarting-services)
+7. [Understanding the File Layout](#7-understanding-the-file-layout)
+8. [Troubleshooting](#8-troubleshooting)
+9. [Differences from Production](#9-differences-from-production)
+10. [Preparing for Production Deployment](#10-preparing-for-production-deployment)
+
+---
+
+## 1. Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────┐
+│                  LOCAL MACHINE                       │
+│                                                      │
+│  ┌──────────────┐   HTTP POST   ┌────────────────┐  │
+│  │ Agent        │ ──────────→   │ Nginx :80       │  │
+│  │ (cron 60s)  │               │                 │  │
+│  └──────────────┘               └───────┬────────┘  │
+│                                         │ proxy      │
+│                                         ▼            │
+│                                 ┌────────────────┐  │
+│                                 │ Gunicorn :8000  │  │
+│                                 │ (Django + DRF) │  │
+│                                 └───────┬────────┘  │
+│                                         │            │
+│                                         ▼            │
+│                                 ┌────────────────┐  │
+│                                 │ PostgreSQL     │  │
+│                                 │ :5432          │  │
+│                                 └────────────────┘  │
+│                                                      │
+│  Browser ──http://localhost──→ Nginx ──→ Django      │
+│  (HTMX dashboard polling every 30s)                  │
+└─────────────────────────────────────────────────────┘
+```
+
+**Key components:**
+
+| Component | Technology | Purpose |
+|-----------|-----------|---------|
+| Server | Django 6.x + DRF | API, dashboard, auth |
+| Database | PostgreSQL 16 | Relational + metric storage |
+| Web server | Nginx | Reverse proxy, static files |
+| App server | Gunicorn | WSGI HTTP server |
+| Dashboard | Django Templates + HTMX | Server-rendered UI with live polling |
+| Agent | Python 3 + psutil/pynvml | Hardware metric collection |
+| Scheduler | cron | Runs agent every 60 seconds |
+
+---
+
+## 2. Prerequisites
+
+| Resource | Minimum | Recommended |
+|----------|---------|-------------|
+| **OS** | Ubuntu 22.04 LTS | Ubuntu 24.04 LTS |
+| **vCPU** | 2 | 4 |
+| **RAM** | 4 GB | 8 GB |
+| **Storage** | 20 GB | 50 GB |
+| **Python** | 3.10+ | 3.12 (ships with Ubuntu 24.04) |
+| **Access** | `sudo` privileges | — |
+
+Verify your system:
+
+```bash
+python3 --version    # 3.10+
+lsb_release -a       # Ubuntu 22.04 or 24.04
+```
+
+### Project Files
+
+This guide assumes the project is checked out at:
+
+```
+/home/qrv/workspace/GPU-Rig-Monitoring-Platform/
+```
+
+If your path is different, adjust all `cp` commands accordingly.
+
+---
+
+## 3. Server Setup
+
+### 3.1 Install System Packages
+
+```bash
+sudo apt update
+sudo apt install -y python3-venv python3-pip postgresql postgresql-contrib \
+    nginx curl build-essential
+```
+
+### 3.2 Configure PostgreSQL
+
+```bash
+# Start and enable PostgreSQL
+sudo systemctl enable postgresql
+sudo systemctl start postgresql
+
+# Create database user and database
+sudo -u postgres psql << 'EOF'
+CREATE USER gpu_monitor WITH PASSWORD 'local_dev_password';
+CREATE DATABASE gpu_monitor OWNER gpu_monitor;
+GRANT ALL PRIVILEGES ON DATABASE gpu_monitor TO gpu_monitor;
+EOF
+```
+
+> **Note:** For local testing we use plain PostgreSQL. TimescaleDB (used in production for time-series optimization) is not required. All metric tables work as regular PostgreSQL tables.
+
+**Verify the connection:**
+
+```bash
+PGPASSWORD=local_...word psql -h 127.0.0.1 -U gpu_monitor -d gpu_monitor -c "SELECT 1;"
+```
+
+If you see `?column? | 1`, the database is ready.
+
+### 3.3 Set Up the Django Project
+
+```bash
+# Create the installation directory
+sudo mkdir -p /opt/gpu_monitor
+sudo chown "$USER:$USER" /opt/gpu_monitor
+
+# Copy the Django project (adjust path if your checkout is elsewhere)
+cp -r /home/qrv/workspace/GPU-Rig-Monitoring-Platform/gpu_monitor/* /opt/gpu_monitor/
+
+# Create directories Django needs
+mkdir -p /opt/gpu_monitor/logs
+mkdir -p /opt/gpu_monitor/staticfiles
+
+# Create and activate virtualenv
+cd /opt/gpu_monitor
+python3 -m venv venv
+source venv/bin/activate
+
+# Install Python dependencies
+pip install --upgrade pip
+pip install django djangorestframework django-htmx psycopg2-binary \
+    argon2-cffi gunicorn requests pyyaml psutil
+```
+
+> **Tip:** There is no `requirements.txt` in the repository. The packages listed above cover all Django server dependencies.
+
+**Create the environment file** at `/opt/gpu_monitor/.env`:
+
+```bash
+cat > /opt/gpu_monitor/.env << 'EOF'
+DJANGO_SECRET_KEY=change-me-generate-a-random-value-with-python-secrets
+DJANGO_DEBUG=True
+DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1
+DB_NAME=gpu_monitor
+DB_USER=gpu_monitor
+DB_PASSWORD=local_dev_password
+DB_HOST=127.0.0.1
+DB_PORT=5432
+EOF
+
+chmod 600 /opt/gpu_monitor/.env
+```
+
+> **Important:** Generate a proper secret key instead of the placeholder:
+> ```bash
+> python3 -c "import secrets; print(secrets.token_urlsafe(50))"
+> ```
+> Then update `DJANGO_SECRET_KEY` in `.env`.
+
+### 3.4 Run Migrations
+
+```bash
+cd /opt/gpu_monitor
+source venv/bin/activate
+set -a && source .env && set +a
+python manage.py migrate
+python manage.py collectstatic --noinput
+```
+
+> **What is `set -a && source .env && set +a`?** It exports all variables from `.env` into the current shell environment so Django settings can read them via `os.environ.get()`.
+
+Expected migration output (20 migrations):
+
+```
+Operations to perform:
+  Apply all migrations: accounts, admin, audit, auth, contenttypes, metrics_app, rigs, sessions
+Running migrations:
+  Applying contenttypes.0001_initial... OK
+  Applying auth.0001_initial... OK
+  ...
+  Applying accounts.0001_initial... OK
+  Applying audit.0001_initial... OK
+  Applying metrics_app.0001_initial... OK
+  Applying rigs.0001_initial... OK
+  Applying sessions.0001_initial... OK
+```
+
+### 3.5 Create an Admin User
+
+```bash
+cd /opt/gpu_monitor
+source venv/bin/activate
+set -a && source .env && set +a
+python manage.py createsuperuser
+```
+
+Enter email, username, and password when prompted. You will use these to log into the dashboard.
+
+### 3.6 Configure Nginx
+
+Create `/etc/nginx/sites-available/gpu_monitor`:
+
+```nginx
+server {
+    listen 80;
+    server_name localhost;
+
+    client_max_body_size 2m;
+
+    location /static/ {
+        alias /opt/gpu_monitor/staticfiles/;
+        expires 1d;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+Enable the site:
+
+```bash
+sudo ln -sf /etc/nginx/sites-available/gpu_monitor /etc/nginx/sites-enabled/gpu_monitor
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t && sudo systemctl restart nginx
+sudo systemctl enable nginx
+```
+
+### 3.7 Start Gunicorn
+
+**For persistent running (recommended), create a systemd service:**
+
+```bash
+sudo tee /etc/systemd/system/gunicorn.service << 'EOF'
+[Unit]
+Description=GPU Rig Monitor - Gunicorn
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=notify
+User=root
+Group=root
+WorkingDirectory=/opt/gpu_monitor
+EnvironmentFile=/opt/gpu_monitor/.env
+ExecStart=/opt/gpu_monitor/venv/bin/gunicorn \
+    gpu_monitor.wsgi:application \
+    --bind 127.0.0.1:8000 \
+    --workers 4 \
+    --timeout 30
+ExecReload=/bin/kill -s HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable gunicorn
+sudo systemctl start gunicorn
+```
+
+**For foreground testing** (stops when you close the terminal):
+
+```bash
+cd /opt/gpu_monitor
+source venv/bin/activate
+set -a && source .env && set +a
+gunicorn gpu_monitor.wsgi:application --bind 127.0.0.1:8000 --workers 2 --timeout 30
+```
+
+### 3.8 Quick Alternative: Django Dev Server
+
+For quick testing without Nginx and Gunicorn:
+
+```bash
+cd /opt/gpu_monitor
+source venv/bin/activate
+set -a && source .env && set +a
+python manage.py runserver 0.0.0.0:8000
+```
+
+Then access the dashboard at `http://localhost:8000/`. This is **not suitable for testing the agent** (which sends to port 80) but works for verifying migrations and templates.
+
+---
+
+## 4. Agent Setup
+
+The agent runs on each machine you want to monitor. For local testing, install it on the same machine.
+
+### 4.1 Create Agent User and Directories
+
+```bash
+# Create the system user (no login shell for security)
+sudo useradd --system --no-create-home --shell /usr/sbin/nologin monitoring-agent 2>/dev/null || true
+
+# Create required directories
+sudo mkdir -p /opt/monitoring-agent /etc/monitoring-agent /var/log/monitoring-agent
+
+# Log directory must be writable by the agent user
+sudo chown monitoring-agent:monitoring-agent /var/log/monitoring-agent
+```
+
+### 4.2 Install Agent Dependencies
+
+```bash
+# Create virtualenv for the agent
+sudo python3 -m venv /opt/monitoring-agent/venv
+sudo /opt/monitoring-agent/venv/bin/pip install --upgrade pip
+sudo /opt/monitoring-agent/venv/bin/pip install psutil py-cpuinfo requests pyyaml docker
+
+# Try to install NVIDIA GPU support (will gracefully fail without GPU)
+sudo /opt/monitoring-agent/venv/bin/pip install nvidia-ml-py3 2>/dev/null || \
+    echo "INFO: pynvml not installed — GPU monitoring will be unavailable (expected without NVIDIA GPU)"
+```
+
+### 4.3 Copy Agent Files
+
+```bash
+sudo cp /home/qrv/workspace/GPU-Rig-Monitoring-Platform/agent/run.py /opt/monitoring-agent/run.py
+sudo chmod +x /opt/monitoring-agent/run.py
+```
+
+### 4.4 Configure the Agent
+
+Create the config file:
+
+```bash
+sudo tee /etc/monitoring-agent/config.yaml << 'EOF'
+rig_uuid: "auto"
+api_key: "PASTE_YOUR_API_KEY_HERE"
+server_endpoint: "http://localhost"
+expected_gpu_count: 0
+collection_timeout_s: 45
+retry_attempts: 3
+debug_mode: true
+EOF
+```
+
+**Edit the config** to paste the API key you will create in Step 5:
+
+```bash
+sudo nano /etc/monitoring-agent/config.yaml
+```
+
+**Fix file ownership** — the `monitoring-agent` user needs to read this file:
+
+```bash
+sudo chown monitoring-agent:monitoring-agent /etc/monitoring-agent/config.yaml
+sudo chmod 600 /etc/monitoring-agent/config.yaml
+```
+
+**Config field reference:**
+
+| Field | Description |
+|-------|-------------|
+| `rig_uuid` | `"auto"` generates a permanent UUID on first run. After the first successful run, check the file — the UUID will be persisted. |
+| `api_key` | Create this from the dashboard (Step 5). The key is shown only once. |
+| `server_endpoint` | `http://localhost` for local testing (no trailing slash). |
+| `expected_gpu_count` | `0` = auto-detect. Set to your actual GPU count to flag mismatches. |
+| `collection_timeout_s` | Hard limit in seconds for metric collection + upload. Default 45s leaves margin in the 60s cron cycle. |
+| `retry_attempts` | Retries on transient failures with exponential backoff (1s → 2s → 4s). |
+| `debug_mode` | `true` enables verbose logging and disables gzip compression. Use for troubleshooting. |
+
+### 4.5 Set Up Sudoers
+
+The agent needs root access for disk SMART data and journal logs:
+
+```bash
+echo 'monitoring-agent ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/bin/nvme, /bin/journalctl' | sudo tee /etc/sudoers.d/monitoring-agent
+sudo chmod 440 /etc/sudoers.d/monitoring-agent
+```
+
+### 4.6 Set Up Cron
+
+```bash
+echo '* * * * * monitoring-agent flock -n /var/lock/monitoring-agent.lock /opt/monitoring-agent/venv/bin/python /opt/monitoring-agent/run.py >> /var/log/monitoring-agent/cron.log 2>&1' | sudo tee /etc/cron.d/monitoring-agent
+sudo chmod 644 /etc/cron.d/monitoring-agent
+```
+
+> **How `flock` works:** `flock -n` creates a lock file to prevent overlapping runs. If a previous agent run is still executing (e.g., network timeout), the next cron invocation skips gracefully instead of stacking up.
+
+### 4.7 Test the Agent
+
+```bash
+sudo -u monitoring-agent /opt/monitoring-agent/venv/bin/python /opt/monitoring-agent/run.py
+```
+
+**Expected output (no GPU):**
+
+```json
+{"ts":"2026-06-01T17:35:04","level":"INFO","module":"main","msg":"Starting collection for rig a1b2c3d4-..."}
+{"ts":"2026-06-01T17:35:11","level":"WARNING","module":"gpu","msg":"GPU collection failed: No module named 'pynvml'"}
+```
+
+The GPU warning is expected without an NVIDIA GPU. The agent should complete without errors.
+
+**If you see `PermissionError: config.yaml`:** The file ownership is wrong. Run:
+```bash
+sudo chown monitoring-agent:monitoring-agent /etc/monitoring-agent/config.yaml
+```
+
+---
+
+## 5. First Run Verification
+
+### 5.1 Check Server Health
+
+```bash
+curl -s http://localhost/api/v1/health/ | python3 -m json.tool
+```
+
+Expected:
+
+```json
+{
+    "status": "healthy",
+    "version": "1.0.0",
+    "uptime_s": 0,
+    "db_connection": "ok",
+    "active_rigs": 0
+}
+```
+
+### 5.2 Log Into the Dashboard
+
+1. Open your browser: **http://localhost/accounts/login/**
+2. Log in with the superuser credentials from Step 3.5
+
+### 5.3 Create an API Key
+
+1. Click **API Keys** in the top navigation bar
+2. Enter a descriptive name (e.g., `local-test-rig`)
+3. Click **Create Key**
+4. **Copy the displayed key immediately** — it is shown only once
+5. Paste it into the agent config:
+   ```bash
+   sudo nano /etc/monitoring-agent/config.yaml
+   # Replace PASTE_YOUR_API_KEY_HERE with the actual key
+   sudo chown monitoring-agent:monitoring-agent /etc/monitoring-agent/config.yaml
+   ```
+
+### 5.4 Verify the Agent Appears on the Dashboard
+
+1. Run the agent manually (Step 4.7) or wait up to 2 minutes for cron to trigger
+2. Open **http://localhost/dashboard/rigs/**
+3. Your rig should appear with a green **● Online** badge
+4. Click the rig name to see the detail page with live metrics
+
+### 5.5 Verify HTMX Live Polling
+
+1. On the rig detail page, wait 30 seconds
+2. Metrics should update without a page reload
+3. The status badge should remain green
+
+---
+
+## 6. Stopping and Restarting Services
+
+```bash
+# Check service status
+systemctl status gunicorn
+systemctl status nginx
+systemctl status postgresql
+
+# Restart after code changes
+sudo systemctl restart gunicorn
+
+# View logs in real-time
+tail -f /opt/gpu_monitor/logs/gunicorn-error.log
+tail -f /opt/gpu_monitor/logs/app.log
+
+# Agent logs
+tail -f /var/log/monitoring-agent/agent.log
+tail -f /var/log/monitoring-agent/cron.log
+
+# After pulling code changes, re-run migrations
+cd /opt/gpu_monitor
+source venv/bin/activate
+set -a && source .env && set +a
+python manage.py migrate
+python manage.py collectstatic --noinput
+sudo systemctl restart gunicorn
+```
+
+---
+
+## 7. Understanding the File Layout
+
+### Server (`/opt/gpu_monitor/`)
+
+```
+/opt/gpu_monitor/
+├── venv/                       # Python virtual environment
+├── gpu_monitor/                # Django project settings
+│   ├── settings.py             # Main settings (reads from .env)
+│   ├── urls.py                 # Root URL configuration
+│   └── wsgi.py                 # WSGI entry point
+├── accounts/                   # User auth + API key management
+│   ├── models.py               # User, ApiKey models
+│   ├── authentication.py       # X-API-Key auth for agents
+│   └── views.py                # Login, logout, API key UI
+├── rigs/                       # Rig inventory
+│   ├── models.py               # Rig, RigTag models
+│   └── management/commands/    # update_rig_status command
+├── metrics_app/                # Ingestion API + metric storage
+│   ├── models.py               # MetricSnapshot, LatestSnapshot, ErrorEvent
+│   ├── serializers.py          # Payload validation + processing
+│   └── views.py                # IngestView, HealthView, ChartDataView
+├── dashboard/                  # HTMX dashboard views
+│   ├── views.py                # rig_list, rig_detail, htmx_metrics
+│   └── urls.py
+├── audit/                      # Audit logging
+│   ├── models.py               # AuditLog model
+│   └── middleware.py           # Request audit middleware
+├── templates/                  # Django HTML templates
+├── logs/                       # Application logs
+│   ├── app.log                 # Django structured JSON log
+│   ├── gunicorn-access.log     # Gunicorn access log
+│   └── gunicorn-error.log      # Gunicorn error log
+├── staticfiles/                # Collected static files (served by Nginx)
+├── .env                        # Environment variables (mode 600)
+└── manage.py                   # Django management command
+```
+
+### Agent (`/opt/monitoring-agent/`)
+
+```
+/opt/monitoring-agent/
+├── venv/                       # Python virtual environment
+└── run.py                      # Agent script
+
+/etc/monitoring-agent/
+└── config.yaml                 # Agent configuration (mode 600)
+
+/var/log/monitoring-agent/
+├── agent.log                   # Structured JSON agent log (rotated 10MB x 3)
+└── cron.log                    # Cron output log
+
+/etc/cron.d/monitoring-agent   # Cron job definition
+/etc/sudoers.d/monitoring-agent # Sudo permissions for disk/log access
+```
+
+### Project Repository (`GPU-Rig-Monitoring-Platform/`)
+
+```
+GPU-Rig-Monitoring-Platform/
+├── agent/                      # Agent source code
+│   ├── run.py                  # Agent script
+│   ├── install.sh              # Agent installer (for production rigs)
+│   └── config.yaml.example     # Config template
+├── gpu_monitor/                # Django server source code
+│   ├── deploy/
+│   │   ├── server_install.sh   # Production server installer
+│   │   ├── nginx.conf          # Production Nginx config (TLS)
+│   │   └── gunicorn.service    # Production systemd unit
+│   └── ...
+├── docs/
+│   ├── DEPLOYMENT_GUIDE.md     # Production deployment guide
+│   └── LOCAL_DEPLOYMENT_GUIDE.md # This guide
+└── README.md
+```
+
+> **Note:** The `metrics_unused_backup/` directory in the repository is a legacy placeholder app. It is intentionally **not** in `INSTALLED_APPS` and can be ignored.
+
+---
+
+## 8. Troubleshooting
+
+### Server Issues
+
+| Problem | Cause | Fix |
+|---------|-------|-----|
+| `502 Bad Gateway` | Gunicorn not running | `sudo systemctl restart gunicorn` |
+| `500 Internal Server Error` | Django config error | Check `/opt/gpu_monitor/logs/gunicorn-error.log` |
+| `FileNotFoundError: logs/app.log` | Missing `logs/` directory | `mkdir -p /opt/gpu_monitor/logs` |
+| `ValueError: Dependency on app with no migrations` | Migration files missing | `python manage.py makemigrations accounts rigs metrics_app dashboard audit` then `python manage.py migrate` |
+| `psycopg2.OperationalError: password authentication failed` | Wrong DB password | Reset: `sudo -u postgres psql -c "ALTER USER gpu_monitor PASSWORD 'local_dev_password';"` — ensure `.env` matches |
+| `psycopg2.OperationalError: connection refused` | PostgreSQL not running | `sudo systemctl restart postgresql` |
+| `collectstatic` fails | Missing `staticfiles/` dir | `mkdir -p /opt/gpu_monitor/staticfiles` then re-run |
+| Nginx `403 Forbidden` on static files | Permission issue | `chmod 755 /opt/gpu_monitor/staticfiles` |
+| `ALLOWED_HOSTS` error | Host not in allowed list | Add your IP/hostname to `DJANGO_ALLOWED_HOSTS` in `.env` |
+
+### Agent Issues
+
+| Problem | Cause | Fix |
+|---------|-------|-----|
+| `PermissionError: config.yaml` | File owned by root | `sudo chown monitoring-agent:monitoring-agent /etc/monitoring-agent/config.yaml` |
+| `AttributeError: module 'logging' has no attribute 'handlers'` | Missing import in `run.py` | Ensure `import logging.handlers` is present after `import logging` |
+| `401 Unauthorized` | Invalid API key | Regenerate key on dashboard, update `config.yaml` |
+| `Connection refused` | Server not running | `curl -v http://localhost/api/v1/health/` |
+| `SSL: CERTIFICATE_VERIFY_FAILED` | Using HTTPS without cert | Use `http://localhost` for local testing |
+| `GPU collection failed: No module named 'pynvml'` | No NVIDIA GPU | Expected — GPU metrics will be empty |
+| `smartctl: command not found` | Disk tools not installed | `sudo apt install smartmontools nvme-cli` |
+| Agent hangs / overlaps | Stale lock file | `sudo rm -f /var/lock/monitoring-agent.lock` |
+| Agent runs but rig doesn't appear | API key not set | Create API key on dashboard, update `config.yaml` |
+
+### Reading Agent Logs
+
+Agent logs are structured JSON. Use `jq` for readable output:
+
+```bash
+# Pretty-print agent logs
+tail -20 /var/log/monitoring-agent/agent.log | jq .
+
+# Filter for errors only
+grep '"level":"WARNING"' /var/log/monitoring-agent/agent.log | jq .
+
+# Watch live
+tail -f /var/log/monitoring-agent/agent.log | jq .
+```
+
+---
+
+## 9. Differences from Production
+
+| Aspect | Production | This Local Setup |
+|--------|-----------|------------------|
+| **TLS** | Let's Encrypt (port 443) | HTTP only (port 80) |
+| **Domain** | `monitor.example.com` | `localhost` |
+| **Database** | PostgreSQL + TimescaleDB | Plain PostgreSQL |
+| **Gunicorn user** | Dedicated `monitoring` user | `root` (or current user) |
+| **Agent** | Separate rigs via HTTPS | Same machine via HTTP |
+| **Nginx** | Rate limiting, HSTS, CSP headers | Basic proxy only |
+| **Firewall** | UFW with strict rules | Not configured |
+| **Backup** | Daily `pg_dump` + rclone | Not configured |
+| **Meta-monitoring** | UptimeRobot | Not configured |
+| **TimescaleDB hypertables** | Yes (compression, continuous aggregates) | No (regular tables) |
+
+---
+
+## 10. Preparing for Production Deployment
+
+When you are ready to deploy to a real server:
+
+1. **Install TimescaleDB** and run `python manage.py setup_timescale` for time-series optimization
+2. **Configure a domain name** and point DNS A record to your server
+3. **Enable TLS** with `certbot --nginx -d yourdomain.com`
+4. **Set up UFW firewall** — allow only ports 22, 80, 443
+5. **Configure daily backups** with `pg_dump` + rclone to offsite storage
+6. **Deploy agents on separate rigs** — each rig gets its own API key
+7. **Set `DJANGO_DEBUG=False`** and generate a proper `DJANGO_SECRET_KEY`
+8. **Create a dedicated `monitoring` user** for Gunicorn instead of running as root
+9. **Enable rate limiting** in Nginx (see `deploy/nginx.conf` in the repository)
+
+See `docs/DEPLOYMENT_GUIDE.md` for the full production deployment procedure.

@@ -17,6 +17,7 @@ import json
 import gzip
 import signal
 import logging
+import logging.handlers
 import platform
 import subprocess
 import uuid

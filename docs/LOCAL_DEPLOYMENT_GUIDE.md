@@ -164,6 +164,11 @@ cp -r /home/qrv/workspace/GPU-Rig-Monitoring-Platform/gpu_monitor/* /opt/gpu_mon
 mkdir -p /opt/gpu_monitor/logs
 mkdir -p /opt/gpu_monitor/staticfiles
 
+# Fix permissions — Gunicorn needs to read all files
+# If you later add new template/views files, re-run this:
+chmod -R 644 /opt/gpu_monitor/templates/
+chmod -R 755 /opt/gpu_monitor/templates/dashboard/
+
 # Create and activate virtualenv
 cd /opt/gpu_monitor
 python3 -m venv venv
@@ -534,6 +539,11 @@ source venv/bin/activate
 set -a && source .env && set +a
 python manage.py migrate
 python manage.py collectstatic --noinput
+
+# Fix permissions on any new template/view files
+sudo chmod -R 644 /opt/gpu_monitor/templates/
+sudo chmod -R 755 /opt/gpu_monitor/templates/dashboard/
+
 sudo systemctl restart gunicorn
 ```
 
@@ -632,8 +642,10 @@ GPU-Rig-Monitoring-Platform/
 | `psycopg2.OperationalError: password authentication failed` | Wrong DB password | Reset: `sudo -u postgres psql -c "ALTER USER gpu_monitor PASSWORD 'local_dev_password';"` — ensure `.env` matches |
 | `psycopg2.OperationalError: connection refused` | PostgreSQL not running | `sudo systemctl restart postgresql` |
 | `collectstatic` fails | Missing `staticfiles/` dir | `mkdir -p /opt/gpu_monitor/staticfiles` then re-run |
-| Nginx `403 Forbidden` on static files | Permission issue | `chmod 755 /opt/gpu_monitor/staticfiles` |
-| `ALLOWED_HOSTS` error | Host not in allowed list | Add your IP/hostname to `DJANGO_ALLOWED_HOSTS` in `.env` |
+|| Nginx `403 Forbidden` on static files | Permission issue | `chmod 755 /opt/gpu_monitor/staticfiles` |
+|| `ALLOWED_HOSTS` error | Host not in allowed list | Add your IP/hostname to `DJANGO_ALLOWED_HOSTS` in `.env` |
+|| `PermissionError` when rendering template | New template file has restrictive permissions | `sudo chmod -R 644 /opt/gpu_monitor/templates/` |
+|| Dashboard shows "Internal Server Error" after adding new files | Template or view file not readable by Gunicorn | Check file permissions: `sudo chmod 644 /opt/gpu_monitor/templates/dashboard/*.html` |
 
 ### Agent Issues
 

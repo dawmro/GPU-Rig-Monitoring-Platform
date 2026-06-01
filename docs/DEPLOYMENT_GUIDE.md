@@ -573,6 +573,10 @@ set -a && source .env && set +a
 python manage.py migrate --noinput
 python manage.py collectstatic --noinput
 
+# Fix permissions on any new template/view files
+sudo chmod -R 644 /opt/gpu_monitor/templates/
+sudo chmod -R 755 /opt/gpu_monitor/templates/dashboard/
+
 # Reload Gunicorn (zero-downtime, graceful)
 systemctl reload gunicorn
 ```
@@ -597,8 +601,10 @@ systemctl reload gunicorn
 | Certbot fails (DNS) | `dig monitor.example.com +short` | Wait for DNS propagation; ensure port 80 is open (check cloud firewall too) |
 | Certbot fails (port) | `curl -I http://monitor.example.com` | Ensure port 8 open in **both** cloud firewall and UFW; certbot uses HTTP-01 challenge |
 | UFW blocks SSH | Locked yourself out | Use VPS provider's console: `ufw disable`, then reconfigure |
-| `collectstatic` fails | Missing `staticfiles/` dir | `mkdir -p /opt/gpu_monitor/staticfiles && chown monitoring:monitoring /opt/gpu_monitor/staticfiles` |
-| Nginx `server_name` mismatch | `nginx -t` | Check that domain in `/etc/nginx/sites-available/gpu_monitor` matches your actual domain |
+|| `collectstatic` fails | Missing `staticfiles/` dir | `mkdir -p /opt/gpu_monitor/staticfiles && chown monitoring:monitoring /opt/gpu_monitor/staticfiles` |
+|| Nginx `server_name` mismatch | `nginx -t` | Check that domain in `/etc/nginx/sites-available/gpu_monitor` matches your actual domain |
+|| `PermissionError` in logs after update | New template/view file has restrictive permissions | `sudo chmod -R 644 /opt/gpu_monitor/templates/` |
+|| Dashboard shows 500 after code update | Template not readable by Gunicorn | `sudo chmod 644 /opt/gpu_monitor/templates/dashboard/*.html` |
 
 ### Rig Agent Issues
 

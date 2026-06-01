@@ -10,12 +10,30 @@ Windows-compatible agent for the GPU Rig Monitoring Platform. Collects hardware/
 
 ## Quick Start
 
-### 1. Install Python Dependencies
+### 0. Create a Virtual Environment (Recommended)
 
-Open PowerShell or Command Prompt:
+Using a virtual environment keeps the agent's dependencies isolated from your system Python:
 
 ```powershell
 cd agent_windows
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+```
+
+> **Note:** If you get an execution policy error, run `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned` first, or use `.\venv\Scripts\activate.bat` in Command Prompt instead.
+
+After activating the venv, your prompt should show `(venv)`. All `pip install` and `python run.py` commands below should be run inside the activated venv.
+
+To deactivate when done:
+```powershell
+deactivate
+```
+
+### 1. Install Python Dependencies
+
+Install core dependencies inside the activated venv:
+
+```powershell
 pip install psutil py-cpuinfo requests pyyaml wmi
 ```
 
@@ -24,6 +42,20 @@ Optional dependencies:
 ```powershell
 pip install docker          # For Docker container monitoring
 pip install nvidia-ml-py3   # For NVIDIA GPU monitoring (requires NVIDIA GPU with drivers)
+```
+
+### 1b. Freeze Dependencies (Optional)
+
+To record exact versions for reproducibility:
+
+```powershell
+pip freeze > requirements.txt
+```
+
+To install from a requirements file on another machine:
+
+```powershell
+pip install -r requirements.txt
 ```
 
 ### 2. Configure

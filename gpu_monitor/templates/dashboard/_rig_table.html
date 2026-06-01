@@ -6,9 +6,9 @@
                 <th class="text-left px-4 py-3 font-medium">Status</th>
                 <th class="text-left px-4 py-3 font-medium">Last Seen</th>
                 <th class="text-left px-4 py-3 font-medium">Tags</th>
+                <th class="text-left px-4 py-3 font-medium">GPU</th>
+                <th class="text-left px-4 py-3 font-medium">GPU Temp</th>
                 <th class="text-left px-4 py-3 font-medium">GPU Util</th>
-                <th class="text-left px-4 py-3 font-medium">GPU Mem</th>
-                <th class="text-left px-4 py-3 font-medium">CPU Temp</th>
                 <th class="text-left px-4 py-3 font-medium">Disk</th>
             </tr>
         </thead>
@@ -41,29 +41,37 @@
                     <span class="px-2 py-0.5 rounded text-xs" style="background: {{ tag.color }}22; color: {{ tag.color }}">{{ tag.name }}</span>
                     {% endfor %}
                 </td>
+                <td class="px-4 py-3 text-gray-400">
+                    {% if item.snapshot and item.snapshot.gpu_metrics_json %}
+                        {% with gpu=item.snapshot.gpu_metrics_json.0 %}
+                            {{ gpu.model|default:"—"|truncatechars:14 }}
+                        {% endwith %}
+                    {% else %}—{% endif %}
+                </td>
+                <td class="px-4 py-3">
+                    {% if item.snapshot and item.snapshot.gpu_metrics_json %}
+                        {% with gpu=item.snapshot.gpu_metrics_json.0 %}
+                            {% if gpu.temp_c != None %}
+                                {% if gpu.temp_c > 80 %}
+                                <span class="text-red-400 font-medium">{{ gpu.temp_c }}°C</span>
+                                {% elif gpu.temp_c > 75 %}
+                                <span class="text-orange-400 font-medium">{{ gpu.temp_c }}°C</span>
+                                {% elif gpu.temp_c > 70 %}
+                                <span class="text-yellow-400">{{ gpu.temp_c }}°C</span>
+                                {% elif gpu.temp_c > 65 %}
+                                <span class="text-green-400">{{ gpu.temp_c }}°C</span>
+                                {% else %}
+                                <span class="text-gray-400">{{ gpu.temp_c }}°C</span>
+                                {% endif %}
+                            {% else %}—{% endif %}
+                        {% endwith %}
+                    {% else %}—{% endif %}
+                </td>
                 <td class="px-4 py-3">
                     {% if item.snapshot and item.snapshot.gpu_metrics_json %}
                         {% with gpu=item.snapshot.gpu_metrics_json.0 %}
                             {% if gpu.gpu_util_pct != None %}{{ gpu.gpu_util_pct }}%{% else %}—{% endif %}
                         {% endwith %}
-                    {% else %}—{% endif %}
-                </td>
-                <td class="px-4 py-3">
-                    {% if item.snapshot and item.snapshot.gpu_metrics_json %}
-                        {% with gpu=item.snapshot.gpu_metrics_json.0 %}
-                            {% if gpu.mem_used_mb != None %}{{ gpu.mem_used_mb }}/{{ gpu.mem_total_mb }} MB{% else %}—{% endif %}
-                        {% endwith %}
-                    {% else %}—{% endif %}
-                </td>
-                <td class="px-4 py-3">
-                    {% if item.snapshot and item.snapshot.cpu_temp_c != None %}
-                        {% if item.snapshot.cpu_temp_c > 85 %}
-                        <span class="text-red-400">{{ item.snapshot.cpu_temp_c }}°C</span>
-                        {% elif item.snapshot.cpu_temp_c > 70 %}
-                        <span class="text-yellow-400">{{ item.snapshot.cpu_temp_c }}°C</span>
-                        {% else %}
-                        {{ item.snapshot.cpu_temp_c }}°C
-                        {% endif %}
                     {% else %}—{% endif %}
                 </td>
                 <td class="px-4 py-3 text-gray-400">

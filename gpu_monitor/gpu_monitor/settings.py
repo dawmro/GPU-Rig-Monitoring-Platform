@@ -109,6 +109,15 @@ REST_FRAMEWORK = {
     },
 }
 
+# Session / cookie settings for IP address access
+# Allow session cookies to work with raw IP addresses (no domain restriction)
+SESSION_COOKIE_SECURE = False
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SECURE = False
+CSRF_COOKIE_SAMESITE = 'Lax'
+SESSION_ENGINE = 'django.contrib.sessions.backends.db'
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,

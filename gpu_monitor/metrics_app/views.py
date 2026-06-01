@@ -5,6 +5,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.throttling import SimpleRateThrottle
+from rest_framework.authentication import SessionAuthentication
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import get_object_or_404
@@ -101,6 +102,7 @@ class HealthView(APIView):
 
 class RigMetricsView(APIView):
     """GET /api/v1/rigs/<uuid>/metrics/ — Latest metrics for a rig."""
+    authentication_classes = [SessionAuthentication]
 
     def get(self, request, uuid):
         user = request.user
@@ -132,6 +134,7 @@ class RigMetricsView(APIView):
 
 class ChartDataView(APIView):
     """GET /api/v1/rigs/<uuid>/chart-data/ — Historical chart data."""
+    authentication_classes = [SessionAuthentication]
 
     def get(self, request, uuid):
         user = request.user

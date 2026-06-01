@@ -27,7 +27,6 @@ chown "$SERVICE_USER:$SERVICE_USER" "$LOG_DIR"
 if [ ! -d "$INSTALL_DIR/venv" ]; then
     python3 -m venv "$INSTALL_DIR/venv"
 fi
-source "$INSTALL_DIR/venv/bin/upgrade-pip"
 "$INSTALL_DIR/venv/bin/pip" install --upgrade pip 2>/dev/null || true
 "$INSTALL_DIR/venv/bin/pip" install psutil py-cpuinfo requests pyyaml docker
 
@@ -42,6 +41,7 @@ chmod +x "$INSTALL_DIR/run.py"
 # Config file
 if [ ! -f "$CONFIG_DIR/config.yaml" ]; then
     cp config.yaml.example "$CONFIG_DIR/config.yaml"
+    chown "$SERVICE_USER:$SERVICE_USER" "$CONFIG_DIR/config.yaml"
     chmod 600 "$CONFIG_DIR/config.yaml"
     echo "Created config template at $CONFIG_DIR/config.yaml"
     echo "⚠️  Edit this file with your API key and server endpoint!"

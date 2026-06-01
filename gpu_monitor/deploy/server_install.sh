@@ -61,6 +61,8 @@ chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 # ── Python virtualenv ──────────────────────────────────────────────────────
 mkdir -p "$APP_DIR/logs"
 chown "$APP_USER:$APP_USER" "$APP_DIR/logs"
+mkdir -p "$APP_DIR/staticfiles"
+chown "$APP_USER:$APP_USER" "$APP_DIR/staticfiles"
 
 sudo -u "$APP_USER" bash << 'APP'
 cd /opt/gpu_monitor
@@ -74,7 +76,7 @@ pip install django djangorestframework django-htmx psycopg2-binary argon2-cffi \
 APP
 
 # ── Environment file ──────────────────────────────────────────────────────
-DJANGO_SECRET=*** -c "import secrets; print(secrets.token_urlsafe(50))")
+DJANGO_SECRET=$(python3 -c "import secrets; print(secrets.token_urlsafe(50))")
 
 cat > "$APP_DIR/.env" << ENVEOF
 DJANGO_SECRET_KEY=$DJANGO_SECRET
@@ -95,7 +97,7 @@ sudo -u "$APP_USER" bash << 'MIGRATE'
 cd /opt/gpu_monitor
 source venv/bin/activate
 export $(grep -v '^#' .env | xargs -d '\n')
-python migrate
+python manage.py migrate
 python manage.py collectstatic --noinput
 MIGRATE
 

@@ -398,6 +398,7 @@ Set these values:
 
 ```yaml
 rig_uuid: "auto"
+rig_name: ""
 api_key: "PASTE_YOUR_API_KEY_HERE"
 server_endpoint: "https://monitor.example.com"
 expected_gpu_count: 0
@@ -411,6 +412,7 @@ debug_mode: false
 | Field | Description |
 |-------|-------------|
 | `rig_uuid` | `"auto"` generates a permanent UUID on first run. After the first successful run, check the file — the UUID will be persisted. |
+| `rig_name` | Suggested initial name for this rig (e.g., `"gpu-server-01"`). Used **only once** during first registration. Leave empty to use the machine's hostname. After creation, rename via the dashboard — this value is ignored on subsequent updates. |
 | `api_key` | The exact key copied from the server dashboard. No quotes needed unless the key contains special characters. |
 | `server_endpoint` | Your server's HTTPS URL **without** a trailing slash. |
 | `expected_gpu_count` | `0` for auto-detect. Set to your actual GPU count (e.g., `4`) to flag mismatches. |
@@ -605,7 +607,7 @@ systemctl reload gunicorn
 | `401 Unauthorized` in logs | API key mismatch | Regenerate key on dashboard, update `config.yaml` |
 | `Connection refused` | Server firewall or Nginx issue | `curl -v https://monitor.example.com/api/v1/health/` from the rig |
 | `SSL: CERTIFICATE_VERIFY_FAILED` | Self-signed cert or DNS mismatch | Use Let's Encrypt; check server name matches cert |
-| GPU metrics empty | `pynvml` not available | `sudo /opt/monitoring-agent/venv/bin/pip install nvidia-ml-py3` |
+|| GPU metrics empty | `pynvml` not available | `sudo /opt/monitoring-agent/venv/bin/pip install pynvml` ||
 | `smartctl: command not found` | Disk tools not installed | `apt install smartmontools nvme-cli` |
 | Agent hangs / overlaps | Stale lock file | `rm -f /var/lock/monitoring-agent.lock` |
 | `PermissionError: config.yaml` | File owned by root | `chown monitoring-agent:monitoring-agent /etc/monitoring-agent/config.yaml` |

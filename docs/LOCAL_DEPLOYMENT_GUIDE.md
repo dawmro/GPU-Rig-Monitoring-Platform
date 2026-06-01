@@ -183,7 +183,7 @@ pip install django djangorestframework django-htmx psycopg2-binary \
 cat > /opt/gpu_monitor/.env << 'EOF'
 DJANGO_SECRET_KEY=change-me-generate-a-random-value-with-python-secrets
 DJANGO_DEBUG=True
-DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1
+DJANGO_ALLOWED_HOSTS=*
 DB_NAME=gpu_monitor
 DB_USER=gpu_monitor
 DB_PASSWORD=local_dev_password
@@ -199,6 +199,9 @@ chmod 600 /opt/gpu_monitor/.env
 > python3 -c "import secrets; print(secrets.token_urlsafe(50))"
 > ```
 > Then update `DJANGO_SECRET_KEY` in `.env`.
+
+> **Note:** `DJANGO_ALLOWED_HOSTS=*` accepts requests from any IP address. This is
+> suitable for local testing but should be set to your actual domain in production.
 
 ### 3.4 Run Migrations
 
@@ -359,7 +362,7 @@ sudo /opt/monitoring-agent/venv/bin/pip install --upgrade pip
 sudo /opt/monitoring-agent/venv/bin/pip install psutil py-cpuinfo requests pyyaml docker
 
 # Try to install NVIDIA GPU support (will gracefully fail without GPU)
-sudo /opt/monitoring-agent/venv/bin/pip install nvidia-ml-py3 2>/dev/null || \
+sudo /opt/monitoring-agent/venv/bin/pip install pynvml 2>/dev/null || \
     echo "INFO: pynvml not installed — GPU monitoring will be unavailable (expected without NVIDIA GPU)"
 ```
 
@@ -377,6 +380,7 @@ Create the config file:
 ```bash
 sudo tee /etc/monitoring-agent/config.yaml << 'EOF'
 rig_uuid: "auto"
+rig_name: ""
 api_key: "PASTE_YOUR_API_KEY_HERE"
 server_endpoint: "http://localhost"
 expected_gpu_count: 0
@@ -404,6 +408,7 @@ sudo chmod 600 /etc/monitoring-agent/config.yaml
 | Field | Description |
 |-------|-------------|
 | `rig_uuid` | `"auto"` generates a permanent UUID on first run. After the first successful run, check the file — the UUID will be persisted. |
+| `rig_name` | Suggested initial name for this rig (e.g., `"gpu-server-01"`). Used **only once** during first registration. Leave empty to use the machine's hostname. After creation, rename via the dashboard — this value is ignored on subsequent updates. |
 | `api_key` | Create this from the dashboard (Step 5). The key is shown only once. |
 | `server_endpoint` | `http://localhost` for local testing (no trailing slash). |
 | `expected_gpu_count` | `0` = auto-detect. Set to your actual GPU count to flag mismatches. |

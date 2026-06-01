@@ -1,15 +1,10 @@
-# GPU Rig Monitoring Agent — Windows
+# GPU Rig Monitoring Agent Configuration
+# Place in the same directory as run.py
 
-Config file for the Windows agent. Place this file in the same directory as `run.py`.
-
-## Fields
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `rig_uuid` | yes | Set to `"auto"` to generate a permanent UUID on first run. |
-| `api_key` | yes | API key created from the monitoring dashboard. |
-| `server_endpoint` | yes | The monitoring server URL, e.g. `https://monitor.example.com` (no trailing slash). |
-| `expected_gpu_count` | no | `0` = auto-detect. Set to your actual GPU count to flag mismatches. |
-| `collection_timeout_s` | no | Hard timeout in seconds (default: 45). |
-| `retry_attempts` | no | Retries on transient failures (default: 3). |
-| `debug_mode` | no | `true` = verbose logging + no gzip (default: `false`). |
+rig_uuid: "auto"           # Generates UUID on first run, or set your own UUID
+api_key: ""                 # Your API key from the dashboard
+server_endpoint: "https://monitor.example.com"  # Server URL (no trailing slash)
+expected_gpu_count: 0       # 0 = auto-detect; >0 = enforce GPU count validation
+collection_timeout_s: 45    # Hard timeout per collection cycle
+retry_attempts: 3           # Max retries on transient failures
+debug_mode: false           # Enable verbose logging and disable gzip

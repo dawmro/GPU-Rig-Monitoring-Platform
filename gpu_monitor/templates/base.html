@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}GPU Rig Monitor{% endblock %}</title>
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        .htmx-indicator { opacity: 0; transition: opacity 200ms; }
+        .htmx-request .htmx-indicator { opacity: 1; }
+        .badge-online { background: #065f46; color: #6ee7b7; }
+        .badge-stale { background: #78350f; color: #fcd34d; }
+        .badge-offline { background: #7f1d1d; color: #fca5a5; }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen">
+    {% if user.is_authenticated %}
+    <nav class="bg-gray-800 border-b border-gray-700 px-6 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-6">
+            <a href="{% url 'dashboard:rig-list' %}" class="text-lg font-bold">🖥️ GPU Rig Monitor</a>
+            <a href="{% url 'dashboard:rig-list' %}" class="text-gray-400 hover:text-white">Fleet</a>
+            <a href="{% url 'accounts:api-keys' %}" class="text-gray-400 hover:text-white">API Keys</a>
+        </div>
+        <div class="flex items-center gap-4">
+            <span class="text-gray-400 text-sm">{{ user.email }}</span>
+            <a href="{% url 'accounts:logout' %}" class="text-gray-400 hover:text-white text-sm">Logout</a>
+        </div>
+    </nav>
+    {% endif %}
+    <main class="p-6">
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

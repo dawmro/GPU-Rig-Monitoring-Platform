@@ -1,0 +1,84 @@
+<div class="bg-gray-800 rounded-lg border border-gray-700 overflow-x-auto">
+    <table class="w-full text-sm">
+        <thead class="bg-gray-750 text-gray-400 border-b border-gray-700">
+            <tr>
+                <th class="text-left px-4 py-3 font-medium">Rig Name</th>
+                <th class="text-left px-4 py-3 font-medium">Status</th>
+                <th class="text-left px-4 py-3 font-medium">Last Seen</th>
+                <th class="text-left px-4 py-3 font-medium">Tags</th>
+                <th class="text-left px-4 py-3 font-medium">GPU Util</th>
+                <th class="text-left px-4 py-3 font-medium">GPU Mem</th>
+                <th class="text-left px-4 py-3 font-medium">CPU Temp</th>
+                <th class="text-left px-4 py-3 font-medium">Disk</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in rig_data %}
+            <tr class="border-b border-gray-700/50 hover:bg-gray-750">
+                <td class="px-4 py-3">
+                    <a href="{% url 'dashboard:rig-detail' item.rig.uuid %}" class="text-blue-400 hover:text-blue-300 font-medium">
+                        {{ item.rig.name }}
+                    </a>
+                </td>
+                <td class="px-4 py-3">
+                    {% if item.rig.status == 'online' %}
+                    <span class="badge-online px-2 py-0.5 rounded text-xs">● Online</span>
+                    {% elif item.rig.status == 'stale' %}
+                    <span class="badge-stale px-2 py-0.5 rounded text-xs">● Stale</span>
+                    {% else %}
+                    <span class="badge-offline px-2 py-0.5 rounded text-xs">● Offline</span>
+                    {% endif %}
+                </td>
+                <td class="px-4 py-3 text-gray-400">
+                    {% if item.rig.last_seen %}
+                        {{ item.rig.last_seen|timesince }} ago
+                    {% else %}
+                        Never
+                    {% endif %}
+                </td>
+                <td class="px-4 py-3">
+                    {% for tag in item.rig.tags.all %}
+                    <span class="px-2 py-0.5 rounded text-xs" style="background: {{ tag.color }}22; color: {{ tag.color }}">{{ tag.name }}</span>
+                    {% endfor %}
+                </td>
+                <td class="px-4 py-3">
+                    {% if item.snapshot and item.snapshot.gpu_metrics_json %}
+                        {% with gpu=item.snapshot.gpu_metrics_json.0 %}
+                            {% if gpu.gpu_util_pct != None %}{{ gpu.gpu_util_pct }}%{% else %}—{% endif %}
+                        {% endwith %}
+                    {% else %}—{% endif %}
+                </td>
+                <td class="px-4 py-3">
+                    {% if item.snapshot and item.snapshot.gpu_metrics_json %}
+                        {% with gpu=item.snapshot.gpu_metrics_json.0 %}
+                            {% if gpu.mem_used_mb != None %}{{ gpu.mem_used_mb }}/{{ gpu.mem_total_mb }} MB{% else %}—{% endif %}
+                        {% endwith %}
+                    {% else %}—{% endif %}
+                </td>
+                <td class="px-4 py-3">
+                    {% if item.snapshot and item.snapshot.cpu_temp_c != None %}
+                        {% if item.snapshot.cpu_temp_c > 85 %}
+                        <span class="text-red-400">{{ item.snapshot.cpu_temp_c }}°C</span>
+                        {% elif item.snapshot.cpu_temp_c > 70 %}
+                        <span class="text-yellow-400">{{ item.snapshot.cpu_temp_c }}°C</span>
+                        {% else %}
+                        {{ item.snapshot.cpu_temp_c }}°C
+                        {% endif %}
+                    {% else %}—{% endif %}
+                </td>
+                <td class="px-4 py-3 text-gray-400">
+                    {% if item.snapshot and item.snapshot.storage_json.0 %}
+                        {{ item.snapshot.storage_json.0.usage_pct }}%
+                    {% else %}—{% endif %}
+                </td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="8" class="px-4 py-8 text-center text-gray-500">
+                    No rigs found. Deploy the monitoring agent to enroll your first rig.
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>

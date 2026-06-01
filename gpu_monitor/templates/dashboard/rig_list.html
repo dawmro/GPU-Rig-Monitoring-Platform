@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Fleet Overview{% endblock %}
+{% block content %}
+<div class="max-w-7xl mx-auto">
+    <div class="flex items-center justify-between mb-6">
+        <h1 class="text-2xl font-bold">Fleet Overview</h1>
+        <div class="flex gap-3">
+            <form class="flex gap-2">
+                <input type="text" name="search" placeholder="Search rigs..." value="{{ search }}"
+                       class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white w-48">
+                <select name="status" class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white">
+                    <option value="">All Status</option>
+                    <option value="online" {% if status_filter == 'online' %}selected{% endif %}>Online</option>
+                    <option value="stale" {% if status_filter == 'stale' %}selected{% endif %}>Stale</option>
+                    <option value="offline" {% if status_filter == 'offline' %}selected{% endif %}>Offline</option>
+                </select>
+            </form>
+        </div>
+    </div>
+
+    <div id="rig-table-container"
+         hx-get="{% url 'dashboard:rig-list' %}?status={{ status_filter }}&search={{ search }}"
+         hx-trigger="every 30s"
+         hx-target="#rig-table-container"
+         hx-swap="outerHTML"
+         hx-indicator=".htmx-indicator">
+        {% include "dashboard/_rig_table.html" %}
+    </div>
+    <div class="htmx-indicator text-gray-500 text-sm mt-2">⟳ Refreshing...</div>
+</div>
+{% endblock %}

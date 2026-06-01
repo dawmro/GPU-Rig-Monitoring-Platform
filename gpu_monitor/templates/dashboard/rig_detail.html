@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}{{ rig.name }}{% endblock %}
+{% block content %}
+<div class="max-w-6xl mx-auto">
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-2xl font-bold">{{ rig.name }}</h1>
+            <p class="text-gray-500 text-sm font-mono">{{ rig.uuid }}</p>
+        </div>
+        <div>
+            {% if rig.status == 'online' %}
+            <span class="badge-online px-3 py-1 rounded text-sm">● Online</span>
+            {% elif rig.status == 'stale' %}
+            <span class="badge-stale px-3 py-1 rounded text-sm">● Stale</span>
+            {% else %}
+            <span class="badge-offline px-3 py-1 rounded text-sm">● Offline</span>
+            {% endif %}
+            <span class="text-gray-500 text-sm ml-3">Last seen: {% if rig.last_seen %}{{ rig.last_seen|timesince }} ago{% else %}Never{% endif %}</span>
+        </div>
+    </div>
+
+    <!-- Auto-refreshing metrics cards -->
+    <div id="metrics-container"
+         hx-get="{% url 'dashboard:htmx-metrics' rig.uuid %}"
+         hx-trigger="every 30s"
+         hx-target="#metrics-container"
+         hx-swap="outerHTML">
+        {% include "dashboard/_metrics_cards.html" %}
+    </div>
+</div>
+{% endblock %}

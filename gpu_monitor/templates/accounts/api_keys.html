@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}API Keys{% endblock %}
+{% block content %}
+<div class="max-w-3xl mx-auto">
+    <h2 class="text-xl font-bold mb-4">API Keys</h2>
+    <p class="text-gray-400 mb-4">API keys are used by the monitoring agent to authenticate with the server.</p>
+
+    <form hx-post="{% url 'accounts:create-api-key' %}" hx-target="#key-list" hx-swap="afterbegin"
+          class="flex gap-2 mb-6">
+        {% csrf_token %}
+        <input type="text" name="name" placeholder="Key name (e.g., rig-farm-1)" required
+               class="flex-1 bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white">
+        <button type="submit" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-white font-medium">
+            Create Key
+        </button>
+    </form>
+
+    <div id="key-list" class="space-y-2">
+        {% for key in keys %}
+        <div class="bg-gray-800 border border-gray-700 rounded p-4 flex items-center justify-between">
+            <div>
+                <span class="font-medium">{{ key.name }}</span>
+                <span class="text-gray-500 text-sm ml-2">{% if key.is_active %}🟢 Active{% else %}🔴 Revoked{% endif %}</span>
+                <div class="text-xs text-gray-500">Created: {{ key.created_at|date:"Y-m-d H:i" }}</div>
+            </div>
+            {% if key.is_active %}
+            <form hx-post="{% url 'accounts:revoke-api-key' key.id %}" hx-target="closest div" hx-swap="outerHTML">
+                {% csrf_token %}
+                <button type="submit" class="text-red-400 hover:text-red-300 text-sm">Revoke</button>
+            </form>
+            {% endif %}
+        </div>
+        {% empty %}
+        <p class="text-gray-500">No API keys yet. Create one above.</p>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

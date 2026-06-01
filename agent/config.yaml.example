@@ -1,0 +1,11 @@
+# GPU Rig Monitoring Agent Configuration
+# Place at: /etc/monitoring-agent/config.yaml
+# Permissions: 0600, owned by root:monitoring-agent
+
+rig_uuid: "auto"           # Generates UUID on first run, or set your own UUID
+api_key: ""                 # Your API key from the dashboard
+server_endpoint: "https://monitor.example.com"  # Server HTTPS URL
+expected_gpu_count: 0       # 0 = auto-detect; >0 = enforce GPU count validation
+collection_timeout_s: 45    # Hard timeout per collection cycle
+retry_attempts: 3           # Max retries on transient failures
+debug_mode: false           # Enable verbose logging and disable gzip

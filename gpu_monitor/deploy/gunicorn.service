@@ -1,0 +1,32 @@
+[Unit]
+Description=GPU Rig Monitor - Django Gunicorn
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=notify
+User=monitoring
+Group=monitoring
+RuntimeDirectory=gunicorn
+WorkingDirectory=/opt/gpu_monitor
+Environment=DJANGO_SETTINGS_MODULE=gpu_monitor.settings
+Environment=DJANGO_SECRET_KEY=__SECRET_KEY__
+Environment=DB_NAME=gpu_monitor
+Environment=DB_USER=gpu_monitor
+Environment=DB_PASSWORD=__DB_PASSWORD__
+Environment=DB_HOST=127.0.0.1
+Environment=DB_PORT=5432
+Environment=DJANGO_ALLOWED_HOSTS=__HOSTNAME__
+ExecStart=/opt/gpu_monitor/venv/bin/gunicorn \
+    gpu_monitor.wsgi:application \
+    --bind 127.0.0.1:8000 \
+    --workers 4 \
+    --access-logfile /opt/gpu_monitor/logs/gunicorn-access.log \
+    --error-logfile /opt/gpu_monitor/logs/gunicorn-error.log \
+    --timeout 30
+ExecReload=/bin/kill -s HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

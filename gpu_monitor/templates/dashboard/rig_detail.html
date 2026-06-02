@@ -34,14 +34,16 @@
             </div>
             <p class="text-gray-500 text-sm font-mono">{{ rig.uuid }}</p>
         </div>
-        <div id="rig-status-container"
-             hx-get="{% url 'dashboard:htmx-rig-status' rig.uuid %}"
-             hx-trigger="every 15s"
-             hx-target="#rig-status-container"
-             hx-swap="innerHTML">
-            {% include "dashboard/_rig_status_badge.html" %}
+        <div id="rig-status-wrapper">
+            <div id="rig-status-container"
+                 hx-get="{% url 'dashboard:htmx-rig-status' rig.uuid %}"
+                 hx-trigger="every 15s"
+                 hx-target="#rig-status-container"
+                 hx-swap="innerHTML">
+                {% include "dashboard/_rig_status_badge.html" %}
+            </div>
+            <span id="rig-status-container-clock" class="text-gray-500 text-xs mt-0.5"></span>
         </div>
-        <span id="rig-status-container-clock" class="text-gray-500 text-xs ml-2"></span>
     </div>
 
     <!-- Tab navigation -->

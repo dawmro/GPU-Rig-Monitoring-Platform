@@ -116,6 +116,7 @@ SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = 'Lax'
 CSRF_COOKIE_SECURE = False
 CSRF_COOKIE_SAMESITE = 'Lax'
+CSRF_TRUSTED_ORIGINS = ['http://*', 'https://*']
 SESSION_ENGINE = 'django.contrib.sessions.backends.db'
 
 LOGGING = {

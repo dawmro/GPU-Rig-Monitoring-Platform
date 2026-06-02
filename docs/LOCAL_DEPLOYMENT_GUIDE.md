@@ -303,7 +303,10 @@ ExecStart=/opt/gpu_monitor/venv/bin/gunicorn \
     gpu_monitor.wsgi:application \
     --bind 127.0.0.1:8000 \
     --workers 4 \
-    --timeout 30
+    --timeout 30 \
+    --access-logfile /opt/gpu_monitor/logs/gunicorn-access.log \
+    --error-logfile /opt/gpu_monitor/logs/gunicorn-error.log \
+    --log-level info
 ExecReload=/bin/kill -s HUP $MAINPID
 Restart=on-failure
 RestartSec=5
@@ -316,6 +319,8 @@ sudo systemctl daemon-reload
 sudo systemctl enable gunicorn
 sudo systemctl start gunicorn
 ```
+
+> **Note:** The `--access-logfile` and `--error-logfile` flags tell Gunicorn to write HTTP access logs and error logs to files. The `--log-level info` flag ensures worker start/stop events are logged. Without these flags, Gunicorn output only goes to the systemd journal (`journalctl -u gunicorn`).
 
 **For foreground testing** (stops when you close the terminal):
 
@@ -526,12 +531,13 @@ systemctl status postgresql
 sudo systemctl restart gunicorn
 
 # View logs in real-time
-tail -f /opt/gpu_monitor/logs/gunicorn-error.log
-tail -f /opt/gpu_monitor/logs/app.log
+tail -f /opt/gpu_monitor/logs/gunicorn-error.log    # Gunicorn errors, worker crashes
+tail -f /opt/gpu_monitor/logs/gunicorn-access.log  # HTTP access log (requests, status codes)
+tail -f /opt/gpu_monitor/logs/app.log               # Django structured JSON log
 
 # Agent logs
-tail -f /var/log/monitoring-agent/agent.log
-tail -f /var/log/monitoring-agent/cron.log
+tail -f /var/log/monitoring-agent/agent.log          # Structured JSON agent log
+tail -f /var/log/monitoring-agent/cron.log           # Cron output log
 
 # After pulling code changes, re-run migrations
 cd /opt/gpu_monitor

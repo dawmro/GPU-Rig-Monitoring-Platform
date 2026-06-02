@@ -646,6 +646,12 @@ journalctl -u postgresql --since "1 hour ago" --no-pager
 
 # Gunicorn error log
 tail -50 /opt/gpu_monitor/logs/gunicorn-error.log
+
+# Gunicorn access log (HTTP requests)
+tail -50 /opt/gpu_monitor/logs/gunicorn-access.log
+
+# Django application log
+tail -50 /opt/gpu_monitor/logs/app.log
 ```
 
 ---
@@ -666,8 +672,11 @@ tail -50 /opt/gpu_monitor/logs/gunicorn-error.log
 | `deploy/` | Nginx config, Gunicorn systemd unit, install scripts, backup scripts |
 | `.env` | Environment variables — mode `0600`, owned by `monitoring:monitoring` |
 | `venv/` | Python virtual environment |
-| `logs/` | Application logs |
-| `staticfiles/` | Collected static files served by Nginx |
+|| `logs/` | Application logs |
+|  | `gunicorn-error.log` — Gunicorn errors, worker crashes |
+|  | `gunicorn-access.log` — HTTP access log (requests, status codes) |
+|  | `app.log` — Django structured JSON log |
+|| `staticfiles/` | Collected static files served by Nginx |
 | `manage.py` | Django management command |
 
 ### Rig (`/opt/monitoring-agent/`)

@@ -21,6 +21,7 @@
                       hx-target="#rig-name-text"
                       hx-swap="outerHTML"
                       class="hidden mt-1">
+                    {% csrf_token %}
                     <div class="flex items-center gap-2">
                         <input type="text" name="name" value="{{ rig.name }}"
                                class="text-xl font-bold bg-gray-700 border border-gray-600 rounded px-2 py-1 w-64"

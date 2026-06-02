@@ -21,6 +21,7 @@
 11. [Testing Strategy](#11-testing-strategy)
 12. [Troubleshooting](#12-troubleshooting)
 13. [File Locations Reference](#13-file-locations-reference)
+14. [Appendices](#14-appendices)
 
 ---
 
@@ -483,92 +484,166 @@ The rig detail header uses `flex justify-between` with two children (rig name le
 
 ## 10. Performance & Scaling
 
-### 10.1 Latency Budgets
+### 10.1 Payload Size & Network Bandwidth
 
-| Metric | Target | Notes |
-|--------|--------|-------|
-| Ingest API (p95) | < 200 ms | Single DB upsert + 7 related table upserts in one transaction |
-| Fleet table HTML swap | < 100 ms | ~50 rows, server-rendered HTML partial |
-| Chart data fetch (per chart) | < 500 ms | Up to 2000 data points, time-range indexed query |
-| Agent collection time | < 45 s | Hard timeout via `signal.alarm(45)` |
-| Agent network footprint | < 2 KB | Uncompressed JSON (DRF does not auto-decompress gzip) |
+The agent collects extensive telemetry but the JSON structure is optimized for density.
 
-### 10.2 Resource Budgets
+| Payload Section | Uncompressed (Est.) | Compressed gzip (Est.) |
+|-----------------|--------------------|-----------------------|
+| Headers & envelope (UUID, timestamps, schema) | ~200 B | ~150 B |
+| Inventory (CPU, mobo, GPU specs) | ~2.5 KB | ~600 B |
+| Metrics (utilizations, temps, GPU arrays) | ~1.5 KB | ~400 B |
+| Software & Docker | ~1.5 KB | ~450 B |
+| Errors (latest, deduplicated) | ~1.0 KB | ~300 B |
+| **Total per payload** | **~6.7 KB** | **~1.9 KB** |
 
-| Resource | Target | Notes |
-|----------|--------|-------|
-| VPS CPU | < 60% avg | At 1000 rigs × 1 req/min = ~17 RPS |
-| VPS RAM | 16–32 GB | Gunicorn 4 workers + PostgreSQL shared buffers |
-| DB storage growth | < 5 GB/day | Before any compression/retention policies |
-| Agent CPU overhead | < 2% | Measured via psutil on host rig |
-| Agent RAM overhead | < 50 MB | Single Python process, short-lived |
+**Design note:** The agent does NOT compress payloads. Django DRF does not auto-decompress gzip request bodies, so compression was disabled to avoid `JSON parse error - 'utf-8' codec can't decode byte 0x8b` errors on the server.
 
-### 10.3 Database Query Patterns
+**Network calculations:**
+- Average load: 1,000 rigs / 60s = **16.67 RPS**
+- Burst load (3x cron clustering): **~50 RPS peak**
+- Peak bandwidth: 50 RPS × 6.7 KB = **335 KB/s (2.68 Mbps)** uncompressed
+- A standard 1 Gbps VPS uplink uses < 0.3% of capacity
 
-| Query | Frequency | Optimization |
-|-------|-----------|-------------|
-| `IngestView` upsert | Every 60s per rig | `update_or_create` with `unique_together` constraint |
-| `rig_list` fleet table | Every 30s per browser | `prefetch_related('tags')`, indexed `order_by('name')` |
-| `htmx_metrics` live cards | Every 30s per browser | Single-row lookup from `LatestSnapshot` + `GPUMetric` |
-| `ChartDataView` per chart | On demand (↻ button) | Time-range filter, `[:2000]` limit, indexed `order_by('timestamp')` |
-| `update_rig_status` | Every 2 min | Bulk `update()` on `Rig` model, no per-row queries |
+### 10.2 Write Throughput & Database IOPS
 
-### 10.4 Scaling Ceiling
+Each ingest performs multiple database operations:
 
-The v1 architecture targets **~1,000 rigs** on a single 4-vCPU / 16 GB RAM VPS. Beyond this ceiling:
+| Target Table | Operation | Purpose |
+|-------------|-----------|---------|
+| `rigs_rig` | UPDATE | Bump last_seen, set status=ONLINE |
+| `metrics_metricsnapshot` | UPSERT | Per-heartbeat metrics (cpu, memory inline) |
+| `metrics_gpumetric` | UPSERT | Per-GPU metrics (1 row per GPU) |
+| `metrics_storagemetric` | UPSERT | Per-disk metrics |
+| `metrics_networkmetric` | UPSERT | Per-interface metrics |
+| `metrics_dockercontainermetric` | UPSERT | Per-container metrics |
+| `metrics_errorevent` | UPSERT | Deduplicated errors |
+| **Total** | **~7-12 writes** | Depending on GPU/disk/container count |
 
-- Database write throughput becomes the bottleneck (1000 writes/min sustained)
-- Gunicorn worker count should be increased (rule of thumb: 2 × vCPU)
-- Consider connection pooling (PgBouncer) for concurrent dashboard queries
-- Consider partitioning `MetricSnapshot` by time for faster queries and easier data lifecycle management
+**Peak throughput:**
+- 50 RPS × 10 writes = **500 writes/sec** at burst
+- PostgreSQL on NVMe sustains 2,000-5,000+ writes/sec
+- **Utilization: ~10-25% of peak DB capacity** — well within safety margin
+
+### 10.3 Query Performance Budgets
+
+| Query | Frequency | Optimization | Budget |
+|-------|-----------|-------------|--------|
+| `IngestView` upsert | Every 60s/rig | `update_or_create` + `unique_together` | < 200 ms |
+| `rig_list` fleet table | Every 30s/browser | `prefetch_related('tags')`, indexed `order_by('name')` | < 100 ms |
+| `htmx_metrics` live cards | Every 30s/browser | Single-row lookup from `LatestSnapshot` + `GPUMetric` | < 100 ms |
+| `ChartDataView` per chart | On demand (↻) | Time-range filter, `[:2000]` limit | < 500 ms |
+| `update_rig_status` | Every 2 min | Bulk `update()`, no per-row queries | < 1 s |
+
+**Concurrency:** 10 dashboard users × 3 pages/min = ~0.5 QPS read load — statistically insignificant vs. agent write load.
+
+### 10.4 Resource Sizing
+
+| Resource | Minimum | Recommended | Justification |
+|----------|---------|-------------|---------------|
+| vCPU | 4 | 4-8 | Gunicorn: (2 × cores) + 1 workers |
+| RAM | 16 GB | 16-32 GB | PG shared_buffers ~4-6 GB + Gunicorn ~1.3 GB + OS ~1.5 GB |
+| Storage | 250 GB NVMe | 500 GB+ NVMe | NVMe mandatory for write IOPS. ~5 GB/day growth. |
+| Network | 100 Mbps | 1 Gbps | Peak < 3 Mbps. Egress for 10 users < 5 Mbps. |
+
+**Storage IOPS:** 500 writes/sec burst. Standard SATA SSDs bottleneck during vacuum/compression. NVMe is a strict requirement.
+
+### 10.5 Scaling Path (Beyond 1,000 Rigs)
+
+| Fleet Size | Architectural Change | Impact |
+|-----------|---------------------|--------|
+| 1,000 | Single VPS (current) | — |
+| 2,500 | Add PostgreSQL read replica | Route dashboard queries to replica |
+| 5,000 | Decouple HTTP from DB: Nginx → Redis/RabbitMQ → Celery workers → batch insert | Async ingestion |
+| 5,000+ | Edge proxies + sharding by rig_uuid | Distributed ingestion |
+
+**v1 readiness:** The Django app is structured so the metrics app can be extracted into a microservice and `IngestView` can be swapped from direct DB write to queue publisher without altering the agent contract.
 
 ---
 
 ## 11. Testing Strategy
 
-### 11.1 Manual Verification Checklist
+Tests are organized in a pragmatic pyramid: unit tests (mocked hardware) → integration tests (real DB) → E2E (HTMX browser flows). Given the system's reliance on external hardware states, fault-injection at the unit level is prioritized.
 
-After every deployment, verify:
+### 11.1 Unit Testing (Component Isolation)
+
+**Agent tests** (`pytest + unittest.mock`) enforce partial failure tolerance — the agent must never crash due to missing hardware:
+
+| Test Scenario | Mocking Strategy | Expected Assertion |
+|--------------|-----------------|-------------------|
+| Happy path | Mock psutil, pynvml, subprocess to return valid data | Payload matches JSON Schema v1.0, all fields populated |
+| GPU driver missing | `pynvml.nvmlInit()` raises `NVMLError_DriverNotLoaded` | Agent logs warning, `metrics.gpus` is `[]`, payload still sent |
+| SMART fallback | `subprocess.run("smartctl")` raises `CalledProcessError` | `storage[*].smart_health` is null, agent does not abort |
+| Network timeout | `requests.post()` raises `ConnectionError` | Retry with exponential backoff (1s, 2s, 4s) verified via mocked `time.sleep` |
+| Hard timeout | Mock collector `time.sleep(60)` | `signal.alarm(45)` triggers `TimeoutError`, agent exits cleanly |
+
+**Server tests** (`pytest-django`) focus on DRF serializers, RBAC, and background logic:
+
+| Test Scenario | Target Component | Expected Assertion |
+|--------------|-----------------|-------------------|
+| Serializer validation | `IngestSerializer` | Rejects missing `rig_uuid` or invalid `schema_version`; accepts unknown extra fields (forward compatibility) |
+| Ownership enforcement | `rig_list`, `rig_detail` | User A requesting User B's rig receives 404 (prevents enumeration) |
+| `update_rig_status` | Management command | Rigs with `last_seen > 10 min` are strictly marked Offline |
+| API key hashing | `ApiKey` model | Saving stores Argon2id hash; plaintext never written to DB |
+
+### 11.2 Integration Testing (Pipeline & Database)
+
+Integration tests verify Django ORM + DRF + PostgreSQL work together. Requires real DB (TimescaleDB not used in v1 — plain PostgreSQL tables).
+
+**Idempotency test** (most critical):
+
+```python
+def test_duplicate_payload_is_ignored(api_client, valid_payload):
+    # First submission → 200 OK
+    r1 = api_client.post('/api/v1/ingest/', valid_payload, format='json')
+    assert r1.status_code == 200
+    assert MetricSnapshot.objects.count() == 1
+
+    # Exact same payload (simulates agent retry) → 202 Accepted
+    r2 = api_client.post('/api/v1/ingest/', valid_payload, format='json')
+    assert r2.status_code == 202
+    assert MetricSnapshot.objects.count() == 1  # DB unchanged
+```
+
+**Ownership test:**
+
+```python
+def test_cross_user_rig_access_denied(api_client, user_a, user_b_rig):
+    api_client.force_authenticate(user_a)
+    response = api_client.get(f'/dashboard/rigs/{user_b_rig.uuid}/')
+    assert response.status_code == 404
+```
+
+### 11.3 Manual Verification Checklist
+
+After every deployment:
 
 - [ ] Health endpoint: `curl http://localhost/api/v1/health/` → `{"status": "healthy"}`
-- [ ] Agent appears on dashboard within 2 minutes of first run
-- [ ] Fleet table refreshes every 30s — clock at top right updates
-- [ ] Rig detail metrics refresh every 30s — clock below cards updates
-- [ ] Rig detail status badge refreshes every 15s — clock near badge updates
+- [ ] Agent appears on dashboard within 2 minutes
+- [ ] Fleet table refreshes every 30s — clock updates
+- [ ] Rig detail metrics refresh every 30s — clock updates
 - [ ] Rig status transitions: Online → Stale (2 min) → Offline (10 min)
-- [ ] Historical charts load when tab is first opened
-- [ ] Historical charts refresh when ↻ button is clicked — clock below tab header updates
-- [ ] Rig rename works from detail page
-- [ ] API key creation and revocation work
-- [ ] New rig auto-registers on first agent heartbeat
-- [ ] No `hx-swap="outerHTML"` anywhere except the rename form (intentionally)
+- [ ] Historical charts load + ↻ button refreshes
+- [ ] Rig rename works
+- [ ] API key creation/revocation work
+- [ ] No `hx-swap="outerHTML"` except rename form
 
-### 11.2 Idempotency Testing
+### 11.4 Load Testing Approach
 
 ```bash
-# Send the same payload twice — second must return 202 (duplicate)
-curl -X POST http://localhost/api/v1/ingest/ \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: <key>" \
-  -d '<payload>'
-
-# Verify no duplicate rows
-sudo -u postgres psql gpu_monitor -c \
-  "SELECT COUNT(*) FROM metrics_metricsnapshot WHERE rig_uuid='<uuid>' AND timestamp='<ts>';"
-# Must return exactly 1
+# Install Locust: pip install locust
+# Target: 1000 rigs × 1 req/min = ~17 RPS sustained, ~50 RPS burst
+# Monitor: Gunicorn error log, DB connection pool, response times
 ```
 
-### 11.3 HTMX Swap Testing
+### 11.5 Contract Testing for Schema Evolution
 
-```bash
-# Verify the Fleet Overview returns fresh HTML (not cached)
-curl -s http://localhost/dashboard/rigs/ | grep -c "rig-table-container"
-# Must return 1 (the container div with hx-* attributes)
-
-# Verify the container has innerHTML swap (not outerHTML)
-curl -s http://localhost/dashboard/rigs/ | grep "hx-swap"
-# Must show hx-swap="innerHTML", NOT outerHTML
-```
+When `schema_version` changes:
+1. Add new `IngestSerializerV2` alongside V1
+2. `SERIALIZER_MAP = {"1.0": IngestSerializerV1, "2.0": IngestSerializerV2}`
+3. Old agents continue sending v1.0 → routed to V1 serializer
+4. New agents send v2.0 → routed to V2 serializer
+5. Deprecation lifecycle: Day 0 (deploy) → Day 30 (recommend upgrade) → Day 180 (deprecated) → Day 365 (dropped)
 
 ---
 
@@ -684,4 +759,254 @@ sudo -u postgres psql gpu_monitor
 | `/etc/cron.d/monitoring-agent` | Agent cron job (every 60s) |
 | `/etc/cron.d/rig-status` | Rig status update cron (every 2 min) |
 | `/etc/logrotate.d/gpu-monitor` | Log rotation configuration |
-| `/etc/sudoers.d/monitoring-agent` | Agent sudo permissions (smartctl, journalctl) |
+|| `/etc/sudoers.d/monitoring-agent` | Agent sudo permissions (smartctl, journalctl) |
+
+---
+
+## 14. Appendices
+
+### A. Full JSON Schema Definitions (Agent Payload)
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "GPU Rig Monitoring Agent Payload v1.0",
+  "type": "object",
+  "required": ["rig_uuid", "schema_version", "timestamp", "metrics"],
+  "properties": {
+    "rig_uuid": { "type": "string", "format": "uuid" },
+    "rig_name": { "type": "string", "maxLength": 128 },
+    "schema_version": { "type": "string", "enum": ["1.0"] },
+    "agent_version": { "type": "string" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "inventory": {
+      "type": "object",
+      "properties": {
+        "cpu": {
+          "type": "object",
+          "properties": {
+            "model": { "type": "string" },
+            "physical_cores": { "type": "integer" },
+            "logical_cores": { "type": "integer" }
+          }
+        },
+        "memory": {
+          "type": "object",
+          "properties": {
+            "total_bytes": { "type": "integer" }
+          }
+        },
+        "motherboard": {
+          "type": "object",
+          "properties": {
+            "manufacturer": { "type": "string" },
+            "model": { "type": "string" }
+          }
+        },
+        "gpus": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "uuid": { "type": "string" },
+              "model": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "properties": {
+        "cpu": {
+          "type": "object",
+          "properties": {
+            "model": { "type": "string" },
+            "physical_cores": { "type": "integer" },
+            "logical_cores": { "type": "integer" },
+            "load_avg": { "type": "array", "items": { "type": "number" } },
+            "utilization_pct": { "type": "number" },
+            "temp_c": { "type": ["number", "null"] }
+          }
+        },
+        "memory": {
+          "type": "object",
+          "properties": {
+            "total_bytes": { "type": "integer" },
+            "used_bytes": { "type": "integer" },
+            "free_bytes": { "type": "integer" },
+            "cached_bytes": { "type": "integer" },
+            "swap_used_bytes": { "type": "integer" },
+            "swap_total_bytes": { "type": "integer" }
+          }
+        },
+        "storage": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "device": { "type": "string" },
+              "mountpoint": { "type": "string" },
+              "fstype": { "type": "string" },
+              "capacity_bytes": { "type": "integer" },
+              "usage_pct": { "type": "number" },
+              "temp_c": { "type": ["number", "null"] },
+              "smart_health": { "type": "string" }
+            }
+          }
+        },
+        "network": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "interface": { "type": "string" },
+              "ipv4": { "type": "string" },
+              "rx_bytes": { "type": "integer" },
+              "tx_bytes": { "type": "integer" },
+              "rx_errors": { "type": "integer" },
+              "tx_errors": { "type": "integer" },
+              "link_speed_mbps": { "type": "integer" }
+            }
+          }
+        },
+        "gpus": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "uuid": { "type": "string" },
+              "model": { "type": "string" },
+              "mem_total_mb": { "type": "integer" },
+              "mem_used_mb": { "type": "integer" },
+              "mem_free_mb": { "type": "integer" },
+              "mem_util_pct": { "type": "number" },
+              "gpu_util_pct": { "type": "number" },
+              "temp_c": { "type": ["number", "null"] },
+              "fan_speed_pct": { "type": ["number", "null"] },
+              "power_draw_w": { "type": ["number", "null"] },
+              "power_limit_w": { "type": ["number", "null"] }
+            }
+          }
+        },
+        "ai_processes": {
+          "type": "array",
+          "items": { "type": "object" },
+          "description": "Reserved for v1.1"
+        },
+        "docker_containers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "image": { "type": "string" },
+              "status": { "type": "string" },
+              "restart_count": { "type": "integer" }
+            }
+          }
+        }
+      }
+    },
+    "software": {
+      "type": "object",
+      "properties": {
+        "hostname": { "type": "string" },
+        "os_distro": { "type": "string" },
+        "kernel": { "type": "string" },
+        "uptime_s": { "type": "integer" },
+        "nvidia_driver": { "type": "string" },
+        "docker_version": { "type": "string" }
+      }
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "source": { "type": "string" },
+          "message": { "type": "string" },
+          "timestamp": { "type": "string" }
+        }
+      }
+    }
+  },
+  "additionalProperties": true
+}
+```
+
+### B. Endpoint Catalog (Summary)
+
+| Method | Path | Auth | Purpose | HTMX Clock |
+|--------|------|------|---------|------------|
+| POST | `/api/v1/ingest/` | API Key | Telemetry submission | No |
+| GET | `/api/v1/health/` | None | Health check | No |
+| GET | `/dashboard/rigs/` | Session | Fleet Overview (initial load) | No |
+| GET | `/dashboard/rigs/` (HX-Request) | Session | Fleet table partial (30s poll) | `#rig-table-container-clock` |
+| GET | `/dashboard/rigs/<uuid>/` | Session | Rig detail page | No |
+| GET | `/dashboard/rigs/<uuid>/htmx-metrics/` | Session | Live metrics partial (30s poll) | `#metrics-container-clock` |
+| GET | `/dashboard/rigs/<uuid>/htmx-status/` | Session | Status badge partial (15s poll) | `#rig-status-container-clock` |
+| POST | `/dashboard/rigs/<uuid>/rename/` | Session | Rename rig | No |
+| GET | `/api/v1/rigs/<uuid>/chart-data/` | Session | Historical chart JSON | No (↻ button) |
+
+### C. Sample systemd Unit (Gunicorn)
+
+```ini
+[Unit]
+Description=GPU Rig Monitor - Gunicorn
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=notify
+User=root
+Group=root
+WorkingDirectory=/opt/gpu_monitor
+EnvironmentFile=/opt/gpu_monitor/.env
+ExecStart=/opt/gpu_monitor/venv/bin/gunicorn \
+    gpu_monitor.wsgi:application \
+    --bind 127.0.0.1:8000 \
+    --workers 4 \
+    --timeout 30 \
+    --access-logfile /opt/gpu_monitor/logs/gunicorn-access.log \
+    --error-logfile /opt/gpu_monitor/logs/gunicorn-error.log \
+    --log-level info
+ExecReload=/bin/kill -s HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### D. Cron Jobs Summary
+
+```bash
+# /etc/cron.d/monitoring-agent — Linux agent, every 60s
+* * * * * monitoring-agent flock -n /var/lock/monitoring-agent.lock \
+    /opt/monitoring-agent/venv/bin/python /opt/monitoring-agent/run.py \
+    >> /var/log/monitoring-agent/cron.log 2>&1
+
+# /etc/cron.d/rig-status — Rig status update, every 2 min
+*/2 * * * * monitoring bash /opt/gpu_monitor/deploy/update_rig_status.sh
+```
+
+### E. Glossary
+
+| Term | Definition |
+|------|-----------|
+| **Rig** | A single monitored machine (physical or VM) running the agent |
+| **Fleet** | The collection of all rigs visible in the dashboard |
+| **Agent** | The Python script running on each rig that collects and sends metrics |
+| **Ingest** | The act of receiving a telemetry payload from an agent |
+| **HTMX** | Hypermedia library for server-rendered HTML with AJAX swaps |
+| **DRF** | Django REST Framework — handles API authentication and serialization |
+| **Idempotency** | Sending the same payload twice produces the same result (no duplicates) |
+| **API Key** | 32-byte hex string used by agents for authentication (Argon2id hashed) |
+| **Session** | Browser cookie-based authentication for dashboard users |
+| **SOX** | Socket-level timeout for network operations |
+| **flock** | File lock preventing overlapping agent runs |
+| **Stale** | Rig status — not reported in 2-10 minutes |
+| **Offline** | Rig status — not reported in 10+ minutes |
+
+---

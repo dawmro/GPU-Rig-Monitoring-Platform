@@ -30,10 +30,11 @@ This guide deploys the GPU Rig Monitoring Platform on a **production VPS** with 
    - 5.6 [Verify on Dashboard](#56-verify-on-dashboard)
 6. [Post-Deployment Configuration](#6-post-deployment-configuration)
    - 6.1 [Rig Status Monitoring Cron](#61-rig-status-monitoring-cron)
-   - 6.2 [Log Rotation](#62-log-rotation)
-   - 6.3 [Database Backups](#63-database-backups)
-   - 6.4 [TLS Certificate Renewal](#64-tls-certificate-renewal)
-   - 6.5 [External Monitoring](#65-external-monitoring)
+   - 6.2 [Dashboard Features](#62-dashboard-features)
+   - 6.3 [Log Rotation](#63-log-rotation)
+   - 6.4 [Database Backups](#64-database-backups)
+   - 6.5 [TLS Certificate Renewal](#65-tls-certificate-renewal)
+   - 6.6 [External Monitoring](#66-external-monitoring)
 7. [Upgrading](#7-upgrading)
 8. [Troubleshooting](#8-troubleshooting)
 9. [File Locations Reference](#9-file-locations-reference)
@@ -455,7 +456,26 @@ echo '*/2 * * * * monitoring /opt/gpu_monitor/venv/bin/python /opt/gpu_monitor/m
 
 This runs every 2 minutes as recommended by the architecture specification.
 
-### 6.2 Log Rotation
+> **Important:** Without this cron job, rigs will always show "Online" even after they stop reporting.
+
+### 6.2 Dashboard Features
+
+The rig detail page has three tabs:
+
+| Tab | Description |
+|-----|-------------|
+| **Live Metrics** | Auto-refreshing cards showing CPU, memory, GPU, Docker, storage, and errors (30s HTMX polling) |
+| **Historical Charts** | 7 individual charts showing 24-hour trends: GPU temperature, GPU utilization, GPU VRAM usage, GPU power draw, CPU utilization, CPU temperature, memory usage |
+| **Errors** | Recent system errors from journalctl/Windows Event Log |
+
+**GPU Model Name Display:** The fleet overview table shows cleaned GPU model names (e.g., "RTX 3060" instead of "NVIDIA GeForce RTX 3060"). Hover to see the full model string.
+
+**Rig Status:** Rigs are automatically marked as:
+- 🟢 **Online** — reported within last 2 minutes
+- 🟡 **Stale** — not seen for 2–10 minutes
+- 🔴 **Offline** — not seen for 10+ minutes
+
+### 6.3 Log Rotation
 
 Configure `logrotate` for application logs:
 
@@ -483,7 +503,7 @@ sudo tee /etc/logrotate.d/gpu-monitor << 'EOF'
 EOF
 ```
 
-### 6.3 Database Backups
+### 6.4 Database Backups
 
 **Create a backup script** at `/opt/gpu_monitor/deploy/backup_db.sh`:
 
@@ -519,7 +539,7 @@ echo '0 3 * * * monitoring /opt/gpu_monitor/deploy/backup_db.sh >> /opt/gpu_moni
 
 > **For offsite backups:** Add `rclone copy` after the `gzip` step to upload to Backblaze B2, S3, or similar. See [rclone.org](https://rclone.org) for configuration.
 
-### 6.4 TLS Certificate Renewal
+### 6.5 TLS Certificate Renewal
 
 Let's Encrypt certificates expire every 90 days. Certbot usually installs a systemd timer automatically. Verify it:
 
@@ -534,7 +554,7 @@ If missing, create a renewal hook:
 echo '0 4 * * 0 certbot renew --quiet --post-hook "systemctl reload nginx"' | sudo tee /etc/cron.d/certbot-renew
 ```
 
-### 6.5 External Monitoring (Meta-Monitoring)
+### 6.6 External Monitoring (Meta-Monitoring)
 
 Monitor your monitoring server to catch outages:
 
@@ -665,11 +685,12 @@ tail -50 /opt/gpu_monitor/logs/app.log
 | `gpu_monitor/` | Django project (`settings.py`, `urls.py`, `wsgi.py`) |
 | `accounts/` | User/auth app (models, views, API key middleware) |
 | `rigs/` | Rig inventory app (models, status management command) |
-| `metrics_app/` | Ingestion API (models, serializers, TimescaleDB setup command) |
-| `dashboard/` | HTMX dashboard (views, URL routing) |
-| `audit/` | Audit logging (models, middleware) |
-| `templates/` | Django HTML templates |
-| `deploy/` | Nginx config, Gunicorn systemd unit, install scripts, backup scripts |
+|| `metrics_app/` | Ingestion API (models, serializers, TimescaleDB setup command) |
+|| `dashboard/` | HTMX dashboard (views, URL routing, templatetags) |
+|| `audit/` | Audit logging (models, middleware) |
+|| `templates/` | Django HTML templates |
+|| `templatetags/` | Custom template filters (gpu_filters.py) |
+|| `deploy/` | Nginx config, Gunicorn systemd unit, install scripts, backup scripts |
 | `.env` | Environment variables — mode `0600`, owned by `monitoring:monitoring` |
 | `venv/` | Python virtual environment |
 || `logs/` | Application logs |

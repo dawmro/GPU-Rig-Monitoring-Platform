@@ -517,6 +517,25 @@ Expected:
 2. Metrics should update without a page reload
 3. The status badge should remain green
 
+### 5.6 Dashboard Features
+
+The rig detail page has three tabs:
+
+| Tab | Description |
+|-----|-------------|
+| **Live Metrics** | Auto-refreshing cards showing CPU, memory, GPU, Docker, storage, and errors (30s HTMX polling) |
+| **Historical Charts** | 7 individual charts showing 24-hour trends: GPU temperature, GPU utilization, GPU VRAM usage, GPU power draw, CPU utilization, CPU temperature, memory usage |
+| **Errors** | Recent system errors from journalctl/Windows Event Log |
+
+**GPU Model Name Display:** The fleet overview table shows cleaned GPU model names (e.g., "RTX 3060" instead of "NVIDIA GeForce RTX 3060"). Hover over the name to see the full model string. For multiple GPUs, each GPU is listed separately.
+
+**Rig Status:** Rigs are automatically marked as:
+- 🟢 **Online** — reported within last 2 minutes
+- 🟡 **Stale** — not seen for 2–10 minutes
+- 🔴 **Offline** — not seen for 10+ minutes
+
+> **Note:** The status update cron job (Section 5.6) must be running for automatic status changes.
+
 ---
 
 ## 6. Stopping and Restarting Services
@@ -590,16 +609,22 @@ tail -f /opt/gpu_monitor/logs/rig_status.log
 │   ├── models.py               # Rig, RigTag models
 │   └── management/commands/    # update_rig_status command
 ├── metrics_app/                # Ingestion API + metric storage
-│   ├── models.py               # MetricSnapshot, LatestSnapshot, ErrorEvent
+│   ├── models.py               # MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, ErrorEvent
 │   ├── serializers.py          # Payload validation + processing
 │   └── views.py                # IngestView, HealthView, ChartDataView
 ├── dashboard/                  # HTMX dashboard views
 │   ├── views.py                # rig_list, rig_detail, htmx_metrics
-│   └── urls.py
+│   ├── urls.py
+│   └── templatetags/
+│       └── gpu_filters.py      # GPU model name cleanup filters
 ├── audit/                      # Audit logging
 │   ├── models.py               # AuditLog model
 │   └── middleware.py           # Request audit middleware
 ├── templates/                  # Django HTML templates
+│   └── dashboard/
+│       ├── rig_detail.html     # Rig detail with tabs (Live Metrics, Historical Charts, Errors)
+│       ├── _metrics_cards.html # Live metric cards
+│       └── _rig_table.html     # Fleet overview table
 ├── logs/                       # Application logs
 │   ├── app.log                 # Django structured JSON log
 │   ├── gunicorn-access.log     # Gunicorn access log

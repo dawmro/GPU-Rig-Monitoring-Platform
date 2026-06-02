@@ -17,6 +17,10 @@
 7. [Security Trust Boundaries](#7-security-trust-boundaries)
 8. [Operational Runbook](#8-operational-runbook)
 9. [Design Decisions & Rationale](#9-design-decisions--rationale)
+10. [Performance & Scaling](#10-performance--scaling)
+11. [Testing Strategy](#11-testing-strategy)
+12. [Troubleshooting](#12-troubleshooting)
+13. [File Locations Reference](#13-file-locations-reference)
 
 ---
 
@@ -474,3 +478,210 @@ The rig detail header uses `flex justify-between` with two children (rig name le
 ### 9.7 Why `pythonw.exe` for Windows Agent?
 
 `pythonw.exe` runs Python without a visible terminal window, preventing a console window from appearing every 60 seconds. The `create_windows_task()` function tries `pythonw.exe` first and falls back to `python.exe` if not found.
+
+---
+
+## 10. Performance & Scaling
+
+### 10.1 Latency Budgets
+
+| Metric | Target | Notes |
+|--------|--------|-------|
+| Ingest API (p95) | < 200 ms | Single DB upsert + 7 related table upserts in one transaction |
+| Fleet table HTML swap | < 100 ms | ~50 rows, server-rendered HTML partial |
+| Chart data fetch (per chart) | < 500 ms | Up to 2000 data points, time-range indexed query |
+| Agent collection time | < 45 s | Hard timeout via `signal.alarm(45)` |
+| Agent network footprint | < 2 KB | Uncompressed JSON (DRF does not auto-decompress gzip) |
+
+### 10.2 Resource Budgets
+
+| Resource | Target | Notes |
+|----------|--------|-------|
+| VPS CPU | < 60% avg | At 1000 rigs × 1 req/min = ~17 RPS |
+| VPS RAM | 16–32 GB | Gunicorn 4 workers + PostgreSQL shared buffers |
+| DB storage growth | < 5 GB/day | Before any compression/retention policies |
+| Agent CPU overhead | < 2% | Measured via psutil on host rig |
+| Agent RAM overhead | < 50 MB | Single Python process, short-lived |
+
+### 10.3 Database Query Patterns
+
+| Query | Frequency | Optimization |
+|-------|-----------|-------------|
+| `IngestView` upsert | Every 60s per rig | `update_or_create` with `unique_together` constraint |
+| `rig_list` fleet table | Every 30s per browser | `prefetch_related('tags')`, indexed `order_by('name')` |
+| `htmx_metrics` live cards | Every 30s per browser | Single-row lookup from `LatestSnapshot` + `GPUMetric` |
+| `ChartDataView` per chart | On demand (↻ button) | Time-range filter, `[:2000]` limit, indexed `order_by('timestamp')` |
+| `update_rig_status` | Every 2 min | Bulk `update()` on `Rig` model, no per-row queries |
+
+### 10.4 Scaling Ceiling
+
+The v1 architecture targets **~1,000 rigs** on a single 4-vCPU / 16 GB RAM VPS. Beyond this ceiling:
+
+- Database write throughput becomes the bottleneck (1000 writes/min sustained)
+- Gunicorn worker count should be increased (rule of thumb: 2 × vCPU)
+- Consider connection pooling (PgBouncer) for concurrent dashboard queries
+- Consider partitioning `MetricSnapshot` by time for faster queries and easier data lifecycle management
+
+---
+
+## 11. Testing Strategy
+
+### 11.1 Manual Verification Checklist
+
+After every deployment, verify:
+
+- [ ] Health endpoint: `curl http://localhost/api/v1/health/` → `{"status": "healthy"}`
+- [ ] Agent appears on dashboard within 2 minutes of first run
+- [ ] Fleet table refreshes every 30s — clock at top right updates
+- [ ] Rig detail metrics refresh every 30s — clock below cards updates
+- [ ] Rig detail status badge refreshes every 15s — clock near badge updates
+- [ ] Rig status transitions: Online → Stale (2 min) → Offline (10 min)
+- [ ] Historical charts load when tab is first opened
+- [ ] Historical charts refresh when ↻ button is clicked — clock below tab header updates
+- [ ] Rig rename works from detail page
+- [ ] API key creation and revocation work
+- [ ] New rig auto-registers on first agent heartbeat
+- [ ] No `hx-swap="outerHTML"` anywhere except the rename form (intentionally)
+
+### 11.2 Idempotency Testing
+
+```bash
+# Send the same payload twice — second must return 202 (duplicate)
+curl -X POST http://localhost/api/v1/ingest/ \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: <key>" \
+  -d '<payload>'
+
+# Verify no duplicate rows
+sudo -u postgres psql gpu_monitor -c \
+  "SELECT COUNT(*) FROM metrics_metricsnapshot WHERE rig_uuid='<uuid>' AND timestamp='<ts>';"
+# Must return exactly 1
+```
+
+### 11.3 HTMX Swap Testing
+
+```bash
+# Verify the Fleet Overview returns fresh HTML (not cached)
+curl -s http://localhost/dashboard/rigs/ | grep -c "rig-table-container"
+# Must return 1 (the container div with hx-* attributes)
+
+# Verify the container has innerHTML swap (not outerHTML)
+curl -s http://localhost/dashboard/rigs/ | grep "hx-swap"
+# Must show hx-swap="innerHTML", NOT outerHTML
+```
+
+---
+
+## 12. Troubleshooting
+
+### 12.1 Server Issues
+
+| Problem | Diagnosis | Fix |
+|---------|-----------|-----|
+| `502 Bad Gateway` | `systemctl status gunicorn` | Check `gunicorn-error.log`; usually import error or DB failure |
+| `500 Internal Server Error` | Check `gunicorn-error.log` | Verify `.env` exists with correct DB credentials |
+| Database connection refused | `sudo -u postgres psql -c "SELECT 1"` | `systemctl restart postgresql` |
+| `PermissionError` in logs | New file has restrictive permissions | `sudo chmod -R 644 /opt/gpu_monitor/templates/` |
+| Dashboard shows 500 after update | Template not readable by Gunicorn | `sudo chmod 644 /opt/gpu_monitor/templates/dashboard/*.html` |
+| HTMX polling stops after page load | `hx-swap="outerHTML"` destroys wrapper div | Change to `hx-swap="innerHTML"` |
+| Clock never updates on Fleet Overview | JS only in `rig_detail.html`, not `base.html` | Move `htmx:afterSwap` listener to `base.html` |
+| Clock shows but data is stale | View may be caching — check DB directly | Verify view queries DB on every request |
+| "Refreshed @" shows but metrics wrong | Serializer field name mismatch | Check `GPU_METRICS` mapping dict in `ChartDataView` |
+| Storage shows duplicate disks | Missing deduplication in view | Add `seen_devices` set in `htmx_metrics` view |
+| `ALLOWED_HOSTS` error | Host not in allowed list | Set `DJANGO_ALLOWED_HOSTS=*` in `.env` |
+| `CSRF verification failed` | Missing `@csrf_exempt` on `IngestView` | Add `@method_decorator(csrf_exempt, name='dispatch')` |
+
+### 12.2 Agent Issues
+
+| Problem | Diagnosis | Fix |
+|---------|-----------|-----|
+| `401 Unauthorized` | API key mismatch | Regenerate key on dashboard, update `config.yaml` |
+| `Connection refused` | Server firewall or Nginx down | `curl -v http://localhost/api/v1/health/` from the rig |
+| `JSON parse error` in server log | Payload is gzip-compressed | Agent must NOT gzip (DRF doesn't decompress requests) |
+| `JSON parse error - utf-8 codec` | Windows encoding issue | Agent uses `encoding='utf-8', errors='replace'` |
+| Agent hangs / overlaps | Stale lock file | `rm -f /var/lock/monitoring-agent.lock` |
+| `PermissionError: config.yaml` | File owned by root | `chown monitoring-agent:monitoring-agent /etc/monitoring-agent/config.yaml` |
+| GPU metrics empty | `pynvml` not installed | `pip install pynvml` in agent venv |
+| `smartctl: command not found` | Disk tools not installed | `apt install smartmontools nvme-cli` |
+
+### 12.3 Cron Job Issues
+
+| Problem | Diagnosis | Fix |
+|---------|-----------|-----|
+| Cron job never runs | `source` doesn't work in `/bin/sh` | Use wrapper script with `bash` explicitly |
+| `update_rig_status` has no effect | `.env` not loaded in wrapper | Wrapper uses `cd /opt/gpu_monitor && . venv/bin/activate` — Django reads `.env` internally via `os.environ.get()` |
+| Cron log is empty | Cron daemon not running | `sudo systemctl restart cron` |
+| Crontab syntax error | Inline `source` in cron | Replace with `bash /opt/gpu_monitor/deploy/update_rig_status.sh` |
+
+### 12.4 Service Status & Logs
+
+```bash
+# All critical services
+systemctl status gunicorn postgresql nginx cron
+
+# View recent logs
+journalctl -u gunicorn --since "1 hour ago" --no-pager
+tail -50 /opt/gpu_monitor/logs/gunicorn-error.log
+tail -50 /opt/gpu_monitor/logs/gunicorn-access.log
+tail -50 /opt/gpu_monitor/logs/app.log
+tail -50 /var/log/monitoring-agent/agent.log
+
+# Verify HTMX is polling (watch access log for repeated requests)
+tail -f /opt/gpu_monitor/logs/gunicorn-access.log | grep "dashboard/rigs"
+
+# Database console
+sudo -u postgres psql gpu_monitor
+```
+
+---
+
+## 13. File Locations Reference
+
+### 13.1 Server (`/opt/gpu_monitor/`)
+
+| Path | Purpose |
+|------|---------|
+| `gpu_monitor/` | Django project (`settings.py`, `urls.py`, `wsgi.py`) |
+| `accounts/` | User/auth app (models, views, API key middleware) |
+| `rigs/` | Rig inventory app (models, status management command) |
+| `metrics_app/` | Ingestion API (models, serializers, views) |
+| `dashboard/` | HTMX dashboard (views, URLs) |
+| `dashboard/templatetags/gpu_filters.py` | GPU model name cleanup filters |
+| `audit/` | Audit logging (models, middleware) |
+| `templates/base.html` | Base layout (HTMX, Tailwind, Chart.js, clock JS) |
+| `templates/dashboard/rig_list.html` | Fleet Overview page |
+| `templates/dashboard/rig_detail.html` | Rig detail page (tabs, charts, clocks) |
+| `templates/dashboard/_rig_table.html` | Fleet table partial (HTMX-swapped) |
+| `templates/dashboard/_metrics_cards.html` | Live metrics cards partial (HTMX-swapped) |
+| `templates/dashboard/_rig_status_badge.html` | Status badge partial (HTMX-swapped) |
+| `templates/dashboard/_rig_name.html` | Rig name partial (HTMX-swapped on rename) |
+| `deploy/` | Nginx config, Gunicorn systemd unit, install scripts |
+| `scripts/sync_to_opt.sh` | Workspace → /opt deployment script |
+| `scripts/update_rig_status.sh` | Cron wrapper for rig status updates |
+| `.env` | Environment variables (mode 0600) |
+| `venv/` | Python virtual environment |
+| `logs/` | Application logs |
+| `staticfiles/` | Collected static files served by Nginx |
+| `manage.py` | Django management command |
+
+### 13.2 Agent
+
+| Path | Purpose |
+|------|---------|
+| `/opt/monitoring-agent/run.py` | Linux agent script |
+| `/opt/monitoring-agent/venv/` | Agent Python virtual environment |
+| `/opt/agent_windows/run.py` | Windows agent script |
+| `/etc/monitoring-agent/config.yaml` | Agent configuration (mode 0600) |
+| `/var/log/monitoring-agent/agent.log` | Agent logs (JSON, rotated 10 MB × 3) |
+| `/var/log/monitoring-agent/cron.log` | Cron output log |
+
+### 13.3 System
+
+| Path | Purpose |
+|------|---------|
+| `/etc/nginx/sites-available/gpu_monitor` | Nginx site configuration |
+| `/etc/systemd/system/gunicorn.service` | Gunicorn systemd unit |
+| `/etc/cron.d/monitoring-agent` | Agent cron job (every 60s) |
+| `/etc/cron.d/rig-status` | Rig status update cron (every 2 min) |
+| `/etc/logrotate.d/gpu-monitor` | Log rotation configuration |
+| `/etc/sudoers.d/monitoring-agent` | Agent sudo permissions (smartctl, journalctl) |

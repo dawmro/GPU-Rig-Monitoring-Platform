@@ -1,21 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Fleet Overview{% endblock %}
 {% block content %}
-{#
-    Fleet Overview — refreshed every 30s via HTMX (hx-swap="outerHTML" on
-    #rig-table-container).  All columns are rendered from rig_data in
-    dashboard/views.py rig_list().  Data sources:
-      Rig Name  -> item.rig.name (Rig model)
-      Status    -> item.rig.status (Rig model, via update_rig_status cron)
-      Last Seen -> item.rig.last_seen (Rig model, updated on agent heartbeat)
-      Tags      -> item.rig.tags (RigTag M2M)
-      GPU       -> item.gpu.model (GPUMetric gpu_index=0)
-      GPU Temp  -> item.gpu.gpu_temp_c (GPUMetric)
-      GPU Util  -> item.gpu.gpu_util_pct (GPUMetric)
-      CPU       -> item.snapshot.cpu_utilization_pct (LatestSnapshot)
-    To add a column: add <th> + <td> in _rig_table.html, fetch data in
-    rig_list() view, extend rig_data dict.
-#}
 <div class="max-w-7xl mx-auto">
     <div class="flex items-center justify-between mb-6">
         <h1 class="text-2xl font-bold">Fleet Overview</h1>

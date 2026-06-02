@@ -492,16 +492,22 @@ JS is strictly limited to: Chart.js initialization after HTMX swaps, Tom Select 
 
 #### Columns
 
-| Column | Source | Rendering |
-|---|---|---|
-| Rig Name | `rigs_rig.name` | Clickable link |
-| Status | `rigs_rig.status` | 🟢 Online / 🟡 Stale / 🔴 Offline |
-| Last Seen | `rigs_rig.last_seen` | Relative time |
-| GPU Util | Latest snapshot | Progress bar |
-| CPU Temp | Latest snapshot | Color-coded text (>85°C red) |
-| Tags | `rigs_rigtag` | Colored pills |
+Refreshed every 30s via HTMX (hx-swap="outerHTML" on #rig-table-container).
+All data is fetched fresh from the database on each poll by dashboard/views.py rig_list().
+To add a new column: add <th> in _rig_table.html, fetch data in rig_list(), extend rig_data dict.
 
-**HTMX Polling:** 30s auto-refresh with `morphdom-swap` extension for DOM diffing. Server-side pagination (50 rows per page).
+| Column | Model Field | Rendering |
+|--------|-------------|-----------|
+| Rig Name | Rig.name | Clickable link to detail page |
+| Status | Rig.status | Online / Stale / Offline (updated by update_rig_status cron) |
+| Last Seen | Rig.last_seen | Relative time (updated on every agent heartbeat) |
+| Tags | RigTag M2M | Colored pills |
+| GPU | GPUMetric.model | Cleaned name (strips GPU_filters prefixes) |
+| GPU Temp | GPUMetric.gpu_temp_c | Color-coded: >80C red, >75C orange, >70C yellow, >65C green |
+| GPU Util | GPUMetric.gpu_util_pct | Percentage |
+| CPU | LatestSnapshot.cpu_utilization_pct | Percentage |
+
+**HTMX Polling:** 30s auto-refresh with outerHTML swap.
 
 ### 5.4 Rig Detail Page
 

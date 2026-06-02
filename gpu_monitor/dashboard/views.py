@@ -62,19 +62,43 @@ def rig_detail(request, uuid):
     except LatestSnapshot.DoesNotExist:
         snapshot = None
 
-    # Fetch related metrics from new models
-    gpu_metrics = GPUMetric.objects.filter(
-        rig_uuid=str(uuid), gpu_index=0
-    ).order_by('-timestamp')[:1]
+    # Fetch related metrics from new models (same query as htmx_metrics)
+    gpu_metrics = []
+    storage_metrics = []
+    docker_metrics = []
+    recent_errors = []
 
-    recent_errors = ErrorEvent.objects.filter(
-        rig_uuid=str(uuid)
-    ).order_by('-last_seen')[:5] if snapshot else []
+    if snapshot:
+        gpu_metrics = GPUMetric.objects.filter(
+            rig_uuid=str(uuid),
+            timestamp__gte=timezone.now() - timedelta(hours=1),
+            gpu_index=0
+        ).order_by('-timestamp')[:1]
+
+        seen_devices = set()
+        for s in StorageMetric.objects.filter(
+            rig_uuid=str(uuid),
+            timestamp__gte=timezone.now() - timedelta(hours=1)
+        ).order_by('-timestamp'):
+            if s.device not in seen_devices:
+                seen_devices.add(s.device)
+                storage_metrics.append(s)
+
+        docker_metrics = DockerContainerMetric.objects.filter(
+            rig_uuid=str(uuid),
+            timestamp__gte=timezone.now() - timedelta(hours=1)
+        ).order_by('-timestamp')[:20]
+
+        recent_errors = ErrorEvent.objects.filter(
+            rig_uuid=str(uuid)
+        ).order_by('-last_seen')[:5]
 
     return render(request, 'dashboard/rig_detail.html', {
         'rig': rig,
         'snapshot': snapshot,
         'gpu_metrics': gpu_metrics,
+        'storage_metrics': storage_metrics,
+        'docker_metrics': docker_metrics,
         'recent_errors': recent_errors,
     })
 

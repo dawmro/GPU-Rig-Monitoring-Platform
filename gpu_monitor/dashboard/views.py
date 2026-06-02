@@ -6,7 +6,7 @@ from datetime import timedelta
 from django.views.decorators.http import require_POST
 
 from rigs.models import Rig
-from metrics_app.models import LatestSnapshot
+from metrics_app.models import LatestSnapshot, GPUMetric, StorageMetric, DockerContainerMetric, ErrorEvent
 
 
 @login_required
@@ -27,14 +27,18 @@ def rig_list(request):
     if tag_filter:
         rigs = rigs.filter(tags__name=tag_filter)
 
-    # Attach latest snapshots
+    # Attach latest snapshots and GPU metrics
     rig_data = []
     for rig in rigs:
         try:
             snap = LatestSnapshot.objects.get(rig_uuid=str(rig.uuid))
         except LatestSnapshot.DoesNotExist:
             snap = None
-        rig_data.append({'rig': rig, 'snapshot': snap})
+        # Get latest GPU metric
+        gpu = GPUMetric.objects.filter(
+            rig_uuid=str(rig.uuid), gpu_index=0
+        ).order_by('-timestamp').first()
+        rig_data.append({'rig': rig, 'snapshot': snap, 'gpu': gpu})
 
     if request.headers.get('HX-Request'):
         return render(request, 'dashboard/_rig_table.html', {'rig_data': rig_data})
@@ -58,9 +62,20 @@ def rig_detail(request, uuid):
     except LatestSnapshot.DoesNotExist:
         snapshot = None
 
+    # Fetch related metrics from new models
+    gpu_metrics = GPUMetric.objects.filter(
+        rig_uuid=str(uuid), gpu_index=0
+    ).order_by('-timestamp')[:1]
+
+    recent_errors = ErrorEvent.objects.filter(
+        rig_uuid=str(uuid)
+    ).order_by('-last_seen')[:5] if snapshot else []
+
     return render(request, 'dashboard/rig_detail.html', {
         'rig': rig,
         'snapshot': snapshot,
+        'gpu_metrics': gpu_metrics,
+        'recent_errors': recent_errors,
     })
 
 
@@ -76,9 +91,40 @@ def htmx_metrics(request, uuid):
     except LatestSnapshot.DoesNotExist:
         snapshot = None
 
+    # Fetch related metrics from new models
+    gpu_metrics = []
+    storage_metrics = []
+    docker_metrics = []
+    recent_errors = []
+
+    if snapshot:
+        gpu_metrics = GPUMetric.objects.filter(
+            rig_uuid=str(uuid),
+            timestamp__gte=timezone.now() - timedelta(minutes=5),
+            gpu_index=0
+        ).order_by('-timestamp')[:1]
+
+        storage_metrics = StorageMetric.objects.filter(
+            rig_uuid=str(uuid),
+            timestamp__gte=timezone.now() - timedelta(minutes=5)
+        ).order_by('-timestamp')[:10]
+
+        docker_metrics = DockerContainerMetric.objects.filter(
+            rig_uuid=str(uuid),
+            timestamp__gte=timezone.now() - timedelta(minutes=5)
+        ).order_by('-timestamp')[:20]
+
+        recent_errors = ErrorEvent.objects.filter(
+            rig_uuid=str(uuid)
+        ).order_by('-last_seen')[:5]
+
     return render(request, 'dashboard/_metrics_cards.html', {
         'rig': rig,
         'snapshot': snapshot,
+        'gpu_metrics': gpu_metrics,
+        'storage_metrics': storage_metrics,
+        'docker_metrics': docker_metrics,
+        'recent_errors': recent_errors,
     })
 
 

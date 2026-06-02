@@ -81,36 +81,44 @@
 
             <!-- GPU Temperature Chart -->
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
-                <div class="flex items-center justify-between mb-4">
-                    <h3 class="text-sm font-medium text-gray-300">GPU Temperature (24h)</h3>
-                    <span class="text-xs text-gray-500">GPU 0</span>
-                </div>
-                <canvas id="gpuTempChart" height="200"></canvas>
+                <h3 class="text-sm font-medium text-gray-300 mb-3">GPU Temperature (24h)</h3>
+                <canvas id="chartGpuTemp" height="180"></canvas>
             </div>
 
             <!-- GPU Utilization Chart -->
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
-                <div class="flex items-center justify-between mb-4">
-                    <h3 class="text-sm font-medium text-gray-300">GPU Utilization (24h)</h3>
-                    <span class="text-xs text-gray-500">GPU 0</span>
-                </div>
-                <canvas id="gpuUtilChart" height="200"></canvas>
+                <h3 class="text-sm font-medium text-gray-300 mb-3">GPU Utilization (24h)</h3>
+                <canvas id="chartGpuUtil" height="180"></canvas>
+            </div>
+
+            <!-- GPU Memory Usage Chart -->
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+                <h3 class="text-sm font-medium text-gray-300 mb-3">GPU VRAM Usage (24h)</h3>
+                <canvas id="chartGpuMem" height="180"></canvas>
+            </div>
+
+            <!-- GPU Power Chart -->
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+                <h3 class="text-sm font-medium text-gray-300 mb-3">GPU Power Draw (24h)</h3>
+                <canvas id="chartGpuPower" height="180"></canvas>
+            </div>
+
+            <!-- CPU Utilization Chart -->
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+                <h3 class="text-sm font-medium text-gray-300 mb-3">CPU Utilization (24h)</h3>
+                <canvas id="chartCpuUtil" height="180"></canvas>
             </div>
 
             <!-- CPU Temperature Chart -->
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
-                <div class="flex items-center justify-between mb-4">
-                    <h3 class="text-sm font-medium text-gray-300">CPU Temperature (24h)</h3>
-                </div>
-                <canvas id="cpuTempChart" height="200"></canvas>
+                <h3 class="text-sm font-medium text-gray-300 mb-3">CPU Temperature (24h)</h3>
+                <canvas id="chartCpuTemp" height="180"></canvas>
             </div>
 
             <!-- Memory Usage Chart -->
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
-                <div class="flex items-center justify-between mb-4">
-                    <h3 class="text-sm font-medium text-gray-300">Memory Usage (24h)</h3>
-                </div>
-                <canvas id="memChart" height="200"></canvas>
+                <h3 class="text-sm font-medium text-gray-300 mb-3">Memory Usage (24h)</h3>
+                <canvas id="chartMem" height="180"></canvas>
             </div>
 
         </div>
@@ -120,21 +128,20 @@
     <div id="tab-content-errors" class="tab-content hidden">
         <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
             <h3 class="text-sm font-medium text-gray-300 mb-4">Recent Errors</h3>
-            <div id="errors-container">
-                {% if snapshot and snapshot.errors_json %}
-                    {% for error in snapshot.errors_json %}
-                    <div class="py-2 border-b border-gray-700/50 last:border-0">
-                        <div class="flex items-center gap-2 mb-1">
-                            <span class="text-xs px-2 py-0.5 rounded bg-red-900/50 text-red-300">{{ error.source|default:"unknown" }}</span>
-                            <span class="text-xs text-gray-500">{{ error.timestamp|default:"" }}</span>
-                        </div>
-                        <p class="text-sm text-gray-400 font-mono">{{ error.message|truncatechars:200 }}</p>
+            {% if recent_errors %}
+                {% for err in recent_errors %}
+                <div class="py-2 border-b border-gray-700/50 last:border-0">
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="text-xs px-2 py-0.5 rounded bg-red-900/50 text-red-300">{{ err.source|default:"unknown" }}</span>
+                        <span class="text-xs text-gray-500">{{ err.last_seen|timesince }} ago</span>
+                        <span class="text-xs text-gray-600">×{{ err.count }}</span>
                     </div>
-                    {% endfor %}
-                {% else %}
-                    <p class="text-gray-500 text-sm">No errors recorded.</p>
-                {% endif %}
-            </div>
+                    <p class="text-sm text-gray-400 font-mono">{{ err.message|truncatechars:200 }}</p>
+                </div>
+                {% endfor %}
+            {% else %}
+                <p class="text-green-400 text-sm">✓ No errors recorded.</p>
+            {% endif %}
         </div>
     </div>
 </div>
@@ -195,10 +202,13 @@ async function loadCharts() {
     var range = 24;
 
     await Promise.all([
-        loadChart('gpuTempChart', 'gpu_temp_c', uuid, range, '°C', 'rgba(239, 68, 68, 0.8)', 'rgba(239, 68, 68, 0.2)'),
-        loadChart('gpuUtilChart', 'gpu_util_pct', uuid, range, '%', 'rgba(59, 130, 246, 0.8)', 'rgba(59, 130, 246, 0.2)'),
-        loadChart('cpuTempChart', 'cpu_temp_c', uuid, range, '°C', 'rgba(245, 158, 11, 0.8)', 'rgba(245, 158, 11, 0.2)'),
-        loadChart('memChart', 'mem_used_bytes', uuid, range, ' GB', 'rgba(16, 185, 129, 0.8)', 'rgba(16, 185, 129, 0.2)'),
+        loadChart('chartGpuTemp',    'gpu_temp_c',           uuid, range, '°C',  'rgba(239, 68, 68, 0.8)',  'rgba(239, 68, 68, 0.15)'),
+        loadChart('chartGpuUtil',    'gpu_util_pct',         uuid, range, '%',   'rgba(59, 130, 246, 0.8)', 'rgba(59, 130, 246, 0.15)'),
+        loadChart('chartGpuMem',     'gpu_mem_used_mb',      uuid, range, ' MB', 'rgba(168, 85, 247, 0.8)', 'rgba(168, 85, 247, 0.15)'),
+        loadChart('chartGpuPower',   'gpu_power_w',          uuid, range, 'W',   'rgba(245, 158, 11, 0.8)', 'rgba(245, 158, 11, 0.15)'),
+        loadChart('chartCpuUtil',    'cpu_utilization_pct',  uuid, range, '%',   'rgba(16, 185, 129, 0.8)', 'rgba(16, 185, 129, 0.15)'),
+        loadChart('chartCpuTemp',    'cpu_temp_c',           uuid, range, '°C',  'rgba(245, 158, 11, 0.8)', 'rgba(245, 158, 11, 0.15)'),
+        loadChart('chartMem',        'mem_used_bytes',       uuid, range, ' GB', 'rgba(14, 165, 233, 0.8)', 'rgba(14, 165, 233, 0.15)'),
     ]);
 }
 

@@ -11,7 +11,7 @@
                 {% if snapshot.cpu_temp_c > 85 %}<span class="text-red-400">{{ snapshot.cpu_temp_c|floatformat:1 }}°C</span>
                 {% elif snapshot.cpu_temp_c > 70 %}<span class="text-yellow-400">{{ snapshot.cpu_temp_c|floatformat:1 }}°C</span>
                 {% else %}{{ snapshot.cpu_temp_c|floatformat:1 }}°C{% endif %}
-            {% endif %}
+            {% else %}No temp sensor{% endif %}
         </div>
         {% else %}
         <div class="text-gray-500">No data</div>
@@ -26,8 +26,10 @@
             {{ snapshot.mem_used_bytes|filesizeformat }} / {{ snapshot.mem_total_bytes|filesizeformat }}
         </div>
         <div class="w-full bg-gray-700 rounded-full h-2 mt-2">
-            <div class="bg-blue-500 h-2 rounded-full" style="width: {% widthratio snapshot.mem_used_bytes snapshot.mem_total_bytes 100 %}%"></div>
+            {% widthratio snapshot.mem_used_bytes snapshot.mem_total_bytes 100 as mem_pct %}
+            <div class="bg-blue-500 h-2 rounded-full" style="width: {{ mem_pct }}%"></div>
         </div>
+        <div class="text-xs text-gray-500 mt-1">{{ mem_pct }}% used</div>
         {% else %}
         <div class="text-gray-500">No data</div>
         {% endif %}
@@ -36,34 +38,48 @@
     <!-- GPU Card -->
     <div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
         <h3 class="text-gray-400 text-sm font-medium mb-2">GPU</h3>
-        {% if snapshot and snapshot.gpu_metrics_json %}
-            {% for gpu in snapshot.gpu_metrics_json %}
-            <div class="mb-2">
-                <div class="text-sm font-medium">{{ gpu.model|default:"Unknown" }}</div>
-                <div class="text-lg font-bold">
-                    {% if gpu.gpu_util_pct != None %}{{ gpu.gpu_util_pct }}%{% else %}—{% endif %}
+        {% if gpu_metrics %}
+            {% for gpu in gpu_metrics %}
+            <div class="mb-1">
+                <div class="text-sm font-medium">{{ gpu.model|default:"Unknown GPU" }}</div>
+                <div class="flex items-baseline gap-2">
+                    <div class="text-xl font-bold">
+                        {% if gpu.gpu_util_pct != None %}{{ gpu.gpu_util_pct|floatformat:1 }}%{% else %}—{% endif %}
+                    </div>
+                    <div class="text-sm text-gray-400">
+                        {% if gpu.gpu_temp_c != None %}
+                            {% if gpu.gpu_temp_c > 80 %}<span class="text-red-400">{{ gpu.gpu_temp_c|floatformat:1 }}°C</span>
+                            {% elif gpu.gpu_temp_c > 70 %}<span class="text-yellow-400">{{ gpu.gpu_temp_c|floatformat:1 }}°C</span>
+                            {% else %}{{ gpu.gpu_temp_c|floatformat:1 }}°C{% endif %}
+                        {% else %}—{% endif %}
+                    </div>
                 </div>
-                <div class="text-sm text-gray-400">
-                    {% if gpu.mem_used_mb != None %}{{ gpu.mem_used_mb }}/{{ gpu.mem_total_mb }} MB{% endif %}
-                    {% if gpu.temp_c != None %} · {{ gpu.temp_c }}°C{% endif %}
-                    {% if gpu.power_draw_w != None %} · {{ gpu.power_draw_w }}W{% endif %}
-                </div>
+                {% if gpu.mem_used_mb != None %}
+                <div class="text-xs text-gray-500">{{ gpu.mem_used_mb }} / {{ gpu.mem_total_mb }} MB vRAM</div>
+                {% endif %}
+                {% if gpu.power_draw_w != None %}
+                <div class="text-xs text-gray-500">{{ gpu.power_draw_w|floatformat:1 }}W / {{ gpu.power_limit_w|floatformat:0 }}W</div>
+                {% endif %}
             </div>
             {% endfor %}
         {% else %}
-        <div class="text-gray-500">No data</div>
+        <div class="text-gray-500">No GPU</div>
         {% endif %}
     </div>
 
     <!-- Docker Card -->
     <div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
         <h3 class="text-gray-400 text-sm font-medium mb-2">Docker</h3>
-        {% if snapshot and snapshot.docker_containers_json %}
-        <div class="text-2xl font-bold mb-1">{{ snapshot.docker_containers_json|length }} containers</div>
-        <div class="text-sm text-gray-400">
-            {% for c in snapshot.docker_containers_json %}
-            <span class="inline-block mr-2">{{ c.name }}: {% if c.status == 'running' %}🟢{% else %}🔴{% endif %}</span>
+        {% if docker_metrics %}
+        <div class="text-2xl font-bold mb-1">{{ docker_metrics|length }} container{{ docker_metrics|length|pluralize }}</div>
+        <div class="text-sm text-gray-400 space-y-0.5">
+            {% for c in docker_metrics|slice:":5" %}
+            <div class="flex items-center gap-1">
+                <span>{% if c.status == 'running' %}🟢{% else %}🔴{% endif %}</span>
+                <span class="truncate">{{ c.name }}</span>
+            </div>
             {% endfor %}
+            {% if docker_metrics|length > 5 %}<div class="text-xs text-gray-500">+{{ docker_metrics|length|add:"-5" }} more</div>{% endif %}
         </div>
         {% else %}
         <div class="text-gray-500">No containers</div>
@@ -73,11 +89,12 @@
     <!-- Storage Card -->
     <div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
         <h3 class="text-gray-400 text-sm font-medium mb-2">Storage</h3>
-        {% if snapshot and snapshot.storage_json %}
-            {% for disk in snapshot.storage_json %}
+        {% if storage_metrics %}
+            {% for disk in storage_metrics %}
             <div class="mb-1">
-                <div class="text-sm">{{ disk.device|default:"unknown" }}</div>
-                <div class="text-lg font-bold">{{ disk.usage_pct|default:"—" }}%</div>
+                <div class="text-sm font-medium">{{ disk.device|default:"unknown" }}</div>
+                <div class="text-lg font-bold">{{ disk.usage_pct|default:"—"|floatformat:1 }}%</div>
+                {% if disk.temp_c != None %}<div class="text-xs text-gray-500">{{ disk.temp_c|floatformat:1 }}°C · {{ disk.smart_health }}</div>{% endif %}
             </div>
             {% endfor %}
         {% else %}
@@ -88,11 +105,13 @@
     <!-- Errors Card -->
     <div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
         <h3 class="text-gray-400 text-sm font-medium mb-2">Recent Errors</h3>
-        {% if snapshot and snapshot.errors_json %}
-        <div class="text-2xl font-bold text-red-400 mb-1">{{ snapshot.errors_json|length }}</div>
-        <div class="text-sm text-gray-400">
-            {% for err in snapshot.errors_json|slice:":3" %}
-            <div class="truncate" title="{{ err.message }}">{{ err.source }}: {{ err.message|truncatechars:40 }}</div>
+        {% if recent_errors %}
+        <div class="text-2xl font-bold text-red-400 mb-1">{{ recent_errors|length }}</div>
+        <div class="text-sm text-gray-400 space-y-1">
+            {% for err in recent_errors|slice:":3" %}
+            <div class="truncate" title="{{ err.message }}">
+                <span class="text-red-300">{{ err.source|default:"unknown" }}</span>: {{ err.message|truncatechars:40 }}
+            </div>
             {% endfor %}
         </div>
         {% else %}
@@ -100,26 +119,3 @@
         {% endif %}
     </div>
 </div>
-
-<!-- Chart section -->
-{% if snapshot %}
-<div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
-    <h3 class="text-gray-400 text-sm font-medium mb-4">GPU Temperature (24h)</h3>
-    <canvas id="gpuTempChart" height="100"></canvas>
-</div>
-<script>
-    const ctx = document.getElementById('gpuTempChart').getContext('2d');
-    const chart = new Chart(ctx, {
-        type: 'line',
-        data: { labels: [], datasets: [{ label: 'GPU Temp (°C)', data: [], borderColor: '#f59e0b', tension: 0.3 }] },
-        options: { responsive: true, scales: { y: { min: 0, max: 100 } } }
-    });
-    function fetchChartData() {
-        fetch('{% url "metrics_app:chart-data" rig.uuid %}?metric=cpu_temp_c&range=24')
-            .then(r => r.json())
-            .then(d => { chart.data.labels = d.labels; chart.data.datasets[0].data = d.datasets[0].data; chart.update(); });
-    }
-    fetchChartData();
-    setInterval(fetchChartData, 30000);
-</script>
-{% endif %}

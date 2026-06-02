@@ -13,6 +13,10 @@ echo "=== Syncing updated files ==="
 sudo cp "$WORKSPACE/gpu_monitor/metrics_app/models.py" "$OPT/metrics_app/models.py"
 sudo cp "$WORKSPACE/gpu_monitor/metrics_app/serializers.py" "$OPT/metrics_app/serializers.py"
 sudo cp "$WORKSPACE/gpu_monitor/metrics_app/views.py" "$OPT/metrics_app/views.py"
+sudo cp "$WORKSPACE/gpu_monitor/dashboard/views.py" "$OPT/dashboard/views.py"
+
+# Settings
+sudo cp "$WORKSPACE/gpu_monitor/gpu_monitor/settings.py" "$OPT/gpu_monitor/settings.py"
 
 # Migrations
 sudo cp "$WORKSPACE/gpu_monitor/metrics_app/migrations/0002_auto_20260602.py" "$OPT/metrics_app/migrations/0002_auto_20260602.py"
@@ -21,15 +25,15 @@ sudo cp "$WORKSPACE/gpu_monitor/metrics_app/migrations/0002_auto_20260602.py" "$
 sudo cp "$WORKSPACE/gpu_monitor/templates/dashboard/rig_detail.html" "$OPT/templates/dashboard/rig_detail.html"
 sudo cp "$WORKSPACE/gpu_monitor/templates/dashboard/_rig_name.html" "$OPT/templates/dashboard/_rig_name.html"
 sudo cp "$WORKSPACE/gpu_monitor/templates/dashboard/_rig_table.html" "$OPT/templates/dashboard/_rig_table.html"
-
-# Settings
-sudo cp "$WORKSPACE/gpu_monitor/gpu_monitor/settings.py" "$OPT/gpu_monitor/settings.py"
+sudo cp "$WORKSPACE/gpu_monitor/templates/dashboard/_metrics_cards.html" "$OPT/templates/dashboard/_metrics_cards.html"
+sudo cp "$WORKSPACE/gpu_monitor/templates/dashboard/rig_list.html" "$OPT/templates/dashboard/rig_list.html"
 
 # Fix permissions
 sudo chmod -R 644 "$OPT/templates/dashboard/"
 sudo chmod -R 755 "$OPT/templates/dashboard/"
 sudo chmod 644 "$OPT/metrics_app/models.py" "$OPT/metrics_app/serializers.py" "$OPT/metrics_app/views.py"
 sudo chmod 644 "$OPT/metrics_app/migrations/0002_auto_20260602.py"
+sudo chmod 644 "$OPT/dashboard/views.py"
 
 echo "=== Running migrations ==="
 cd "$OPT"

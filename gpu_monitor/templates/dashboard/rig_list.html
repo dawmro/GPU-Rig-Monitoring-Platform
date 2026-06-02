@@ -22,10 +22,13 @@
          hx-get="{% url 'dashboard:rig-list' %}?status={{ status_filter }}&search={{ search }}"
          hx-trigger="every 30s"
          hx-target="#rig-table-container"
-         hx-swap="outerHTML"
+         hx-swap="innerHTML"
          hx-indicator=".htmx-indicator">
         {% include "dashboard/_rig_table.html" %}
     </div>
-    <div class="htmx-indicator text-gray-500 text-sm mt-2">⟳ Refreshing...</div>
+    <div class="flex items-center gap-2 text-gray-500 text-xs mt-2">
+        <span class="htmx-indicator">⟳ Refreshing...</span>
+        <span id="rig-table-container-clock"></span>
+    </div>
 </div>
 {% endblock %}

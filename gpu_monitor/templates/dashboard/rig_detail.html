@@ -34,7 +34,8 @@
             </div>
             <p class="text-gray-500 text-sm font-mono">{{ rig.uuid }}</p>
         </div>
-        <div id="rig-status-wrapper">
+        <div class="flex flex-col items-end gap-0.5">
+            <span id="rig-status-container-clock" class="text-gray-500 text-xs"></span>
             <div id="rig-status-container"
                  hx-get="{% url 'dashboard:htmx-rig-status' rig.uuid %}"
                  hx-trigger="every 15s"
@@ -42,7 +43,6 @@
                  hx-swap="innerHTML">
                 {% include "dashboard/_rig_status_badge.html" %}
             </div>
-            <span id="rig-status-container-clock" class="text-gray-500 text-xs mt-0.5"></span>
         </div>
     </div>
 
@@ -66,6 +66,7 @@
 
     <!-- Tab: Live Metrics (auto-refreshing) -->
     <div id="tab-content-metrics" class="tab-content">
+        <span id="metrics-container-clock" class="text-gray-500 text-xs mb-2 block text-right"></span>
         <div id="metrics-container"
              hx-get="{% url 'dashboard:htmx-metrics' rig.uuid %}"
              hx-trigger="every 30s"
@@ -73,7 +74,6 @@
              hx-swap="innerHTML">
             {% include "dashboard/_metrics_cards.html" %}
         </div>
-        <span id="metrics-container-clock" class="text-gray-500 text-xs mt-1"></span>
     </div>
 
     <!-- Tab: Historical Charts -->

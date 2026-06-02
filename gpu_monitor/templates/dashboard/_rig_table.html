@@ -1,4 +1,21 @@
 {% load gpu_filters %}
+{#
+    Fleet Overview table — refreshed every 30s via HTMX swap (see rig_list.html).
+    Each row is rendered from rig_data entries built in rig_list view.
+
+    Data sources per column:
+      Rig Name    -> item.rig.name (Rig model)
+      Status      -> item.rig.status (Rig model, updated by update_rig_status cron)
+      Last Seen   -> item.rig.last_seen (Rig model, updated on every agent heartbeat)
+      Tags        -> item.rig.tags (RigTag M2M)
+      GPU         -> item.gpu.model (GPUMetric gpu_index=0)
+      GPU Temp    -> item.gpu.gpu_temp_c (GPUMetric)
+      GPU Util    -> item.gpu.gpu_util_pct (GPUMetric)
+      CPU         -> item.snapshot.cpu_utilization_pct (LatestSnapshot)
+
+    To add a new column: add <th> header + <td> cell here, and make sure
+    the corresponding data key exists in rig_data (see dashboard/views.py rig_list).
+#}
 <div class="bg-gray-800 rounded-lg border border-gray-700 overflow-x-auto">
     <table class="w-full text-sm">
         <thead class="bg-gray-750 text-gray-400 border-b border-gray-700">

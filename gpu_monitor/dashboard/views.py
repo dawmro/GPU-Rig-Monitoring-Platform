@@ -11,7 +11,17 @@ from metrics_app.models import LatestSnapshot, GPUMetric, StorageMetric, DockerC
 
 @login_required
 def rig_list(request):
-    """Fleet overview page."""
+    """Fleet overview page.
+
+    Refreshes every 30s via HTMX (see rig_list.html).
+    All table columns are rendered from ``rig_data`` passed to
+    ``_rig_table.html``.  To add a new column:
+
+    1. Add the column header to ``_rig_table.html`` <thead>.
+    2. Fetch the data here in the ``rig_data`` loop (or annotate the queryset).
+    3. Extend the ``rig_data.append({...})`` dict with the new key.
+    4. Add the <td> cell in ``_rig_table.html`` <tbody> using the new key.
+    """
     user = request.user
     rigs = Rig.objects.filter(owner=user).prefetch_related('tags').order_by('-last_seen')
 
@@ -27,17 +37,24 @@ def rig_list(request):
     if tag_filter:
         rigs = rigs.filter(tags__name=tag_filter)
 
-    # Attach latest snapshots and GPU metrics
+    # Build rig_data dicts consumed by _rig_table.html.
+    # Each key maps directly to a template variable in the table cells:
+    #   rig_data[]['rig']      -> Rig model (name, status, last_seen, tags, uuid)
+    #   rig_data[]['snapshot'] -> LatestSnapshot (cpu_utilization_pct, cpu_temp_c, mem_*)
+    #   rig_data[]['gpu']      -> GPUMetric gpu_index=0 (gpu_temp_c, gpu_util_pct, model)
+    #   rig_data[]['storage']  -> first StorageMetric (usage_pct) -- add key when needed
+    #   rig_data[]['docker']   -> DockerContainerMetric count -- add key when needed
     rig_data = []
     for rig in rigs:
         try:
             snap = LatestSnapshot.objects.get(rig_uuid=str(rig.uuid))
         except LatestSnapshot.DoesNotExist:
             snap = None
-        # Get latest GPU metric
+
         gpu = GPUMetric.objects.filter(
             rig_uuid=str(rig.uuid), gpu_index=0
         ).order_by('-timestamp').first()
+
         rig_data.append({'rig': rig, 'snapshot': snap, 'gpu': gpu})
 
     if request.headers.get('HX-Request'):

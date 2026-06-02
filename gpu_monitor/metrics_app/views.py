@@ -154,7 +154,16 @@ class ChartDataView(APIView):
     # Metrics stored directly on MetricSnapshot
     SNAPSHOT_METRICS = {'cpu_utilization_pct', 'cpu_temp_c', 'mem_used_bytes', 'mem_total_bytes'}
     # Metrics stored on GPUMetric (per-GPU)
-    GPU_METRICS = {'gpu_temp_c', 'gpu_util_pct', 'gpu_mem_used_mb', 'gpu_power_w'}
+    # Maps chart/query metric names to actual GPUMetric field names
+    GPU_METRICS = {
+        'gpu_temp_c': 'gpu_temp_c',
+        'gpu_util_pct': 'gpu_util_pct',
+        'gpu_mem_used_mb': 'mem_used_mb',
+        'gpu_mem_total_mb': 'mem_total_mb',
+        'gpu_power_w': 'power_draw_w',
+        'gpu_power_limit_w': 'power_limit_w',
+        'gpu_fan_pct': 'fan_speed_pct',
+    }
     # Metrics stored on StorageMetric
     STORAGE_METRICS = {'disk_usage_pct'}
 
@@ -189,9 +198,10 @@ class ChartDataView(APIView):
                 gpu_index=gpu_index,
                 timestamp__gte=since,
             ).order_by('timestamp')[:2000]
+            field_name = self.GPU_METRICS[metric]
             for g in gpu_data:
                 labels.append(g.timestamp.isoformat())
-                values.append(getattr(g, metric, None))
+                values.append(getattr(g, field_name, None))
 
         elif metric in self.STORAGE_METRICS:
             from .models import StorageMetric

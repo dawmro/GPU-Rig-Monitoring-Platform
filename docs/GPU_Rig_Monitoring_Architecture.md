@@ -1,8 +1,8 @@
 # GPU Rig Monitoring Platform — Architecture Document
 
-**Version:** 1.0  
-**Status:** Implementation-Ready Blueprint  
-**Classification:** Technical Architecture Document
+**Version:** 1.0
+**Status:** Implemented — Living Architecture Reference
+**Last Updated:** 2026-06-02
 
 ---
 
@@ -13,939 +13,464 @@
 3. [Client Agent Specification](#3-client-agent-specification)
 4. [Server Architecture](#4-server-architecture)
 5. [Dashboard Specification](#5-dashboard-specification)
-6. [Data Model & Schema Versioning](#6-data-model--schema-versioning)
-7. [Security Architecture](#7-security-architecture)
-8. [Operational Architecture](#8-operational-architecture)
-9. [Performance & Scaling Analysis](#9-performance--scaling-analysis)
-10. [Testing Strategy](#10-testing-strategy)
-11. [Appendices](#11-appendices)
+6. [Data Model Reference](#6-data-model-reference)
+7. [Security Trust Boundaries](#7-security-trust-boundaries)
+8. [Operational Runbook](#8-operational-runbook)
+9. [Design Decisions & Rationale](#9-design-decisions--rationale)
 
 ---
 
 ## 1. Executive Summary
 
-This document defines the comprehensive, implementation-ready architecture for the **GPU Rig Monitoring Platform v1.0**. It translates detailed business and operational requirements into a deterministic technical blueprint, guiding the development, deployment, and day-two operations of the system.
+The GPU Rig Monitoring Platform is a single-server telemetry dashboard for GPU rigs running AI/LLM workloads. It uses Django + HTMX for server-rendered HTML with live polling, PostgreSQL for data storage, and a lightweight Python agent for metric collection.
 
-### 1.1 Purpose & Scope
+**Topology:** One Ubuntu VPS hosts everything (Django, Nginx, PostgreSQL, Gunicorn). Remote rigs run the agent via cron and POST telemetry to the server over HTTP.
 
-#### 1.1.1 System Purpose
+**Scale target:** ~1,000 rigs reporting at 1-minute intervals.
 
-The platform is a specialized, multi-user telemetry and monitoring dashboard designed explicitly for GPU rigs serving AI/LLM workloads. Unlike generic infrastructure monitors, this system provides deep visibility into the unique failure modes of AI servers, including VRAM fragmentation, PCIe throughput bottlenecks, GPU-attached process mapping, and Docker container instability.
+### 1.1 Non-Goals (v1)
 
-It empowers fleet operators to assess real-time health, analyze historical performance trends, and inspect deep hardware/software states without relying on manual SSH access.
+| Excluded | Rationale |
+|----------|-----------|
+| Full log aggregation (ELK, Loki) | Only latest deduplicated errors with timestamps |
+| Active alerting (PagerDuty, Slack) | Visual dashboard indicators only |
+| Distributed deployment / K8s | Single VPS intentionally |
+| Public API / webhooks | API is internal-only, scoped to agents |
+| Remote command execution | Agent is strictly read-only |
 
-#### 1.1.2 Architectural Scope
+### 1.2 Success Metrics
 
-The system is bounded by three primary components operating within a strict single-VPS topology:
-
-- **Client Agent:** A lightweight, fault-tolerant Python script executed via cron every 60 seconds on target rigs. It collects extensive hardware, software, and AI-specific metrics, constructs a versioned JSON payload, and delivers it securely over HTTPS.
-- **Ingestion & Storage Server:** A Django-based application running on a single Ubuntu VPS. It utilizes Django REST Framework (DRF) for secure API ingestion, PostgreSQL for relational inventory/audit data, and TimescaleDB for high-performance time-series metric storage and aggregation.
-- **Hypermedia Dashboard:** A server-rendered web interface built with Django Templates and HTMX. It provides a highly responsive, low-complexity user experience with 30-second polling, eliminating the need for heavy SPA frameworks or WebSocket infrastructure.
-
-#### 1.1.3 Target Scale & Topology
-
-The v1 architecture is explicitly designed for vertical scaling on a single Ubuntu VPS, targeting a ceiling of **~1,000 rigs** reporting at 1-minute intervals. This constraint intentionally avoids the operational overhead of distributed microservices, message brokers, or multi-region clustering.
-
-### 1.2 Non-Goals & Out-of-Scope (v1)
-
-| Category | Excluded Capability | Rationale |
-|---|---|---|
-| Data Ingestion | Full Log Aggregation (e.g., ELK, Loki) | Storing full journalctl or application logs transforms the system into a heavy log-management platform. v1 strictly limits error tracking to the latest deduplicated critical errors with timestamps. |
-| Operations | Active Alerting & Notifications | No PagerDuty, email, or Slack webhook integrations. v1 relies on visual dashboard indicators (Stale/Offline badges, redlining metrics) for human-in-the-loop operations. |
-| Topology | Distributed Deployment / Clustering | No Kubernetes, no separate worker nodes, no Celery/RabbitMQ queues. Background tasks are handled by native systemd timers and TimescaleDB continuous aggregates. |
-| Extensibility | Public API / Third-Party Webhooks | The REST API is strictly internal, secured by user-scoped API keys for agent ingestion and session cookies for the dashboard. |
-| Remediation | Remote Command Execution | The agent is strictly read-only. It cannot execute shell commands, restart services, or modify rig configurations remotely. |
-
-### 1.3 Success Metrics & KPIs
-
-#### 1.3.1 Ingestion & Pipeline Reliability
-
-| Metric | Target | Validation Method |
-|---|---|---|
-| Payload Acceptance Rate | > 99.9% | Ratio of 200 OK / 202 Accepted vs 4xx/5xx errors under load |
-| Idempotency Accuracy | 100% | Zero duplicate rows created in TimescaleDB during simulated network retries |
-| Agent Overhead | < 2% CPU, < 50 MB RAM | Measured via psutil on the host rig during the 60-second cron execution window |
-| Network Footprint | < 2.0 KB per payload | Average gzip-compressed payload size over a 24-hour period |
-
-#### 1.3.2 Performance & Latency Budgets
-
-| Metric | Target | Validation Method |
-|---|---|---|
-| Ingest API Latency (p95) | < 200 ms | Measured at the Gunicorn worker level during 1,000-rig Locust load tests |
-| Dashboard Chart Load | < 500 ms | Time from HTMX trigger to Chart.js render for a 24-hour historical view |
-| Fleet List Polling Swap | < 100 ms | Time for Nginx to serve and browser to morphdom-swap the 50-row fleet table partial |
-
-#### 1.3.3 Operational & Resource Efficiency
-
-| Metric | Target | Validation Method |
-|---|---|---|
-| VPS CPU Saturation | < 60% average | Measured via netdata/htop on the 4-vCPU VPS at peak 1,000-rig burst (50 RPS) |
-| Database Storage Growth | < 5 GB / day | Raw hypertable size + indexes at 1,000 rigs, prior to 14-day compression/drop policies |
-| Time-to-First-Payload | < 2 minutes | Time from executing the agent install script to the rig appearing as "Online" on the dashboard |
-| Backup Restore Validity | 100% success | Monthly automated CI/CD pipeline that provisions a dummy VPS, restores the latest pg_dump, and passes `Django check --deploy` |
+| Metric | Target |
+|--------|--------|
+| Payload acceptance rate | > 99.9% |
+| Agent overhead (CPU) | < 2% |
+| Payload size | < 2 KB compressed |
+| Time to first payload | < 2 min from agent install |
 
 ---
 
 ## 2. System Architecture Overview
 
-### 2.1 High-Level Component Diagram (C4 Level 2)
-
-The system follows a hub-and-spoke telemetry model with three primary container boundaries: Client Agent, Ingestion/API Server, and Dashboard/UI. All components communicate over HTTPS or internal loopback.
-
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        RIG FLEET (Untrusted)                            │
-│                                                                         │
-│  ┌─────────────────┐    HTTPS POST /api/v1/ingest/    ┌──────────────┐  │
-│  │ Python Client   │ ────────────────────────────────→ │   Nginx      │  │
-│  │ Agent (cron 60s)│                                   │   Reverse    │  │
-│  └─────────────────┘                                   │   Proxy      │  │
-│                                                        └──────┬───────┘  │
-└───────────────────────────────────────────────────────────────┼──────────┘
-                                                                │ HTTP/1.1
-                                                                │ (TLS terminated)
-┌───────────────────────────────────────────────────────────────┼──────────┐
-│                   SINGLE UBUNTU VPS (Trusted)                 │          │
-│                                                               ▼          │
-│  ┌─────────────────┐    TCP/5432    ┌──────────────────────────────┐    │
-│  │ Django + DRF    │ ────────────→  │ PostgreSQL + TimescaleDB     │    │
-│  │ Application     │                │                              │    │
-│  └────────┬────────┘                └──────────────────────────────┘    │
-│           │                                                             │
-│           │ Render/Query                                                 │
-│           ▼                                                             │
-│  ┌─────────────────┐    HTTPS GET/POST    ┌──────────────────────────┐  │
-│  │ HTMX Dashboard  │ ←─────────────────── │   User Browser           │  │
-│  │ UI              │    + HTMX Polling     │                          │  │
-│  └─────────────────┘                       └──────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                    REMOTE RIGS (Untrusted)                   │
+│                                                              │
+│  ┌──────────────┐  HTTP POST   ┌────────────┐              │
+│  │ Agent (cron) │ ──────────→  │   Nginx :80│  (or :443)   │
+│  └──────────────┘              └─────┬──────┘              │
+└──────────────────────────────────────┼───────────────────────┘
+                                       │ proxy to 8000
+┌──────────────────────────────────────┼───────────────────────┐
+│                 UBUNTU VPS           │                      │
+│                              ┌───────▼──────┐               │
+│  Browser ←──HTMX polling──→  │ Gunicorn :8000│              │
+│  Django ←──render──────────→  │   (4 workers) │              │
+│                              └───────┬──────┘               │
+│                                      │                       │
+│                              ┌───────▼──────┐               │
+│                              │ PostgreSQL   │               │
+│                              │   :5432      │               │
+│                              └──────────────┘               │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-#### Component Responsibilities
+### 2.1 Service Matrix
 
-| Component | Technology | Responsibility |
-|---|---|---|
-| Client Agent | Python 3.10+, psutil, pynvml, requests | Collects metrics, constructs JSON payload, handles retry/idempotency, runs via cron |
-| Nginx Edge | Nginx | TLS termination, request routing, rate limiting, static asset serving |
-| Django App | Django 5.x, DRF, Gunicorn | Auth, schema validation, payload routing, RBAC, dashboard rendering |
-| PostgreSQL + TimescaleDB | PG 16, TimescaleDB 2.14+ | Relational storage, hypertable time-series, continuous aggregates |
-| Dashboard UI | Django Templates + HTMX 2.0 | Server-rendered pages, 30s polling, chart data, tag filtering |
+| Service | Port | Protocol | Access |
+|---------|------|----------|--------|
+| Nginx | 80/443 | HTTP/HTTPS | Public |
+| Gunicorn | 8000 | HTTP | localhost only |
+| PostgreSQL | 5432 | TCP | localhost only |
 
-### 2.2 Deployment Topology
-
-#### Infrastructure Baseline
-
-| Resource | Specification |
-|---|---|
-| OS | Ubuntu 22.04 / 24.04 LTS |
-| Compute | 4–8 vCPU, 16–32 GB RAM, 500 GB+ NVMe SSD |
-| Network | Single public IPv4, DNS A record |
-| TLS | Let's Encrypt (certbot), auto-renew via systemd timer |
-
-#### Service & Port Matrix
-
-| Service | Bind Address | Port | Protocol | Access Control |
-|---|---|---|---|---|
-| Nginx | 0.0.0.0 | 80 | HTTP | Public |
-| Nginx | 0.0.0.0 | 443 | HTTPS | Public (TLS enforced) |
-| Gunicorn | 127.0.0.1 | 8000 | HTTP | Internal only |
-| PostgreSQL | 127.0.0.1 | 5432 | TCP | Internal only, SCRAM-SHA-256 |
-| SSH | 0.0.0.0 | 22 | TCP | Restrict to admin IPs |
-
-#### Firewall Rules (ufw)
-
-```bash
-ufw default deny incoming
-ufw default allow outgoing
-ufw allow 22/tcp
-ufw allow 80/tcp
-ufw allow 443/tcp
-ufw enable
-```
-
-### 2.3 Data Flow Diagrams
-
-#### 2.3.1 Agent Ingestion Sequence
+### 2.2 Data Flow: Agent Ingestion
 
 ```
-Cron (Rig) → Python Agent → Nginx → DRF Ingest View → API Key Middleware → TimescaleDB/PG
-    │              │            │          │                    │                    │
-    │─ Trigger ──→ │            │          │                    │                    │
-    │              │─ Collect → │          │                    │                    │
-    │              │─ Build ──→ │          │                    │                    │
-    │              │─ POST ───→ │─ Forward→│─ Validate ──────→ │─ Verify ────────→ │
-    │              │            │          │   X-API-Key        │   Argon2id         │
-    │              │← Response ─│←─────────│←── 200/202/4xx ──│                    │
-    │              │─ Log/Exit  │          │                    │                    │
+Cron → Agent collects metrics → JSON payload → POST /api/v1/ingest/
+  → Nginx (rate limit, size check)
+  → DRF APIKeyAuthentication (X-API-Key header → Argon2id hash comparison)
+  → DRF throttle (per-key rate limit)
+  → IngestSerializer validation (schema version 1.0)
+  → process_ingest() → DB upsert (MetricSnapshot, GPUMetric, StorageMetric, etc.)
+  → Rig.last_seen and Rig.status updated to ONLINE
+  → Response: 200 (new) or 202 (duplicate/idempotent)
 ```
 
-#### 2.3.2 Ingestion Contract
+### 2.3 Key Files
 
-| Step | Requirement | Implementation |
-|---|---|---|
-| Auth | API key on every request | `X-API-Key` header, Argon2id hash comparison |
-| Idempotency | Avoid duplicate storage | `UNIQUE(rig_uuid, schema_version, timestamp)` + `ON CONFLICT` |
-| Retry Logic | Safe failure recovery | Exponential backoff (1s → 2s → 4s), max 3 attempts |
-| Partial Failures | Tolerate metric gaps | Agent wraps collectors in try/except, missing fields omitted |
-| Payload Size | Network efficiency | Gzip if > 8 KB, target < 2 KB compressed |
-
-### 2.4 Trust Boundaries & Security Zones
-
-| Zone | Trust Level | Components | Enforcement |
-|---|---|---|---|
-| Z1: External Fleet | Untrusted | Client Agents, Internet | TLS 1.3, API key auth, rate limiting |
-| Z2: Edge/DMZ | Semi-Trusted | Nginx, certbot, UFW | TLS termination, connection limits, size caps |
-| Z3: Application | Trusted | Django, Gunicorn, DRF | Session auth, CSRF, RBAC, audit logging |
-| Z4: Data Layer | Highly Trusted | PostgreSQL, TimescaleDB | localhost-only, least-privilege roles, encrypted backups |
-
-#### Boundary Validation Matrix
-
-| Boundary | Threat | Mitigation |
-|---|---|---|
-| Z1 → Z2 | MITM, Replay, Flood | HTTPS, HSTS, rate limiting, TLS 1.3 only |
-| Z2 → Z3 | Auth Bypass, Payload Injection | DRF auth, strict JSON schema validation |
-| Z3 → Z4 | SQLi, Data Leakage | ORM only, separate DB roles |
-| User → Z3 | XSS, CSRF, Session Hijacking | CSRF middleware, Secure cookies, CSP headers |
-
-#### Rate Limiting Strategy
-
-| Layer | Algorithm | Threshold | Action |
-|---|---|---|---|
-| Nginx | Fixed Window | 10 req/s per IP | 429 |
-| DRF | Sliding Window | 2 req/min per key | 429 + backoff hint |
-| Global | Connection limit | 500 concurrent | Nginx worker tuning |
+| File | Purpose |
+|------|---------|
+| `agent/run.py` | Linux agent (~480 lines) |
+| `agent_windows/run.py` | Windows agent (~890 lines) |
+| `metrics_app/views.py` | IngestView, HealthView, ChartDataView, RigMetricsView |
+| `metrics_app/serializers.py` | IngestSerializer, process_ingest() |
+| `metrics_app/models.py` | MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, ErrorEvent |
+| `dashboard/views.py` | rig_list, rig_detail, htmx_metrics, htmx_rig_status, rig_rename |
+| `rigs/models.py` | Rig, RigTag |
+| `accounts/authentication.py` | APIKeyAuthentication |
+| `rigs/management/commands/update_rig_status.py` | Rig status state machine |
 
 ---
 
 ## 3. Client Agent Specification
 
-### 3.1 Runtime Environment
+### 3.1 Runtime
 
-| Category | Specification |
-|---|---|
-| Python Version | 3.10+ |
-| Installation Path | `/opt/monitoring-agent/` |
-| Virtual Env | `/opt/monitoring-agent/venv/` |
-| Core Deps | psutil, pynvml, py-cpuinfo, requests, docker, pyyaml |
-| System Binaries | smartmontools, nvme-cli, lm-sensors |
-| Execution User | `monitoring-agent` (system, no-login) |
+| Property | Value |
+|----------|-------|
+| Python | 3.10+ |
+| Path | `/opt/monitoring-agent/` (Linux) or next to `run.py` (Windows) |
+| Deps | psutil, pynvml, py-cpuinfo, requests, pyyaml |
+| User | `monitoring-agent` system user (Linux) |
+| Schedule | Every 60 seconds via cron |
 
-### 3.2 Configuration Management
-
-**Path:** `/etc/monitoring-agent/config.yaml` (mode 0600)
+### 3.2 Configuration (`/etc/monitoring-agent/config.yaml`)
 
 ```yaml
-rig_uuid: "auto"
-api_key: ""
-server_endpoint: "https://monitor.example.com"
-expected_gpu_count: 0
-collection_timeout_s: 45
-retry_attempts: 3
-debug_mode: false
+rig_uuid: "auto"          # Auto-generated on first run, persisted to file
+rig_name: ""              # Suggested initial name. Used ONLY once during rig creation.
+                          # Leave empty to use hostname. Ignored on subsequent updates.
+api_key: "..."            # Server-side API key (shown once at creation)
+server_endpoint: "http://..."  # Must include http:// or https://
+expected_gpu_count: 0     # 0 = auto-detect
+collection_timeout_s: 45  # Hard timeout via signal.alarm()
+retry_attempts: 3         # Exponential backoff: 1s → 2s → 4s
+debug_mode: false         # Verbose logging
 ```
 
-**UUID Lifecycle:** Generated via `uuid.uuid4()` on first run, persisted to config, never regenerated. Ownership bound server-side on first ingest.
-
-### 3.3 Metric Collection Modules
-
-Each module is wrapped in an isolated `try/except` block. Failures are logged and omitted from the payload.
-
-| Module | Primary Source | Output Fields | Error Handling |
-|---|---|---|---|
-| CPU | py-cpuinfo, psutil | model, cores, load, util%, temp | Omit temp if None |
-| Memory | psirtual_memory, swap | total, used, free, cached, swap | None (always available) |
-| Motherboard | /sys/class/dmi/id/board_* | manufacturer, model, bios | Skip if permission denied |
-| Storage | psutil + smartctl/nvme | device, capacity, usage%, smart health | Catch CalledProcessError |
-| Network | psutil + /sys/class/net/*/speed | iface, ipv4, speed, rx/tx bytes | Skip loopback |
-| GPU | pynvml (NVIDIA ML) | uuid, model, mem, util%, temp, power | Handle NVMLError_NotSupported |
-| Docker | docker SDK | containers: [{name, image, status}] | Log warning if failed |
-| Software | platform, nvidia-smi, docker version | hostname, kernel, driver, docker | Partial failure tolerated |
-| Errors | journalctl -p err..crit | [{source, message, timestamp}] | Truncate to 20 entries |
-
-### 3.4 Payload Construction & Serialization
-
-#### JSON Schema (v1.0) — Key Structure
+### 3.3 Payload Schema (v1.0)
 
 ```json
 {
   "rig_uuid": "UUIDv4",
+  "rig_name": "my-server",
   "schema_version": "1.0",
   "agent_version": "1.0.0",
-  "timestamp": "ISO 8601 UTC",
-  "inventory": { "cpu": {}, "memory": {}, "gpus": [], ... },
-  "metrics": { "cpu": {}, "gpus": [], "docker_containers": [], ... },
-  "software": { "hostname": "...", "kernel": "..." },
+  "timestamp": "2026-06-02T19:54:06Z",
+  "inventory": { "cpu": {}, "memory": {}, "motherboard": {}, "storage": [], "network": [], "gpus": [] },
+  "metrics": { "cpu": {}, "memory": {}, "storage": [], "network": [], "gpus": [], "ai_processes": [], "docker_containers": [] },
+  "software": { "hostname": "...", "os_distro": "...", "kernel": "..." },
   "errors": [{ "source": "kernel", "message": "...", "timestamp": "..." }]
 }
 ```
 
-#### Serialization Rules
+### 3.4 Transport
 
-| Rule | Specification |
-|---|---|
-| Nullability | Failed metrics are `null`, not omitted |
-| Types | Strict typing, no implicit coercion |
-| Compression | gzip if > 8 KB uncompressed |
-| Size Budget | Target < 20 KB compressed, reject > 2 MB |
+- **Compression:** None (Django DRF does not auto-decompress gzip request bodies)
+- **Idempotency:** Same `rig_uuid + schema_version + timestamp` → 202 Accepted (not 200)
+- **Retry:** Exponential backoff with jitter, max 3 attempts, 45s hard timeout
 
-### 3.5 Transport Layer
+### 3.5 Two Agents
 
-| Parameter | Value |
-|---|---|
-| Strategy | Exponential backoff with jitter |
-| Sequence | 1s → 2s → 4s (max 3 attempts) |
-| Jitter | ±20% random delay |
-| Hard Timeout | 45s via `signal.alarm(45)` |
-
-#### Server Response Codes
-
-| Code | Meaning | Agent Action |
-|---|---|---|
-| 200 | New payload accepted | Log OK |
-| 202 | Duplicate (idempotent) | Log DUP, ignore |
-| 400 | Validation failed | Log ERR, retry next cycle |
-| 401 | Invalid API key | Check config |
-| 429 | Rate limit hit | Back off |
-| 5xx | Server error | Retry per backoff |
-
-### 3.6 Execution Guardrails
-
-```bash
-# /etc/cron.d/monitoring-agent
-* * * * * monitoring-agent flock -n /var/lock/monitoring-agent.lock /opt/monitoring-agent/venv/bin/python /opt/monitoring-agent/run.py >> /var/log/monitoring-agent/cron.log 2>&1
-```
-
-- **flock** prevents overlapping runs
-- **nice -n 19** for lowest CPU priority
-- **ionice -c 3** for idle I/O priority
-
-### 3.7 Local Logging
-
-| Aspect | Specification |
-|---|---|
-| Path | `/var/log/monitoring-agent/agent.log` |
-| Format | Structured JSON |
-| Rotation | 10 MB max, 3 backups |
-| Redaction | API keys masked in logs |
+| Agent | File | Platform | Scheduling |
+|-------|------|----------|------------|
+| Linux | `agent/run.py` | Any Linux, VMware NAT | `cron` every 60s with `flock` |
+| Windows | `agent_windows/run.py` | Windows 10/11 | Task Scheduler with `pythonw.exe` (hidden window) |
 
 ---
 
 ## 4. Server Architecture
 
-### 4.1 Django Project Structure
+### 4.1 Django Apps
 
-| App | Purpose | Key Files |
-|---|---|---|
-| `accounts` | Users, API keys, RBAC | `models.py`, `authentication.py`, `views.py` |
-| `rigs` | Rig inventory, tags, status | `models.py`, `update_rig_status` command |
-| `metrics_app` | Ingestion, time-series, snapshots | `models.py`, `serializers.py`, `setup_timescale` command |
-| `dashboard` | HTMX views, polling endpoints | `views.py`, templates |
-| `audit` | Immutable audit logs | `models.py`, `middleware.py` |
+| App | Models | Key Views |
+|-----|--------|-----------|
+| `gpu_monitor` | — | Settings, URL routing, WSGI |
+| `accounts` | User, ApiKey | Login, logout, API key management |
+| `rigs` | Rig, RigTag | `update_rig_status` management command |
+| `metrics_app` | MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, ErrorEvent | IngestView, HealthView, ChartDataView, RigMetricsView |
+| `dashboard` | — | rig_list, rig_detail, htmx_metrics, htmx_rig_status, rig_rename |
+| `audit` | AuditLog | Middleware-based request logging |
+| `dashboard/templatetags` | — | gpu_model_name, gpu_model_short filters |
 
-### 4.2 Authentication & Authorization
+### 4.2 Authentication
 
-#### Dual-Context Authentication
-
-| Context | Mechanism | Transport |
-|---|---|---|
-| Agent Ingestion | `APIKeyAuthentication` | `X-API-Key` header |
-| Dashboard UI | Django Session Auth | Secure, HttpOnly, SameSite=Lax cookie |
-
-#### RBAC Roles
-
-| Role | Permissions |
-|---|---|
-| Owner | View/edit own rigs, manage own keys, assign tags |
-| Admin | View all rigs, reassign ownership (audit-logged), manage all users |
-| Viewer | Read-only dashboard access |
+| Context | Mechanism |
+|---------|-----------|
+| Agent ingestion | `X-API-Key` header → `APIKeyAuthentication` (Argon2id hash comparison) |
+| Dashboard | Django session cookie (Secure, HttpOnly, SameSite=Lax) |
+| API key creation | Session auth + `login_required` |
 
 ### 4.3 Ingestion Pipeline
 
 ```
 POST /api/v1/ingest/
-  → Nginx (TLS, rate limit, payload size check)
-  → DRF APIKeyAuthentication (validate key)
-  → DRF Throttle (per-key rate limit)
-  → IngestSerializer.validate() (schema version, field mapping)
-  → DB UPSERT (UNIQUE constraint + ON CONFLICT DO UPDATE)
-  → Response (200/202/4xx/429)
+  → CsrfViewMiddleware (skipped via @csrf_exempt on IngestView)
+  → APIKeyAuthentication validates X-API-Key
+  → DRF throttle (AnonRateThrottle)
+  → IngestSerializer validates schema
+  → process_ingest() in transaction.atomic():
+      - Upsert MetricSnapshot (cpu, memory fields)
+      - Upsert GPUMetric per GPU (gpu_index = 0, 1, ...)
+      - Upsert StorageMetric per disk
+      - Upsert NetworkMetric per interface
+      - Upsert DockerContainerMetric per container
+      - Upsert ErrorEvent (deduplicated by hash)
+      - Update Rig.last_seen = now(), Rig.status = ONLINE
+      - On Rig.DoesNotExist: auto-create with agent-suggested name
+        (rig_name is used only at creation, never overwritten)
+  → Response: {"status": "new"} or {"status": "duplicate"}
 ```
 
-**Idempotency:** `UNIQUE(rig_uuid, schema_version, timestamp)` with `ON CONFLICT DO NOTHING`. Insert → 200, Conflict → 202.
+### 4.4 Rig Name Management (Design Decision: Option 5)
 
-### 4.4 Data Storage Layer
+**Problem:** Two sources of truth — agent's `config.yaml` rig_name and dashboard database field.
 
-#### Relational Schema (PostgreSQL)
+**Solution:** Agent sends `rig_name` in every payload, but the server uses it **only** when creating a new rig (`Rig.DoesNotExist`). All subsequent renames are dashboard-only via the `rig_rename` POST endpoint. This prevents config.yaml from overwriting user-changed names on every heartbeat.
 
-| Table | Purpose | Key Constraints |
-|---|---|---|
-| `accounts_apikey` | Ingestion auth | `UNIQUE(user_id, name)`, prefix index |
-| `rigs_rig` | Asset registry | `PRIMARY KEY(uuid)`, FK owner_id |
-| `rigs_tag` / `rigs_rig_tags` | Fleet grouping | Composite PK for M2M |
-| `audit_auditlog` | Immutable ledger | Partitioned by month |
+### 4.5 Rig Status State Machine
 
-#### Time-Series Schema (TimescaleDB)
+Managed by `update_rig_status` management command, run every 2 minutes via cron:
 
-```sql
-CREATE TABLE metrics_timeseries (
-    time            TIMESTAMPTZ NOT NULL,
-    rig_uuid        UUID NOT NULL,
-    cpu_util        NUMERIC(5,2),
-    gpu_temps       NUMERIC(5,2)[],
-    gpu_utils       NUMERIC(5,2)[],
-    disk_usage_max  NUMERIC(5,2)
-);
-SELECT create_hypertable('metrics_timeseries', 'time',
-    chunk_time_interval => INTERVAL '1 day');
-SELECT add_compression_policy('metrics_timeseries', INTERVAL '7 days');
+```
+ONLINE  → STALE   (last_seen > 2 minutes ago)
+STALE   → OFFLINE (last_seen > 10 minutes ago)
+ONLINE  → OFFLINE (last_seen > 10 minutes ago, direct transition)
 ```
 
-#### Retention Strategy
+On every agent heartbeat, `IngestView` sets `Rig.status = ONLINE` and `Rig.last_seen = now()`.
 
-| Layer | Storage | Retention |
-|---|---|---|
-| Raw metrics | `metrics_timeseries` | 7–14 days |
-| Hourly aggregates | `metrics_hourly_agg` | 90 days |
-| Daily aggregates | `metrics_daily_agg` | 1 year |
+### 4.6 API Endpoints
 
-### 4.5 API Layer
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| POST | `/api/v1/ingest/` | API Key | Telemetry submission |
+| GET | `/api/v1/health/` | None | Health check (DB + active rigs count) |
+| GET | `/api/v1/rigs/<uuid>/metrics/` | Session | Latest metrics (used by Chart.js direct fetch) |
+| GET | `/api/v1/rigs/<uuid>/chart-data/?metric=X&range=N` | Session | Historical chart data |
+| GET | `/dashboard/rigs/` | Session | Fleet Overview (HTMX) |
+| GET | `/dashboard/rigs/<uuid>/htmx-metrics/` | Session | Live metrics partial (30s poll) |
+| GET | `/dashboard/rigs/<uuid>/htmx-status/` | Session | Status badge partial (15s poll) |
+| POST | `/dashboard/rigs/<uuid>/rename/` | Session | Rename rig |
 
-#### Endpoint Catalog
+### 4.7 Cron Jobs
 
-| Method | Path | Purpose | Auth |
-|---|---|---|---|
-| POST | `/api/v1/ingest/` | Telemetry submission | API Key |
-| GET | `/api/v1/health/` | Health check | None |
-| GET | `/api/v1/rigs/` | List rigs | Session |
-| GET | `/api/v1/rigs/<uuid>/htmx-metrics/` | Dashboard polling | Session |
-| GET | `/api/v1/rigs/<uuid>/chart-data/` | Chart JSON | Session |
-
-### 4.6 Background Tasks
-
-| Task | Mechanism | Frequency |
-|---|---|---|
-| Rig status update | `update_rig_status` command | Every 2 minutes |
-| Chunk drop | Timescale policy | Auto (7 days) |
-| Aggregate refresh | Timescale policy | Auto (1 hour) |
-| Error pruning | Django command | Daily |
-| DB backup | `backup_db.sh` + rclone | Daily |
-
-### 4.7 Schema Versioning Protocol
-
-| Change Type | Version Bump |
-|---|---|
-| Add optional field | None (additive) |
-| Rename field | Major (2.0) |
-| Change data type | Major (2.0) |
-
-**Server-Side Routing:**
-```python
-SERIALIZER_MAP = {"1.0": IngestSerializerV1, "1.1": IngestSerializerV1_1}
-```
-
-**Agent Deprecation Lifecycle:** Day 0 (deploy) → Day 30 (upgrade recommended) → Day 180 (deprecated, shim) → Day 365 (dropped, 400 response).
-
-### 4.8 Audit Logging & Observability
-
-**Audit Events:** `apikey.created`, `apikey.revoked`, `rig.enrolled`, `rig.reassigned`, `tag.created/deleted`, `user.login_failed`
-
-**Health Endpoint Response:**
-```json
-{
-  "status": "healthy",
-  "version": "1.0.0",
-  "db_connection": "ok",
-  "timescale_version": "2.14.1",
-  "active_rigs": 842,
-  "ingest_qps": 14.2
-}
-```
+| Job | Frequency | Wrapper |
+|-----|-----------|---------|
+| Linux agent | 60s | `flock` + cron |
+| Rig status update | 2 min | `scripts/update_rig_status.sh` |
+| Frontend (Windows) agent | 60s | Task Scheduler + `pythonw.exe` |
 
 ---
 
 ## 5. Dashboard Specification
 
-### 5.1 UI Architecture
+### 5.1 HTMX Polling Architecture
 
-The dashboard follows a **Hypermedia-Driven Application (HDA)** pattern. HTMX swaps HTML fragments; the server is the single source of truth for UI state.
+HTMX polls use `hx-swap="innerHTML"` (not `outerHTML`). This is critical: `innerHTML` replaces only the **contents** of the target element, preserving the wrapper `<div>` that carries the `hx-*` attributes. Using `outerHTML` would destroy the wrapper on the first swap, breaking all subsequent polls.
 
-#### HTMX Patterns Used
+**Global refresh clock:** A single `htmx:afterSwap` event listener in `base.html` updates all clock spans (`<target>-clock`) after every swap, giving the operator visibility into when each section was last refreshed.
 
-| Pattern | Attributes | Use Case |
-|---|---|---|
-| Polling | `hx-trigger="every 30s"` | Fleet table, rig detail metrics |
-| Lazy Loading | `hx-trigger="revealed"` | Historical charts |
-| Form Submission | `hx-post`, `hx-target` | API key creation, tag assignment |
-| OOB Swap | `hx-swap-oob="true"` | Toast notifications |
-| Morphdom | `hx-ext="morphdom-swap"` | Preserves scroll position during table swaps |
+### 5.2 Fleet Overview (`/dashboard/rigs/`)
 
-#### JavaScript Constraints
+**Polling:** `#rig-table-container` polls every 30s via `innerHTML` swap.
 
-JS is strictly limited to: Chart.js initialization after HTMX swaps, Tom Select for tag dropdowns, and `htmx:afterSwap` event bridging. No client-side routing or state stores.
+**Data source:** `dashboard/views.py rig_list()` queries:
+- `Rig` (all fields including `status`, `last_seen`, `name`)
+- `LatestSnapshot` (cpu_utilization_pct, mem_used_bytes, cpu_temp_c, etc.)
+- `GPUMetric` (gpu_index=0: gpu_temp_c, gpu_util_pct, model)
 
-### 5.2 Auth & User Management
+**Sorting:** Alphabetically by `Rig.name` (stable ordering, rigs don't jump around).
 
-- **Login/Logout:** Session-based cookie auth, `LoginRequiredMixin` on all `/dashboard/` routes
-- **API Key UI:** Generate → show plaintext key once → list with revoke button
+**Columns and data sources:**
 
-### 5.3 Rig List Page (Fleet Overview)
-
-#### Columns
-
-Refreshed every 30s via HTMX (hx-swap="outerHTML" on #rig-table-container).
-All data is fetched fresh from the database on each poll by dashboard/views.py rig_list().
-To add a new column: add <th> in _rig_table.html, fetch data in rig_list(), extend rig_data dict.
-
-| Column | Model Field | Rendering |
-|--------|-------------|-----------|
-| Rig Name | Rig.name | Clickable link to detail page |
-| Status | Rig.status | Online / Stale / Offline (updated by update_rig_status cron) |
-| Last Seen | Rig.last_seen | Relative time (updated on every agent heartbeat) |
+| Column | Source | Model Field |
+|--------|--------|-------------|
+| Rig Name | Rig.name | Clickable link to detail |
+| Status | Rig.status | Online/Stale/Offline |
+| Last Seen | Rig.last_seen | Relative time |
 | Tags | RigTag M2M | Colored pills |
-| GPU | GPUMetric.model | Cleaned name (strips GPU_filters prefixes) |
-| GPU Temp | GPUMetric.gpu_temp_c | Color-coded: >80C red, >75C orange, >70C yellow, >65C green |
+| GPU | GPUMetric.model | Cleaned by gpu_model_name filter |
+| GPU Temp | GPUMetric.gpu_temp_c | Color-coded thresholds |
 | GPU Util | GPUMetric.gpu_util_pct | Percentage |
 | CPU | LatestSnapshot.cpu_utilization_pct | Percentage |
 
-**HTMX Polling:** 30s auto-refresh with outerHTML swap.
+### 5.3 Rig Detail Page (`/dashboard/rigs/<uuid>/`)
 
-### 5.4 Rig Detail Page
+Three HTMX polling regions:
 
-Three tabs:
+| Region | Target ID | Interval | Mode | Data |
+|--------|-----------|----------|------|------|
+| Status badge | `#rig-status-container` | 15s | `innerHTML` | Rig.status, Rig.last_seen |
+| Live metrics | `#metrics-container` | 30s | `innerHTML` | CPU, memory, GPU, Docker, storage, errors, error events |
+| Header status | — | 15s | HTMX badge + clock | Status + last_seen |
 
-1. **Static Inventory** — Hardware grid (CPU, GPU, memory, storage, network), software grid (OS, driver, Docker)
-2. **Live Status & Errors** — 30s HTMX poll, vitals, Docker containers, deduplicated errors
-3. **Historical Charts** — Lazy-loaded, Chart.js, time range selector (1H/6H/24H/7D/30D), queries continuous aggregates for ranges > 24H
+Plus one manual-refresh region:
 
-### 5.5 Tagging & Filtering
+| Region | Trigger | Data |
+|--------|---------|------|
+| Historical charts | User clicks ↻ button | 7× ChartDataView queries (GPU temp, GPU util, GPU mem, GPU power, CPU util, CPU temp, memory) |
 
-- **Model:** `RigTag` (name, color, owner) + M2M through table
-- **UI:** Tom Select multi-select dropdown, color-coded pills on fleet table
-- **Filtering:** URL query params → Django ORM `Q` objects
+**Historical charts are NOT polled automatically** — they load once when the tab is first opened and refresh only when the user clicks the ↻ button. This avoids 7× expensive time-series queries (2000 rows each) every 30 seconds.
 
-### 5.6 Performance Budgets
+### 5.4 Tab Layout
 
-| Metric | Target | Strategy |
-|---|---|---|
-| Initial Page Load | < 800 ms | `select_related`, `prefetch_related`, no N+1 |
-| 30s Polling Payload | < 50 KB | HTML fragments only, minified |
-| Chart Data Fetch | < 500 ms | Continuous aggregates, < 2000 points |
-| Template Rendering | < 100 ms | `{% cache %}` for static elements |
+The rig detail page has three tabs:
 
----
+1. **Live Metrics** — cards with CPU%, memory bar, GPU model/temp/util/power/vRAM, Docker container count, storage disks, recent errors
+2. **Historical Charts** — 7 individual Chart.js line charts (GPU temp, GPU util, GPU VRAM, GPU power, CPU util, CPU temp, memory usage) with a ↻ Refresh button in the tab header
+3. **Errors** — recent system errors from journalctl/Windows Event Log
 
-## 6. Data Model & Schema Versioning
+### 5.5 Data Deduplication
 
-### 6.1 Five-Layer Data Architecture
+Storage metrics are deduplicated by device: the view queries the latest `StorageMetric` per unique `device` path, preventing duplicate entries when the agent reports the same disk multiple times within the window.
 
-| Layer | Storage | Purpose |
-|---|---|---|
-| Layer 1 | PostgreSQL relational | Users, API keys, rigs, tags, audit events |
-| Layer 2 | PostgreSQL denormalized | `metrics_latest_snapshot` — current state per rig |
-| Layer 3 | TimescaleDB hypertable | `metrics_timeseries` — historical time-series |
-| Layer 4 | PostgreSQL | `metrics_latest_errors` — deduplicated errors |
-| Layer 5 | PostgreSQL partitioned | `audit_event` — immutable activity log |
-
-### 6.2 Key Table DDLs
-
-#### `accounts_apikey`
-```sql
-CREATE TABLE accounts_apikey (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id     UUID NOT NULL REFERENCES accounts_user(id) ON DELETE CASCADE,
-    name        VARCHAR(64) NOT NULL,
-    prefix      VARCHAR(8) NOT NULL UNIQUE,
-    key_hash    VARCHAR(255) NOT NULL,
-    is_active   BOOLEAN DEFAULT TRUE,
-    created_at  TIMESTAMPTZ DEFAULT NOW(),
-    last_used_at TIMESTAMPTZ NULL,
-    CONSTRAINT unique_name_per_user UNIQUE (user_id, name)
-);
-CREATE INDEX idx_apikey_prefix ON accounts_apikey(prefix);
-```
-
-#### `rigs_rig`
-```sql
-CREATE TABLE rigs_rig (
-    uuid                UUID PRIMARY KEY,
-    owner_id            UUID NOT NULL REFERENCES accounts_user(id) ON DELETE RESTRICT,
-    name                VARCHAR(128) NOT NULL DEFAULT 'Unnamed Rig',
-    expected_gpu_count  INTEGER DEFAULT 0,
-    status              VARCHAR(16) DEFAULT 'offline',
-    last_seen           TIMESTAMPTZ NULL,
-    last_agent_version  VARCHAR(32) NULL,
-    enrolled_at         TIMESTAMPTZ DEFAULT NOW(),
-    CONSTRAINT chk_status CHECK (status IN ('online', 'stale', 'offline'))
-);
-CREATE INDEX idx_rig_owner ON rigs_rig(owner_id);
-CREATE INDEX idx_rig_status ON rigs_rig(status);
-```
-
-#### `metrics_latest_snapshot` (Denormalized Current State)
-```sql
-CREATE TABLE metrics_latest_snapshot (
-    rig_uuid            UUID PRIMARY KEY REFERENCES rigs_rig(uuid) ON DELETE CASCADE,
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    cpu_util            NUMERIC(5,2),
-    cpu_temp            NUMERIC(5,2),
-    mem_used_bytes      BIGINT,
-    mem_total_bytes     BIGINT,
-    gpu_util_max        NUMERIC(5,2),
-    gpu_temp_max        NUMERIC(5,2),
-    inventory_json      JSONB NOT NULL,
-    software_json       JSONB NOT NULL,
-    docker_json         JSONB NOT NULL,
-    ai_processes_json   JSONB NOT NULL
-);
-```
-
-#### `metrics_timeseries` (TimescaleDB Hypertable)
-```sql
-CREATE TABLE metrics_timeseries (
-    time                TIMESTAMPTZ NOT NULL,
-    rig_uuid            UUID NOT NULL REFERENCES rigs_rig(uuid) ON DELETE CASCADE,
-    cpu_util            NUMERIC(5,2),
-    cpu_temp            NUMERIC(5,2),
-    mem_used_bytes      BIGINT,
-    gpu_utils           NUMERIC(5,2)[],
-    gpu_temps           NUMERIC(5,2)[],
-    gpu_power_draws     NUMERIC(5,2)[],
-    disk_usage_max      NUMERIC(5,2)
-);
-SELECT create_hypertable('metrics_timeseries', 'time',
-    chunk_time_interval => INTERVAL '1 day');
-CREATE INDEX idx_timeseries_rig_time ON metrics_timeseries (rig_uuid, time DESC);
-```
-
-#### `metrics_latest_errors`
-```sql
-CREATE TABLE metrics_latest_errors (
-    id              BIGSERIAL PRIMARY KEY,
-    rig_uuid        UUID NOT NULL,
-    source          VARCHAR(32) NOT NULL,
-    message         TEXT NOT NULL,
-    first_seen      TIMESTAMPTZ NOT NULL,
-    last_seen       TIMESTAMPTZ NOT NULL,
-    occurrence_count INTEGER DEFAULT 1,
-    CONSTRAINT unique_rig_source UNIQUE (rig_uuid, source, message)
-);
-```
-
-#### `audit_event`
-```sql
-CREATE TABLE audit_event (
-    id          BIGSERIAL PRIMARY KEY,
-    timestamp   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    actor_id    UUID REFERENCES accounts_user(id) ON DELETE SET NULL,
-    action      VARCHAR(64) NOT NULL,
-    target_type VARCHAR(32) NOT NULL,
-    target_id   UUID NOT NULL,
-    ip_address  INET,
-    metadata    JSONB
-) PARTITION BY RANGE (timestamp);
-```
-
-### 6.3 Continuous Aggregates
-
-**Hourly (retained 90 days):**
-```sql
-CREATE MATERIALIZED VIEW metrics_hourly_agg
-WITH (timescaledb.continuous) AS
-SELECT
-    time_bucket('1 hour', time) AS bucket,
-    rig_uuid,
-    AVG(cpu_util) AS avg_cpu_util,
-    MAX(cpu_temp) AS max_cpu_temp,
-    AVG(gpu_utils[1]) AS avg_gpu_util_0
-FROM metrics_timeseries
-GROUP BY bucket, rig_uuid;
-SELECT add_continuous_aggregate_policy('metrics_hourly_agg',
-    start_offset => INTERVAL '3 hours',
-    end_offset => INTERVAL '1 hour',
-    schedule_interval => INTERVAL '1 hour');
-SELECT add_retention_policy('metrics_hourly_agg', INTERVAL '90 days');
-```
-
-**Daily (retained 1 year):** Similar structure with 1-day bucket.
-
-**Raw data retention:** 14 days via `add_retention_policy`.
-
-### 6.4 Schema Versioning Rules
-
-| Change Type | Version Bump |
-|---|---|
-| Add optional field | None |
-| Rename field | Major (2.0) |
-| Change data type | Major (2.0) |
-
-**Server-side routing:** `SERIALIZER_MAP = {"1.0": V1Serializer, "1.1": V1_1Serializer}`
+Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the agent misses a heartbeat.
 
 ---
 
-## 7. Security Architecture
+## 6. Data Model Reference
 
-### 7.1 STRIDE Threat Model
+### 6.1 Table Summary
 
-| Threat | Attack Vector | Mitigation | Enforcement Layer |
-|---|---|---|---|
-| Spoofing | Fake metrics for victim's rig_uuid | UUID permanently bound to first API key owner | DRF `IsRigOwner` |
-| Tampering | MITM alters payload | TLS 1.3, HSTS | Nginx / Let's Encrypt |
-| Repudiation | Admin denies rig reassignment | Immutable audit ledger | DB triggers |
-| Information Disclosure | Backup theft → plaintext keys | Argon2id hashing | Django `make_password()` |
-| DoS | Flood /api/v1/ingest/ | Nginx + DRF throttling | Multi-layer |
-| Privilege Escalation | IDOR to view other users' rigs | QuerySet filtering by `request.user` | Django ORM |
+| Table | App | Purpose |
+|-------|-----|---------|
+| `accounts_user` | accounts | Custom user model (email-based) |
+| `accounts_apikey` | accounts | API keys for agent ingestion (Argon2id hashed) |
+| `rigs_rig` | rigs | Rig inventory (uuid PK, owner FK, status, last_seen, name) |
+| `rigs_rigtag` | rigs | Tags (name, color) |
+| `rigs_rig_tags` | rigs | M2M through table |
+| `metrics_metricsnapshot` | metrics_app | Per-heartbeat metrics (cpu, memory fields inline) |
+| `metrics_gpumetric` | metrics_app | Per-GPU metrics (temp, util, mem, power; FK to snapshot) |
+| `metrics_storagemetric` | metrics_app | Per-disk metrics (usage, smart temp) |
+| `metrics_networkmetric` | metrics_app | Per-interface metrics (rx/tx bytes, speed) |
+| `metrics_dockercontainermetric` | metrics_app | Per-container metrics (name, status, restarts) |
+| `metrics_latestsnapshot` | metrics_app | Current state per rig (upserted on every heartbeat) |
+| `metrics_errorevent` | metrics_app | Deduplicated errors (hash-based dedup, count, last_seen) |
+| `audit_auditlog` | audit | Immutable audit trail |
 
-### 7.2 API Key Lifecycle
+### 6.2 Key Constraints
 
-- **Generation:** `secrets.token_urlsafe(48)`, prefix stored in plaintext, full key hashed with Argon2id
-- **Validation:** Constant-time `check_password()`, timing attack mitigation with dummy hash on miss
-- **Revocation:** `is_active = False` takes effect immediately (no caching)
+| Table | Constraint |
+|-------|------------|
+| `metrics_gpumetric` | `UNIQUE(rig_uuid, timestamp, gpu_index)` |
+| `metrics_storagemetric` | `UNIQUE(rig_uuid, timestamp, device)` |
+| `metrics_networkmetric` | `UNIQUE(rig_uuid, timestamp, interface)` |
+| `metrics_dockercontainermetric` | `UNIQUE(rig_uuid, timestamp, name)` |
+| `metrics_metricsnapshot` | `UNIQUE(rig_uuid, schema_version, timestamp)` |
 
-### 7.3 Transport Security
+### 6.3 Metric Field Name Mapping
 
-| Setting | Value |
-|---|---|
-| Protocol | TLS 1.3 only |
-| HSTS | `max-age=63072000; includeSubDomains; preload` |
-| Certificate | Let's Encrypt, auto-renew via systemd timer |
-| Headers | `X-Frame-Options: DENY`, CSP, `X-Content-Type-Options: nosniff` |
+The `ChartDataView` uses a name-mapping dict because chart-facing metric names differ from model field names:
 
-### 7.4 Rate Limiting
-
-| Layer | Algorithm | Threshold |
-|---|---|---|
-| Nginx | Fixed Window | 10 req/s per IP |
-| DRF | Scoped Sliding Window | 2/min per API key |
-
-### 7.5 Secret Management
-
-- All secrets via environment variables (`.env` file, mode 600)
-- No hardcoded secrets in `settings.py`
-- Django uses `PASSWORD_HASHERS` with `Argon2PasswordHasher` first
-- DB role with least privilege, `pg_hba.conf` restricted to `127.0.0.1/32`
+| Chart Metric (URL param) | GPUMetric Model Field |
+|--------------------------|----------------------|
+| `gpu_temp_c` | `gpu_temp_c` |
+| `gpu_util_pct` | `gpu_util_pct` |
+| `gpu_mem_used_mb` | `mem_used_mb` |
+| `gpu_mem_total_mb` | `mem_total_mb` |
+| `gpu_power_w` | `power_draw_w` |
+| `gpu_power_limit_w` | `power_limit_w` |
+| `gpu_fan_pct` | `fan_speed_pct` |
 
 ---
 
-## 8. Operational Architecture
+## 7. Security Trust Boundaries
 
-### 8.1 Directory Structure
+| Zone | Components | Enforcement |
+|------|-----------|-------------|
+| Z1: Fleet (untrusted) | Agents, internet | HTTP (local) or HTTPS, API key auth |
+| Z2: Edge | Nginx | Rate limiting, payload size caps |
+| Z3: Application | Django, Gunicorn | Session auth, CSRF, ownership checks |
+| Z4: Data | PostgreSQL | localhost-only, least-privilege DB user |
 
+**CSRF exemption:** `IngestView` uses `@csrf_exempt` because it authenticates via API key (not session cookie). The agent has no CSRF token.
+
+**Cookie settings for local testing:**
 ```
-/opt/gpu_monitor/          # Django project root (owned by monitoring:monitoring)
-├── venv/                  # Python virtual environment
-├── gpu_monitor/           # Django settings, urls, wsgi
-├── accounts/              # Users, API keys, auth
-├── rigs/                  # Rig inventory
-├── metrics_app/           # Ingestion, time-series
-├── dashboard/             # HTMX views
-├── audit/                 # Audit logging
-├── templates/             # HTML templates
-├── deploy/                # Nginx config, systemd units, install scripts
-├── logs/                  # Application logs
-└── .env                   # Environment variables (0600)
-```
-
-### 8.2 Gunicorn Systemd Unit
-
-```ini
-[Unit]
-Description=GPU Rig Monitor - Gunicorn
-After=network.target postgresql.service
-
-[Service]
-Type=notify
-User=monitoring
-Group=monitoring
-WorkingDirectory=/opt/gpu_monitor
-EnvironmentFile=/opt/gpu_monitor/.env
-ExecStart=/opt/gpu_monitor/venv/bin/gunicorn \
-    gpu_monitor.wsgi:application \
-    --bind 127.0.0.1:8000 \
-    --workers 4 --timeout 30
-ExecReload=/bin/kill -s HUP $MAINPID
-Restart=on-failure
-
-[Install]
-WantedBy=multi-user.target
+SESSION_COOKIE_SECURE = False    # HTTP without TLS
+CSRF_COOKIE_SECURE = False
+SESSION_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SAMESITE = 'Lax'
+ALLOWED_HOSTS = '*'              # Accept any host (local testing only)
+CSRF_TRUSTED_ORIGINS = ['http://*', 'https://*']
 ```
 
-### 8.3 Backup Strategy
+---
 
-**Daily pg_dump + rclone to offsite storage:**
+## 8. Operational Runbook
+
+### 8.1 Deployment Procedure
 
 ```bash
-#!/bin/bash
-pg_dump -U postgres -Fc gpu_monitor > /var/backups/postgres/gpu_monitor_$(date +%Y%m%d).dump
-gzip /var/backups/postgres/gpu_monitor_*.dump
-rclone copy /var/backups/postgres/ b2:gpu-monitor-backups/db/
-find /var/backups/postgres -name "*.dump.gz" -mtime +7 -delete
+# Sync code from workspace to /opt
+cd /home/qrv/workspace/GPU-Rig-Monitoring-Platform
+bash scripts/sync_to_opt.sh
+# This: copies files, runs migrations, restarts Gunicorn
 ```
 
-**Monthly automated restore test:** Spins up temporary VPS, restores backup, validates with `python manage.py check --deploy`.
+### 8.2 Log Locations
 
-### 8.4 Meta-Monitoring
+| Log | Path | Format |
+|-----|------|--------|
+| Gunicorn errors | `/opt/gpu_monitor/logs/gunicorn-error.log` | stdout |
+| Gunicorn access | `/opt/gpu_monitor/logs/gunicorn-access.log` | HTTP access |
+| Django app | `/opt/gpu_monitor/logs/app.log` | Structured JSON |
+| Agent (Linux) | `/var/log/monitoring-agent/agent.log` | Structured JSON |
+| Agent cron | `/var/log/monitoring-agent/cron.log` | stdout |
 
-| Probe | Tool | Frequency | Alert Threshold |
-|---|---|---|---|
-| HTTPS & TLS Cert | UptimeRobot | 60s | HTTP != 200, cert < 14 days |
-| Health Endpoint | UptimeRobot JSON parser | 60s | `status != "healthy"` |
-| Host Resources | Netdata / HetrixTools | 60s | CPU > 90%, Disk > 85% |
+### 8.3 Manual Operations
 
-### 8.5 Logging Strategy
-
-- **Format:** Structured JSON (python-json-logger)
-- **Correlation IDs:** UUID per request, propagated to all logs
-- **Rotation:** `logrotate` daily, compress, retain 14 days
-
-### 8.6 Upgrade Procedures
-
-**Server (Zero-Downtime):**
 ```bash
-cd /opt/gpu_monitor
-git pull origin main
-./venv/bin/pip install -r requirements.txt
-./venv/bin/python manage.py migrate --noinput
-./venv/bin/python manage.py collectstatic --noinput
-systemctl reload gunicorn
+# Restart Gunicorn
+sudo systemctl restart gunicorn
+
+# Restart cron (needed after creating new cron jobs)
+sudo systemctl restart cron
+
+# Test agent
+sudo -u monitoring-agent /opt/monitoring-agent/venv/bin/python /opt/monitoring-agent/run.py
+
+# Update rig status manually
+cd /opt/gpu_monitor && source venv/bin/activate && set -a && source .env && set +a && python manage.py update_rig_status
+
+# View HTMX polling
+curl -s http://localhost/api/v1/health | python3 -m json.tool
+
+# Database console
+sudo -u postgres psql gpu_monitor
 ```
 
-**Migration Safety Rules:**
-1. No `RenameField` or `DeleteModel` in a single deploy
-2. Additive-only evolution: add new field → dual-write → backfill → read from new → drop old
-3. TimescaleDB: never change column types, add new columns instead
+### 8.4 Sync Script (`scripts/sync_to_opt.sh`)
+
+The sync script handles the full deploy cycle:
+1. Copies all Django source code, templates, migrations, agents, scripts from workspace to `/opt`
+2. Runs `python manage.py makemigrations --check` in `/opt` to detect model changes
+3. Runs `python manage.py migrate` to apply any new migrations
+4. Runs `python manage.py collectstatic`
+5. Restarts Gunicorn
+
+Files **never** overwritten: `.env`, `venv/`, `logs/`, `staticfiles/`, `config.yaml`, cron jobs, PostgreSQL database.
 
 ---
 
-## 9. Performance & Scaling Analysis
+## 9. Design Decisions & Rationale
 
-### 9.1 Payload Size Budget
+### 9.1 Why HTMX `innerHTML` instead of `outerHTML`?
 
-| Section | Uncompressed | Compressed (gzip) |
-|---|---|---|
-| Headers & Envelope | ~200 B | ~150 B |
-| Inventory | ~2.5 KB | ~600 B |
-| Metrics | ~1.5 KB | ~400 B |
-| Software & Docker | ~1.5 KB | ~450 B |
-| Errors | ~1.0 KB | ~300 B |
-| **Total** | **~6.7 KB** | **~1.9 KB** |
+**Problem discovered:** Using `outerHTML` swap on a div with `hx-*` attributes destroys the wrapper on the first swap. The server returns only the inner content (e.g., `_rig_table.html` starts with `<div class="bg-gray-800...">`, not `<div id="rig-table-container" hx-get="...">`). After swap, the element no longer has `hx-*` attributes and polling stops permanently.
 
-### 9.2 Network & Write Throughput
+**Solution:** Use `innerHTML` which replaces only the contents, preserving the wrapper div.
 
-| Metric | Value |
-|---|---|
-| Average RPS | 1,000 rigs / 60s = **16.67 RPS** |
-| Peak RPS (3x burst) | **~50 RPS** |
-| Peak Bandwidth | 50 × 1.9 KB = **95 KB/s (0.76 Mbps)** |
-| Peak DB Writes | 50 × 8 = **400 writes/sec** |
-| PostgreSQL Capacity (NVMe) | **2,000–5,000+ writes/sec** |
-| Safety Margin | **~10–20%** of peak |
+### 9.2 Why Historical Charts Don't Poll Automatically?
 
-### 9.3 Resource Sizing
+Each chart fetches up to 2000 rows from the database. With 7 charts × N tabs open, polling every 30 seconds would add significant load for minimal value (historical data only changes at the latest data point). The ↻ button gives the user control.
 
-| Resource | Specification | Justification |
-|---|---|---|
-| CPU | 4 vCPUs | Gunicorn: (2×4)+1 = 9 workers. Handles 50 RPS + background tasks. |
-| RAM | 16 GB | PG/TimescaleDB: 4–6 GB. Gunicorn: ~1.3 GB. OS/Nginx: ~1.5 GB. Headroom: ~7 GB. |
-| Storage | 250 GB NVMe | Data: ~5 GB/day. 14-day retention: ~70 GB. Backups/Logs: ~50 GB. **NVMe mandatory.** |
-| Network | 1 Gbps | Peak < 1 Mbps. |
+### 9.3 Why Rig Name Is Set Only Once?
 
-### 9.4 Horizontal Scaling Path (Future)
+Two sources of truth conflict: agent's `config.yaml` vs dashboard database.Setting the name on every heartbeat would overwrite dashboard renames. Solution: agent's `rig_name` is used only during initial rig creation. Subsequent renames use the dashboard-only `rig_rename` POST endpoint.
 
-| Phase | Fleet Size | Change |
-|---|---|---|
-| 1,000–2,500 | Read Replica | Route dashboard queries to replica |
-| 2,500–5,000 | Ingestion Queue | Redis Streams / RabbitMQ + Celery workers |
-| 5,000+ | Edge Proxies + Sharding | Go/Rust edge proxies, TimescaleDB sharding |
+### 9.4 Why Deduplicate Storage Metrics?
 
----
+Without deduplication, a single heartbeat creates N records per disk (one per poll window), causing N duplicate rows to appear in the dashboard "Storage" card. The view deduplicates by taking only the latest record per unique `device` path.
 
-## 10. Testing Strategy
+### 9.5 Why 1-Hour Window for HTMX Metrics?
 
-### 10.1 Unit Tests
+A 5-minute window was too narrow — if the agent misses one heartbeat (common in VMs under load), the metrics show "No data". A 1-hour window provides tolerance while still returning recent data.
 
-#### Agent (pytest + mock)
+### 9.6 Why `flex flex-col items-end` for Status Clock?
 
-| Scenario | Assertion |
-|---|---|
-| Happy path | Payload matches JSON Schema v1.0 |
-| GPU driver missing | `gpus: []`, payload still sent |
-| SMART failure | `smart_health: null`, agent doesn't abort |
-| Network timeout | Exponential backoff verified |
-| Hard timeout | `signal.alarm(45)` triggers `TimeoutError` |
+The rig detail header uses `flex justify-between` with two children (rig name left, status right). Adding a third child (clock) would center it between them. Wrapping the clock above the status badge in a single `flex flex-col items-end` container makes the header have only two flex children again, with the clock positioned above the badge, right-aligned.
 
-#### Server (pytest-django)
+### 9.7 Why `pythonw.exe` for Windows Agent?
 
-| Scenario | Assertion |
-|---|---|
-| Serializer validation | Rejects missing `rig_uuid`, accepts unknown extra fields |
-| Ownership enforcement | User B's rig → 404 for User A |
-| Offline detection | `last_seen > 10 min` → `status = "offline"` |
-| API key hashing | Argon2id hash stored, plaintext never in DB |
-
-### 10.2 Integration Tests
-
-**Idempotency Proof:**
-```python
-def test_duplicate_payload(api_client, payload):
-    r1 = api_client.post('/api/v1/ingest/', payload)
-    assert r1.status_code == 200
-    assert MetricSnapshot.objects.count() == 1
-    
-    r2 = api_client.post('/api/v1/ingest/', payload)
-    assert r2.status_code == 202  # Duplicate
-    assert MetricSnapshot.objects.count() == 1  # Unchanged
-```
-
-**TimescaleDB:** Migration tests, chunk exclusion via `EXPLAIN ANALYZE`, error deduplication (5 identical errors → 1 row, `count=5`).
-
-### 10.3 E2E Tests (Playwright)
-
-1. Log in, generate API key → key visible once in DOM
-2. Agent thread sends 3 payloads over 3 minutes
-3. Navigate to /dashboard/ → rig appears with 🟢 Online
-4. Click rig, switch to charts tab → Chart.js rendered with data
-5. Kill agent, wait for stale threshold → badge updates to 🟡 Stale
-
-### 10.4 Load Testing (Locust)
-
-```python
-class RigAgent(HttpUser):
-    wait_time = between(55, 65)  # Cron jitter around 60s
-    
-    @task
-    def send_telemetry(self):
-        self.client.post("/api/v1/ingest/", data=payload,
-                        headers={"X-API-Key": self.api_key})
-```
-
-**Pass Criteria:** p95 latency < 200 ms, error rate < 0.1%, VPS CPU < 85%.
-
-### 10.5 Contract Testing
-
-Golden payload repository (`tests/contracts/payloads/`): `v1.0_minimal.json`, `v1.0_full.json`, `v1.1_with_ai_metrics.json`. Every PR must pass all historical schema versions.
-
----
-
-## 11. Appendices
-
-### Appendix A: Glossary & Acronyms
-
-| Term | Definition |
-|---|---|
-| HDA | Hypermedia-Driven Application. UI pattern where server-rendered HTML fragments drive state changes via HTMX. |
-| Hypertable | TimescaleDB abstraction that automatically partitions time-series data into chunks based on time intervals. |
-| Continuous Aggregate | TimescaleDB materialized view that incrementally computes aggregations as new data arrives. |
-| Idempotency | Property where repeating the same request yields the same system state without side effects. |
-| RBAC | Role-Based Access Control. Restricts dashboard/data access to Owner, Admin, or Viewer roles. |
-| STRIDE | Threat modeling framework: Spoofing, Tampering, Repudiation, Information Disclosure, DoS, Elevation of Privilege. |
-| Schema Versioning | Protocol where `schema_version` in payloads allows the server to route validation logic. |
-| Morphdom | HTMX extension that performs DOM diffing during swaps, preserving scroll position and input focus. |
-| UFC | Ubuntu Firewall. |
-| DRF | Django REST Framework. |
-| pynvml | Python bindings for NVIDIA Management Library (NVML). |
-| cron | Time-based job scheduler on Unix-like systems. |
-| systemd | System and service manager for Linux. |
-
----
-
-*End of document.*
+`pythonw.exe` runs Python without a visible terminal window, preventing a console window from appearing every 60 seconds. The `create_windows_task()` function tries `pythonw.exe` first and falls back to `python.exe` if not found.

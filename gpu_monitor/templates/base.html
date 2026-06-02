@@ -32,5 +32,22 @@
     <main class="p-6">
         {% block content %}{% endblock %}
     </main>
+
+    <script>
+    // HTMX refresh clocks — updates elements with id "<target>-clock" after every swap.
+    // Works on any page: harmless when no clock element exists.
+    document.body.addEventListener('htmx:afterSwap', function(evt) {
+        var targetId = evt.detail && evt.detail.target && evt.detail.target.id;
+        if (!targetId) return;
+        var clock = document.getElementById(targetId + '-clock');
+        if (clock) {
+            var d = new Date();
+            clock.textContent = 'Refreshed @ ' +
+                String(d.getHours()).padStart(2,'0') + ':' +
+                String(d.getMinutes()).padStart(2,'0') + ':' +
+                String(d.getSeconds()).padStart(2,'0');
+        }
+    });
+    </script>
 </body>
 </html>

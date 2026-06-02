@@ -194,22 +194,6 @@ document.body.addEventListener('htmx:afterSettle', function(evt) {
     }
 });
 
-// ── HTMX refresh clocks ────────────────────────────────────────────
-// Updates <id>-clock spans after every HTMX swap so the operator can
-// see at a glance when each section was last refreshed.
-document.body.addEventListener('htmx:afterSwap', function(evt) {
-    var targetId = evt.detail && evt.detail.target && evt.detail.target.id;
-    if (!targetId) return;
-    var clock = document.getElementById(targetId + '-clock');
-    if (clock) {
-        var d = new Date();
-        var hh = String(d.getHours()).padStart(2, '0');
-        var mm = String(d.getMinutes()).padStart(2, '0');
-        var ss = String(d.getSeconds()).padStart(2, '0');
-        clock.textContent = 'Refreshed @ ' + hh + ':' + mm + ':' + ss;
-    }
-});
-
 // Chart instances
 var chartInstances = {};
 

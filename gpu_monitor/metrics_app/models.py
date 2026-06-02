@@ -3,7 +3,7 @@ from django.conf import settings
 
 
 class MetricSnapshot(models.Model):
-    """Time-series metric data stored in TimescaleDB hypertable."""
+    """Time-series metric data — one row per rig per minute."""
     id = models.BigAutoField(primary_key=True)
     rig_uuid = models.UUIDField(db_index=True)
     schema_version = models.CharField(max_length=10, default='1.0')
@@ -22,33 +22,103 @@ class MetricSnapshot(models.Model):
     mem_used_bytes = models.BigIntegerField(null=True)
     mem_cached_bytes = models.BigIntegerField(null=True)
 
-    # Storage JSON (array of disk info)
-    storage_json = models.JSONField(default=list, blank=True)
-
-    # Network JSON (array of interface info)
-    network_json = models.JSONField(default=list, blank=True)
-
-    # GPU metrics JSON (array of GPU info)
-    gpu_metrics_json = models.JSONField(default=list, blank=True)
-
-    # AI process info
-    ai_processes_json = models.JSONField(default=list, blank=True)
-
-    # Docker containers
-    docker_containers_json = models.JSONField(default=list, blank=True)
-
-    # Software info
-    software_json = models.JSONField(default=dict, blank=True)
-
-    # Errors
-    errors_json = models.JSONField(default=list, blank=True)
-
     # Full inventory snapshot (static info, updated less frequently)
     inventory_json = models.JSONField(default=dict, blank=True)
+    software_json = models.JSONField(default=dict, blank=True)
 
     class Meta:
         db_table = 'metrics_metricsnapshot'
         unique_together = ('rig_uuid', 'schema_version', 'timestamp')
+        indexes = [
+            models.Index(fields=['rig_uuid', '-timestamp']),
+        ]
+
+
+class GPUMetric(models.Model):
+    """Per-GPU time-series metrics — one row per GPU per snapshot."""
+    id = models.BigAutoField(primary_key=True)
+    snapshot = models.ForeignKey(MetricSnapshot, on_delete=models.CASCADE, related_name='gpu_metrics')
+    rig_uuid = models.UUIDField(db_index=True)
+    timestamp = models.DateTimeField(db_index=True)
+    gpu_index = models.PositiveSmallIntegerField(default=0)
+
+    gpu_uuid = models.CharField(max_length=64, blank=True, default='')
+    model = models.CharField(max_length=255, blank=True, default='')
+    gpu_util_pct = models.FloatField(null=True)
+    gpu_temp_c = models.FloatField(null=True)
+    fan_speed_pct = models.FloatField(null=True)
+    mem_total_mb = models.PositiveIntegerField(null=True)
+    mem_used_mb = models.PositiveIntegerField(null=True)
+    mem_util_pct = models.FloatField(null=True)
+    power_draw_w = models.FloatField(null=True)
+    power_limit_w = models.FloatField(null=True)
+
+    class Meta:
+        db_table = 'metrics_gpumetric'
+        unique_together = ('rig_uuid', 'timestamp', 'gpu_index')
+        indexes = [
+            models.Index(fields=['rig_uuid', '-timestamp']),
+        ]
+
+
+class StorageMetric(models.Model):
+    """Per-disk time-series metrics — one row per disk per snapshot."""
+    id = models.BigAutoField(primary_key=True)
+    snapshot = models.ForeignKey(MetricSnapshot, on_delete=models.CASCADE, related_name='storage_metrics')
+    rig_uuid = models.UUIDField(db_index=True)
+    timestamp = models.DateTimeField(db_index=True)
+    device = models.CharField(max_length=255, blank=True, default='')
+    mountpoint = models.CharField(max_length=512, blank=True, default='')
+    fstype = models.CharField(max_length=32, blank=True, default='')
+    capacity_bytes = models.BigIntegerField(null=True)
+    usage_pct = models.FloatField(null=True)
+    temp_c = models.FloatField(null=True)
+    smart_health = models.CharField(max_length=16, blank=True, default='')
+
+    class Meta:
+        db_table = 'metrics_storagemetric'
+        unique_together = ('rig_uuid', 'timestamp', 'device')
+        indexes = [
+            models.Index(fields=['rig_uuid', '-timestamp']),
+        ]
+
+
+class NetworkMetric(models.Model):
+    """Per-interface time-series metrics — one row per interface per snapshot."""
+    id = models.BigAutoField(primary_key=True)
+    snapshot = models.ForeignKey(MetricSnapshot, on_delete=models.CASCADE, related_name='network_metrics')
+    rig_uuid = models.UUIDField(db_index=True)
+    timestamp = models.DateTimeField(db_index=True)
+    interface = models.CharField(max_length=64, blank=True, default='')
+    ipv4 = models.CharField(max_length=15, blank=True, default='')
+    link_speed_mbps = models.PositiveIntegerField(null=True)
+    rx_bytes = models.BigIntegerField(null=True)
+    tx_bytes = models.BigIntegerField(null=True)
+    rx_errors = models.PositiveIntegerField(null=True)
+    tx_errors = models.PositiveIntegerField(null=True)
+
+    class Meta:
+        db_table = 'metrics_networkmetric'
+        unique_together = ('rig_uuid', 'timestamp', 'interface')
+        indexes = [
+            models.Index(fields=['rig_uuid', '-timestamp']),
+        ]
+
+
+class DockerContainerMetric(models.Model):
+    """Per-container time-series metrics — one row per container per snapshot."""
+    id = models.BigAutoField(primary_key=True)
+    snapshot = models.ForeignKey(MetricSnapshot, on_delete=models.CASCADE, related_name='docker_metrics')
+    rig_uuid = models.UUIDField(db_index=True)
+    timestamp = models.DateTimeField(db_index=True)
+    name = models.CharField(max_length=255, blank=True, default='')
+    image = models.CharField(max_length=255, blank=True, default='')
+    status = models.CharField(max_length=32, blank=True, default='')
+    restart_count = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        db_table = 'metrics_dockercontainermetric'
+        unique_together = ('rig_uuid', 'timestamp', 'name')
         indexes = [
             models.Index(fields=['rig_uuid', '-timestamp']),
         ]
@@ -63,12 +133,6 @@ class LatestSnapshot(models.Model):
     cpu_temp_c = models.FloatField(null=True)
     mem_used_bytes = models.BigIntegerField(null=True)
     mem_total_bytes = models.BigIntegerField(null=True)
-    gpu_metrics_json = models.JSONField(default=list, blank=True)
-    storage_json = models.JSONField(default=list, blank=True)
-    network_json = models.JSONField(default=list, blank=True)
-    docker_containers_json = models.JSONField(default=list, blank=True)
-    software_json = models.JSONField(default=dict, blank=True)
-    errors_json = models.JSONField(default=list, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

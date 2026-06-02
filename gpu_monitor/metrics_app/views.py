@@ -140,8 +140,23 @@ class RigMetricsView(APIView):
 
 
 class ChartDataView(APIView):
-    """GET /api/v1/rigs/<uuid>/chart-data/ — Historical chart data."""
+    """GET /api/v1/rigs/<uuid>/chart-data/ — Historical chart data.
+
+    Query parameters:
+        metric: Field name to chart. Supported values:
+            - cpu_utilization_pct, cpu_temp_c, mem_used_bytes (from MetricSnapshot)
+            - gpu_temp_c, gpu_util_pct, gpu_mem_used_mb, gpu_power_w (from GPUMetric, gpu_index=0)
+            - disk_usage_pct (from StorageMetric, first disk)
+        range: Hours of historical data (default: 24)
+    """
     authentication_classes = [SessionAuthentication]
+
+    # Metrics stored directly on MetricSnapshot
+    SNAPSHOT_METRICS = {'cpu_utilization_pct', 'cpu_temp_c', 'mem_used_bytes', 'mem_total_bytes'}
+    # Metrics stored on GPUMetric (per-GPU)
+    GPU_METRICS = {'gpu_temp_c', 'gpu_util_pct', 'gpu_mem_used_mb', 'gpu_power_w'}
+    # Metrics stored on StorageMetric
+    STORAGE_METRICS = {'disk_usage_pct'}
 
     def get(self, request, uuid):
         user = request.user
@@ -151,20 +166,45 @@ class ChartDataView(APIView):
 
         metric = request.query_params.get('metric', 'cpu_utilization_pct')
         range_hours = int(request.query_params.get('range', '24'))
+        gpu_index = int(request.query_params.get('gpu_index', 0))
 
         since = timezone.now() - timedelta(hours=range_hours)
 
-        snapshots = MetricSnapshot.objects.filter(
-            rig_uuid=str(uuid),
-            timestamp__gte=since,
-        ).order_by('timestamp')[:2000]
-
         labels = []
         values = []
-        for s in snapshots:
-            labels.append(s.timestamp.isoformat())
-            val = getattr(s, metric, None)
-            values.append(val)
+
+        if metric in self.SNAPSHOT_METRICS:
+            snapshots = MetricSnapshot.objects.filter(
+                rig_uuid=str(uuid),
+                timestamp__gte=since,
+            ).order_by('timestamp')[:2000]
+            for s in snapshots:
+                labels.append(s.timestamp.isoformat())
+                values.append(getattr(s, metric, None))
+
+        elif metric in self.GPU_METRICS:
+            from .models import GPUMetric
+            gpu_data = GPUMetric.objects.filter(
+                rig_uuid=str(uuid),
+                gpu_index=gpu_index,
+                timestamp__gte=since,
+            ).order_by('timestamp')[:2000]
+            for g in gpu_data:
+                labels.append(g.timestamp.isoformat())
+                values.append(getattr(g, metric, None))
+
+        elif metric in self.STORAGE_METRICS:
+            from .models import StorageMetric
+            storage_data = StorageMetric.objects.filter(
+                rig_uuid=str(uuid),
+                timestamp__gte=since,
+            ).order_by('timestamp')[:2000]
+            for s in storage_data:
+                labels.append(s.timestamp.isoformat())
+                values.append(s.usage_pct)
+
+        else:
+            return Response({'status': 'error', 'message': f'Unknown metric: {metric}'}, status=400)
 
         return Response({
             'labels': labels,

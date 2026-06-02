@@ -2,9 +2,9 @@
 {% block title %}{{ rig.name }}{% endblock %}
 {% block content %}
 <div class="max-w-6xl mx-auto">
+    <!-- Rig header -->
     <div class="flex items-center justify-between mb-6">
         <div>
-            <!-- Editable rig name with inline rename -->
             <div id="rig-name-wrapper" class="group">
                 <h1 class="text-2xl font-bold flex items-center gap-2">
                     <span id="rig-name-text">{{ rig.name }}</span>
@@ -15,7 +15,6 @@
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
                     </button>
                 </h1>
-                <!-- Hidden rename form -->
                 <form id="rig-rename-form"
                       hx-post="{% url 'dashboard:rig-rename' rig.uuid %}"
                       hx-target="#rig-name-text"
@@ -47,17 +46,120 @@
         </div>
     </div>
 
-    <!-- Auto-refreshing metrics cards -->
-    <div id="metrics-container"
-         hx-get="{% url 'dashboard:htmx-metrics' rig.uuid %}"
-         hx-trigger="every 30s"
-         hx-target="#metrics-container"
-         hx-swap="outerHTML">
-        {% include "dashboard/_metrics_cards.html" %}
+    <!-- Tab navigation -->
+    <div class="border-b border-gray-700 mb-6">
+        <nav class="flex gap-6">
+            <button onclick="switchTab('metrics')" id="tab-metrics"
+                    class="tab-btn pb-3 px-1 border-b-2 border-blue-400 text-blue-400 font-medium">
+                Live Metrics
+            </button>
+            <button onclick="switchTab('charts')" id="tab-charts"
+                    class="tab-btn pb-3 px-1 border-b-2 border-transparent text-gray-400 hover:text-gray-200">
+                Historical Charts
+            </button>
+            <button onclick="switchTab('errors')" id="tab-errors"
+                    class="tab-btn pb-3 px-1 border-b-2 border-transparent text-gray-400 hover:text-gray-200">
+                Errors
+            </button>
+        </nav>
+    </div>
+
+    <!-- Tab: Live Metrics (auto-refreshing) -->
+    <div id="tab-content-metrics" class="tab-content">
+        <div id="metrics-container"
+             hx-get="{% url 'dashboard:htmx-metrics' rig.uuid %}"
+             hx-trigger="every 30s"
+             hx-target="#metrics-container"
+             hx-swap="outerHTML">
+            {% include "dashboard/_metrics_cards.html" %}
+        </div>
+    </div>
+
+    <!-- Tab: Historical Charts -->
+    <div id="tab-content-charts" class="tab-content hidden">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+            <!-- GPU Temperature Chart -->
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-sm font-medium text-gray-300">GPU Temperature (24h)</h3>
+                    <span class="text-xs text-gray-500">GPU 0</span>
+                </div>
+                <canvas id="gpuTempChart" height="200"></canvas>
+            </div>
+
+            <!-- GPU Utilization Chart -->
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-sm font-medium text-gray-300">GPU Utilization (24h)</h3>
+                    <span class="text-xs text-gray-500">GPU 0</span>
+                </div>
+                <canvas id="gpuUtilChart" height="200"></canvas>
+            </div>
+
+            <!-- CPU Temperature Chart -->
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-sm font-medium text-gray-300">CPU Temperature (24h)</h3>
+                </div>
+                <canvas id="cpuTempChart" height="200"></canvas>
+            </div>
+
+            <!-- Memory Usage Chart -->
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-sm font-medium text-gray-300">Memory Usage (24h)</h3>
+                </div>
+                <canvas id="memChart" height="200"></canvas>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Tab: Errors -->
+    <div id="tab-content-errors" class="tab-content hidden">
+        <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+            <h3 class="text-sm font-medium text-gray-300 mb-4">Recent Errors</h3>
+            <div id="errors-container">
+                {% if snapshot and snapshot.errors_json %}
+                    {% for error in snapshot.errors_json %}
+                    <div class="py-2 border-b border-gray-700/50 last:border-0">
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="text-xs px-2 py-0.5 rounded bg-red-900/50 text-red-300">{{ error.source|default:"unknown" }}</span>
+                            <span class="text-xs text-gray-500">{{ error.timestamp|default:"" }}</span>
+                        </div>
+                        <p class="text-sm text-gray-400 font-mono">{{ error.message|truncatechars:200 }}</p>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <p class="text-gray-500 text-sm">No errors recorded.</p>
+                {% endif %}
+            </div>
+        </div>
     </div>
 </div>
 
 <script>
+// Tab switching
+function switchTab(tabName) {
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+    document.querySelectorAll('.tab-btn').forEach(el => {
+        el.classList.remove('border-blue-400', 'text-blue-400');
+        el.classList.add('border-transparent', 'text-gray-400');
+    });
+    document.getElementById('tab-content-' + tabName).classList.remove('hidden');
+    var btn = document.getElementById('tab-' + tabName);
+    btn.classList.remove('border-transparent', 'text-gray-400');
+    btn.classList.add('border-blue-400', 'text-blue-400');
+
+    // Lazy-load charts when tab is first opened
+    if (tabName === 'charts' && !window.chartsLoaded) {
+        loadCharts();
+        window.chartsLoaded = true;
+    }
+}
+
+// Inline rename form toggle
 function toggleRenameForm() {
     var form = document.getElementById('rig-rename-form');
     var text = document.getElementById('rig-name-text');
@@ -83,5 +185,100 @@ document.body.addEventListener('htmx:afterSettle', function(evt) {
         }
     }
 });
+
+// Chart instances
+var chartInstances = {};
+
+// Load all charts
+async function loadCharts() {
+    var uuid = '{{ rig.uuid }}';
+    var range = 24;
+
+    await Promise.all([
+        loadChart('gpuTempChart', 'gpu_temp_c', uuid, range, '°C', 'rgba(239, 68, 68, 0.8)', 'rgba(239, 68, 68, 0.2)'),
+        loadChart('gpuUtilChart', 'gpu_util_pct', uuid, range, '%', 'rgba(59, 130, 246, 0.8)', 'rgba(59, 130, 246, 0.2)'),
+        loadChart('cpuTempChart', 'cpu_temp_c', uuid, range, '°C', 'rgba(245, 158, 11, 0.8)', 'rgba(245, 158, 11, 0.2)'),
+        loadChart('memChart', 'mem_used_bytes', uuid, range, ' GB', 'rgba(16, 185, 129, 0.8)', 'rgba(16, 185, 129, 0.2)'),
+    ]);
+}
+
+// Load a single chart
+async function loadChart(canvasId, metric, uuid, range, unit, borderColor, bgColor) {
+    var ctx = document.getElementById(canvasId);
+    if (!ctx) return;
+
+    try {
+        var resp = await fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=${metric}&range=${range}`);
+        var data = await resp.json();
+
+        // Convert memory from bytes to GB
+        var values = data.datasets[0].data.map(function(v) {
+            if (v === null) return null;
+            if (metric === 'mem_used_bytes') return (v / (1024 * 1024 * 1024)).toFixed(2);
+            return v;
+        });
+
+        // Destroy existing chart if any
+        if (chartInstances[canvasId]) {
+            chartInstances[canvasId].destroy();
+        }
+
+        chartInstances[canvasId] = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: data.labels.map(function(ts) {
+                    var d = new Date(ts);
+                    return d.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'});
+                }),
+                datasets: [{
+                    label: metric.replace(/_/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); }),
+                    data: values,
+                    borderColor: borderColor,
+                    backgroundColor: bgColor,
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 0,
+                    pointHitRadius: 10,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        callbacks: {
+                            label: function(ctx) {
+                                return ctx.parsed.y + unit;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { color: 'rgba(255,255,255,0.05)' },
+                        ticks: { color: '#9ca3af', maxTicksLimit: 8 }
+                    },
+                    y: {
+                        grid: { color: 'rgba(255,255,255,0.05)' },
+                        ticks: { color: '#9ca3af' },
+                        beginAtZero: true
+                    }
+                },
+                interaction: {
+                    mode: 'nearest',
+                    axis: 'x',
+                    intersect: false
+                }
+            }
+        });
+    } catch (e) {
+        console.error('Failed to load chart ' + metric + ':', e);
+        ctx.parentElement.innerHTML = '<div class="flex items-center justify-center h-48 text-gray-500 text-sm">No data available</div>';
+    }
+}
 </script>
 {% endblock %}

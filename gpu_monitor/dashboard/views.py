@@ -100,18 +100,24 @@ def htmx_metrics(request, uuid):
     if snapshot:
         gpu_metrics = GPUMetric.objects.filter(
             rig_uuid=str(uuid),
-            timestamp__gte=timezone.now() - timedelta(minutes=5),
+            timestamp__gte=timezone.now() - timedelta(hours=1),
             gpu_index=0
         ).order_by('-timestamp')[:1]
 
-        storage_metrics = StorageMetric.objects.filter(
+        # Get latest storage metric per unique device
+        storage_metrics = []
+        seen_devices = set()
+        for s in StorageMetric.objects.filter(
             rig_uuid=str(uuid),
-            timestamp__gte=timezone.now() - timedelta(minutes=5)
-        ).order_by('-timestamp')[:10]
+            timestamp__gte=timezone.now() - timedelta(hours=1)
+        ).order_by('-timestamp'):
+            if s.device not in seen_devices:
+                seen_devices.add(s.device)
+                storage_metrics.append(s)
 
         docker_metrics = DockerContainerMetric.objects.filter(
             rig_uuid=str(uuid),
-            timestamp__gte=timezone.now() - timedelta(minutes=5)
+            timestamp__gte=timezone.now() - timedelta(hours=1)
         ).order_by('-timestamp')[:20]
 
         recent_errors = ErrorEvent.objects.filter(

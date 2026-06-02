@@ -553,6 +553,22 @@ sudo chmod -R 755 /opt/gpu_monitor/templates/dashboard/
 sudo systemctl restart gunicorn
 ```
 
+### 5.6 Set Up Rig Status Monitoring Cron
+
+The platform needs a periodic task to mark rigs as **Stale** (not seen in 2–10 minutes) or **Offline** (not seen in 10+ minutes). Set up a cron job:
+
+```bash
+echo '*/2 * * * * root cd /opt/gpu_monitor && source venv/bin/activate && set -a && source .env && set +a && python manage.py update_rig_status >> /opt/gpu_monitor/logs/rig_status.log 2>&1' | sudo tee /etc/cron.d/rig-status
+```
+
+This runs every 2 minutes. Verify it's working:
+```bash
+cat /etc/cron.d/rig-status
+tail -f /opt/gpu_monitor/logs/rig_status.log
+```
+
+> **Important:** Without this cron job, rigs will always show "Online" even after they stop reporting. The `update_rig_status` management command checks `last_seen` timestamps and updates the status accordingly.
+
 ---
 
 ## 7. Understanding the File Layout

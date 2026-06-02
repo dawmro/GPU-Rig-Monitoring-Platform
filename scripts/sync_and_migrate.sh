@@ -39,6 +39,7 @@ echo "=== Running migrations ==="
 cd "$OPT"
 source venv/bin/activate
 set -a && source .env && set +a
+python manage.py makemigrations
 python manage.py migrate
 
 echo "=== Restarting Gunicorn ==="

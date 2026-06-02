@@ -666,6 +666,13 @@ def print_task_scheduler_instructions():
     script_path = Path(__file__).resolve()
     python_path = sys.executable
 
+    # Use pythonw.exe for hidden window execution
+    pythonw_path = python_path.replace('python.exe', 'pythonw.exe')
+    if not Path(pythonw_path).exists():
+        pythonw_path = python_path.replace('python3.exe', 'pythonw.exe')
+    if not Path(pythonw_path).exists():
+        pythonw_path = python_path
+
     print()
     print("=" * 60)
     print("  Windows Task Scheduler Setup")
@@ -674,13 +681,14 @@ def print_task_scheduler_instructions():
     print("The agent should run every 60 seconds.")
     print("Windows Task Scheduler minimum interval is 1 minute.")
     print("The built-in --install-task flag uses 1-minute intervals.")
+    print("NOTE: Uses pythonw.exe to run without a visible terminal window.")
     print()
     print("Option 1 — Automatic (run as Administrator):")
     print(f'  python "{script_path}" --install-task')
     print()
     print("Option 2 — Using schtasks command (run as Administrator):")
     print(f'  schtasks /create /tn "GPURigMonitorAgent" '
-          f'/tr "\\{python_path}\\" \\"{script_path}\\"" '
+          f'/tr "\\{pythonw_path}\\" \\"{script_path}\\"" '
           f'/sc minute /mo 1 /f')
     print()
     print("Option 3 — Using Task Scheduler GUI:")
@@ -689,8 +697,8 @@ def print_task_scheduler_instructions():
     print("  3. Name: GPURigMonitorAgent")
     print("  4. Trigger: When the computer starts")
     print("  5. Action: Start a program")
-    print(f"  6. Program: {python_path}")
-    print(f'  7. Arguments: "{script_path}"')
+    print(f"  6. Program: {pythonw_path}")
+    print('  7. Arguments: "{script_path}"')
     print("  8. Check 'Run whether user is logged on or not'")
     print("  9. Check 'Run with highest privileges' (for SMART/GPU access)")
     print()
@@ -709,9 +717,16 @@ def create_windows_task():
     script_path = Path(__file__).resolve()
     python_path = sys.executable
 
+    # Use pythonw.exe to run without a visible terminal window
+    pythonw_path = python_path.replace('python.exe', 'pythonw.exe')
+    if not Path(pythonw_path).exists():
+        pythonw_path = python_path.replace('python3.exe', 'pythonw.exe')
+    if not Path(pythonw_path).exists():
+        pythonw_path = python_path  # fallback to python.exe if pythonw.exe not found
+
     # Build schtasks command
     task_name = "GPURigMonitorAgent"
-    arguments = f'"{python_path}" "{script_path}"'
+    arguments = f'"{pythonw_path}" "{script_path}"'
 
     cmd = [
         'schtasks', '/create',
@@ -726,7 +741,7 @@ def create_windows_task():
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         if result.returncode == 0:
             print(f"Task '{task_name}' created successfully.")
-            print("The agent will run every 1 minute.")
+            print("The agent will run every 1 minute (hidden window).")
             print(f"To verify: schtasks /query /tn {task_name}")
             print(f"To remove: schtasks /delete /tn {task_name} /f")
         else:

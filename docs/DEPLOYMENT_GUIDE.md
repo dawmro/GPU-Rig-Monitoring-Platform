@@ -448,15 +448,24 @@ sudo -u monitoring-agent /opt/monitoring-agent/venv/bin/python /opt/monitoring-a
 
 ### 6.1 Rig Status Monitoring Cron
 
-The platform needs a periodic task to mark rigs as **Stale** (not seen in 2–10 minutes) or **Offline** (not seen in 10+ minutes). Set up a cron job:
+The platform needs a periodic task to mark rigs as **Stale** (not seen in 2–10 minutes) or **Offline** (not seen in 10+ minutes). Create the wrapper script and cron job:
 
 ```bash
-echo '*/2 * * * * monitoring /opt/gpu_monitor/venv/bin/python /opt/gpu_monitor/manage.py update_rig_status >> /opt/gpu_monitor/logs/rig_status.log 2>&1' | sudo tee /etc/cron.d/rig-status
+# Copy the wrapper script (from the repo checkout)
+sudo cp scripts/update_rig_status.sh /opt/gpu_monitor/deploy/update_rig_status.sh
+sudo chmod +x /opt/gpu_monitor/deploy/update_rig_status.sh
+
+# Create the cron job
+echo '*/2 * * * * monitoring bash /opt/gpu_monitor/deploy/update_rig_status.sh' | sudo tee /etc/cron.d/rig-status
+
+# Restart cron to pick up the new job
+sudo systemctl restart cron
 ```
 
 This runs every 2 minutes as recommended by the architecture specification.
 
 > **Important:** Without this cron job, rigs will always show "Online" even after they stop reporting.
+> **Note:** The wrapper script uses `bash` explicitly because inline `source` doesn't work in cron's default `/bin/sh` shell. Django reads `.env` via `os.environ.get()` in `settings.py`.
 
 ### 6.2 Dashboard Features
 

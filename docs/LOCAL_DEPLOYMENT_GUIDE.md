@@ -574,10 +574,18 @@ sudo systemctl restart gunicorn
 
 ### 5.6 Set Up Rig Status Monitoring Cron
 
-The platform needs a periodic task to mark rigs as **Stale** (not seen in 2–10 minutes) or **Offline** (not seen in 10+ minutes). Set up a cron job:
+The platform needs a periodic task to mark rigs as **Stale** (not seen in 2–10 minutes) or **Offline** (not seen in 10+ minutes). Create the wrapper script and cron job:
 
 ```bash
-echo '*/2 * * * * root cd /opt/gpu_monitor && source venv/bin/activate && set -a && source .env && set +a && python manage.py update_rig_status >> /opt/gpu_monitor/logs/rig_status.log 2>&1' | sudo tee /etc/cron.d/rig-status
+# Copy the wrapper script (from the repo checkout)
+sudo cp scripts/update_rig_status.sh /opt/gpu_monitor/deploy/update_rig_status.sh
+sudo chmod +x /opt/gpu_monitor/deploy/update_rig_status.sh
+
+# Create the cron job
+echo '*/2 * * * * root bash /opt/gpu_monitor/deploy/update_rig_status.sh' | sudo tee /etc/cron.d/rig-status
+
+# Restart cron to pick up the new job
+sudo systemctl restart cron
 ```
 
 This runs every 2 minutes. Verify it's working:
@@ -587,6 +595,7 @@ tail -f /opt/gpu_monitor/logs/rig_status.log
 ```
 
 > **Important:** Without this cron job, rigs will always show "Online" even after they stop reporting. The `update_rig_status` management command checks `last_seen` timestamps and updates the status accordingly.
+> **Note:** The wrapper script uses `bash` explicitly because the old inline `source` approach doesn't work in cron's default `/bin/sh` shell. Django reads `.env` via `os.environ.get()` in `settings.py`, so no shell-level `.env` sourcing is needed.
 
 ---
 

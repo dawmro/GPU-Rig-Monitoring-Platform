@@ -1,0 +1,12 @@
+<span id="rig-status-badge">
+    {% if rig.status == 'online' %}
+    <span class="badge-online px-3 py-1 rounded text-sm">● Online</span>
+    {% elif rig.status == 'stale' %}
+    <span class="badge-stale px-3 py-1 rounded text-sm">● Stale</span>
+    {% else %}
+    <span class="badge-offline px-3 py-1 rounded text-sm">● Offline</span>
+    {% endif %}
+</span>
+<span class="text-gray-500 text-sm ml-3" id="rig-last-seen">
+    {% if rig.last_seen %}Last seen: {{ rig.last_seen|timesince }} ago{% else %}Never{% endif %}
+</span>

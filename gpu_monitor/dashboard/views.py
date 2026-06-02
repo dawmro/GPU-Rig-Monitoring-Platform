@@ -159,6 +159,15 @@ def htmx_metrics(request, uuid):
 
 
 @login_required
+def htmx_rig_status(request, uuid):
+    """HTMX polling endpoint — returns just the status badge + last_seen."""
+    rig = get_object_or_404(Rig, uuid=uuid)
+    if rig.owner_id != request.user.id and not request.user.is_staff:
+        raise Http404
+    return render(request, 'dashboard/_rig_status_badge.html', {'rig': rig})
+
+
+@login_required
 @require_POST
 def rig_rename(request, uuid):
     """Rename a rig. Accepts both form POST and HTMX POST."""

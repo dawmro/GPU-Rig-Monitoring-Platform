@@ -686,10 +686,10 @@ tail -50 /opt/gpu_monitor/logs/app.log
 | `accounts/` | User/auth app (models, views, API key middleware) |
 | `rigs/` | Rig inventory app (models, status management command) |
 || `metrics_app/` | Ingestion API (models, serializers, TimescaleDB setup command) |
-|| `dashboard/` | HTMX dashboard (views, URL routing, templatetags) |
+|| `dashboard/` | HTMX dashboard (views, URL routing) |
+|| `dashboard/templatetags/` | Custom template filters (gpu_filters.py) |
 || `audit/` | Audit logging (models, middleware) |
 || `templates/` | Django HTML templates |
-|| `templatetags/` | Custom template filters (gpu_filters.py) |
 || `deploy/` | Nginx config, Gunicorn systemd unit, install scripts, backup scripts |
 | `.env` | Environment variables — mode `0600`, owned by `monitoring:monitoring` |
 | `venv/` | Python virtual environment |

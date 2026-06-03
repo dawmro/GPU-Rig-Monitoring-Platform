@@ -1,0 +1,12 @@
+[Unit]
+Description=GPU Rig Monitoring Agent (runs every 60 seconds)
+After=network.target
+
+[Timer]
+OnBootSec=30sec
+OnUnitActiveSec=60sec
+AccuracySec=1sec
+RandomizedDelaySec=5sec
+
+[Install]
+WantedBy=timers.target

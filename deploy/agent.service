@@ -1,0 +1,21 @@
+[Unit]
+Description=GPU Rig Monitoring Agent
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=oneshot
+User=monitoring-agent
+Group=monitoring-agent
+WorkingDirectory=/opt/monitoring-agent
+Environment=PATH=/opt/monitoring-agent/venv/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONPATH=/opt/monitoring-agent
+ExecStart=/opt/monitoring-agent/venv/bin/python /opt/monitoring-agent/run.py
+StandardOutput=append:/var/log/monitoring-agent/cron.log
+StandardError=append:/var/log/monitoring-agent/cron.log
+TimeoutStartSec=50
+# Prevent overlapping runs
+ExecStartPre=/bin/sh -c 'flock -n /var/lock/monitoring-agent.lock true'
+
+[Install]
+WantedBy=multi-user.target

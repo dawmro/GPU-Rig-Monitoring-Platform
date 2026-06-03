@@ -1,6 +1,5 @@
 import logging
 from django.utils import timezone
-from django.utils.dateparse import parse_datetime
 from datetime import timedelta
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -216,27 +215,6 @@ class ChartDataView(APIView):
 
         else:
             return Response({'status': 'error', 'message': f'Unknown metric: {metric}'}, status=400)
-
-        # Fill gaps: generate a complete 1-minute time series so that
-        # downtime periods appear as gaps in the chart (not as misleading
-        # flat lines connecting the last online point to the next).
-        if labels and values:
-            filled_labels = []
-            filled_values = []
-            # Build a lookup of existing data points by timestamp
-            data_by_ts = dict(zip(labels, values))
-            # Generate 1-minute intervals across the full range
-            start = parse_datetime(labels[0])
-            # Find the actual end from the last label (may not be "now" if rig is offline)
-            end = timezone.now()
-            current = start
-            while current <= end:
-                ts_str = current.isoformat()
-                filled_labels.append(ts_str)
-                filled_values.append(data_by_ts.get(ts_str, None))
-                current += timedelta(minutes=1)
-            labels = filled_labels
-            values = filled_values
 
         return Response({
             'labels': labels,

@@ -66,7 +66,7 @@ Files in this directory are **developer convenience scripts** for the local work
 - Are never referenced by cron, systemd, or any production config
 - Should NOT contain production cron wrappers or deploy artifacts
 
-Examples: `sync_to_opt.sh` (deploy workspace → /opt), `sync_and_migrate.sh` (granular sync)
+Examples: `sync_to_opt.sh` (full workspace → /opt deploy), `sync_and_migrate.sh` (granular file sync), `sync_agents.sh` (agent files only)
 
 > **Rule of thumb:** If a script is referenced by a cron job or systemd unit in production, it belongs in `gpu_monitor/deploy/`, **not** in `scripts/`.
 

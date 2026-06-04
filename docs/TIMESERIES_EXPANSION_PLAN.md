@@ -1,5 +1,20 @@
 # Time Series Data Expansion — Analysis & Plan
 
+## ✅ Phase 1 — IMPLEMENTED
+
+### Changes made:
+1. **MetricSnapshot** — added `uptime_s` (BigIntegerField) and `status` (CharField)
+2. **NetworkMetric** — added `rx_bytes_delta` and `tx_bytes_delta` (BigIntegerField)
+3. **Serializer** — stores `uptime_s` from payload, `status` from Rig model
+4. **Serializer** — calculates network deltas by comparing consecutive readings per interface
+5. **Views** — passes `rig` object to `process_ingest` for status tracking
+6. **Migration 0007** — applies all new fields
+
+### Verification:
+- First network reading: delta=None (no previous reading)
+- Second reading: delta correctly calculated (rx_delta=10MB, tx_delta=5MB)
+- Uptime and status stored correctly per heartbeat
+
 ## Goal
 Identify all data from the agent payload that changes over time and should be stored
 in the database as time-series data. This enables historical charts for every metric.

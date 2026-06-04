@@ -1,5 +1,7 @@
 from django import template
 import re
+from django.utils import timezone
+from datetime import timedelta
 
 register = template.Library()
 
@@ -57,3 +59,38 @@ def gpu_model_short(value):
 
     # Fallback: clean the full name
     return gpu_model_name(value)
+
+
+@register.filter
+def time_since(seconds):
+    """Convert seconds to human-readable uptime string.
+
+    Examples:
+        3600 -> '1h 0m'
+        86400 -> '1d 0h'
+        1778196 -> '20d 15h 39m'
+        0 -> '0s'
+        None -> '—'
+    """
+    if seconds is None:
+        return '—'
+    try:
+        seconds = int(seconds)
+    except (ValueError, TypeError):
+        return '—'
+    if seconds <= 0:
+        return '0s'
+    td = timedelta(seconds=seconds)
+    days = td.days
+    hours, remainder = divmod(td.seconds, 3600)
+    minutes, _ = divmod(remainder, 60)
+    parts = []
+    if days:
+        parts.append(f'{days}d')
+    if hours:
+        parts.append(f'{hours}h')
+    if minutes and not days:
+        parts.append(f'{minutes}m')
+    if not parts:
+        parts.append('0s')
+    return ' '.join(parts)

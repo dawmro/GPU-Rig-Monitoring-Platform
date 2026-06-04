@@ -1,121 +1,337 @@
-<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-    <!-- CPU Card -->
-    <div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
-        <h3 class="text-gray-400 text-sm font-medium mb-2">CPU</h3>
-        {% if snapshot %}
-        <div class="text-2xl font-bold mb-1">
+{# Live Metrics — Detailed Display #}
+{# Polled every 30s via HTMX #}
+{% load gpu_filters %}
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- CPU -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
+    <h3 class="text-gray-400 text-sm font-medium mb-2">CPU</h3>
+    {% if snapshot %}
+    <div class="text-lg font-bold text-white mb-1">
+        {{ snapshot.cpu_model|default:"Unknown" }}
+    </div>
+    <div class="text-sm text-gray-400 mb-2">
+        {{ snapshot.cpu_physical_cores|default:"?" }} cores / {{ snapshot.cpu_logical_cores|default:"?" }} threads
+    </div>
+    <div class="flex items-center gap-3 mb-2">
+        <div class="flex-1">
+            <div class="w-full bg-gray-700 rounded-full h-2">
+                <div class="h-2 rounded-full
+                    {% if snapshot.cpu_utilization_pct != None %}
+                        {% if snapshot.cpu_utilization_pct > 80 %}bg-red-500
+                        {% elif snapshot.cpu_utilization_pct > 60 %}bg-yellow-500
+                        {% else %}bg-green-500{% endif %}
+                    {% else %}bg-gray-600{% endif %}"
+                    style="width: {% if snapshot.cpu_utilization_pct != None %}{{ snapshot.cpu_utilization_pct }}{% else %}0{% endif %}%">
+                </div>
+            </div>
+        </div>
+        <span class="text-sm font-mono text-gray-300 w-14 text-right">
             {% if snapshot.cpu_utilization_pct != None %}{{ snapshot.cpu_utilization_pct|floatformat:1 }}%{% else %}—{% endif %}
-        </div>
-        <div class="text-sm text-gray-400">
+        </span>
+    </div>
+    <div class="flex items-center gap-4 text-xs text-gray-500">
+        <span>
+            Temp:
             {% if snapshot.cpu_temp_c != None %}
-                {% if snapshot.cpu_temp_c > 85 %}<span class="text-red-400">{{ snapshot.cpu_temp_c|floatformat:1 }}°C</span>
-                {% elif snapshot.cpu_temp_c > 70 %}<span class="text-yellow-400">{{ snapshot.cpu_temp_c|floatformat:1 }}°C</span>
-                {% else %}{{ snapshot.cpu_temp_c|floatformat:1 }}°C{% endif %}
-            {% else %}No temp sensor{% endif %}
+                <span class="{% if snapshot.cpu_temp_c > 85 %}text-red-400{% elif snapshot.cpu_temp_c > 70 %}text-yellow-400{% else %}text-green-400{% endif %}">
+                    {{ snapshot.cpu_temp_c|floatformat:1 }}°C
+                </span>
+            {% else %}—{% endif %}
+        </span>
+    </div>
+    {% else %}
+    <div class="text-gray-500">No data</div>
+    {% endif %}
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- Memory -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
+    <h3 class="text-gray-400 text-sm font-medium mb-2">Memory</h3>
+    {% if snapshot and snapshot.mem_total_bytes %}
+    <div class="flex items-center gap-3 mb-2">
+        <div class="flex-1">
+            <div class="w-full bg-gray-700 rounded-full h-2">
+                {% widthratio snapshot.mem_used_bytes snapshot.mem_total_bytes 100 as mem_pct %}
+                <div class="h-2 rounded-full
+                    {% if mem_pct > 85 %}bg-red-500
+                    {% elif mem_pct > 70 %}bg-yellow-500
+                    {% else %}bg-blue-500{% endif %}"
+                    style="width: {{ mem_pct }}%">
+                </div>
+            </div>
         </div>
-        {% else %}
-        <div class="text-gray-500">No data</div>
+        <span class="text-sm font-mono text-gray-300 w-14 text-right">{{ mem_pct }}%</span>
+    </div>
+    <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-400">
+        <span>Used: <span class="text-gray-300">{{ snapshot.mem_used_bytes|filesizeformat }}</span></span>
+        <span>Total: <span class="text-gray-300">{{ snapshot.mem_total_bytes|filesizeformat }}</span></span>
+        {% if snapshot.mem_cached_bytes %}
+        <span>Cached: <span class="text-gray-300">{{ snapshot.mem_cached_bytes|filesizeformat }}</span></span>
         {% endif %}
     </div>
+    {% else %}
+    <div class="text-gray-500">No data</div>
+    {% endif %}
+</div>
 
-    <!-- Memory Card -->
-    <div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
-        <h3 class="text-gray-400 text-sm font-medium mb-2">Memory</h3>
-        {% if snapshot and snapshot.mem_total_bytes %}
-        <div class="text-2xl font-bold mb-1">
-            {{ snapshot.mem_used_bytes|filesizeformat }} / {{ snapshot.mem_total_bytes|filesizeformat }}
-        </div>
-        <div class="w-full bg-gray-700 rounded-full h-2 mt-2">
-            {% widthratio snapshot.mem_used_bytes snapshot.mem_total_bytes 100 as mem_pct %}
-            <div class="bg-blue-500 h-2 rounded-full" style="width: {{ mem_pct }}%"></div>
-        </div>
-        <div class="text-xs text-gray-500 mt-1">{{ mem_pct }}% used</div>
-        {% else %}
-        <div class="text-gray-500">No data</div>
-        {% endif %}
-    </div>
-
-    <!-- GPU Card -->
-    <div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
-        <h3 class="text-gray-400 text-sm font-medium mb-2">GPU</h3>
-        {% if gpu_metrics %}
-            {% for gpu in gpu_metrics %}
-            <div class="mb-1">
-                <div class="text-sm font-medium">{{ gpu.model|default:"Unknown GPU" }}</div>
-                <div class="flex items-baseline gap-2">
-                    <div class="text-xl font-bold">
-                        {% if gpu.gpu_util_pct != None %}{{ gpu.gpu_util_pct|floatformat:1 }}%{% else %}—{% endif %}
-                    </div>
-                    <div class="text-sm text-gray-400">
-                        {% if gpu.gpu_temp_c != None %}
-                            {% if gpu.gpu_temp_c > 80 %}<span class="text-red-400">{{ gpu.gpu_temp_c|floatformat:1 }}°C</span>
-                            {% elif gpu.gpu_temp_c > 70 %}<span class="text-yellow-400">{{ gpu.gpu_temp_c|floatformat:1 }}°C</span>
-                            {% else %}{{ gpu.gpu_temp_c|floatformat:1 }}°C{% endif %}
-                        {% else %}—{% endif %}
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- Storage (per device) -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
+    <h3 class="text-gray-400 text-sm font-medium mb-2">Storage</h3>
+    {% if storage_metrics %}
+        {% for disk in storage_metrics %}
+        <div class="mb-3 pb-3 border-b border-gray-700/50 last:border-0 last:mb-0 last:pb-0">
+            <div class="flex items-center justify-between mb-1">
+                <span class="text-sm font-medium text-gray-300">{{ disk.device|default:"unknown" }}</span>
+                <span class="text-xs text-gray-500">{{ disk.fstype|default:"" }} · {{ disk.mountpoint|default:"" }}</span>
+            </div>
+            <div class="flex items-center gap-3 mb-1">
+                <div class="flex-1">
+                    <div class="w-full bg-gray-700 rounded-full h-2">
+                        <div class="h-2 rounded-full
+                            {% if disk.usage_pct > 90 %}bg-red-500
+                            {% elif disk.usage_pct > 75 %}bg-yellow-500
+                            {% else %}bg-blue-500{% endif %}"
+                            style="width: {% if disk.usage_pct != None %}{{ disk.usage_pct }}{% else %}0{% endif %}%">
+                        </div>
                     </div>
                 </div>
-                {% if gpu.mem_used_mb != None %}
-                <div class="text-xs text-gray-500">{{ gpu.mem_used_mb }} / {{ gpu.mem_total_mb }} MB vRAM</div>
+                <span class="text-sm font-mono text-gray-300 w-14 text-right">
+                    {% if disk.usage_pct != None %}{{ disk.usage_pct|floatformat:1 }}%{% else %}—{% endif %}
+                </span>
+            </div>
+            <div class="flex items-center gap-4 text-xs text-gray-500">
+                {% if disk.capacity_bytes %}
+                <span>Capacity: {{ disk.capacity_bytes|filesizeformat }}</span>
                 {% endif %}
-                {% if gpu.power_draw_w != None %}
-                <div class="text-xs text-gray-500">{{ gpu.power_draw_w|floatformat:1 }}W / {{ gpu.power_limit_w|floatformat:0 }}W</div>
+                {% if disk.temp_c != None %}
+                <span>Temp: {{ disk.temp_c|floatformat:1 }}°C</span>
+                {% endif %}
+                {% if disk.smart_health %}
+                <span>SMART: <span class="{% if disk.smart_health == 'OK' %}text-green-400{% elif disk.smart_health == 'FAILING' %}text-red-400{% else %}text-gray-400{% endif %}">{{ disk.smart_health }}</span></span>
                 {% endif %}
             </div>
-            {% endfor %}
-        {% else %}
-        <div class="text-gray-500">No GPU</div>
-        {% endif %}
-    </div>
-
-    <!-- Docker Card -->
-    <div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
-        <h3 class="text-gray-400 text-sm font-medium mb-2">Docker</h3>
-        {% if docker_metrics %}
-        <div class="text-2xl font-bold mb-1">{{ docker_metrics|length }} container{{ docker_metrics|length|pluralize }}</div>
-        <div class="text-sm text-gray-400 space-y-0.5">
-            {% for c in docker_metrics|slice:":5" %}
-            <div class="flex items-center gap-1">
-                <span>{% if c.status == 'running' %}🟢{% else %}🔴{% endif %}</span>
-                <span class="truncate">{{ c.name }}</span>
-            </div>
-            {% endfor %}
-            {% if docker_metrics|length > 5 %}<div class="text-xs text-gray-500">+{{ docker_metrics|length|add:"-5" }} more</div>{% endif %}
         </div>
-        {% else %}
-        <div class="text-gray-500">No containers</div>
-        {% endif %}
-    </div>
+        {% endfor %}
+    {% else %}
+    <div class="text-gray-500">No data</div>
+    {% endif %}
+</div>
 
-    <!-- Storage Card -->
-    <div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
-        <h3 class="text-gray-400 text-sm font-medium mb-2">Storage</h3>
-        {% if storage_metrics %}
-            {% for disk in storage_metrics %}
-            <div class="mb-1">
-                <div class="text-sm font-medium">{{ disk.device|default:"unknown" }}</div>
-                <div class="text-lg font-bold">{{ disk.usage_pct|default:"—"|floatformat:1 }}%</div>
-                {% if disk.temp_c != None %}<div class="text-xs text-gray-500">{{ disk.temp_c|floatformat:1 }}°C · {{ disk.smart_health }}</div>{% endif %}
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- GPU (per device) -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
+    <h3 class="text-gray-400 text-sm font-medium mb-2">GPU</h3>
+    {% if gpu_metrics %}
+        {% for gpu in gpu_metrics %}
+        <div class="mb-3 pb-3 border-b border-gray-700/50 last:border-0 last:mb-0 last:pb-0">
+            <div class="flex items-center justify-between mb-1">
+                <span class="text-sm font-medium text-gray-300">{{ gpu.model|default:"Unknown GPU" }}</span>
+                {% if gpu.gpu_uuid %}
+                <span class="text-xs text-gray-600 font-mono" title="{{ gpu.gpu_uuid }}">{{ gpu.gpu_uuid|truncatechars:12 }}</span>
+                {% endif %}
             </div>
-            {% endfor %}
-        {% else %}
-        <div class="text-gray-500">No data</div>
-        {% endif %}
-    </div>
-
-    <!-- Errors Card -->
-    <div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
-        <h3 class="text-gray-400 text-sm font-medium mb-2">Recent Errors</h3>
-        {% if recent_errors %}
-        <div class="text-2xl font-bold text-red-400 mb-1">{{ recent_errors|length }}</div>
-        <div class="text-sm text-gray-400 space-y-1">
-            {% for err in recent_errors|slice:":3" %}
-            <div class="truncate" title="{{ err.message }}">
-                <span class="text-red-300">{{ err.source|default:"unknown" }}</span>: {{ err.message|truncatechars:40 }}
+            <div class="flex items-center gap-3 mb-1">
+                <div class="flex-1">
+                    <div class="w-full bg-gray-700 rounded-full h-2">
+                        <div class="h-2 rounded-full
+                            {% if gpu.gpu_util_pct != None %}
+                                {% if gpu.gpu_util_pct > 90 %}bg-red-500
+                                {% elif gpu.gpu_util_pct > 70 %}bg-yellow-500
+                                {% else %}bg-green-500{% endif %}
+                            {% else %}bg-gray-600{% endif %}"
+                            style="width: {% if gpu.gpu_util_pct != None %}{{ gpu.gpu_util_pct }}{% else %}0{% endif %}%">
+                        </div>
+                    </div>
+                </div>
+                <span class="text-sm font-mono text-gray-300 w-14 text-right">
+                    {% if gpu.gpu_util_pct != None %}{{ gpu.gpu_util_pct|floatformat:1 }}%{% else %}—{% endif %}
+                </span>
             </div>
-            {% endfor %}
+            <div class="flex items-center gap-4 text-xs text-gray-500 mb-1">
+                <span>
+                    Temp:
+                    {% if gpu.gpu_temp_c != None %}
+                        <span class="{% if gpu.gpu_temp_c > 80 %}text-red-400{% elif gpu.gpu_temp_c > 70 %}text-yellow-400{% else %}text-green-400{% endif %}">
+                            {{ gpu.gpu_temp_c|floatformat:1 }}°C
+                        </span>
+                    {% else %}—{% endif %}
+                </span>
+                {% if gpu.fan_speed_pct != None %}
+                <span>Fan: {{ gpu.fan_speed_pct|floatformat:0 }}%</span>
+                {% endif %}
+            </div>
+            {% if gpu.mem_used_mb != None and gpu.mem_total_mb %}
+            <div class="flex items-center gap-3 mb-1">
+                <div class="flex-1">
+                    <div class="w-full bg-gray-700 rounded-full h-1.5">
+                        {% widthratio gpu.mem_used_mb gpu.mem_total_mb 100 as vram_pct %}
+                        <div class="bg-purple-500 h-1.5 rounded-full" style="width: {{ vram_pct }}%"></div>
+                    </div>
+                </div>
+                <span class="text-xs font-mono text-gray-400 w-20 text-right">{{ gpu.mem_used_mb }} / {{ gpu.mem_total_mb }} MB</span>
+            </div>
+            {% endif %}
+            {% if gpu.power_draw_w != None %}
+            <div class="text-xs text-gray-500">
+                Power: <span class="text-gray-400">{{ gpu.power_draw_w|floatformat:1 }}W</span>
+                {% if gpu.power_limit_w %} / {{ gpu.power_limit_w|floatformat:0 }}W{% endif %}
+            </div>
+            {% endif %}
         </div>
-        {% else %}
-        <div class="text-green-400">✓ No errors</div>
+        {% endfor %}
+    {% else %}
+    <div class="text-gray-500">No GPU</div>
+    {% endif %}
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- Network (per interface) -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
+    <h3 class="text-gray-400 text-sm font-medium mb-2">Network</h3>
+    {% if network_metrics %}
+    <div class="overflow-x-auto">
+        <table class="w-full text-xs">
+            <thead class="text-gray-500 border-b border-gray-700">
+                <tr>
+                    <th class="text-left pb-1 font-medium">Interface</th>
+                    <th class="text-left pb-1 font-medium">IPv4</th>
+                    <th class="text-right pb-1 font-medium">Speed</th>
+                    <th class="text-right pb-1 font-medium">RX</th>
+                    <th class="text-right pb-1 font-medium">TX</th>
+                    <th class="text-right pb-1 font-medium">Errors</th>
+                </tr>
+            </thead>
+            <tbody class="text-gray-400">
+                {% for iface in network_metrics %}
+                <tr class="border-b border-gray-700/30 last:border-0">
+                    <td class="py-1 text-gray-300">{{ iface.interface|default:"—" }}</td>
+                    <td class="py-1 font-mono">{{ iface.ipv4|default:"—" }}</td>
+                    <td class="py-1 text-right">
+                        {% if iface.link_speed_mbps %}{{ iface.link_speed_mbps }} Mbps{% else %}—{% endif %}
+                    </td>
+                    <td class="py-1 text-right">{{ iface.rx_bytes|filesizeformat }}</td>
+                    <td class="py-1 text-right">{{ iface.tx_bytes|filesizeformat }}</td>
+                    <td class="py-1 text-right">
+                        {% if iface.rx_errors or iface.tx_errors %}
+                        <span class="text-yellow-400">↑{{ iface.rx_errors }} ↓{{ iface.tx_errors }}</span>
+                        {% else %}
+                        <span class="text-green-400">0</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="text-gray-500">No data</div>
+    {% endif %}
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- Motherboard -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+{% if metric_snapshot.motherboard_json %}
+<div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
+    <h3 class="text-gray-400 text-sm font-medium mb-2">Motherboard</h3>
+    <div class="text-sm text-gray-300">
+        {{ metric_snapshot.motherboard_json.manufacturer|default:"—" }}
+    </div>
+    <div class="text-sm text-gray-400">
+        {{ metric_snapshot.motherboard_json.model|default:"—" }}
+        {% if metric_snapshot.motherboard_json.bios_version %}
+        <span class="text-gray-600"> · BIOS: {{ metric_snapshot.motherboard_json.bios_version }}</span>
         {% endif %}
     </div>
+</div>
+{% endif %}
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- Software / OS -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+{% if metric_snapshot.software_json %}
+<div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
+    <h3 class="text-gray-400 text-sm font-medium mb-2">Software</h3>
+    <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+        <div class="text-gray-500">Hostname:</div>
+        <div class="text-gray-300">{{ metric_snapshot.software_json.hostname|default:"—" }}</div>
+        <div class="text-gray-500">OS:</div>
+        <div class="text-gray-300 truncate" title="{{ metric_snapshot.software_json.os_distro }}">{{ metric_snapshot.software_json.os_distro|default:"—" }}</div>
+        <div class="text-gray-500">Kernel:</div>
+        <div class="text-gray-300">{{ metric_snapshot.software_json.kernel|default:"—" }}</div>
+        {% if metric_snapshot.software_json.uptime_s %}
+        <div class="text-gray-500">Uptime:</div>
+        <div class="text-gray-300">{{ metric_snapshot.software_json.uptime_s|time_since }}</div>
+        {% endif %}
+        {% if metric_snapshot.software_json.nvidia_driver %}
+        <div class="text-gray-500">NVIDIA Driver:</div>
+        <div class="text-gray-300">{{ metric_snapshot.software_json.nvidia_driver }}</div>
+        {% endif %}
+        {% if metric_snapshot.software_json.docker_version %}
+        <div class="text-gray-500">Docker:</div>
+        <div class="text-gray-300">{{ metric_snapshot.software_json.docker_version }}</div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- Docker Containers -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
+    <h3 class="text-gray-400 text-sm font-medium mb-2">Docker</h3>
+    {% if docker_metrics %}
+    <div class="text-sm text-gray-400 mb-2">{{ docker_metrics|length }} container{{ docker_metrics|length|pluralize }}</div>
+    <div class="space-y-1">
+        {% for c in docker_metrics|slice:":10" %}
+        <div class="flex items-center gap-2 text-xs">
+            <span>{% if c.status == 'running' %}🟢{% else %}🔴{% endif %}</span>
+            <span class="text-gray-300 truncate flex-1">{{ c.name }}</span>
+            <span class="text-gray-600 truncate max-w-32" title="{{ c.image }}">{{ c.image|truncatechars:30 }}</span>
+            {% if c.restart_count > 0 %}
+            <span class="text-yellow-500" title="{{ c.restart_count }} restarts">↻{{ c.restart_count }}</span>
+            {% endif %}
+        </div>
+        {% endfor %}
+        {% if docker_metrics|length > 10 %}
+        <div class="text-xs text-gray-600">+{{ docker_metrics|length|add:"-10" }} more</div>
+        {% endif %}
+    </div>
+    {% else %}
+    <div class="text-gray-500">No containers</div>
+    {% endif %}
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- Recent Errors -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
+    <h3 class="text-gray-400 text-sm font-medium mb-2">Recent Errors</h3>
+    {% if recent_errors %}
+    <div class="text-2xl font-bold text-red-400 mb-2">{{ recent_errors|length }}</div>
+    <div class="space-y-2">
+        {% for err in recent_errors|slice:":5" %}
+        <div class="text-xs">
+            <div class="flex items-center gap-2 mb-0.5">
+                <span class="px-1.5 py-0.5 rounded bg-red-900/50 text-red-300 text-[10px]">{{ err.source|default:"unknown" }}</span>
+                <span class="text-gray-600">{{ err.last_seen|timesince }} ago</span>
+                {% if err.count > 1 %}
+                <span class="text-gray-600">×{{ err.count }}</span>
+                {% endif %}
+            </div>
+            <p class="text-gray-400 font-mono truncate" title="{{ err.message }}">{{ err.message|truncatechars:120 }}</p>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="text-green-400">✓ No errors</div>
+    {% endif %}
 </div>

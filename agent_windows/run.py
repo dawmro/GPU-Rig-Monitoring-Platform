@@ -33,7 +33,7 @@ import yaml
 import requests
 
 __version__ = '1.2.0-win'
-__schema_version__ = '1.0'
+__schema_version__ = '1.1'
 
 # ── Config ──────────────────────────────────────────────────────────────────
 

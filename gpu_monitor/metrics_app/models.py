@@ -31,6 +31,12 @@ class MetricSnapshot(models.Model):
     swap_used_bytes = models.BigIntegerField(null=True)
     swap_total_bytes = models.BigIntegerField(null=True)
 
+    # Rig uptime in seconds (resets on reboot)
+    uptime_s = models.BigIntegerField(null=True)
+
+    # Rig status at time of this snapshot (online/offline/stale)
+    status = models.CharField(max_length=10, null=True, blank=True)
+
     # Motherboard info (static, stored as JSON for flexibility)
     motherboard_json = models.JSONField(default=dict, blank=True)
 
@@ -114,6 +120,8 @@ class NetworkMetric(models.Model):
     link_speed_mbps = models.PositiveIntegerField(null=True)
     rx_bytes = models.BigIntegerField(null=True)
     tx_bytes = models.BigIntegerField(null=True)
+    rx_bytes_delta = models.BigIntegerField(null=True, help_text="Bytes received since last reading")
+    tx_bytes_delta = models.BigIntegerField(null=True, help_text="Bytes sent since last reading")
     rx_errors = models.PositiveIntegerField(null=True)
     tx_errors = models.PositiveIntegerField(null=True)
 

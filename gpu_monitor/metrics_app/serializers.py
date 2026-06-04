@@ -26,7 +26,7 @@ class IngestSerializer(serializers.Serializer):
         return value
 
 
-def process_ingest(rig_uuid, data, owner_id):
+def process_ingest(rig_uuid, data, owner_id, rig=None):
     """Process an ingestion payload. Returns (response_data, status_code)."""
     serializer = IngestSerializer(data=data)
     if not serializer.is_valid():
@@ -69,6 +69,8 @@ def process_ingest(rig_uuid, data, owner_id):
                     'mem_cached_bytes': memory.get('cached_bytes'),
                     'swap_used_bytes': memory.get('swap_used_bytes'),
                     'swap_total_bytes': memory.get('swap_total_bytes'),
+                    'uptime_s': software_data.get('uptime_s'),
+                    'status': rig.status if rig else None,
                     'motherboard_json': motherboard_data,
                     'software_json': software_data,
                 },
@@ -113,18 +115,43 @@ def process_ingest(rig_uuid, data, owner_id):
                     },
                 )
 
-            # Store per-interface metrics
+            # Store per-interface metrics with traffic delta calculation
             for iface in network_list:
+                iface_name = iface.get('interface', '')
+                new_rx = iface.get('rx_bytes')
+                new_tx = iface.get('tx_bytes')
+
+                # Calculate deltas by comparing with previous reading for this interface
+                rx_delta = None
+                tx_delta = None
+                try:
+                    prev = NetworkMetric.objects.filter(
+                        rig_uuid=rig_uuid,
+                        interface=iface_name,
+                    ).order_by('-timestamp').first()
+                    if prev and new_rx is not None and new_tx is not None:
+                        rx_delta = new_rx - prev.rx_bytes if prev.rx_bytes else None
+                        tx_delta = new_tx - prev.tx_bytes if prev.tx_bytes else None
+                        # Handle counter wraparound (shouldn't happen with 64-bit counters, but be safe)
+                        if rx_delta is not None and rx_delta < 0:
+                            rx_delta = new_rx
+                        if tx_delta is not None and tx_delta < 0:
+                            tx_delta = new_tx
+                except Exception:
+                    pass
+
                 NetworkMetric.objects.update_or_create(
                     rig_uuid=rig_uuid,
                     timestamp=ts,
-                    interface=iface.get('interface', ''),
+                    interface=iface_name,
                     defaults={
                         'snapshot': snapshot,
                         'ipv4': iface.get('ipv4', ''),
                         'link_speed_mbps': iface.get('link_speed_mbps'),
-                        'rx_bytes': iface.get('rx_bytes'),
-                        'tx_bytes': iface.get('tx_bytes'),
+                        'rx_bytes': new_rx,
+                        'tx_bytes': new_tx,
+                        'rx_bytes_delta': rx_delta,
+                        'tx_bytes_delta': tx_delta,
                         'rx_errors': iface.get('rx_errors'),
                         'tx_errors': iface.get('tx_errors'),
                     },

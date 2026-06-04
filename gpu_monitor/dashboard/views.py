@@ -55,21 +55,7 @@ def rig_list(request):
             rig_uuid=str(rig.uuid), gpu_index=0
         ).order_by('-timestamp').first()
 
-        # Get GPU model from RigHardware (static info)
-        gpu_model = None
-        try:
-            hw = RigHardware.objects.get(rig_uuid=str(rig.uuid))
-            if hw.gpu_static_json:
-                gpu_model = hw.gpu_static_json[0].get('model', '')
-        except RigHardware.DoesNotExist:
-            pass
-
-        rig_data.append({
-            'rig': rig,
-            'snapshot': snap,
-            'gpu': gpu,
-            'gpu_model': gpu_model,
-        })
+        rig_data.append({'rig': rig, 'snapshot': snap, 'gpu': gpu})
 
     if request.headers.get('HX-Request'):
         return render(request, 'dashboard/_rig_table.html', {'rig_data': rig_data})

@@ -112,47 +112,80 @@ def log_payload(payload):
     payload_path.write_text(json.dumps(payload, indent=2, default=str) + '\n')
 
 
-# ── Static Hardware Collectors (rarely changing, sent as "static") ──────────
+# ── Metric Collectors (all-in-one, no duplication) ─────────────────────────
 
-def collect_static():
-    """Collect static hardware inventory that rarely changes between heartbeats.
-
-    Returns a dict with cpu, motherboard, and gpu static info.
-    This data is sent in the 'static' section and stored separately
-    on the server, avoiding duplication in every MetricSnapshot row.
-    """
-    return {
-        'cpu': _collect_cpu_static(),
-        'motherboard': collect_motherboard(),
-        'gpus': _collect_gpu_static(),
-    }
-
-
-def _collect_cpu_static():
-    """Collect static CPU info (model, core count). No utilization."""
-    result = {'model': 'Unknown', 'physical_cores': None, 'logical_cores': None}
+def collect_cpu():
+    """Collect all CPU metrics: static info + time-series data."""
     try:
         import psutil
-        result['physical_cores'] = psutil.cpu_count(logical=False)
-        result['logical_cores'] = psutil.cpu_count(logical=True)
-    except Exception:
-        pass
-    try:
-        import cpuinfo
-        info = cpuinfo.get_cpu_info()
-        result['model'] = info.get('brand_raw', 'Unknown')
-    except Exception:
-        pass
-    if result['model'] == 'Unknown' and platform.system() == 'Windows':
+        cpu_percent = psutil.cpu_percent(interval=1)
+        cpu_count_phys = psutil.cpu_count(logical=False)
+        cpu_count_log = psutil.cpu_count(logical=True)
+
+        # Windows doesn't have os.getloadavg(); use CPU percent as proxy
+        load_avg = [cpu_percent / 100.0 * cpu_count_log] * 3
+
+        temp_c = None
         try:
-            import wmi
-            c = wmi.WMI()
-            for proc in c.Win32_Processor():
-                result['model'] = proc.Name.strip()
-                break
+            temps = psutil.sensors_temperatures()
+            if temps:
+                for name, entries in temps.items():
+                    if entries:
+                        temp_c = entries[0].current
+                        break
+        except Exception:
+            # sensors_temperatures() may not be available on Windows
+            pass
+
+        model = 'Unknown'
+        try:
+            import cpuinfo
+            info = cpuinfo.get_cpu_info()
+            model = info.get('brand_raw', 'Unknown')
         except Exception:
             pass
-    return result
+
+        # Fallback: use WMI on Windows if cpuinfo didn't work
+        if model == 'Unknown' and platform.system() == 'Windows':
+            try:
+                import wmi
+                c = wmi.WMI()
+                for proc in c.Win32_Processor():
+                    model = proc.Name.strip()
+                    break
+            except Exception:
+                pass
+
+        return {
+            'model': model,
+            'physical_cores': cpu_count_phys,
+            'logical_cores': cpu_count_log,
+            'load_avg': load_avg,
+            'utilization_pct': cpu_percent,
+            'temp_c': temp_c,
+        }
+    except Exception as e:
+        logging.getLogger('cpu').warning('CPU collection failed: %s', e)
+        return {}
+
+
+def collect_memory():
+    """Collect all memory metrics: total, used, free, cached, swap."""
+    try:
+        import psutil
+        vm = psutil.virtual_memory()
+        swap = psutil.swap_memory()
+        return {
+            'total_bytes': vm.total,
+            'used_bytes': vm.used,
+            'free_bytes': vm.available,
+            'cached_bytes': getattr(vm, 'cached', None),
+            'swap_used_bytes': swap.used,
+            'swap_total_bytes': swap.total,
+        }
+    except Exception as e:
+        logging.getLogger('memory').warning('Memory collection failed: %s', e)
+        return {}
 
 
 def collect_motherboard():
@@ -187,80 +220,8 @@ def collect_motherboard():
     return result
 
 
-def _collect_gpu_static():
-    """Collect static GPU info (uuid, model, total memory). No utilization/temp."""
-    gpus = []
-    try:
-        import pynvml
-        pynvml.nvmlInit()
-        count = pynvml.nvmlDeviceGetCount()
-        for i in range(count):
-            handle = pynvml.nvmlDeviceGetHandleByIndex(i)
-            info = pynvml.nvmlDeviceGetMemoryInfo(handle)
-            gpus.append({
-                'uuid': pynvml.nvmlDeviceGetUUID(handle),
-                'model': pynvml.nvmlDeviceGetName(handle),
-                'mem_total_mb': info.total // (1024 * 1024),
-            })
-        pynvml.nvmlShutdown()
-    except Exception as e:
-        logging.getLogger('gpu').warning('GPU static collection failed: %s', e)
-    return gpus
-
-
-# ── Dynamic Metric Collectors (change every heartbeat, sent as "metrics") ──
-
-def collect_cpu():
-    """Collect CPU time-series metrics (utilization, temp, load)."""
-    try:
-        import psutil
-        cpu_percent = psutil.cpu_percent(interval=1)
-        cpu_count_log = psutil.cpu_count(logical=True)
-
-        # Windows doesn't have os.getloadavg(); use CPU percent as proxy
-        load_avg = [cpu_percent / 100.0 * cpu_count_log] * 3
-
-        temp_c = None
-        try:
-            temps = psutil.sensors_temperatures()
-            if temps:
-                for name, entries in temps.items():
-                    if entries:
-                        temp_c = entries[0].current
-                        break
-        except Exception:
-            # sensors_temperatures() may not be available on Windows
-            pass
-
-        return {
-            'utilization_pct': cpu_percent,
-            'temp_c': temp_c,
-            'load_avg': load_avg,
-        }
-    except Exception as e:
-        logging.getLogger('cpu').warning('CPU collection failed: %s', e)
-        return {}
-
-
-def collect_memory():
-    """Collect memory time-series metrics."""
-    try:
-        import psutil
-        vm = psutil.virtual_memory()
-        swap = psutil.swap_memory()
-        return {
-            'used_bytes': vm.used,
-            'cached_bytes': getattr(vm, 'cached', None),
-            'swap_used_bytes': swap.used,
-            'swap_total_bytes': swap.total,
-        }
-    except Exception as e:
-        logging.getLogger('memory').warning('Memory collection failed: %s', e)
-        return {}
-
-
 def collect_storage():
-    """Collect storage time-series metrics. Capacity is static and not included here."""
+    """Collect all storage metrics per disk: capacity, usage, temp, smart."""
     try:
         import psutil
         disks = []
@@ -274,6 +235,7 @@ def collect_storage():
                     'device': part.device,
                     'mountpoint': part.mountpoint,
                     'fstype': part.fstype,
+                    'capacity_bytes': usage.total,
                     'usage_pct': round(usage.percent, 1),
                     'temp_c': None,
                     'smart_health': '',
@@ -357,7 +319,7 @@ def _get_physical_disk_name(device):
 
 
 def collect_network():
-    """Collect network time-series metrics."""
+    """Collect all network metrics per interface."""
     try:
         import psutil
         interfaces = []
@@ -409,7 +371,7 @@ def collect_network():
 
 
 def collect_gpus():
-    """Collect GPU time-series metrics. Static info (model, uuid, mem_total) is not included."""
+    """Collect all GPU metrics: uuid, model, memory, utilization, temp, fan, power."""
     try:
         import pynvml
         pynvml.nvmlInit()
@@ -435,12 +397,15 @@ def collect_gpus():
                 power_limit = None
 
             gpus.append({
-                'gpu_index': i,
+                'uuid': pynvml.nvmlDeviceGetUUID(handle),
+                'model': pynvml.nvmlDeviceGetName(handle),
+                'mem_total_mb': info.total // (1024 * 1024),
+                'mem_used_mb': info.used // (1024 * 1024),
+                'mem_free_mb': info.free // (1024 * 1024),
+                'mem_util_pct': round(info.used / info.total * 100, 1) if info.total else None,
                 'gpu_util_pct': util.gpu,
                 'temp_c': temp,
                 'fan_speed_pct': fan,
-                'mem_used_mb': info.used // (1024 * 1024),
-                'mem_util_pct': round(info.used / info.total * 100, 1) if info.total else None,
                 'power_draw_w': power,
                 'power_limit_w': power_limit,
             })
@@ -507,6 +472,7 @@ def collect_errors():
     """Collect recent system errors from Windows Event Log or journalctl."""
     errors = []
     if platform.system() == 'Windows':
+        # Use Windows Event Log via PowerShell
         try:
             ps_cmd = (
                 "Get-WinEvent -FilterHashtable @{"
@@ -536,6 +502,7 @@ def collect_errors():
         except Exception as e:
             logging.getLogger('errors').warning('Windows Event Log collection failed: %s', e)
     else:
+        # Linux: use journalctl
         try:
             out = subprocess.run(
                 ['journalctl', '-p', 'err..crit', '--since', '5 min ago', '--no-pager', '-o', 'short-iso'],
@@ -560,15 +527,26 @@ def collect_errors():
 def build_payload(config):
     """Build the telemetry payload.
 
-    Payload structure:
-    - static: hardware inventory that rarely changes (cpu model/mobo/gpu model).
-              Sent every heartbeat but server only updates when values change.
-    - metrics: time-series data that changes every heartbeat (utilization, temps, etc.)
+    Payload structure (no duplication):
+    - metrics: all data in one section. Each collector returns both static
+              identifiers (model, uuid, capacity) and dynamic values
+              (utilization, temp, usage). This ensures complete data for
+              per-minute historical tracking. GPU uuid is included so
+              replacements can be tracked accurately.
+    - motherboard: static hardware info
     - software: OS-level info (hostname, kernel, driver versions)
     - errors: recent system errors
     """
     now = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
-    static = collect_static()
+    metrics = {
+        'cpu': collect_cpu(),
+        'memory': collect_memory(),
+        'storage': collect_storage(),
+        'network': collect_network(),
+        'gpus': collect_gpus(),
+        'ai_processes': [],
+        'docker_containers': collect_docker(),
+    }
 
     payload = {
         'rig_uuid': config['rig_uuid'],
@@ -576,16 +554,8 @@ def build_payload(config):
         'schema_version': __schema_version__,
         'agent_version': __version__,
         'timestamp': now,
-        'static': static,
-        'metrics': {
-            'cpu': collect_cpu(),
-            'memory': collect_memory(),
-            'storage': collect_storage(),
-            'network': collect_network(),
-            'gpus': collect_gpus(),
-            'ai_processes': [],
-            'docker_containers': collect_docker(),
-        },
+        'metrics': metrics,
+        'motherboard': collect_motherboard(),
         'software': collect_software(),
         'errors': collect_errors(),
     }

@@ -220,6 +220,7 @@ class AIProcessMetric(models.Model):
     class Meta:
         db_table = 'metrics_ai_process'
         ordering = ['-gpu_mem_used_mb']
+        unique_together = ('rig_uuid', 'timestamp', 'process_name')
         indexes = [
             models.Index(fields=['rig_uuid', '-timestamp']),
             models.Index(fields=['rig_uuid', 'process_name']),

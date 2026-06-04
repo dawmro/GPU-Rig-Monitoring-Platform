@@ -108,13 +108,17 @@ class HealthView(APIView):
 
 
 class RigMetricsView(APIView):
-    """GET /api/v1/rigs/<uuid>/metrics/ — Latest metrics for a rig."""
+    """GET /api/v1/rigs/<uuid>/metrics/ — Latest metrics for a rig.
+
+    Returns the latest snapshot values from the denormalized LatestSnapshot table.
+    For full time-series data, use the chart-data endpoint.
+    """
     authentication_classes = [SessionAuthentication]
 
     def get(self, request, uuid):
         user = request.user
         rig = get_object_or_404(Rig, uuid=uuid)
-        if rig.owner_id != user.id and not user.is_staff:
+        if rig.owner_id != user.id and not request.user.is_staff:
             return Response({'status': 'error', 'message': 'Forbidden'}, status=403)
 
         try:
@@ -126,12 +130,6 @@ class RigMetricsView(APIView):
                 'cpu_temp_c': snapshot.cpu_temp_c,
                 'mem_used_bytes': snapshot.mem_used_bytes,
                 'mem_total_bytes': snapshot.mem_total_bytes,
-                'gpu_metrics': snapshot.gpu_metrics_json,
-                'storage': snapshot.storage_json,
-                'network': snapshot.network_json,
-                'docker_containers': snapshot.docker_containers_json,
-                'software': snapshot.software_json,
-                'errors': snapshot.errors_json,
             }
         except LatestSnapshot.DoesNotExist:
             data = {'rig_uuid': str(uuid), 'timestamp': None}

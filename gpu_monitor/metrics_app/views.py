@@ -188,7 +188,7 @@ class ChartDataView(APIView):
             bucket_time = start_minute + timedelta(minutes=i)
             labels.append(bucket_time.strftime('%H:%M'))
 
-        values = [0.0] * total_minutes
+        values = [None] * total_minutes
         return labels, values, start_minute, end_minute
 
     def _fill_buckets(self, labels, values, start_minute, queryset, field_name, value_key='timestamp'):

@@ -1,6 +1,6 @@
 # GPU Rig Monitoring Platform — Local Deployment Guide
 
-**Version:** 1.0
+**Version:** 1.1
 **Target OS:** Ubuntu 24.04 LTS (local testing, no domain name)
 
 This guide walks through deploying the complete GPU Rig Monitoring Platform on a **local Ubuntu machine** for development, testing, or evaluation before deploying to production hardware.
@@ -621,14 +621,14 @@ You should see output like `Updated: 0 stale, 2 offline`. If you see `password a
 │   ├── models.py               # Rig, RigTag models
 │   └── management/commands/    # update_rig_status command
 ├── metrics_app/                # Ingestion API + metric storage
-│   ├── models.py               # MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, ErrorEvent
+│   ├── models.py               # MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, ErrorEvent, ErrorEventOccurrence, RigStatusEvent, AIProcessMetric
 │   ├── serializers.py          # Payload validation + processing
-│   └── views.py                # IngestView, HealthView, ChartDataView
+│   └── views.py                # IngestView, HealthView, ChartDataView, RigMetricsView
 ├── dashboard/                  # HTMX dashboard views
 │   ├── views.py                # rig_list, rig_detail, htmx_metrics
 │   ├── urls.py
 │   └── templatetags/
-│       └── gpu_filters.py      # GPU model name cleanup filters
+│       └── gpu_filters.py      # Template filters: gpu_model_name, gpu_model_short, time_since
 ├── audit/                      # Audit logging
 │   ├── models.py               # AuditLog model
 │   └── middleware.py           # Request audit middleware
@@ -637,6 +637,10 @@ You should see output like `Updated: 0 stale, 2 offline`. If you see `password a
 │       ├── rig_detail.html     # Rig detail with tabs (Live Metrics, Historical Charts, Errors)
 │       ├── _metrics_cards.html # Live metric cards
 │       └── _rig_table.html     # Fleet overview table
+├── scripts/                    # Dev/test helper scripts
+│   ├── sync_to_opt.sh          # Full workspace → /opt deployment
+│   ├── sync_agent.sh           # Agent files only → /opt deployment
+│   └── sync_and_migrate.sh     # Granular file sync + migrate
 ├── logs/                       # Application logs
 │   ├── app.log                 # Django structured JSON log
 │   ├── gunicorn-access.log     # Gunicorn access log

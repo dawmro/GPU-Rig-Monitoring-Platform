@@ -1,5 +1,6 @@
 from django.db import models
 from django.conf import settings
+from django.utils import timezone
 
 
 class MetricSnapshot(models.Model):
@@ -165,6 +166,60 @@ class LatestSnapshot(models.Model):
 
     class Meta:
         db_table = 'metrics_latest_snapshot'
+
+
+class RigStatusEvent(models.Model):
+    """Tracks rig status transitions over time for uptime reporting.
+
+    Created whenever the rig's status changes (online→stale, stale→offline,
+    offline→online, etc.). Also created on every heartbeat to track uptime
+    continuity. Enables historical availability charts and downtime analysis.
+    """
+    id = models.BigAutoField(primary_key=True)
+    rig_uuid = models.UUIDField(db_index=True)
+    timestamp = models.DateTimeField(default=timezone.now, db_index=True)
+    status = models.CharField(max_length=10, db_index=True)
+    previous_status = models.CharField(max_length=10, null=True, blank=True)
+
+    class Meta:
+        db_table = 'metrics_rig_status_event'
+        ordering = ['-timestamp']
+        indexes = [
+            models.Index(fields=['rig_uuid', '-timestamp']),
+            models.Index(fields=['rig_uuid', 'status']),
+        ]
+
+
+class AIProcessMetric(models.Model):
+    """Per-process GPU/CPU usage tracking for AI workloads.
+
+    Stores per-process resource usage when the agent collects AI process data.
+    The `ai_processes` array in the agent payload contains processes that are
+    actively using GPU resources (detected via nvidia-smi or similar).
+
+    Enables charts showing:
+    - Which processes are using GPU memory over time
+    - Per-process GPU memory usage trends
+    - CPU usage breakdown by AI process
+    """
+    id = models.BigAutoField(primary_key=True)
+    snapshot = models.ForeignKey(MetricSnapshot, on_delete=models.CASCADE, related_name='ai_processes')
+    rig_uuid = models.UUIDField(db_index=True)
+    timestamp = models.DateTimeField(db_index=True)
+
+    process_name = models.CharField(max_length=255, blank=True, default='')
+    pid = models.PositiveIntegerField(null=True)
+    gpu_uuid = models.CharField(max_length=64, blank=True, default='')
+    gpu_mem_used_mb = models.PositiveIntegerField(null=True)
+    cpu_pct = models.FloatField(null=True)
+
+    class Meta:
+        db_table = 'metrics_ai_process'
+        ordering = ['-gpu_mem_used_mb']
+        indexes = [
+            models.Index(fields=['rig_uuid', '-timestamp']),
+            models.Index(fields=['rig_uuid', 'process_name']),
+        ]
 
 
 class ErrorEvent(models.Model):

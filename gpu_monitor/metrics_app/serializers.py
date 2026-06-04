@@ -3,7 +3,8 @@ import logging
 from rest_framework import serializers, status
 from django.db import transaction
 from django.utils import timezone
-from .models import MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, ErrorEvent
+from .models import MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, ErrorEvent, RigStatusEvent, AIProcessMetric
+from rigs.models import Rig
 from audit.middleware import compute_error_hash
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
     gpu_list = metrics_data.get('gpus', [])
     storage_list = metrics_data.get('storage', [])
     network_list = metrics_data.get('network', [])
+    ai_processes = metrics_data.get('ai_processes', [])
     docker_containers = metrics_data.get('docker_containers', [])
 
     try:
@@ -183,6 +185,32 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     'mem_total_bytes': memory.get('total_bytes'),
                 },
             )
+
+            # Store per-process AI metrics
+            for proc in ai_processes:
+                AIProcessMetric.objects.update_or_create(
+                    rig_uuid=rig_uuid,
+                    timestamp=ts,
+                    process_name=proc.get('process_name', ''),
+                    pid=proc.get('pid'),
+                    defaults={
+                        'snapshot': snapshot,
+                        'gpu_uuid': proc.get('gpu_uuid', ''),
+                        'gpu_mem_used_mb': proc.get('gpu_mem_used_mb'),
+                        'cpu_pct': proc.get('cpu_pct'),
+                    },
+                )
+
+            # Track rig status transitions
+            if rig:
+                previous_status = rig.status
+                current_status = Rig.Status.ONLINE  # Heartbeat always means online
+                if previous_status != current_status:
+                    RigStatusEvent.objects.create(
+                        rig_uuid=rig_uuid,
+                        status=current_status,
+                        previous_status=previous_status,
+                    )
 
             # Process errors (deduplicate)
             for error in errors_data:

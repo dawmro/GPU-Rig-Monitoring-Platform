@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, ErrorEvent
+from .models import MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, ErrorEvent, RigStatusEvent, AIProcessMetric
 
 
 @admin.register(MetricSnapshot)
@@ -39,3 +39,18 @@ class ErrorEventAdmin(admin.ModelAdmin):
     list_display = ('rig_uuid', 'timestamp', 'source', 'message', 'count', 'last_seen')
     list_filter = ('source',)
     search_fields = ('rig_uuid', 'message')
+
+
+@admin.register(RigStatusEvent)
+class RigStatusEventAdmin(admin.ModelAdmin):
+    list_display = ('rig_uuid', 'timestamp', 'status', 'previous_status')
+    list_filter = ('status',)
+    search_fields = ('rig_uuid',)
+    readonly_fields = ('timestamp',)
+
+
+@admin.register(AIProcessMetric)
+class AIProcessMetricAdmin(admin.ModelAdmin):
+    list_display = ('rig_uuid', 'timestamp', 'process_name', 'pid', 'gpu_uuid', 'gpu_mem_used_mb', 'cpu_pct')
+    list_filter = ('process_name',)
+    search_fields = ('rig_uuid', 'process_name', 'gpu_uuid')

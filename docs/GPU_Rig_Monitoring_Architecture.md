@@ -252,7 +252,7 @@ On every agent heartbeat, `IngestView` sets `Rig.status = ONLINE` and `Rig.last_
 | Job | Frequency | Wrapper |
 |-----|-----------|---------|
 | Linux agent | 60s | `flock` + cron |
-| Rig status update | 2 min | `scripts/update_rig_status.sh` |
+| Rig status update | 2 min | `gpu_monitor/deploy/update_rig_status.sh` |
 | Frontend (Windows) agent | 60s | Task Scheduler + `pythonw.exe` |
 
 ---
@@ -731,9 +731,9 @@ sudo -u postgres psql gpu_monitor
 | `templates/dashboard/_metrics_cards.html` | Live metrics cards partial (HTMX-swapped) |
 | `templates/dashboard/_rig_status_badge.html` | Status badge partial (HTMX-swapped) |
 | `templates/dashboard/_rig_name.html` | Rig name partial (HTMX-swapped on rename) |
-| `deploy/` | Nginx config, Gunicorn systemd unit, install scripts |
+| `gpu_monitor/deploy/` | Nginx config, Gunicorn systemd unit, install scripts, cron wrappers |
+| `gpu_monitor/deploy/update_rig_status.sh` | Cron wrapper for rig status updates |
 | `scripts/sync_to_opt.sh` | Workspace → /opt deployment script |
-| `scripts/update_rig_status.sh` | Cron wrapper for rig status updates |
 | `.env` | Environment variables (mode 0600) |
 | `venv/` | Python virtual environment |
 | `logs/` | Application logs |

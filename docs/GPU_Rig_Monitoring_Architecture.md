@@ -684,7 +684,8 @@ When `schema_version` changes:
 | Problem | Diagnosis | Fix |
 |---------|-----------|-----|
 | Cron job never runs | `source` doesn't work in `/bin/sh` | Use wrapper script with `bash` explicitly |
-| `update_rig_status` has no effect | `.env` not loaded in wrapper | Wrapper uses `cd /opt/gpu_monitor && . venv/bin/activate` — Django reads `.env` internally via `os.environ.get()` |
+|| `update_rig_status` has no effect | `.env` not loaded in wrapper | Wrapper must `set -a && source .env && set +a` **before** calling `python manage.py`. Django reads DB credentials from `os.environ` — if `.env` is not sourced, the DB password is empty and authentication fails |
+| Cron log shows `password authentication failed` | `.env` not sourced, or wrong user | Ensure wrapper sources `.env` and cron runs as a user with read access to `.env` |
 | Cron log is empty | Cron daemon not running | `sudo systemctl restart cron` |
 | Crontab syntax error | Inline `source` in cron | Replace with `bash /opt/gpu_monitor/deploy/update_rig_status.sh` |
 
@@ -988,7 +989,7 @@ WantedBy=multi-user.target
     >> /var/log/monitoring-agent/cron.log 2>&1
 
 # /etc/cron.d/rig-status — Rig status update, every 2 min
-*/2 * * * * monitoring bash /opt/gpu_monitor/deploy/update_rig_status.sh
+*/2 * * * * root bash /opt/gpu_monitor/deploy/update_rig_status.sh
 ```
 
 ### E. Glossary

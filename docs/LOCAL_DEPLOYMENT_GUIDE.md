@@ -591,11 +591,14 @@ sudo systemctl restart cron
 This runs every 2 minutes. Verify it's working:
 ```bash
 cat /etc/cron.d/rig-status
+# Wait up to 2 minutes, then check the log:
 tail -f /opt/gpu_monitor/logs/rig_status.log
 ```
 
+You should see output like `Updated: 0 stale, 2 offline`. If you see `password authentication failed`, the wrapper is not sourcing `.env` correctly — ensure the script contains `set -a && source .env && set +a` before the `python manage.py` call.
+
 > **Important:** Without this cron job, rigs will always show "Online" even after they stop reporting. The `update_rig_status` management command checks `last_seen` timestamps and updates the status accordingly.
-> **Note:** The wrapper script uses `bash` explicitly because the old inline `source` approach doesn't work in cron's default `/bin/sh` shell. Django reads `.env` via `os.environ.get()` in `settings.py`, so no shell-level `.env` sourcing is needed.
+> **Note:** The wrapper script uses `bash` explicitly because inline `source` doesn't work in cron's default `/bin/sh` shell. The wrapper must source `.env` with `set -a && source .env && set +a` **before** calling `python manage.py` — Django reads DB credentials from `os.environ`, and without sourcing `.env` the DB password is empty, causing `password authentication failed`.
 
 ---
 

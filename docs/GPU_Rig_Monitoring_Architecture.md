@@ -148,15 +148,21 @@ debug_mode: false         # Verbose logging
 {
   "rig_uuid": "UUIDv4",
   "rig_name": "my-server",
-  "schema_version": "1.0",
-  "agent_version": "1.0.0",
+  "schema_version": "1.1",
+  "agent_version": "1.1.0",
   "timestamp": "2026-06-02T19:54:06Z",
-  "inventory": { "cpu": {}, "memory": {}, "motherboard": {}, "storage": [], "network": [], "gpus": [] },
   "metrics": { "cpu": {}, "memory": {}, "storage": [], "network": [], "gpus": [], "ai_processes": [], "docker_containers": [] },
+  "motherboard": { "manufacturer": "...", "model": "...", "bios_version": "..." },
   "software": { "hostname": "...", "os_distro": "...", "kernel": "..." },
   "errors": [{ "source": "kernel", "message": "...", "timestamp": "..." }]
 }
 ```
+
+**Changelog from schema 1.0 → 1.1:**
+- Removed `inventory` top-level key (was a 100% duplicate of `metrics`, wasting ~50% of payload size)
+- Added `motherboard` as a top-level key (previously nested inside `inventory`)
+- Each collector now called once per heartbeat (was twice)
+- All metric fields preserved: `gpu_uuid`, `model`, `mem_total_mb`, `capacity_bytes`, etc.
 
 ### 3.4 Transport
 
@@ -166,10 +172,16 @@ debug_mode: false         # Verbose logging
 
 ### 3.5 Two Agents
 
-| Agent | File | Platform | Scheduling |
-|-------|------|----------|------------|
-| Linux | `agent/run.py` | Any Linux, VMware NAT | `cron` every 60s with `flock` |
-| Windows | `agent_windows/run.py` | Windows 10/11 | Task Scheduler with `pythonw.exe` (hidden window) |
+| Agent | File | Version | Schema | Platform | Scheduling |
+|-------|------|---------|--------|----------|------------|
+| Linux | `agent/run.py` | 1.1.0 | 1.1 | Any Linux, VMware NAT | `cron` every 60s with `flock` |
+| Windows | `agent_windows/run.py` | 1.2.0-win | 1.1 | Windows 10/11 | Task Scheduler with `pythonw.exe` (hidden window) |
+
+**Versioning rules:**
+- `agent_version` (e.g. `1.1.0`): incremented for agent-side changes (collectors, payload format, bug fixes). Format: `MAJOR.MINOR.PATCH`.
+- `schema_version` (e.g. `1.1`): incremented only when the payload structure changes in a way that affects the server's serialization/storage. Format: `MAJOR.MINOR`.
+- Schema 1.0 agents remain supported (backward compatible via `validate_schema_version`).
+- When schema changes, both `SERIALIZER_MAP` entries are kept (see §11.5).
 
 ---
 
@@ -771,54 +783,20 @@ sudo -u postgres psql gpu_monitor
 
 ### A. Full JSON Schema Definitions (Agent Payload)
 
+**Current: v1.1** (see changelog below)
+
 ```json
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "GPU Rig Monitoring Agent Payload v1.0",
+  "title": "GPU Rig Monitoring Agent Payload v1.1",
   "type": "object",
   "required": ["rig_uuid", "schema_version", "timestamp", "metrics"],
   "properties": {
     "rig_uuid": { "type": "string", "format": "uuid" },
     "rig_name": { "type": "string", "maxLength": 128 },
-    "schema_version": { "type": "string", "enum": ["1.0"] },
+    "schema_version": { "type": "string", "enum": ["1.0", "1.1"] },
     "agent_version": { "type": "string" },
     "timestamp": { "type": "string", "format": "date-time" },
-    "inventory": {
-      "type": "object",
-      "properties": {
-        "cpu": {
-          "type": "object",
-          "properties": {
-            "model": { "type": "string" },
-            "physical_cores": { "type": "integer" },
-            "logical_cores": { "type": "integer" }
-          }
-        },
-        "memory": {
-          "type": "object",
-          "properties": {
-            "total_bytes": { "type": "integer" }
-          }
-        },
-        "motherboard": {
-          "type": "object",
-          "properties": {
-            "manufacturer": { "type": "string" },
-            "model": { "type": "string" }
-          }
-        },
-        "gpus": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "uuid": { "type": "string" },
-              "model": { "type": "string" }
-            }
-          }
-        }
-      }
-    },
     "metrics": {
       "type": "object",
       "properties": {
@@ -893,11 +871,7 @@ sudo -u postgres psql gpu_monitor
             }
           }
         },
-        "ai_processes": {
-          "type": "array",
-          "items": { "type": "object" },
-          "description": "Reserved for v1.1"
-        },
+        "ai_processes": { "type": "array", "items": { "type": "object" } },
         "docker_containers": {
           "type": "array",
           "items": {
@@ -910,6 +884,14 @@ sudo -u postgres psql gpu_monitor
             }
           }
         }
+      }
+    },
+    "motherboard": {
+      "type": "object",
+      "properties": {
+        "manufacturer": { "type": "string" },
+        "model": { "type": "string" },
+        "bios_version": { "type": "string" }
       }
     },
     "software": {
@@ -934,10 +916,15 @@ sudo -u postgres psql gpu_monitor
         }
       }
     }
-  },
-  "additionalProperties": true
+  }
 }
 ```
+
+**Schema 1.0 → 1.1 changelog:**
+- Removed `inventory` top-level key (was a 100% duplicate of `metrics`)
+- Added `motherboard` as a top-level key (previously nested inside `inventory`)
+- `schema_version` enum now accepts both `"1.0"` and `"1.1"` (backward compatible)
+- All metric fields preserved — no data loss
 
 ### B. Endpoint Catalog (Summary)
 

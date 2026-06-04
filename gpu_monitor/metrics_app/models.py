@@ -3,27 +3,34 @@ from django.conf import settings
 
 
 class MetricSnapshot(models.Model):
-    """Time-series metric data — one row per rig per minute."""
+    """Time-series metric data — one row per rig per minute.
+
+    Stores all metrics from the agent payload. Fields that are technically
+    static (cpu_model, mem_total_bytes, etc.) are stored per-row for
+    simplicity and to track any changes over time (e.g., hardware upgrades).
+    """
     id = models.BigAutoField(primary_key=True)
     rig_uuid = models.UUIDField(db_index=True)
     schema_version = models.CharField(max_length=10, default='1.0')
     agent_version = models.CharField(max_length=20, default='1.0.0')
     timestamp = models.DateTimeField(db_index=True)
 
-    # CPU metrics
+    # CPU metrics (static + dynamic)
     cpu_model = models.CharField(max_length=255, blank=True, default='')
     cpu_utilization_pct = models.FloatField(null=True)
     cpu_temp_c = models.FloatField(null=True)
     cpu_physical_cores = models.PositiveIntegerField(null=True)
     cpu_logical_cores = models.PositiveIntegerField(null=True)
 
-    # Memory metrics
+    # Memory metrics (static + dynamic)
     mem_total_bytes = models.BigIntegerField(null=True)
     mem_used_bytes = models.BigIntegerField(null=True)
     mem_cached_bytes = models.BigIntegerField(null=True)
 
-    # Full inventory snapshot (static info, updated less frequently)
-    inventory_json = models.JSONField(default=dict, blank=True)
+    # Motherboard info (static, stored as JSON for flexibility)
+    motherboard_json = models.JSONField(default=dict, blank=True)
+
+    # Software info (static, stored as JSON)
     software_json = models.JSONField(default=dict, blank=True)
 
     class Meta:
@@ -35,7 +42,12 @@ class MetricSnapshot(models.Model):
 
 
 class GPUMetric(models.Model):
-    """Per-GPU time-series metrics — one row per GPU per snapshot."""
+    """Per-GPU time-series metrics — one row per GPU per snapshot.
+
+    Includes both static identifiers (uuid, model, mem_total_mb) and
+    dynamic metrics (utilization, temp, power). UUID is stored per-row
+    so GPU replacements can be tracked accurately over time.
+    """
     id = models.BigAutoField(primary_key=True)
     snapshot = models.ForeignKey(MetricSnapshot, on_delete=models.CASCADE, related_name='gpu_metrics')
     rig_uuid = models.UUIDField(db_index=True)
@@ -49,6 +61,7 @@ class GPUMetric(models.Model):
     fan_speed_pct = models.FloatField(null=True)
     mem_total_mb = models.PositiveIntegerField(null=True)
     mem_used_mb = models.PositiveIntegerField(null=True)
+    mem_free_mb = models.PositiveIntegerField(null=True)
     mem_util_pct = models.FloatField(null=True)
     power_draw_w = models.FloatField(null=True)
     power_limit_w = models.FloatField(null=True)
@@ -62,7 +75,10 @@ class GPUMetric(models.Model):
 
 
 class StorageMetric(models.Model):
-    """Per-disk time-series metrics — one row per disk per snapshot."""
+    """Per-disk time-series metrics — one row per disk per snapshot.
+
+    Includes capacity (static) and dynamic metrics (usage, temp, smart).
+    """
     id = models.BigAutoField(primary_key=True)
     snapshot = models.ForeignKey(MetricSnapshot, on_delete=models.CASCADE, related_name='storage_metrics')
     rig_uuid = models.UUIDField(db_index=True)

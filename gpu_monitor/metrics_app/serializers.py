@@ -1,7 +1,7 @@
 import hashlib
 import logging
 from rest_framework import serializers, status
-from django.db import connection
+from django.db import transaction
 from django.utils import timezone
 from .models import MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, ErrorEvent
 from audit.middleware import compute_error_hash
@@ -12,24 +12,22 @@ logger = logging.getLogger(__name__)
 class IngestSerializer(serializers.Serializer):
     rig_uuid = serializers.UUIDField()
     rig_name = serializers.CharField(required=False, default='')
-    schema_version = serializers.CharField(default='1.0')
-    agent_version = serializers.CharField(default='1.0.0')
+    schema_version = serializers.CharField(default='1.1')
+    agent_version = serializers.CharField(default='1.1.0')
     timestamp = serializers.DateTimeField()
-    inventory = serializers.JSONField(required=False, default=dict)
     metrics = serializers.JSONField(required=False, default=dict)
+    motherboard = serializers.JSONField(required=False, default=dict)
     software = serializers.JSONField(required=False, default=dict)
     errors = serializers.ListField(required=False, default=list)
 
     def validate_schema_version(self, value):
-        if value not in ('1.0',):
+        if value not in ('1.0', '1.1'):
             raise serializers.ValidationError(f"Unsupported schema_version: {value}")
         return value
 
 
 def process_ingest(rig_uuid, data, owner_id):
     """Process an ingestion payload. Returns (response_data, status_code)."""
-    from django.db import transaction
-
     serializer = IngestSerializer(data=data)
     if not serializer.is_valid():
         return {'status': 'error', 'message': serializer.errors}, status.HTTP_400_BAD_REQUEST
@@ -39,8 +37,8 @@ def process_ingest(rig_uuid, data, owner_id):
     ts = validated['timestamp']
     schema_version = validated['schema_version']
     metrics_data = validated.get('metrics', {})
+    motherboard_data = validated.get('motherboard', {})
     software_data = validated.get('software', {})
-    inventory_data = validated.get('inventory', {})
     errors_data = validated.get('errors', [])
 
     cpu = metrics_data.get('cpu', {})
@@ -48,7 +46,6 @@ def process_ingest(rig_uuid, data, owner_id):
     gpu_list = metrics_data.get('gpus', [])
     storage_list = metrics_data.get('storage', [])
     network_list = metrics_data.get('network', [])
-    ai_processes = metrics_data.get('ai_processes', [])
     docker_containers = metrics_data.get('docker_containers', [])
 
     try:
@@ -68,12 +65,12 @@ def process_ingest(rig_uuid, data, owner_id):
                     'mem_total_bytes': memory.get('total_bytes'),
                     'mem_used_bytes': memory.get('used_bytes'),
                     'mem_cached_bytes': memory.get('cached_bytes'),
-                    'inventory_json': inventory_data,
+                    'motherboard_json': motherboard_data,
                     'software_json': software_data,
                 },
             )
 
-            # Store per-GPU metrics
+            # Store per-GPU metrics (with uuid, model, mem_total — all per-row for tracking)
             for idx, gpu in enumerate(gpu_list):
                 GPUMetric.objects.update_or_create(
                     rig_uuid=rig_uuid,
@@ -88,13 +85,14 @@ def process_ingest(rig_uuid, data, owner_id):
                         'fan_speed_pct': gpu.get('fan_speed_pct'),
                         'mem_total_mb': gpu.get('mem_total_mb'),
                         'mem_used_mb': gpu.get('mem_used_mb'),
+                        'mem_free_mb': gpu.get('mem_free_mb'),
                         'mem_util_pct': gpu.get('mem_util_pct'),
                         'power_draw_w': gpu.get('power_draw_w'),
                         'power_limit_w': gpu.get('power_limit_w'),
                     },
                 )
 
-            # Store per-disk metrics
+            # Store per-disk metrics (with capacity — for tracking)
             for disk in storage_list:
                 StorageMetric.objects.update_or_create(
                     rig_uuid=rig_uuid,

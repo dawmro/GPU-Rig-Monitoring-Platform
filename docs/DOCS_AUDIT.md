@@ -49,49 +49,20 @@ Missing from the pipeline description:
 - Store DockerContainerMetric with cpu_pct, mem_usage_bytes, mem_limit_bytes
 - Calculate and store network deltas
 
-## 5. Architecture.md — §4.6 API Endpoints — RigMetricsView BUG ⚠️ CRITICAL
+## 5. Architecture.md — §4.6 API Endpoints — RigMetricsView BUG ⚠️ CRITICAL — ✅ FIXED
 
-The `GET /api/v1/rigs/<uuid>/metrics/` endpoint (RigMetricsView) references fields that DON'T EXIST on LatestSnapshot:
+**Was:** The `GET /api/v1/rigs/<uuid>/metrics/` endpoint referenced non-existent fields on LatestSnapshot.
 
-```python
-# views.py lines 129-134 — these fields DO NOT EXIST on LatestSnapshot:
-'gpu_metrics': snapshot.gpu_metrics_json,      # ❌ AttributeError
-'storage': snapshot.storage_json,               # ❌ AttributeError
-'network': snapshot.network_json,               # ❌ AttributeError
-'docker_containers': snapshot.docker_containers_json,  # ❌ AttributeError
-'software': snapshot.software_json,              # ❌ AttributeError
-'errors': snapshot.errors_json,                  # ❌ AttributeError
-```
+**Fix:** Removed the broken fields. Now returns only what LatestSnapshot actually has:
+- `rig_uuid`, `timestamp`, `cpu_utilization_pct`, `cpu_temp_c`, `mem_used_bytes`, `mem_total_bytes`
 
-**LatestSnapshot only has these fields:**
-- `rig_uuid`, `schema_version`, `timestamp`
-- `cpu_utilization_pct`, `cpu_temp_c`
-- `mem_used_bytes`, `mem_total_bytes`
-- `updated_at`
+The endpoint was unused by any template/frontend code. For GPU/storage/network/docker data, the frontend queries the individual time-series tables directly via `htmx_metrics`.
 
-**Impact:** Any call to `/api/v1/rigs/<uuid>/metrics/` will raise `AttributeError` and return 500.
+## 5b. AIProcessMetric — Missing unique_together constraint ⚠️ — ✅ FIXED
 
-**Fix needed:** Either:
-a) Add these JSON fields to LatestSnapshot and populate them in the serializer, OR
-b) Remove these fields from the response and let clients query the individual time-series tables
+**Was:** No unique_together constraint, allowing duplicate records per heartbeat.
 
-## 5b. AIProcessMetric — Missing unique_together constraint ⚠️
-
-**Problem:** `AIProcessMetric` has NO `unique_together` constraint. This means:
-- Multiple records can be created per heartbeat for the same process
-- The `update_or_create` in the serializer uses `process_name` + `pid` as lookup, but there's no DB-level constraint to enforce uniqueness
-
-**Current model:**
-```python
-class AIProcessMetric(models.Model):
-    # ... fields ...
-    class Meta:
-        db_table = 'metrics_ai_process'
-        ordering = ['-gpu_mem_used_mb']
-        # ❌ NO unique_together!
-```
-
-**Fix needed:** Add `unique_together = ('rig_uuid', 'timestamp', 'process_name')` or similar.
+**Fix:** Added `unique_together = ('rig_uuid', 'timestamp', 'process_name')` — one record per process name per heartbeat. If the PID changes (process restart), the existing record is updated via `update_or_create`.
 
 ## 6. LOCAL_DEPLOYMENT_GUIDE.md — §7 File Layout — Missing files
 

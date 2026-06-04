@@ -21,11 +21,15 @@ class MetricSnapshot(models.Model):
     cpu_temp_c = models.FloatField(null=True)
     cpu_physical_cores = models.PositiveIntegerField(null=True)
     cpu_logical_cores = models.PositiveIntegerField(null=True)
+    cpu_load_avg_json = models.JSONField(default=list, blank=True)
 
     # Memory metrics (static + dynamic)
     mem_total_bytes = models.BigIntegerField(null=True)
     mem_used_bytes = models.BigIntegerField(null=True)
+    mem_free_bytes = models.BigIntegerField(null=True)
     mem_cached_bytes = models.BigIntegerField(null=True)
+    swap_used_bytes = models.BigIntegerField(null=True)
+    swap_total_bytes = models.BigIntegerField(null=True)
 
     # Motherboard info (static, stored as JSON for flexibility)
     motherboard_json = models.JSONField(default=dict, blank=True)

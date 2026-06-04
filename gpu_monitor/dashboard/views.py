@@ -6,7 +6,7 @@ from datetime import timedelta
 from django.views.decorators.http import require_POST
 
 from rigs.models import Rig
-from metrics_app.models import LatestSnapshot, GPUMetric, StorageMetric, DockerContainerMetric, ErrorEvent
+from metrics_app.models import MetricSnapshot, LatestSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, ErrorEvent
 
 
 @login_required
@@ -82,8 +82,10 @@ def rig_detail(request, uuid):
     # Fetch related metrics from new models (same query as htmx_metrics)
     gpu_metrics = []
     storage_metrics = []
+    network_metrics = []
     docker_metrics = []
     recent_errors = []
+    latest_metric_snapshot = None
 
     if snapshot:
         gpu_metrics = GPUMetric.objects.filter(
@@ -97,9 +99,21 @@ def rig_detail(request, uuid):
             rig_uuid=str(uuid),
             timestamp__gte=timezone.now() - timedelta(hours=1)
         ).order_by('-timestamp'):
-            if s.device not in seen_devices:
-                seen_devices.add(s.device)
+            # Normalize device path: strip trailing slashes/backslashes for dedup
+            norm_device = s.device.rstrip('/\\') if s.device else ''
+            if norm_device not in seen_devices:
+                seen_devices.add(norm_device)
                 storage_metrics.append(s)
+
+        # Get latest network metric per unique interface
+        seen_interfaces = set()
+        for n in NetworkMetric.objects.filter(
+            rig_uuid=str(uuid),
+            timestamp__gte=timezone.now() - timedelta(hours=1)
+        ).order_by('-timestamp'):
+            if n.interface not in seen_interfaces:
+                seen_interfaces.add(n.interface)
+                network_metrics.append(n)
 
         docker_metrics = DockerContainerMetric.objects.filter(
             rig_uuid=str(uuid),
@@ -110,13 +124,23 @@ def rig_detail(request, uuid):
             rig_uuid=str(uuid)
         ).order_by('-last_seen')[:5]
 
+        # Get the latest MetricSnapshot for motherboard/software JSON data
+        try:
+            latest_metric_snapshot = MetricSnapshot.objects.filter(
+                rig_uuid=str(uuid)
+            ).order_by('-timestamp').first()
+        except MetricSnapshot.DoesNotExist:
+            pass
+
     return render(request, 'dashboard/rig_detail.html', {
         'rig': rig,
         'snapshot': snapshot,
         'gpu_metrics': gpu_metrics,
         'storage_metrics': storage_metrics,
+        'network_metrics': network_metrics,
         'docker_metrics': docker_metrics,
         'recent_errors': recent_errors,
+        'metric_snapshot': latest_metric_snapshot,
     })
 
 
@@ -135,8 +159,10 @@ def htmx_metrics(request, uuid):
     # Fetch related metrics from new models
     gpu_metrics = []
     storage_metrics = []
+    network_metrics = []
     docker_metrics = []
     recent_errors = []
+    latest_metric_snapshot = None
 
     if snapshot:
         gpu_metrics = GPUMetric.objects.filter(
@@ -145,16 +171,29 @@ def htmx_metrics(request, uuid):
             gpu_index=0
         ).order_by('-timestamp')[:1]
 
-        # Get latest storage metric per unique device
+        # Get latest storage metric per unique device (normalize path for dedup)
         storage_metrics = []
         seen_devices = set()
         for s in StorageMetric.objects.filter(
             rig_uuid=str(uuid),
             timestamp__gte=timezone.now() - timedelta(hours=1)
         ).order_by('-timestamp'):
-            if s.device not in seen_devices:
-                seen_devices.add(s.device)
+            # Normalize device path: strip trailing slashes/backslashes for dedup
+            norm_device = s.device.rstrip('/\\') if s.device else ''
+            if norm_device not in seen_devices:
+                seen_devices.add(norm_device)
                 storage_metrics.append(s)
+
+        # Get latest network metric per unique interface
+        network_metrics = []
+        seen_interfaces = set()
+        for n in NetworkMetric.objects.filter(
+            rig_uuid=str(uuid),
+            timestamp__gte=timezone.now() - timedelta(hours=1)
+        ).order_by('-timestamp'):
+            if n.interface not in seen_interfaces:
+                seen_interfaces.add(n.interface)
+                network_metrics.append(n)
 
         docker_metrics = DockerContainerMetric.objects.filter(
             rig_uuid=str(uuid),
@@ -165,13 +204,23 @@ def htmx_metrics(request, uuid):
             rig_uuid=str(uuid)
         ).order_by('-last_seen')[:5]
 
+        # Get the latest MetricSnapshot for motherboard/software JSON data
+        try:
+            latest_metric_snapshot = MetricSnapshot.objects.filter(
+                rig_uuid=str(uuid)
+            ).order_by('-timestamp').first()
+        except MetricSnapshot.DoesNotExist:
+            pass
+
     return render(request, 'dashboard/_metrics_cards.html', {
         'rig': rig,
         'snapshot': snapshot,
         'gpu_metrics': gpu_metrics,
         'storage_metrics': storage_metrics,
+        'network_metrics': network_metrics,
         'docker_metrics': docker_metrics,
         'recent_errors': recent_errors,
+        'metric_snapshot': latest_metric_snapshot,
     })
 
 

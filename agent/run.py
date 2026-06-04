@@ -86,33 +86,16 @@ def setup_logging(debug=False):
 
 
 def log_payload(payload):
-    """Write the full JSON payload to a separate log file for local analysis.
+    """Save the latest full JSON payload to payload.json for local analysis.
 
-    Each entry is written as:
-        --- YYYY-MM-DD HH:MM:SS UTC ---
-        {pretty-printed JSON payload}
-
-    The file is rotated at 50 MB with 3 backups to avoid filling disk
-    on machines that run for months.
+    Overwrites the file each run so it always contains the most recent
+    payload. This is useful for debugging what the agent is actually
+    sending to the server.
     """
     log_dir = Path('/var/log/monitoring-agent')
     log_dir.mkdir(parents=True, exist_ok=True)
-    payload_log = logging.getLogger('payload')
-    payload_log.propagate = False
-    payload_log.setLevel(logging.INFO)
-
-    # Add handler only once
-    if not payload_log.handlers:
-        handler = logging.handlers.RotatingFileHandler(
-            log_dir / 'payload.log', maxBytes=50*1024*1024, backupCount=3
-        )
-        handler.setFormatter(logging.Formatter('%(message)s'))
-        payload_log.addHandler(handler)
-
-    ts = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
-    separator = f'--- {ts} ---'
-    body = json.dumps(payload, indent=2, default=str)
-    payload_log.info(f'{separator}\n{body}\n')
+    payload_path = log_dir / 'payload.json'
+    payload_path.write_text(json.dumps(payload, indent=2, default=str) + '\n')
 
 
 # ── Metric Collectors ───────────────────────────────────────────────────────

@@ -161,7 +161,8 @@ agent_windows/
 ├── config.yaml.example      # Config template
 ├── config.yaml              # Your config (create from example)
 └── logs/                    # Created automatically
-    └── agent.log            # Structured JSON log (rotated at 10 MB)
+    ├── agent.log            # Structured JSON log (rotated at 10 MB)
+    └── payload.json         # Latest full JSON payload sent to server (overwritten each run)
 ```
 
 ## What Gets Collected

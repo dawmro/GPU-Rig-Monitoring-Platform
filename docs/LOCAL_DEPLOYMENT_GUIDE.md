@@ -658,6 +658,7 @@ You should see output like `Updated: 0 stale, 2 offline`. If you see `password a
 
 /var/log/monitoring-agent/
 ├── agent.log                   # Structured JSON agent log (rotated 10MB x 3)
+├── payload.json                # Latest full JSON payload sent to server (overwritten each run)
 └── cron.log                    # Cron output log
 
 /etc/cron.d/monitoring-agent   # Cron job definition

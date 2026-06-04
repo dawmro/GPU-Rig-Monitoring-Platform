@@ -105,6 +105,19 @@ def setup_logging(debug=False):
     root.addHandler(console)
 
 
+def log_payload(payload):
+    """Save the latest full JSON payload to payload.json for local analysis.
+
+    Overwrites the file each run so it always contains the most recent
+    payload. This is useful for debugging what the agent is actually
+    sending to the server.
+    """
+    log_dir = Path(__file__).resolve().parent / 'logs'
+    log_dir.mkdir(parents=True, exist_ok=True)
+    payload_path = log_dir / 'payload.json'
+    payload_path.write_text(json.dumps(payload, indent=2, default=str) + '\n')
+
+
 # ── Metric Collectors ───────────────────────────────────────────────────────
 
 def collect_cpu():
@@ -885,6 +898,7 @@ def main():
     try:
         logger.info('Starting collection for rig %s', config['rig_uuid'])
         payload = build_payload(config)
+        log_payload(payload)
         status_code, response = send_payload(config, payload)
         if status_code in (200, 202):
             logger.info('Payload accepted: %s', response.get('status', 'unknown'))

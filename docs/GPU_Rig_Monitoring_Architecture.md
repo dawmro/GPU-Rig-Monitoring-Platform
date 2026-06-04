@@ -411,6 +411,8 @@ bash scripts/sync_to_opt.sh
 | Gunicorn access | `/opt/gpu_monitor/logs/gunicorn-access.log` | HTTP access |
 | Django app | `/opt/gpu_monitor/logs/app.log` | Structured JSON |
 | Agent (Linux) | `/var/log/monitoring-agent/agent.log` | Structured JSON |
+| Agent payload (Linux) | `/var/log/monitoring-agent/payload.json` | Latest full JSON payload (overwritten each run) |
+| Agent payload (Windows) | `./logs/payload.json` (alongside agent) | Latest full JSON payload (overwritten each run) |
 | Agent cron | `/var/log/monitoring-agent/cron.log` | stdout |
 
 ### 8.3 Manual Operations
@@ -749,6 +751,7 @@ sudo -u postgres psql gpu_monitor
 | `/opt/agent_windows/run.py` | Windows agent script |
 | `/etc/monitoring-agent/config.yaml` | Agent configuration (mode 0600) |
 | `/var/log/monitoring-agent/agent.log` | Agent logs (JSON, rotated 10 MB × 3) |
+| `/var/log/monitoring-agent/payload.json` | Latest full JSON payload sent to server (overwritten each run) |
 | `/var/log/monitoring-agent/cron.log` | Cron output log |
 
 ### 13.3 System

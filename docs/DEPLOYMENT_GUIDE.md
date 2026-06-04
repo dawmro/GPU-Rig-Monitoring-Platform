@@ -717,6 +717,7 @@ tail -50 /opt/gpu_monitor/logs/app.log
 | `venv/` | Python virtual environment |
 | `/etc/monitoring-agent/config.yaml` | Agent configuration — mode `0600`, owned by `monitoring-agent:monitoring-agent` |
 | `/var/log/monitoring-agent/agent.log` | Agent logs (JSON, rotated at 10 MB × 3 backups) |
+| `/var/log/monitoring-agent/payload.json` | Latest full JSON payload sent to server (overwritten each run) |
 | `/var/log/monitoring-agent/cron.log` | Cron output log |
 | `/etc/cron.d/monitoring-agent` | Cron job definition (every 60 seconds) |
 | `/etc/sudoers.d/monitoring-agent` | Sudo permissions for disk/log access |

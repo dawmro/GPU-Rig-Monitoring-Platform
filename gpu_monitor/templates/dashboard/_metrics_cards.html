@@ -40,20 +40,18 @@
                 </span>
             {% else %}—{% endif %}
         </span>
+        {% if metric_snapshot.cpu_load_avg_json %}
+        <span>
+            Load:
+            {% for val in metric_snapshot.cpu_load_avg_json %}
+                <span class="text-gray-400">{{ val|floatformat:2 }}</span>{% if not forloop.last %} / {% endif %}
+            {% endfor %}
+        </span>
+        {% endif %}
     </div>
     {% elif snapshot %}
     <div class="text-sm text-gray-400 mb-2">
         Utilization: {% if snapshot.cpu_utilization_pct != None %}{{ snapshot.cpu_utilization_pct|floatformat:1 }}%{% else %}—{% endif %}
-    </div>
-    <div class="flex items-center gap-4 text-xs text-gray-500">
-        <span>
-            Temp:
-            {% if snapshot.cpu_temp_c != None %}
-                <span class="{% if snapshot.cpu_temp_c > 85 %}text-red-400{% elif snapshot.cpu_temp_c > 70 %}text-yellow-400{% else %}text-green-400{% endif %}">
-                    {{ snapshot.cpu_temp_c|floatformat:1 }}°C
-                </span>
-            {% else %}—{% endif %}
-        </span>
     </div>
     {% else %}
     <div class="text-gray-500">No data</div>
@@ -63,13 +61,14 @@
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <!-- Memory -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
+{% if metric_snapshot %}
 <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
     <h3 class="text-gray-400 text-sm font-medium mb-2">Memory</h3>
-    {% if snapshot and snapshot.mem_total_bytes %}
+    {% if metric_snapshot.mem_total_bytes %}
     <div class="flex items-center gap-3 mb-2">
         <div class="flex-1">
             <div class="w-full bg-gray-700 rounded-full h-2">
-                {% widthratio snapshot.mem_used_bytes snapshot.mem_total_bytes 100 as mem_pct %}
+                {% widthratio metric_snapshot.mem_used_bytes metric_snapshot.mem_total_bytes 100 as mem_pct %}
                 <div class="h-2 rounded-full
                     {% if mem_pct > 85 %}bg-red-500
                     {% elif mem_pct > 70 %}bg-yellow-500
@@ -81,22 +80,51 @@
         <span class="text-sm font-mono text-gray-300 w-14 text-right">{{ mem_pct }}%</span>
     </div>
     <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-400">
-        <span>Used: <span class="text-gray-300">{{ snapshot.mem_used_bytes|filesizeformat }}</span></span>
-        <span>Total: <span class="text-gray-300">{{ snapshot.mem_total_bytes|filesizeformat }}</span></span>
-        {% if snapshot.mem_cached_bytes %}
-        <span>Cached: <span class="text-gray-300">{{ snapshot.mem_cached_bytes|filesizeformat }}</span></span>
+        <span>Used: <span class="text-gray-300">{{ metric_snapshot.mem_used_bytes|filesizeformat }}</span></span>
+        <span>Total: <span class="text-gray-300">{{ metric_snapshot.mem_total_bytes|filesizeformat }}</span></span>
+        {% if metric_snapshot.mem_free_bytes %}
+        <span>Free: <span class="text-gray-300">{{ metric_snapshot.mem_free_bytes|filesizeformat }}</span></span>
+        {% endif %}
+        {% if metric_snapshot.mem_cached_bytes %}
+        <span>Cached: <span class="text-gray-300">{{ metric_snapshot.mem_cached_bytes|filesizeformat }}</span></span>
         {% endif %}
     </div>
+    {% if metric_snapshot.swap_total_bytes %}
+    <div class="mt-1 pt-1 border-t border-gray-700/50 text-xs text-gray-500">
+        Swap:
+        <span class="text-gray-400">{{ metric_snapshot.swap_used_bytes|filesizeformat }}</span> /
+        <span class="text-gray-400">{{ metric_snapshot.swap_total_bytes|filesizeformat }}</span>
+        {% widthratio metric_snapshot.swap_used_bytes metric_snapshot.swap_total_bytes 100 as swap_pct %}
+        <span class="text-gray-600">({{ swap_pct }}%)</span>
+    </div>
+    {% endif %}
     {% else %}
     <div class="text-gray-500">No data</div>
     {% endif %}
 </div>
+{% elif snapshot and snapshot.mem_total_bytes %}
+<div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
+    <h3 class="text-gray-400 text-sm font-medium mb-2">Memory</h3>
+    <div class="flex items-center gap-3 mb-2">
+        <div class="flex-1">
+            <div class="w-full bg-gray-700 rounded-full h-2">
+                {% widthratio snapshot.mem_used_bytes snapshot.mem_total_bytes 100 as mem_pct %}
+                <div class="bg-blue-500 h-2 rounded-full" style="width: {{ mem_pct }}%"></div>
+            </div>
+        </div>
+        <span class="text-sm font-mono text-gray-300 w-14 text-right">{{ mem_pct }}%</span>
+    </div>
+    <div class="text-xs text-gray-400">
+        Used: {{ snapshot.mem_used_bytes|filesizeformat }} / Total: {{ snapshot.mem_total_bytes|filesizeformat }}
+    </div>
+</div>
+{% endif %}
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <!-- Storage (per device) -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
-    <h3 class="text-gray-400 text-sm font-medium mb-2">Storage</h3>
+    <h3 class="text-gray-400 text-sm font-medium mb-2">Storage ({{ storage_metrics|length }})</h3>
     {% if storage_metrics %}
         {% for disk in storage_metrics %}
         <div class="mb-3 pb-3 border-b border-gray-700/50 last:border-0 last:mb-0 last:pb-0">
@@ -141,7 +169,7 @@
 <!-- GPU (per device) -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
-    <h3 class="text-gray-400 text-sm font-medium mb-2">GPU</h3>
+    <h3 class="text-gray-400 text-sm font-medium mb-2">GPU ({{ gpu_metrics|length }})</h3>
     {% if gpu_metrics %}
         {% for gpu in gpu_metrics %}
         <div class="mb-3 pb-3 border-b border-gray-700/50 last:border-0 last:mb-0 last:pb-0">
@@ -189,8 +217,14 @@
                         <div class="bg-purple-500 h-1.5 rounded-full" style="width: {{ vram_pct }}%"></div>
                     </div>
                 </div>
-                <span class="text-xs font-mono text-gray-400 w-20 text-right">{{ gpu.mem_used_mb }} / {{ gpu.mem_total_mb }} MB</span>
+                <span class="text-xs font-mono text-gray-400 w-28 text-right">
+                    {{ gpu.mem_used_mb }} / {{ gpu.mem_total_mb }} MB
+                    {% if gpu.mem_util_pct != None %}({{ gpu.mem_util_pct|floatformat:1 }}%){% endif %}
+                </span>
             </div>
+            {% if gpu.mem_free_mb != None %}
+            <div class="text-xs text-gray-500 mb-1">Free: {{ gpu.mem_free_mb }} MB</div>
+            {% endif %}
             {% endif %}
             {% if gpu.power_draw_w != None %}
             <div class="text-xs text-gray-500">
@@ -209,7 +243,7 @@
 <!-- Network (per interface) -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
-    <h3 class="text-gray-400 text-sm font-medium mb-2">Network</h3>
+    <h3 class="text-gray-400 text-sm font-medium mb-2">Network ({{ network_metrics|length }})</h3>
     {% if network_metrics %}
     <div class="overflow-x-auto">
         <table class="w-full text-xs">

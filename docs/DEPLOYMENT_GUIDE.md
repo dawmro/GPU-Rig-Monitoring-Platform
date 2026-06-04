@@ -451,12 +451,12 @@ sudo -u monitoring-agent /opt/monitoring-agent/venv/bin/python /opt/monitoring-a
 The platform needs a periodic task to mark rigs as **Stale** (not seen in 2–10 minutes) or **Offline** (not seen in 10+ minutes). Create the wrapper script and cron job:
 
 ```bash
-# Copy the wrapper script (from the repo checkout)
-sudo cp scripts/update_rig_status.sh /opt/gpu_monitor/deploy/update_rig_status.sh
+# Copy the wrapper script to /opt
+sudo cp gpu_monitor/deploy/update_rig_status.sh /opt/gpu_monitor/deploy/update_rig_status.sh
 sudo chmod +x /opt/gpu_monitor/deploy/update_rig_status.sh
 
 # Create the cron job
-echo '*/2 * * * * monitoring bash /opt/gpu_monitor/deploy/update_rig_status.sh' | sudo tee /etc/cron.d/rig-status
+echo '*/2 * * * * root bash /opt/gpu_monitor/deploy/update_rig_status.sh' | sudo tee /etc/cron.d/rig-status
 
 # Restart cron to pick up the new job
 sudo systemctl restart cron

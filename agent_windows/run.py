@@ -21,6 +21,7 @@ Optional dependencies:
 import os
 import sys
 import json
+import time
 import logging
 import logging.handlers
 import platform
@@ -444,7 +445,7 @@ def collect_software():
     }
     try:
         import psutil
-        result['uptime_s'] = int(psutil.boot_time())
+        result['uptime_s'] = int(time.time() - psutil.boot_time())
     except Exception:
         pass
     # NVIDIA driver

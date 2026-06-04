@@ -99,8 +99,10 @@ def rig_detail(request, uuid):
             rig_uuid=str(uuid),
             timestamp__gte=timezone.now() - timedelta(hours=1)
         ).order_by('-timestamp'):
-            if s.device not in seen_devices:
-                seen_devices.add(s.device)
+            # Normalize device path: strip trailing slashes/backslashes for dedup
+            norm_device = s.device.rstrip('/\\') if s.device else ''
+            if norm_device not in seen_devices:
+                seen_devices.add(norm_device)
                 storage_metrics.append(s)
 
         # Get latest network metric per unique interface
@@ -169,15 +171,17 @@ def htmx_metrics(request, uuid):
             gpu_index=0
         ).order_by('-timestamp')[:1]
 
-        # Get latest storage metric per unique device
+        # Get latest storage metric per unique device (normalize path for dedup)
         storage_metrics = []
         seen_devices = set()
         for s in StorageMetric.objects.filter(
             rig_uuid=str(uuid),
             timestamp__gte=timezone.now() - timedelta(hours=1)
         ).order_by('-timestamp'):
-            if s.device not in seen_devices:
-                seen_devices.add(s.device)
+            # Normalize device path: strip trailing slashes/backslashes for dedup
+            norm_device = s.device.rstrip('/\\') if s.device else ''
+            if norm_device not in seen_devices:
+                seen_devices.add(norm_device)
                 storage_metrics.append(s)
 
         # Get latest network metric per unique interface

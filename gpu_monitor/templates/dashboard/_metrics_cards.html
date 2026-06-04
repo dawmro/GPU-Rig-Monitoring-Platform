@@ -7,29 +7,43 @@
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
     <h3 class="text-gray-400 text-sm font-medium mb-2">CPU</h3>
-    {% if snapshot %}
+    {% if metric_snapshot %}
     <div class="text-lg font-bold text-white mb-1">
-        {{ snapshot.cpu_model|default:"Unknown" }}
+        {{ metric_snapshot.cpu_model|default:"Unknown" }}
     </div>
     <div class="text-sm text-gray-400 mb-2">
-        {{ snapshot.cpu_physical_cores|default:"?" }} cores / {{ snapshot.cpu_logical_cores|default:"?" }} threads
+        {{ metric_snapshot.cpu_physical_cores|default:"?" }} cores / {{ metric_snapshot.cpu_logical_cores|default:"?" }} threads
     </div>
     <div class="flex items-center gap-3 mb-2">
         <div class="flex-1">
             <div class="w-full bg-gray-700 rounded-full h-2">
                 <div class="h-2 rounded-full
-                    {% if snapshot.cpu_utilization_pct != None %}
-                        {% if snapshot.cpu_utilization_pct > 80 %}bg-red-500
-                        {% elif snapshot.cpu_utilization_pct > 60 %}bg-yellow-500
+                    {% if metric_snapshot.cpu_utilization_pct != None %}
+                        {% if metric_snapshot.cpu_utilization_pct > 80 %}bg-red-500
+                        {% elif metric_snapshot.cpu_utilization_pct > 60 %}bg-yellow-500
                         {% else %}bg-green-500{% endif %}
                     {% else %}bg-gray-600{% endif %}"
-                    style="width: {% if snapshot.cpu_utilization_pct != None %}{{ snapshot.cpu_utilization_pct }}{% else %}0{% endif %}%">
+                    style="width: {% if metric_snapshot.cpu_utilization_pct != None %}{{ metric_snapshot.cpu_utilization_pct }}{% else %}0{% endif %}%">
                 </div>
             </div>
         </div>
         <span class="text-sm font-mono text-gray-300 w-14 text-right">
-            {% if snapshot.cpu_utilization_pct != None %}{{ snapshot.cpu_utilization_pct|floatformat:1 }}%{% else %}—{% endif %}
+            {% if metric_snapshot.cpu_utilization_pct != None %}{{ metric_snapshot.cpu_utilization_pct|floatformat:1 }}%{% else %}—{% endif %}
         </span>
+    </div>
+    <div class="flex items-center gap-4 text-xs text-gray-500">
+        <span>
+            Temp:
+            {% if metric_snapshot.cpu_temp_c != None %}
+                <span class="{% if metric_snapshot.cpu_temp_c > 85 %}text-red-400{% elif metric_snapshot.cpu_temp_c > 70 %}text-yellow-400{% else %}text-green-400{% endif %}">
+                    {{ metric_snapshot.cpu_temp_c|floatformat:1 }}°C
+                </span>
+            {% else %}—{% endif %}
+        </span>
+    </div>
+    {% elif snapshot %}
+    <div class="text-sm text-gray-400 mb-2">
+        Utilization: {% if snapshot.cpu_utilization_pct != None %}{{ snapshot.cpu_utilization_pct|floatformat:1 }}%{% else %}—{% endif %}
     </div>
     <div class="flex items-center gap-4 text-xs text-gray-500">
         <span>

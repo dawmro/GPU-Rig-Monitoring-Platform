@@ -142,6 +142,9 @@ class RigMetricsView(APIView):
 class ChartDataView(APIView):
     """GET /api/v1/rigs/<uuid>/chart-data/ — Historical chart data.
 
+    Returns fixed 1-minute buckets for the requested range (default 24h = 1440 points).
+    Empty buckets are zero-filled so offline periods are visible on the chart.
+
     Query parameters:
         metric: Field name to chart. Supported values:
             - cpu_utilization_pct, cpu_temp_c, mem_used_bytes (from MetricSnapshot)
@@ -167,6 +170,46 @@ class ChartDataView(APIView):
     # Metrics stored on StorageMetric
     STORAGE_METRICS = {'disk_usage_pct'}
 
+    def _build_buckets(self, range_hours):
+        """Build fixed 1-minute bucket labels and empty value array.
+
+        Returns (labels, values) where labels are 'HH:MM' strings and
+        values are a list of zeros with length = range_hours * 60.
+        Bucket 0 = oldest, bucket N-1 = newest (now).
+        """
+        now = timezone.now()
+        # Truncate to the start of the current minute
+        end_minute = now.replace(second=0, microsecond=0)
+        total_minutes = range_hours * 60
+        start_minute = end_minute - timedelta(minutes=total_minutes)
+
+        labels = []
+        for i in range(total_minutes):
+            bucket_time = start_minute + timedelta(minutes=i)
+            labels.append(bucket_time.strftime('%H:%M'))
+
+        values = [0.0] * total_minutes
+        return labels, values, start_minute, end_minute
+
+    def _fill_buckets(self, labels, values, start_minute, queryset, field_name, value_key='timestamp'):
+        """Fill bucket values from a queryset.
+
+        Each row is placed into the bucket matching its truncated minute.
+        If multiple rows fall in the same bucket, the last one wins.
+        """
+        total_minutes = len(labels)
+        for row in queryset:
+            ts = getattr(row, value_key)
+            # Truncate to minute
+            ts_minute = ts.replace(second=0, microsecond=0)
+            # Calculate bucket index
+            delta = ts_minute - start_minute
+            idx = int(delta.total_seconds() // 60)
+            if 0 <= idx < total_minutes:
+                val = getattr(row, field_name, None)
+                if val is not None:
+                    values[idx] = val
+
     def get(self, request, uuid):
         user = request.user
         rig = get_object_or_404(Rig, uuid=uuid)
@@ -177,41 +220,35 @@ class ChartDataView(APIView):
         range_hours = int(request.query_params.get('range', '24'))
         gpu_index = int(request.query_params.get('gpu_index', 0))
 
-        since = timezone.now() - timedelta(hours=range_hours)
-
-        labels = []
-        values = []
+        labels, values, start_minute, end_minute = self._build_buckets(range_hours)
 
         if metric in self.SNAPSHOT_METRICS:
             snapshots = MetricSnapshot.objects.filter(
                 rig_uuid=str(uuid),
-                timestamp__gte=since,
-            ).order_by('timestamp')[:2000]
-            for s in snapshots:
-                labels.append(s.timestamp.isoformat())
-                values.append(getattr(s, metric, None))
+                timestamp__gte=start_minute,
+                timestamp__lte=end_minute,
+            ).order_by('timestamp')[:10000]
+            self._fill_buckets(labels, values, start_minute, snapshots, metric)
 
         elif metric in self.GPU_METRICS:
             from .models import GPUMetric
             gpu_data = GPUMetric.objects.filter(
                 rig_uuid=str(uuid),
                 gpu_index=gpu_index,
-                timestamp__gte=since,
-            ).order_by('timestamp')[:2000]
+                timestamp__gte=start_minute,
+                timestamp__lte=end_minute,
+            ).order_by('timestamp')[:10000]
             field_name = self.GPU_METRICS[metric]
-            for g in gpu_data:
-                labels.append(g.timestamp.isoformat())
-                values.append(getattr(g, field_name, None))
+            self._fill_buckets(labels, values, start_minute, gpu_data, field_name)
 
         elif metric in self.STORAGE_METRICS:
             from .models import StorageMetric
             storage_data = StorageMetric.objects.filter(
                 rig_uuid=str(uuid),
-                timestamp__gte=since,
-            ).order_by('timestamp')[:2000]
-            for s in storage_data:
-                labels.append(s.timestamp.isoformat())
-                values.append(s.usage_pct)
+                timestamp__gte=start_minute,
+                timestamp__lte=end_minute,
+            ).order_by('timestamp')[:10000]
+            self._fill_buckets(labels, values, start_minute, storage_data, 'usage_pct')
 
         else:
             return Response({'status': 'error', 'message': f'Unknown metric: {metric}'}, status=400)

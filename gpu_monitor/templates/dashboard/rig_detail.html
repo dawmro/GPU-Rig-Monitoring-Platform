@@ -238,9 +238,9 @@ async function loadChart(canvasId, metric, uuid, range, unit, borderColor, bgCol
         var resp = await fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=${metric}&range=${range}`);
         var data = await resp.json();
 
-        // Convert memory from bytes to GB
+        // Convert memory from bytes to GB; leave other metrics as-is
         var values = data.datasets[0].data.map(function(v) {
-            if (v === null) return null;
+            if (v === null || v === undefined) return 0;
             if (metric === 'mem_used_bytes') return (v / (1024 * 1024 * 1024)).toFixed(2);
             return v;
         });
@@ -253,10 +253,7 @@ async function loadChart(canvasId, metric, uuid, range, unit, borderColor, bgCol
         chartInstances[canvasId] = new Chart(ctx, {
             type: 'line',
             data: {
-                labels: data.labels.map(function(ts) {
-                    var d = new Date(ts);
-                    return d.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'});
-                }),
+                labels: data.labels,
                 datasets: [{
                     label: metric.replace(/_/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); }),
                     data: values,
@@ -264,9 +261,10 @@ async function loadChart(canvasId, metric, uuid, range, unit, borderColor, bgCol
                     backgroundColor: bgColor,
                     borderWidth: 2,
                     fill: true,
-                    tension: 0.3,
+                    tension: 0.0,
                     pointRadius: 0,
                     pointHitRadius: 10,
+                    spanGaps: false,
                 }]
             },
             options: {
@@ -287,7 +285,16 @@ async function loadChart(canvasId, metric, uuid, range, unit, borderColor, bgCol
                 scales: {
                     x: {
                         grid: { color: 'rgba(255,255,255,0.05)' },
-                        ticks: { color: '#9ca3af', maxTicksLimit: 8 }
+                        ticks: {
+                            color: '#9ca3af',
+                            maxTicksLimit: 12,
+                            maxRotation: 0,
+                            autoSkip: true,
+                            callback: function(val, index) {
+                                // Show every 60th label (every hour) to avoid crowding
+                                return index % 60 === 0 ? this.getLabelForValue(val) : '';
+                            }
+                        }
                     },
                     y: {
                         grid: { color: 'rgba(255,255,255,0.05)' },

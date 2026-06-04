@@ -70,7 +70,7 @@ class IngestView(APIView):
             # overwriting user-set names on every heartbeat.
 
         # Process the payload
-        result, http_status = process_ingest(rig_uuid, data, user.id)
+        result, http_status = process_ingest(rig_uuid, data, user.id, rig=rig)
 
         # Update rig last_seen and status
         rig.last_seen = timezone.now()

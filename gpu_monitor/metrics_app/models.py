@@ -1,5 +1,6 @@
 from django.db import models
 from django.conf import settings
+from django.utils import timezone
 
 
 class MetricSnapshot(models.Model):
@@ -31,10 +32,14 @@ class MetricSnapshot(models.Model):
     swap_used_bytes = models.BigIntegerField(null=True)
     swap_total_bytes = models.BigIntegerField(null=True)
 
+    # Rig status at time of this snapshot (online/offline/stale)
+    status = models.CharField(max_length=10, null=True, blank=True)
+
     # Motherboard info (static, stored as JSON for flexibility)
     motherboard_json = models.JSONField(default=dict, blank=True)
 
     # Software info (static, stored as JSON)
+    # Contains: hostname, os_distro, kernel, uptime_s, nvidia_driver, docker_version
     software_json = models.JSONField(default=dict, blank=True)
 
     class Meta:
@@ -114,6 +119,8 @@ class NetworkMetric(models.Model):
     link_speed_mbps = models.PositiveIntegerField(null=True)
     rx_bytes = models.BigIntegerField(null=True)
     tx_bytes = models.BigIntegerField(null=True)
+    rx_bytes_delta = models.BigIntegerField(null=True, help_text="Bytes received since last reading")
+    tx_bytes_delta = models.BigIntegerField(null=True, help_text="Bytes sent since last reading")
     rx_errors = models.PositiveIntegerField(null=True)
     tx_errors = models.PositiveIntegerField(null=True)
 
@@ -126,7 +133,10 @@ class NetworkMetric(models.Model):
 
 
 class DockerContainerMetric(models.Model):
-    """Per-container time-series metrics — one row per container per snapshot."""
+    """Per-container time-series metrics — one row per container per snapshot.
+
+    Stores container status and resource usage for historical tracking.
+    """
     id = models.BigAutoField(primary_key=True)
     snapshot = models.ForeignKey(MetricSnapshot, on_delete=models.CASCADE, related_name='docker_metrics')
     rig_uuid = models.UUIDField(db_index=True)
@@ -135,6 +145,9 @@ class DockerContainerMetric(models.Model):
     image = models.CharField(max_length=255, blank=True, default='')
     status = models.CharField(max_length=32, blank=True, default='')
     restart_count = models.PositiveIntegerField(default=0)
+    cpu_pct = models.FloatField(null=True)
+    mem_usage_bytes = models.BigIntegerField(null=True)
+    mem_limit_bytes = models.BigIntegerField(null=True)
 
     class Meta:
         db_table = 'metrics_dockercontainermetric'
@@ -159,6 +172,60 @@ class LatestSnapshot(models.Model):
         db_table = 'metrics_latest_snapshot'
 
 
+class RigStatusEvent(models.Model):
+    """Tracks rig status transitions over time for uptime reporting.
+
+    Created whenever the rig's status changes (online→stale, stale→offline,
+    offline→online, etc.). Also created on every heartbeat to track uptime
+    continuity. Enables historical availability charts and downtime analysis.
+    """
+    id = models.BigAutoField(primary_key=True)
+    rig_uuid = models.UUIDField(db_index=True)
+    timestamp = models.DateTimeField(default=timezone.now, db_index=True)
+    status = models.CharField(max_length=10, db_index=True)
+    previous_status = models.CharField(max_length=10, null=True, blank=True)
+
+    class Meta:
+        db_table = 'metrics_rig_status_event'
+        ordering = ['-timestamp']
+        indexes = [
+            models.Index(fields=['rig_uuid', '-timestamp']),
+            models.Index(fields=['rig_uuid', 'status']),
+        ]
+
+
+class AIProcessMetric(models.Model):
+    """Per-process GPU/CPU usage tracking for AI workloads.
+
+    Stores per-process resource usage when the agent collects AI process data.
+    The `ai_processes` array in the agent payload contains processes that are
+    actively using GPU resources (detected via nvidia-smi or similar).
+
+    Enables charts showing:
+    - Which processes are using GPU memory over time
+    - Per-process GPU memory usage trends
+    - CPU usage breakdown by AI process
+    """
+    id = models.BigAutoField(primary_key=True)
+    snapshot = models.ForeignKey(MetricSnapshot, on_delete=models.CASCADE, related_name='ai_processes')
+    rig_uuid = models.UUIDField(db_index=True)
+    timestamp = models.DateTimeField(db_index=True)
+
+    process_name = models.CharField(max_length=255, blank=True, default='')
+    pid = models.PositiveIntegerField(null=True)
+    gpu_uuid = models.CharField(max_length=64, blank=True, default='')
+    gpu_mem_used_mb = models.PositiveIntegerField(null=True)
+    cpu_pct = models.FloatField(null=True)
+
+    class Meta:
+        db_table = 'metrics_ai_process'
+        ordering = ['-gpu_mem_used_mb']
+        indexes = [
+            models.Index(fields=['rig_uuid', '-timestamp']),
+            models.Index(fields=['rig_uuid', 'process_name']),
+        ]
+
+
 class ErrorEvent(models.Model):
     """Deduplicated error events."""
     id = models.BigAutoField(primary_key=True)
@@ -173,3 +240,24 @@ class ErrorEvent(models.Model):
     class Meta:
         db_table = 'metrics_lasterrors'
         unique_together = ('rig_uuid', 'hash')
+
+
+class ErrorEventOccurrence(models.Model):
+    """Individual error occurrence for time-series error tracking.
+
+    Each time an error is received by the ingest endpoint, an occurrence is
+    created linked to the parent ErrorEvent. This enables error frequency
+    charts and detailed error timeline analysis.
+    """
+    id = models.BigAutoField(primary_key=True)
+    error_event = models.ForeignKey(ErrorEvent, on_delete=models.CASCADE, related_name='occurrences')
+    rig_uuid = models.UUIDField(db_index=True)
+    timestamp = models.DateTimeField(db_index=True)
+
+    class Meta:
+        db_table = 'metrics_error_event_occurrence'
+        ordering = ['-timestamp']
+        indexes = [
+            models.Index(fields=['rig_uuid', '-timestamp']),
+            models.Index(fields=['error_event', '-timestamp']),
+        ]

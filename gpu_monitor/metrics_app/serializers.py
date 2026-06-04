@@ -3,7 +3,8 @@ import logging
 from rest_framework import serializers, status
 from django.db import transaction
 from django.utils import timezone
-from .models import MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, ErrorEvent
+from .models import MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, ErrorEvent, ErrorEventOccurrence, RigStatusEvent, AIProcessMetric
+from rigs.models import Rig
 from audit.middleware import compute_error_hash
 
 logger = logging.getLogger(__name__)
@@ -26,7 +27,7 @@ class IngestSerializer(serializers.Serializer):
         return value
 
 
-def process_ingest(rig_uuid, data, owner_id):
+def process_ingest(rig_uuid, data, owner_id, rig=None):
     """Process an ingestion payload. Returns (response_data, status_code)."""
     serializer = IngestSerializer(data=data)
     if not serializer.is_valid():
@@ -46,6 +47,7 @@ def process_ingest(rig_uuid, data, owner_id):
     gpu_list = metrics_data.get('gpus', [])
     storage_list = metrics_data.get('storage', [])
     network_list = metrics_data.get('network', [])
+    ai_processes = metrics_data.get('ai_processes', [])
     docker_containers = metrics_data.get('docker_containers', [])
 
     try:
@@ -69,6 +71,7 @@ def process_ingest(rig_uuid, data, owner_id):
                     'mem_cached_bytes': memory.get('cached_bytes'),
                     'swap_used_bytes': memory.get('swap_used_bytes'),
                     'swap_total_bytes': memory.get('swap_total_bytes'),
+                    'status': rig.status if rig else None,
                     'motherboard_json': motherboard_data,
                     'software_json': software_data,
                 },
@@ -113,18 +116,43 @@ def process_ingest(rig_uuid, data, owner_id):
                     },
                 )
 
-            # Store per-interface metrics
+            # Store per-interface metrics with traffic delta calculation
             for iface in network_list:
+                iface_name = iface.get('interface', '')
+                new_rx = iface.get('rx_bytes')
+                new_tx = iface.get('tx_bytes')
+
+                # Calculate deltas by comparing with previous reading for this interface
+                rx_delta = None
+                tx_delta = None
+                try:
+                    prev = NetworkMetric.objects.filter(
+                        rig_uuid=rig_uuid,
+                        interface=iface_name,
+                    ).order_by('-timestamp').first()
+                    if prev and new_rx is not None and new_tx is not None:
+                        rx_delta = new_rx - prev.rx_bytes if prev.rx_bytes else None
+                        tx_delta = new_tx - prev.tx_bytes if prev.tx_bytes else None
+                        # Handle counter wraparound (shouldn't happen with 64-bit counters, but be safe)
+                        if rx_delta is not None and rx_delta < 0:
+                            rx_delta = new_rx
+                        if tx_delta is not None and tx_delta < 0:
+                            tx_delta = new_tx
+                except Exception:
+                    pass
+
                 NetworkMetric.objects.update_or_create(
                     rig_uuid=rig_uuid,
                     timestamp=ts,
-                    interface=iface.get('interface', ''),
+                    interface=iface_name,
                     defaults={
                         'snapshot': snapshot,
                         'ipv4': iface.get('ipv4', ''),
                         'link_speed_mbps': iface.get('link_speed_mbps'),
-                        'rx_bytes': iface.get('rx_bytes'),
-                        'tx_bytes': iface.get('tx_bytes'),
+                        'rx_bytes': new_rx,
+                        'tx_bytes': new_tx,
+                        'rx_bytes_delta': rx_delta,
+                        'tx_bytes_delta': tx_delta,
                         'rx_errors': iface.get('rx_errors'),
                         'tx_errors': iface.get('tx_errors'),
                     },
@@ -141,6 +169,9 @@ def process_ingest(rig_uuid, data, owner_id):
                         'image': container.get('image', ''),
                         'status': container.get('status', ''),
                         'restart_count': container.get('restart_count', 0),
+                        'cpu_pct': container.get('cpu_pct'),
+                        'mem_usage_bytes': container.get('mem_usage_bytes'),
+                        'mem_limit_bytes': container.get('mem_limit_bytes'),
                     },
                 )
 
@@ -157,12 +188,38 @@ def process_ingest(rig_uuid, data, owner_id):
                 },
             )
 
-            # Process errors (deduplicate)
+            # Store per-process AI metrics
+            for proc in ai_processes:
+                AIProcessMetric.objects.update_or_create(
+                    rig_uuid=rig_uuid,
+                    timestamp=ts,
+                    process_name=proc.get('process_name', ''),
+                    pid=proc.get('pid'),
+                    defaults={
+                        'snapshot': snapshot,
+                        'gpu_uuid': proc.get('gpu_uuid', ''),
+                        'gpu_mem_used_mb': proc.get('gpu_mem_used_mb'),
+                        'cpu_pct': proc.get('cpu_pct'),
+                    },
+                )
+
+            # Track rig status transitions
+            if rig:
+                previous_status = rig.status
+                current_status = Rig.Status.ONLINE  # Heartbeat always means online
+                if previous_status != current_status:
+                    RigStatusEvent.objects.create(
+                        rig_uuid=rig_uuid,
+                        status=current_status,
+                        previous_status=previous_status,
+                    )
+
+            # Process errors (deduplicate + track occurrences)
             for error in errors_data:
                 source = error.get('source', '')
                 message = error.get('message', '')
                 error_hash = compute_error_hash(source, message)
-                ErrorEvent.objects.update_or_create(
+                error_event, _ = ErrorEvent.objects.update_or_create(
                     rig_uuid=rig_uuid,
                     hash=error_hash,
                     defaults={
@@ -170,6 +227,12 @@ def process_ingest(rig_uuid, data, owner_id):
                         'source': source,
                         'message': message[:500],
                     },
+                )
+                # Create occurrence record for time-series tracking
+                ErrorEventOccurrence.objects.create(
+                    error_event=error_event,
+                    rig_uuid=rig_uuid,
+                    timestamp=ts,
                 )
 
             http_status = status.HTTP_200_OK if created else status.HTTP_202_ACCEPTED

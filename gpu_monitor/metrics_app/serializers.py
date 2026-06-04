@@ -71,7 +71,6 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     'mem_cached_bytes': memory.get('cached_bytes'),
                     'swap_used_bytes': memory.get('swap_used_bytes'),
                     'swap_total_bytes': memory.get('swap_total_bytes'),
-                    'uptime_s': software_data.get('uptime_s'),
                     'status': rig.status if rig else None,
                     'motherboard_json': motherboard_data,
                     'software_json': software_data,

@@ -32,9 +32,6 @@ class MetricSnapshot(models.Model):
     swap_used_bytes = models.BigIntegerField(null=True)
     swap_total_bytes = models.BigIntegerField(null=True)
 
-    # Rig uptime in seconds (resets on reboot)
-    uptime_s = models.BigIntegerField(null=True)
-
     # Rig status at time of this snapshot (online/offline/stale)
     status = models.CharField(max_length=10, null=True, blank=True)
 
@@ -42,6 +39,7 @@ class MetricSnapshot(models.Model):
     motherboard_json = models.JSONField(default=dict, blank=True)
 
     # Software info (static, stored as JSON)
+    # Contains: hostname, os_distro, kernel, uptime_s, nvidia_driver, docker_version
     software_json = models.JSONField(default=dict, blank=True)
 
     class Meta:

@@ -129,3 +129,24 @@ this will track GPU-using processes over time.
 ### New model: ErrorEventOccurrence
 - `error_event` — FK to ErrorEvent
 - `timestamp` — when this occurrence happened
+
+---
+
+## ✅ Phase 4 — Deduplication Cleanup (IMPLEMENTED)
+
+### Removed redundant field:
+- **`MetricSnapshot.uptime_s`** — was redundant with `software_json.uptime_s`
+- The `software_json` field already contained `uptime_s` from the agent payload
+- Now reads uptime from `metric_snapshot.software_json.uptime_s` in templates
+- Migration 0010
+
+### Intentional redundancy kept:
+- **`LatestSnapshot`** — denormalized cache for fast dashboard loading
+  - Avoids JOIN with latest MetricSnapshot on every page load
+  - Contains: cpu_utilization_pct, cpu_temp_c, mem_used_bytes, mem_total_bytes
+  - Updated on every heartbeat via serializer
+
+### Final data storage (no unnecessary duplication):
+- **MetricSnapshot:** dedicated fields for CPU/memory/status + JSON for motherboard/software
+- **software_json** contains: hostname, os_distro, kernel, uptime_s, nvidia_driver, docker_version
+- **uptime_s** is NOT stored as a separate field — read from software_json

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-GPU Rig Monitoring Agent v1.0.0
+GPU Rig Monitoring Agent v1.1.0
 
 Collects hardware/software metrics and sends them to the monitoring server.
 Designed to run via cron every 60 seconds.
@@ -26,7 +26,7 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.0.0'
+__version__ = '1.1.0'
 __schema_version__ = '1.0'
 
 # ── Config ──────────────────────────────────────────────────────────────────
@@ -86,79 +86,45 @@ def setup_logging(debug=False):
 
 
 def log_payload(payload):
-    """Save the latest full JSON payload to payload.json for local analysis.
-
-    Overwrites the file each run so it always contains the most recent
-    payload. This is useful for debugging what the agent is actually
-    sending to the server.
-    """
+    """Save the latest full JSON payload to payload.json for local analysis."""
     log_dir = Path('/var/log/monitoring-agent')
     log_dir.mkdir(parents=True, exist_ok=True)
     payload_path = log_dir / 'payload.json'
     payload_path.write_text(json.dumps(payload, indent=2, default=str) + '\n')
 
 
-# ── Metric Collectors ───────────────────────────────────────────────────────
+# ── Static Hardware Collectors (rarely changing, sent as "static") ──────────
 
-def collect_cpu():
-    """Collect CPU metrics."""
+def collect_static():
+    """Collect static hardware inventory that rarely changes between heartbeats.
+
+    Returns a dict with cpu, motherboard, and gpu static info.
+    This data is sent in the 'static' section and stored separately
+    on the server, avoiding duplication in every MetricSnapshot row.
+    """
+    return {
+        'cpu': _collect_cpu_static(),
+        'motherboard': collect_motherboard(),
+        'gpus': _collect_gpu_static(),
+    }
+
+
+def _collect_cpu_static():
+    """Collect static CPU info (model, core count). No utilization."""
+    result = {'model': 'Unknown', 'physical_cores': None, 'logical_cores': None}
     try:
         import psutil
-        cpu_percent = psutil.cpu_percent(interval=1)
-        cpu_count_phys = psutil.cpu_count(logical=False)
-        cpu_count_log = psutil.cpu_count(logical=True)
-        load_avg = os.getloadavg()
-
-        temp_c = None
-        try:
-            import psutil
-            temps = psutil.sensors_temperatures()
-            if temps:
-                for name, entries in temps.items():
-                    if entries:
-                        temp_c = entries[0].current
-                        break
-        except Exception:
-            pass
-
-        model = 'Unknown'
-        try:
-            import cpuinfo
-            info = cpuinfo.get_cpu_info()
-            model = info.get('brand_raw', 'Unknown')
-        except Exception:
-            pass
-
-        return {
-            'model': model,
-            'physical_cores': cpu_count_phys,
-            'logical_cores': cpu_count_log,
-            'load_avg': list(load_avg),
-            'utilization_pct': cpu_percent,
-            'temp_c': temp_c,
-        }
-    except Exception as e:
-        logging.getLogger('cpu').warning('CPU collection failed: %s', e)
-        return {}
-
-
-def collect_memory():
-    """Collect memory metrics."""
+        result['physical_cores'] = psutil.cpu_count(logical=False)
+        result['logical_cores'] = psutil.cpu_count(logical=True)
+    except Exception:
+        pass
     try:
-        import psutil
-        vm = psutil.virtual_memory()
-        swap = psutil.swap_memory()
-        return {
-            'total_bytes': vm.total,
-            'used_bytes': vm.used,
-            'free_bytes': vm.available,
-            'cached_bytes': getattr(vm, 'cached', None),
-            'swap_used_bytes': swap.used,
-            'swap_total_bytes': swap.total,
-        }
-    except Exception as e:
-        logging.getLogger('memory').warning('Memory collection failed: %s', e)
-        return {}
+        import cpuinfo
+        info = cpuinfo.get_cpu_info()
+        result['model'] = info.get('brand_raw', 'Unknown')
+    except Exception:
+        pass
+    return result
 
 
 def collect_motherboard():
@@ -179,8 +145,76 @@ def collect_motherboard():
     return result
 
 
+def _collect_gpu_static():
+    """Collect static GPU info (uuid, model, total memory). No utilization/temp."""
+    gpus = []
+    try:
+        import pynvml
+        pynvml.nvmlInit()
+        count = pynvml.nvmlDeviceGetCount()
+        for i in range(count):
+            handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+            info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+            gpus.append({
+                'uuid': pynvml.nvmlDeviceGetUUID(handle),
+                'model': pynvml.nvmlDeviceGetName(handle),
+                'mem_total_mb': info.total // (1024 * 1024),
+            })
+        pynvml.nvmlShutdown()
+    except Exception as e:
+        logging.getLogger('gpu').warning('GPU static collection failed: %s', e)
+    return gpus
+
+
+# ── Dynamic Metric Collectors (change every heartbeat, sent as "metrics") ──
+
+def collect_cpu():
+    """Collect CPU time-series metrics (utilization, temp, load)."""
+    try:
+        import psutil
+        cpu_percent = psutil.cpu_percent(interval=1)
+        load_avg = os.getloadavg()
+
+        temp_c = None
+        try:
+            temps = psutil.sensors_temperatures()
+            if temps:
+                for name, entries in temps.items():
+                    if entries:
+                        temp_c = entries[0].current
+                        break
+        except Exception:
+            pass
+
+        return {
+            'utilization_pct': cpu_percent,
+            'temp_c': temp_c,
+            'load_avg': list(load_avg),
+        }
+    except Exception as e:
+        logging.getLogger('cpu').warning('CPU collection failed: %s', e)
+        return {}
+
+
+def collect_memory():
+    """Collect memory time-series metrics."""
+    try:
+        import psutil
+        vm = psutil.virtual_memory()
+        swap = psutil.swap_memory()
+        return {
+            'used_bytes': vm.used,
+            'cached_bytes': getattr(vm, 'cached', None),
+            'swap_used_bytes': swap.used,
+            'swap_total_bytes': swap.total,
+        }
+    except Exception as e:
+        logging.getLogger('memory').warning('Memory collection failed: %s', e)
+        return {}
+
+
 def collect_storage():
-    """Collect storage metrics."""
+    """Collect storage time-series metrics. Capacity is static and not included here."""
     try:
         import psutil
         disks = []
@@ -193,10 +227,11 @@ def collect_storage():
                     'device': part.device,
                     'mountpoint': part.mountpoint,
                     'fstype': part.fstype,
-                    'capacity_bytes': usage.total,
                     'usage_pct': round(usage.percent, 1),
+                    'temp_c': None,
+                    'smart_health': '',
                 }
-                # Try SMART
+                # Try SMART for temperature
                 try:
                     out = subprocess.run(
                         ['sudo', 'smartctl', '-a', part.device],
@@ -221,7 +256,7 @@ def collect_storage():
 
 
 def collect_network():
-    """Collect network metrics."""
+    """Collect network time-series metrics."""
     try:
         import psutil
         interfaces = []
@@ -259,7 +294,7 @@ def collect_network():
 
 
 def collect_gpus():
-    """Collect GPU metrics via pynvml."""
+    """Collect GPU time-series metrics. Static info (model, uuid, mem_total) is not included."""
     try:
         import pynvml
         pynvml.nvmlInit()
@@ -284,20 +319,16 @@ def collect_gpus():
                 power = None
                 power_limit = None
 
-            gpu = {
-                'uuid': pynvml.nvmlDeviceGetUUID(handle),
-                'model': pynvml.nvmlDeviceGetName(handle),
-                'mem_total_mb': info.total // (1024 * 1024),
-                'mem_used_mb': info.used // (1024 * 1024),
-                'mem_free_mb': info.free // (1024 * 1024),
-                'mem_util_pct': round(info.used / info.total * 100, 1) if info.total else None,
+            gpus.append({
+                'gpu_index': i,
                 'gpu_util_pct': util.gpu,
                 'temp_c': temp,
                 'fan_speed_pct': fan,
+                'mem_used_mb': info.used // (1024 * 1024),
+                'mem_util_pct': round(info.used / info.total * 100, 1) if info.total else None,
                 'power_draw_w': power,
                 'power_limit_w': power_limit,
-            }
-            gpus.append(gpu)
+            })
         pynvml.nvmlShutdown()
         return gpus
     except Exception as e:
@@ -380,27 +411,17 @@ def collect_errors():
 # ── Payload & Transport ─────────────────────────────────────────────────────
 
 def build_payload(config):
-    """Build the telemetry payload."""
+    """Build the telemetry payload.
+
+    Payload structure:
+    - static: hardware inventory that rarely changes (cpu model/mobo/gpu model).
+              Sent every heartbeat but server only updates when values change.
+    - metrics: time-series data that changes every heartbeat (utilization, temps, etc.)
+    - software: OS-level info (hostname, kernel, driver versions)
+    - errors: recent system errors
+    """
     now = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
-
-    inventory = {
-        'cpu': collect_cpu(),
-        'memory': collect_memory(),
-        'motherboard': collect_motherboard(),
-        'storage': collect_storage(),
-        'network': collect_network(),
-        'gpus': collect_gpus(),
-    }
-
-    metrics = {
-        'cpu': collect_cpu(),
-        'memory': collect_memory(),
-        'storage': collect_storage(),
-        'network': collect_network(),
-        'gpus': collect_gpus(),
-        'ai_processes': [],
-        'docker_containers': collect_docker(),
-    }
+    static = collect_static()
 
     payload = {
         'rig_uuid': config['rig_uuid'],
@@ -408,8 +429,16 @@ def build_payload(config):
         'schema_version': __schema_version__,
         'agent_version': __version__,
         'timestamp': now,
-        'inventory': inventory,
-        'metrics': metrics,
+        'static': static,
+        'metrics': {
+            'cpu': collect_cpu(),
+            'memory': collect_memory(),
+            'storage': collect_storage(),
+            'network': collect_network(),
+            'gpus': collect_gpus(),
+            'ai_processes': [],
+            'docker_containers': collect_docker(),
+        },
         'software': collect_software(),
         'errors': collect_errors(),
     }
@@ -423,10 +452,6 @@ def send_payload(config, payload):
     import random
 
     data = json.dumps(payload).encode('utf-8')
-    # Django DRF does not auto-decompress gzip request bodies,
-    # so we always send uncompressed JSON.
-    use_gzip = False
-
     headers = {
         'Content-Type': 'application/json',
         'X-API-Key': config['api_key'],

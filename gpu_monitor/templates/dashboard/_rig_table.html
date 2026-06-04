@@ -49,9 +49,9 @@
                     {% endfor %}
                 </td>
                 <td class="px-4 py-3">
-                    {% if item.gpu %}
-                        <span title="{{ item.gpu.model|default:'Unknown' }}">
-                            {{ item.gpu.model|default:"—"|gpu_model_name }}
+                    {% if item.gpu_model %}
+                        <span title="{{ item.gpu_model }}">
+                            {{ item.gpu_model|gpu_model_name }}
                         </span>
                     {% else %}—{% endif %}
                 </td>

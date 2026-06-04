@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-GPU Rig Monitoring Agent v1.1.0 (Windows)
+GPU Rig Monitoring Agent v1.2.0 (Windows)
 
 Collects hardware/software metrics and sends them to the monitoring server.
 Designed to run via Windows Task Scheduler.
@@ -32,14 +32,13 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.1.0-win'
+__version__ = '1.2.0-win'
 __schema_version__ = '1.0'
 
 # ── Config ──────────────────────────────────────────────────────────────────
 
 def get_default_config_path():
     """Return platform-appropriate default config path."""
-    # Store config alongside the script for portability
     script_dir = Path(__file__).resolve().parent
     return str(script_dir / 'config.yaml')
 
@@ -106,92 +105,54 @@ def setup_logging(debug=False):
 
 
 def log_payload(payload):
-    """Save the latest full JSON payload to payload.json for local analysis.
-
-    Overwrites the file each run so it always contains the most recent
-    payload. This is useful for debugging what the agent is actually
-    sending to the server.
-    """
+    """Save the latest full JSON payload to payload.json for local analysis."""
     log_dir = Path(__file__).resolve().parent / 'logs'
     log_dir.mkdir(parents=True, exist_ok=True)
     payload_path = log_dir / 'payload.json'
     payload_path.write_text(json.dumps(payload, indent=2, default=str) + '\n')
 
 
-# ── Metric Collectors ───────────────────────────────────────────────────────
+# ── Static Hardware Collectors (rarely changing, sent as "static") ──────────
 
-def collect_cpu():
-    """Collect CPU metrics."""
+def collect_static():
+    """Collect static hardware inventory that rarely changes between heartbeats.
+
+    Returns a dict with cpu, motherboard, and gpu static info.
+    This data is sent in the 'static' section and stored separately
+    on the server, avoiding duplication in every MetricSnapshot row.
+    """
+    return {
+        'cpu': _collect_cpu_static(),
+        'motherboard': collect_motherboard(),
+        'gpus': _collect_gpu_static(),
+    }
+
+
+def _collect_cpu_static():
+    """Collect static CPU info (model, core count). No utilization."""
+    result = {'model': 'Unknown', 'physical_cores': None, 'logical_cores': None}
     try:
         import psutil
-        cpu_percent = psutil.cpu_percent(interval=1)
-        cpu_count_phys = psutil.cpu_count(logical=False)
-        cpu_count_log = psutil.cpu_count(logical=True)
-
-        # Windows doesn't have os.getloadavg(); use CPU percent as proxy
-        load_avg = [cpu_percent / 100.0 * cpu_count_log] * 3
-
-        temp_c = None
-        try:
-            temps = psutil.sensors_temperatures()
-            if temps:
-                for name, entries in temps.items():
-                    if entries:
-                        temp_c = entries[0].current
-                        break
-        except Exception:
-            # sensors_temperatures() may not be available on Windows
-            pass
-
-        model = 'Unknown'
-        try:
-            import cpuinfo
-            info = cpuinfo.get_cpu_info()
-            model = info.get('brand_raw', 'Unknown')
-        except Exception:
-            pass
-
-        # Fallback: use WMI on Windows if cpuinfo didn't work
-        if model == 'Unknown' and platform.system() == 'Windows':
-            try:
-                import wmi
-                c = wmi.WMI()
-                for proc in c.Win32_Processor():
-                    model = proc.Name.strip()
-                    break
-            except Exception:
-                pass
-
-        return {
-            'model': model,
-            'physical_cores': cpu_count_phys,
-            'logical_cores': cpu_count_log,
-            'load_avg': load_avg,
-            'utilization_pct': cpu_percent,
-            'temp_c': temp_c,
-        }
-    except Exception as e:
-        logging.getLogger('cpu').warning('CPU collection failed: %s', e)
-        return {}
-
-
-def collect_memory():
-    """Collect memory metrics."""
+        result['physical_cores'] = psutil.cpu_count(logical=False)
+        result['logical_cores'] = psutil.cpu_count(logical=True)
+    except Exception:
+        pass
     try:
-        import psutil
-        vm = psutil.virtual_memory()
-        swap = psutil.swap_memory()
-        return {
-            'total_bytes': vm.total,
-            'used_bytes': vm.used,
-            'free_bytes': vm.available,
-            'cached_bytes': getattr(vm, 'cached', None),
-            'swap_used_bytes': swap.used,
-            'swap_total_bytes': swap.total,
-        }
-    except Exception as e:
-        logging.getLogger('memory').warning('Memory collection failed: %s', e)
-        return {}
+        import cpuinfo
+        info = cpuinfo.get_cpu_info()
+        result['model'] = info.get('brand_raw', 'Unknown')
+    except Exception:
+        pass
+    if result['model'] == 'Unknown' and platform.system() == 'Windows':
+        try:
+            import wmi
+            c = wmi.WMI()
+            for proc in c.Win32_Processor():
+                result['model'] = proc.Name.strip()
+                break
+        except Exception:
+            pass
+    return result
 
 
 def collect_motherboard():
@@ -226,8 +187,80 @@ def collect_motherboard():
     return result
 
 
+def _collect_gpu_static():
+    """Collect static GPU info (uuid, model, total memory). No utilization/temp."""
+    gpus = []
+    try:
+        import pynvml
+        pynvml.nvmlInit()
+        count = pynvml.nvmlDeviceGetCount()
+        for i in range(count):
+            handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+            info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+            gpus.append({
+                'uuid': pynvml.nvmlDeviceGetUUID(handle),
+                'model': pynvml.nvmlDeviceGetName(handle),
+                'mem_total_mb': info.total // (1024 * 1024),
+            })
+        pynvml.nvmlShutdown()
+    except Exception as e:
+        logging.getLogger('gpu').warning('GPU static collection failed: %s', e)
+    return gpus
+
+
+# ── Dynamic Metric Collectors (change every heartbeat, sent as "metrics") ──
+
+def collect_cpu():
+    """Collect CPU time-series metrics (utilization, temp, load)."""
+    try:
+        import psutil
+        cpu_percent = psutil.cpu_percent(interval=1)
+        cpu_count_log = psutil.cpu_count(logical=True)
+
+        # Windows doesn't have os.getloadavg(); use CPU percent as proxy
+        load_avg = [cpu_percent / 100.0 * cpu_count_log] * 3
+
+        temp_c = None
+        try:
+            temps = psutil.sensors_temperatures()
+            if temps:
+                for name, entries in temps.items():
+                    if entries:
+                        temp_c = entries[0].current
+                        break
+        except Exception:
+            # sensors_temperatures() may not be available on Windows
+            pass
+
+        return {
+            'utilization_pct': cpu_percent,
+            'temp_c': temp_c,
+            'load_avg': load_avg,
+        }
+    except Exception as e:
+        logging.getLogger('cpu').warning('CPU collection failed: %s', e)
+        return {}
+
+
+def collect_memory():
+    """Collect memory time-series metrics."""
+    try:
+        import psutil
+        vm = psutil.virtual_memory()
+        swap = psutil.swap_memory()
+        return {
+            'used_bytes': vm.used,
+            'cached_bytes': getattr(vm, 'cached', None),
+            'swap_used_bytes': swap.used,
+            'swap_total_bytes': swap.total,
+        }
+    except Exception as e:
+        logging.getLogger('memory').warning('Memory collection failed: %s', e)
+        return {}
+
+
 def collect_storage():
-    """Collect storage metrics."""
+    """Collect storage time-series metrics. Capacity is static and not included here."""
     try:
         import psutil
         disks = []
@@ -241,8 +274,9 @@ def collect_storage():
                     'device': part.device,
                     'mountpoint': part.mountpoint,
                     'fstype': part.fstype,
-                    'capacity_bytes': usage.total,
                     'usage_pct': round(usage.percent, 1),
+                    'temp_c': None,
+                    'smart_health': '',
                 }
                 # Try SMART on Windows
                 if platform.system() == 'Windows':
@@ -284,12 +318,7 @@ def _get_physical_drive_for_partition(partition_letter):
     try:
         import wmi
         c = wmi.WMI()
-        # e.g. "C:" from "C:\\"
         drive_letter = partition_letter[0].upper()
-        for disk in c.Win32_DiskPartition():
-            for logical in disk.associators("Win32_DiskPartitionToDiskDrive"):
-                pass
-        # Use Win32_LogicalDiskToPartition mapping
         for ld in c.Win32_LogicalDisk(DriveType=3):
             if ld.DeviceID.startswith(drive_letter):
                 for assoc in ld.associators("Win32_LogicalDiskToPartition"):
@@ -328,7 +357,7 @@ def _get_physical_disk_name(device):
 
 
 def collect_network():
-    """Collect network metrics."""
+    """Collect network time-series metrics."""
     try:
         import psutil
         interfaces = []
@@ -380,7 +409,7 @@ def collect_network():
 
 
 def collect_gpus():
-    """Collect GPU metrics via pynvml (works on Windows and Linux)."""
+    """Collect GPU time-series metrics. Static info (model, uuid, mem_total) is not included."""
     try:
         import pynvml
         pynvml.nvmlInit()
@@ -405,20 +434,16 @@ def collect_gpus():
                 power = None
                 power_limit = None
 
-            gpu = {
-                'uuid': pynvml.nvmlDeviceGetUUID(handle),
-                'model': pynvml.nvmlDeviceGetName(handle),
-                'mem_total_mb': info.total // (1024 * 1024),
-                'mem_used_mb': info.used // (1024 * 1024),
-                'mem_free_mb': info.free // (1024 * 1024),
-                'mem_util_pct': round(info.used / info.total * 100, 1) if info.total else None,
+            gpus.append({
+                'gpu_index': i,
                 'gpu_util_pct': util.gpu,
                 'temp_c': temp,
                 'fan_speed_pct': fan,
+                'mem_used_mb': info.used // (1024 * 1024),
+                'mem_util_pct': round(info.used / info.total * 100, 1) if info.total else None,
                 'power_draw_w': power,
                 'power_limit_w': power_limit,
-            }
-            gpus.append(gpu)
+            })
         pynvml.nvmlShutdown()
         return gpus
     except Exception as e:
@@ -430,8 +455,6 @@ def collect_docker():
     """Collect Docker container info."""
     try:
         import docker
-        # On Windows, Docker Desktop uses a named pipe, not a Unix socket
-        # The docker SDK handles this automatically from_env()
         client = docker.from_env()
         containers = []
         for c in client.containers.list():
@@ -456,7 +479,6 @@ def collect_software():
     }
     try:
         import psutil
-        # psutil.boot_time() works on both Windows and Linux
         result['uptime_s'] = int(psutil.boot_time())
     except Exception:
         pass
@@ -485,7 +507,6 @@ def collect_errors():
     """Collect recent system errors from Windows Event Log or journalctl."""
     errors = []
     if platform.system() == 'Windows':
-        # Use Windows Event Log via PowerShell
         try:
             ps_cmd = (
                 "Get-WinEvent -FilterHashtable @{"
@@ -515,7 +536,6 @@ def collect_errors():
         except Exception as e:
             logging.getLogger('errors').warning('Windows Event Log collection failed: %s', e)
     else:
-        # Linux: use journalctl
         try:
             out = subprocess.run(
                 ['journalctl', '-p', 'err..crit', '--since', '5 min ago', '--no-pager', '-o', 'short-iso'],
@@ -538,27 +558,17 @@ def collect_errors():
 # ── Payload & Transport ─────────────────────────────────────────────────────
 
 def build_payload(config):
-    """Build the telemetry payload."""
+    """Build the telemetry payload.
+
+    Payload structure:
+    - static: hardware inventory that rarely changes (cpu model/mobo/gpu model).
+              Sent every heartbeat but server only updates when values change.
+    - metrics: time-series data that changes every heartbeat (utilization, temps, etc.)
+    - software: OS-level info (hostname, kernel, driver versions)
+    - errors: recent system errors
+    """
     now = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
-
-    inventory = {
-        'cpu': collect_cpu(),
-        'memory': collect_memory(),
-        'motherboard': collect_motherboard(),
-        'storage': collect_storage(),
-        'network': collect_network(),
-        'gpus': collect_gpus(),
-    }
-
-    metrics = {
-        'cpu': collect_cpu(),
-        'memory': collect_memory(),
-        'storage': collect_storage(),
-        'network': collect_network(),
-        'gpus': collect_gpus(),
-        'ai_processes': [],
-        'docker_containers': collect_docker(),
-    }
+    static = collect_static()
 
     payload = {
         'rig_uuid': config['rig_uuid'],
@@ -566,8 +576,16 @@ def build_payload(config):
         'schema_version': __schema_version__,
         'agent_version': __version__,
         'timestamp': now,
-        'inventory': inventory,
-        'metrics': metrics,
+        'static': static,
+        'metrics': {
+            'cpu': collect_cpu(),
+            'memory': collect_memory(),
+            'storage': collect_storage(),
+            'network': collect_network(),
+            'gpus': collect_gpus(),
+            'ai_processes': [],
+            'docker_containers': collect_docker(),
+        },
         'software': collect_software(),
         'errors': collect_errors(),
     }
@@ -577,25 +595,18 @@ def build_payload(config):
 
 def send_payload(config, payload):
     """Send payload to server with retry logic."""
-    data = json.dumps(payload).encode('utf-8')
-    # Only gzip if payload is large AND server supports it.
-    # Django DRF does not auto-decompress gzip request bodies,
-    # so we disable gzip by default. Set debug_mode=True to also
-    # disable gzip for easier debugging.
-    use_gzip = False  # Django doesn't support gzip request decompression
+    import time
+    import random
 
+    data = json.dumps(payload).encode('utf-8')
     headers = {
         'Content-Type': 'application/json',
         'X-API-Key': config['api_key'],
         'User-Agent': f'rig-monitor-agent/{__version__}',
     }
-    if use_gzip:
-        data = gzip.compress(data)
-        headers['Content-Encoding'] = 'gzip'
 
     max_retries = config.get('retry_attempts', 3)
-    import time
-    import random
+    timeout = (3.0, 10.0)
 
     for attempt in range(max_retries):
         try:
@@ -603,7 +614,7 @@ def send_payload(config, payload):
                 f"{config['server_endpoint']}/api/v1/ingest/",
                 data=data,
                 headers=headers,
-                timeout=(3.0, 10.0),
+                timeout=timeout,
             )
             logging.getLogger('transport').info(
                 'Ingest response: %d %s', resp.status_code, resp.text[:100]
@@ -679,7 +690,6 @@ def print_task_scheduler_instructions():
     script_path = Path(__file__).resolve()
     python_path = sys.executable
 
-    # Use pythonw.exe for hidden window execution
     pythonw_path = python_path.replace('python.exe', 'pythonw.exe')
     if not Path(pythonw_path).exists():
         pythonw_path = python_path.replace('python3.exe', 'pythonw.exe')
@@ -730,14 +740,12 @@ def create_windows_task():
     script_path = Path(__file__).resolve()
     python_path = sys.executable
 
-    # Use pythonw.exe to run without a visible terminal window
     pythonw_path = python_path.replace('python.exe', 'pythonw.exe')
     if not Path(pythonw_path).exists():
         pythonw_path = python_path.replace('python3.exe', 'pythonw.exe')
     if not Path(pythonw_path).exists():
-        pythonw_path = python_path  # fallback to python.exe if pythonw.exe not found
+        pythonw_path = python_path
 
-    # Build schtasks command
     task_name = "GPURigMonitorAgent"
     arguments = f'"{pythonw_path}" "{script_path}"'
 
@@ -796,7 +804,6 @@ def _detect_server():
     print("=" * 60)
     print()
 
-    # Show local network info
     hostname = socket.gethostname()
     try:
         local_ip = socket.gethostbyname(hostname)
@@ -804,20 +811,15 @@ def _detect_server():
     except Exception:
         print(f"  This machine: {hostname}")
 
-    # Try common VM/test network gateways
     candidates = [
-        # VMware NAT default gateway
         ("192.168.253.1", "VMware NAT (VMnet8) gateway"),
         ("192.168.40.1", "VMware Host-Only (VMnet1) gateway"),
-        # Common DHCP ranges — try .1 gateway
         ("192.168.8.1", "Common gateway (192.168.8.x)"),
         ("192.168.0.1", "Common gateway (192.168.0.x)"),
         ("192.168.1.1", "Common gateway (192.168.1.x)"),
-        # Fallback: localhost
         ("127.0.0.1", "Localhost (same machine)"),
     ]
 
-    # Also try probing the local subnet's .1
     try:
         local_parts = local_ip.rsplit('.', 1)
         if len(local_parts) == 2:
@@ -835,12 +837,12 @@ def _detect_server():
             result = sock.connect_ex((ip, 80))
             sock.close()
             if result == 0:
-                print(f"  ✅ {ip:20s} — {label} (port 80 open)")
+                print(f"  {ip:20s} — {label} (port 80 open)")
                 found.append(ip)
             else:
-                print(f"  ❌ {ip:20s} — {label} (no response)")
+                print(f"  {ip:20s} — {label} (no response)")
         except Exception:
-            print(f"  ❌ {ip:20s} — {label} (error)")
+            print(f"  {ip:20s} — {label} (error)")
 
     if found:
         best = found[0]
@@ -859,7 +861,7 @@ def _detect_server():
                     r = s.connect_ex((probe, 80))
                     s.close()
                     if r == 0:
-                        print(f"  ✅ {probe} responds on port 80 — try: http://{probe}")
+                        print(f"  {probe} responds on port 80 — try: http://{probe}")
                 except Exception:
                     pass
     else:
@@ -869,6 +871,9 @@ def _detect_server():
 
     print()
     print("=" * 60)
+
+
+# ── Main ────────────────────────────────────────────────────────────────────
 
 def main():
     # Handle command-line arguments for task management and diagnostics

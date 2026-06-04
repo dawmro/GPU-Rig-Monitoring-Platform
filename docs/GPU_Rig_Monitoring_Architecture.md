@@ -1,8 +1,8 @@
 # GPU Rig Monitoring Platform — Architecture Document
 
-**Version:** 1.0
+**Version:** 1.1
 **Status:** Implemented — Living Architecture Reference
-**Last Updated:** 2026-06-02
+**Last Updated:** 2026-06-05
 
 ---
 
@@ -94,8 +94,8 @@ Cron → Agent collects metrics → JSON payload → POST /api/v1/ingest/
   → Nginx (rate limit, size check)
   → DRF APIKeyAuthentication (X-API-Key header → Argon2id hash comparison)
   → DRF throttle (per-key rate limit)
-  → IngestSerializer validation (schema version 1.0)
-  → process_ingest() → DB upsert (MetricSnapshot, GPUMetric, StorageMetric, etc.)
+  → IngestSerializer validation (schema version 1.0 or 1.1)
+  → process_ingest() → DB upsert (MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, AIProcessMetric, ErrorEvent, ErrorEventOccurrence, RigStatusEvent, LatestSnapshot)
   → Rig.last_seen and Rig.status updated to ONLINE
   → Response: 200 (new) or 202 (duplicate/idempotent)
 ```
@@ -104,15 +104,16 @@ Cron → Agent collects metrics → JSON payload → POST /api/v1/ingest/
 
 | File | Purpose |
 |------|---------|
-| `agent/run.py` | Linux agent (~480 lines) |
-| `agent_windows/run.py` | Windows agent (~890 lines) |
+| `agent/run.py` | Linux agent (~517 lines) |
+| `agent_windows/run.py` | Windows agent (~916 lines) |
 | `metrics_app/views.py` | IngestView, HealthView, ChartDataView, RigMetricsView |
 | `metrics_app/serializers.py` | IngestSerializer, process_ingest() |
-| `metrics_app/models.py` | MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, ErrorEvent |
+| `metrics_app/models.py` | MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, ErrorEvent, ErrorEventOccurrence, RigStatusEvent, AIProcessMetric |
 | `dashboard/views.py` | rig_list, rig_detail, htmx_metrics, htmx_rig_status, rig_rename |
+| `dashboard/templatetags/gpu_filters.py` | gpu_model_name, gpu_model_short, time_since filters |
 | `rigs/models.py` | Rig, RigTag |
 | `accounts/authentication.py` | APIKeyAuthentication |
-| `rigs/management/commands/update_rig_status.py` | Rig status state machine |
+| `rigs/management/commands/update_rig_status.py` | Rig status state machine (creates RigStatusEvent on transitions) |
 
 ---
 
@@ -142,7 +143,7 @@ retry_attempts: 3         # Exponential backoff: 1s → 2s → 4s
 debug_mode: false         # Verbose logging
 ```
 
-### 3.3 Payload Schema (v1.0)
+### 3.3 Payload Schema (v1.1)
 
 ```json
 {
@@ -151,10 +152,101 @@ debug_mode: false         # Verbose logging
   "schema_version": "1.1",
   "agent_version": "1.1.0",
   "timestamp": "2026-06-02T19:54:06Z",
-  "metrics": { "cpu": {}, "memory": {}, "storage": [], "network": [], "gpus": [], "ai_processes": [], "docker_containers": [] },
-  "motherboard": { "manufacturer": "...", "model": "...", "bios_version": "..." },
-  "software": { "hostname": "...", "os_distro": "...", "kernel": "..." },
-  "errors": [{ "source": "kernel", "message": "...", "timestamp": "..." }]
+  "metrics": {
+    "cpu": {
+      "model": "AMD Ryzen 7 5700X3D 8-Core Processor",
+      "physical_cores": 8,
+      "logical_cores": 16,
+      "load_avg": [0.26, 0.23, 0.36],
+      "utilization_pct": 5.2,
+      "temp_c": null
+    },
+    "memory": {
+      "total_bytes": 68637540352,
+      "used_bytes": 27017158656,
+      "free_bytes": 41620381696,
+      "cached_bytes": null,
+      "swap_used_bytes": 368766976,
+      "swap_total_bytes": 8589934592
+    },
+    "storage": [
+      {
+        "device": "C:\\",
+        "mountpoint": "C:\\",
+        "fstype": "NTFS",
+        "capacity_bytes": 1000200990720,
+        "usage_pct": 51.7,
+        "temp_c": null,
+        "smart_health": ""
+      }
+    ],
+    "network": [
+      {
+        "interface": "Ethernet",
+        "rx_bytes": 143633646149,
+        "tx_bytes": 8690378455,
+        "rx_errors": 0,
+        "tx_errors": 0,
+        "ipv4": "192.168.8.158",
+        "link_speed_mbps": 100
+      }
+    ],
+    "gpus": [
+      {
+        "uuid": "GPU-a322cff7-19cf-f056-4a38-b676c04a38aa",
+        "model": "NVIDIA GeForce RTX 3060",
+        "mem_total_mb": 12288,
+        "mem_used_mb": 1235,
+        "mem_free_mb": 11052,
+        "mem_util_pct": 10.1,
+        "gpu_util_pct": 4,
+        "temp_c": 46,
+        "fan_speed_pct": 0,
+        "power_draw_w": 8.843,
+        "power_limit_w": 170.0
+      }
+    ],
+    "ai_processes": [
+      {
+        "process_name": "ollama",
+        "pid": 1234,
+        "gpu_uuid": "GPU-a322cff7-19cf-f056-4a38-b676c04a38aa",
+        "gpu_mem_used_mb": 8000,
+        "cpu_pct": 15.5
+      }
+    ],
+    "docker_containers": [
+      {
+        "name": "ollama",
+        "image": "ollama/ollama:latest",
+        "status": "running",
+        "restart_count": 0,
+        "cpu_pct": 15.5,
+        "mem_usage_bytes": 4000000000,
+        "mem_limit_bytes": 8000000000
+      }
+    ]
+  },
+  "motherboard": {
+    "manufacturer": "Gigabyte Technology Co., Ltd.",
+    "model": "B450M DS3H-CF",
+    "bios_version": "F67d"
+  },
+  "software": {
+    "hostname": "DESKTOP-REE04FV",
+    "os_distro": "Windows-10-10.0.19045-SP0",
+    "kernel": "10",
+    "uptime_s": 2415271,
+    "nvidia_driver": "571.96",
+    "docker_version": "24.0.7"
+  },
+  "errors": [
+    {
+      "source": "kernel",
+      "message": "nvidia-container-cli failed",
+      "timestamp": "2026-06-02T19:54:06"
+    }
+  ]
 }
 ```
 
@@ -163,6 +255,10 @@ debug_mode: false         # Verbose logging
 - Added `motherboard` as a top-level key (previously nested inside `inventory`)
 - Each collector now called once per heartbeat (was twice)
 - All metric fields preserved: `gpu_uuid`, `model`, `mem_total_mb`, `capacity_bytes`, etc.
+- Added `ai_processes[]` array for per-process GPU/CPU tracking
+- Added `docker_containers[].cpu_pct`, `mem_usage_bytes`, `mem_limit_bytes` for container resource tracking
+- Added `network[].rx_errors`, `tx_errors` for network error tracking
+- Added `software.nvidia_driver`, `docker_version` for driver/version tracking
 
 ### 3.4 Transport
 
@@ -213,15 +309,19 @@ debug_mode: false         # Verbose logging
 POST /api/v1/ingest/
   → CsrfViewMiddleware (skipped via @csrf_exempt on IngestView)
   → APIKeyAuthentication validates X-API-Key
-  → DRF throttle (AnonRateThrottle)
-  → IngestSerializer validates schema
+  → DRF throttle (per-key rate limit)
+  → IngestSerializer validation (schema version 1.0 or 1.1)
   → process_ingest() in transaction.atomic():
-      - Upsert MetricSnapshot (cpu, memory fields)
+      - Upsert MetricSnapshot (cpu, memory, status fields; motherboard/software as JSON)
       - Upsert GPUMetric per GPU (gpu_index = 0, 1, ...)
-      - Upsert StorageMetric per disk
-      - Upsert NetworkMetric per interface
-      - Upsert DockerContainerMetric per container
+      - Upsert StorageMetric per disk (with path-normalized dedup)
+      - Upsert NetworkMetric per interface (with rx/tx delta calculation)
+      - Upsert DockerContainerMetric per container (with cpu%, memory stats)
+      - Upsert AIProcessMetric per AI process (gpu_mem, cpu_pct)
+      - Create RigStatusEvent on status transition (e.g. offline→online)
       - Upsert ErrorEvent (deduplicated by hash)
+      - Create ErrorEventOccurrence per error (for time-series tracking)
+      - Update LatestSnapshot (denormalized cache for fast dashboard loading)
       - Update Rig.last_seen = now(), Rig.status = ONLINE
       - On Rig.DoesNotExist: auto-create with agent-suggested name
         (rig_name is used only at creation, never overwritten)
@@ -308,7 +408,7 @@ Three HTMX polling regions:
 | Region | Target ID | Interval | Mode | Data |
 |--------|-----------|----------|------|------|
 | Status badge | `#rig-status-container` | 15s | `innerHTML` | Rig.status, Rig.last_seen |
-| Live metrics | `#metrics-container` | 30s | `innerHTML` | CPU, memory, GPU, Docker, storage, errors, error events |
+| Live metrics | `#metrics-container` | 30s | `innerHTML` | CPU, memory, GPU, storage, network, Docker, motherboard, software, errors |
 | Header status | — | 15s | HTMX badge + clock | Status + last_seen |
 
 Plus one manual-refresh region:
@@ -346,13 +446,16 @@ Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the age
 | `rigs_rig` | rigs | Rig inventory (uuid PK, owner FK, status, last_seen, name) |
 | `rigs_rigtag` | rigs | Tags (name, color) |
 | `rigs_rig_tags` | rigs | M2M through table |
-| `metrics_metricsnapshot` | metrics_app | Per-heartbeat metrics (cpu, memory fields inline) |
+| `metrics_metricsnapshot` | metrics_app | Per-heartbeat metrics (cpu, memory, status fields inline; motherboard/software as JSON) |
 | `metrics_gpumetric` | metrics_app | Per-GPU metrics (temp, util, mem, power; FK to snapshot) |
-| `metrics_storagemetric` | metrics_app | Per-disk metrics (usage, smart temp) |
-| `metrics_networkmetric` | metrics_app | Per-interface metrics (rx/tx bytes, speed) |
-| `metrics_dockercontainermetric` | metrics_app | Per-container metrics (name, status, restarts) |
-| `metrics_latestsnapshot` | metrics_app | Current state per rig (upserted on every heartbeat) |
+| `metrics_storagemetric` | metrics_app | Per-disk metrics (capacity, usage%, temp, SMART health) |
+| `metrics_networkmetric` | metrics_app | Per-interface metrics (rx/tx bytes, rx/tx deltas, speed, errors) |
+| `metrics_dockercontainermetric` | metrics_app | Per-container metrics (name, image, status, restarts, cpu%, memory) |
+| `metrics_latestsnapshot` | metrics_app | Denormalized latest snapshot per rig (fast dashboard loading) |
 | `metrics_errorevent` | metrics_app | Deduplicated errors (hash-based dedup, count, last_seen) |
+| `metrics_error_event_occurrence` | metrics_app | Per-occurrence error timestamps for time-series error tracking |
+| `metrics_rig_status_event` | metrics_app | Rig status transition log (online/stale/offline with timestamps) |
+| `metrics_ai_process` | metrics_app | Per-process GPU/CPU usage tracking for AI workloads |
 | `audit_auditlog` | audit | Immutable audit trail |
 
 ### 6.2 Key Constraints
@@ -364,6 +467,7 @@ Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the age
 | `metrics_networkmetric` | `UNIQUE(rig_uuid, timestamp, interface)` |
 | `metrics_dockercontainermetric` | `UNIQUE(rig_uuid, timestamp, name)` |
 | `metrics_metricsnapshot` | `UNIQUE(rig_uuid, schema_version, timestamp)` |
+| `metrics_ai_process` | `UNIQUE(rig_uuid, timestamp, process_name)` |
 
 ### 6.3 Metric Field Name Mapping
 

@@ -1,6 +1,6 @@
 # GPU Rig Monitoring Platform — Deployment Guide
 
-**Version:** 1.0
+**Version:** 1.1
 **Target OS:** Ubuntu 22.04 / 24.04 LTS (single VPS with domain name)
 
 This guide deploys the GPU Rig Monitoring Platform on a **production VPS** with TLS, a domain name, and remote GPU rigs sending telemetry.
@@ -694,9 +694,9 @@ tail -50 /opt/gpu_monitor/logs/app.log
 | `gpu_monitor/` | Django project (`settings.py`, `urls.py`, `wsgi.py`) |
 | `accounts/` | User/auth app (models, views, API key middleware) |
 | `rigs/` | Rig inventory app (models, status management command) |
-|| `metrics_app/` | Ingestion API (models, serializers, TimescaleDB setup command) |
-|| `dashboard/` | HTMX dashboard (views, URL routing) |
-|| `dashboard/templatetags/` | Custom template filters (gpu_filters.py) |
+| `metrics_app/` | Ingestion API (models, serializers, views) |
+| `dashboard/` | HTMX dashboard (views, URL routing) |
+| `dashboard/templatetags/` | Custom template filters (gpu_filters.py — gpu_model_name, gpu_model_short, time_since) |
 || `audit/` | Audit logging (models, middleware) |
 || `templates/` | Django HTML templates |
 || `deploy/` | Nginx config, Gunicorn systemd unit, install scripts, backup scripts |
@@ -708,6 +708,20 @@ tail -50 /opt/gpu_monitor/logs/app.log
 |  | `app.log` — Django structured JSON log |
 || `staticfiles/` | Collected static files served by Nginx |
 | `manage.py` | Django management command |
+
+### Workspace (`GPU-Rig-Monitoring-Platform/`)
+
+| Path | Purpose |
+|------|---------|
+| `agent/` | Linux agent source code |
+| `agent_windows/` | Windows agent source code |
+| `gpu_monitor/` | Django server source code |
+| `docs/` | Documentation (Architecture, Deployment, Local Deployment guides) |
+| `scripts/` | Dev/test helper scripts |
+| `scripts/sync_to_opt.sh` | Full workspace → /opt deployment (copy + migrate + restart) |
+| `scripts/sync_agent.sh` | Agent files only → /opt deployment |
+| `scripts/sync_and_migrate.sh` | Granular file sync + migrate |
+| `README.md` | Project overview with directory conventions |
 
 ### Rig (`/opt/monitoring-agent/`)
 

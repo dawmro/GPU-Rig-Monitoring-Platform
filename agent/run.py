@@ -85,6 +85,36 @@ def setup_logging(debug=False):
     root.addHandler(console)
 
 
+def log_payload(payload):
+    """Write the full JSON payload to a separate log file for local analysis.
+
+    Each entry is written as:
+        --- YYYY-MM-DD HH:MM:SS UTC ---
+        {pretty-printed JSON payload}
+
+    The file is rotated at 50 MB with 3 backups to avoid filling disk
+    on machines that run for months.
+    """
+    log_dir = Path('/var/log/monitoring-agent')
+    log_dir.mkdir(parents=True, exist_ok=True)
+    payload_log = logging.getLogger('payload')
+    payload_log.propagate = False
+    payload_log.setLevel(logging.INFO)
+
+    # Add handler only once
+    if not payload_log.handlers:
+        handler = logging.handlers.RotatingFileHandler(
+            log_dir / 'payload.log', maxBytes=50*1024*1024, backupCount=3
+        )
+        handler.setFormatter(logging.Formatter('%(message)s'))
+        payload_log.addHandler(handler)
+
+    ts = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
+    separator = f'--- {ts} ---'
+    body = json.dumps(payload, indent=2, default=str)
+    payload_log.info(f'{separator}\n{body}\n')
+
+
 # ── Metric Collectors ───────────────────────────────────────────────────────
 
 def collect_cpu():
@@ -464,6 +494,7 @@ def main():
     try:
         logger.info('Starting collection for rig %s', config['rig_uuid'])
         payload = build_payload(config)
+        log_payload(payload)
         status_code, response = send_payload(config, payload)
         if status_code in (200, 202):
             logger.info('Payload accepted: %s', response.get('status', 'unknown'))

@@ -684,8 +684,6 @@ GPU-Rig-Monitoring-Platform/
 └── README.md
 ```
 
-> **Note:** The `metrics_unused_backup/` directory in the repository is a legacy placeholder app. It is intentionally **not** in `INSTALLED_APPS` and can be ignored.
-
 ---
 
 ## 8. Troubleshooting

@@ -418,22 +418,47 @@ def collect_gpus():
 
 
 def collect_docker():
-    """Collect Docker container info."""
+    """Collect Docker container info with resource usage stats."""
     try:
         import docker
         client = docker.from_env()
         containers = []
         for c in client.containers.list():
-            containers.append({
+            container_info = {
                 'name': c.name,
                 'image': c.image.tags[0] if c.image.tags else 'unknown',
                 'status': c.status,
                 'restart_count': c.attrs.get('RestartCount', 0),
-            })
+                'cpu_pct': None,
+                'mem_usage_bytes': None,
+                'mem_limit_bytes': None,
+            }
+            if c.status == 'running':
+                try:
+                    stats = c.stats(stream=False)
+                    cpu_delta = (
+                        stats['cpu_stats']['cpu_usage']['total_usage'] -
+                        stats['precpu_stats']['cpu_usage']['total_usage']
+                    )
+                    system_delta = (
+                        stats['cpu_stats']['system_cpu_usage'] -
+                        stats['precpu_stats']['system_cpu_usage']
+                    )
+                    if system_delta > 0 and cpu_delta > 0:
+                        num_cpus = stats['cpu_stats'].get('online_cpus', 1)
+                        container_info['cpu_pct'] = round(
+                            (cpu_delta / system_delta) * num_cpus * 100, 2
+                        )
+                    mem_stats = stats.get('memory_stats', {})
+                    container_info['mem_usage_bytes'] = mem_stats.get('usage')
+                    container_info['mem_limit_bytes'] = mem_stats.get('limit')
+                except Exception:
+                    pass
+            containers.append(container_info)
         return containers
     except Exception as e:
         logging.getLogger('docker').warning('Docker collection failed: %s', e)
-        return []
+    return []
 
 
 def collect_software():

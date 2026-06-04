@@ -3,7 +3,7 @@ import logging
 from rest_framework import serializers, status
 from django.db import transaction
 from django.utils import timezone
-from .models import MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, ErrorEvent, RigStatusEvent, AIProcessMetric
+from .models import MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, ErrorEvent, ErrorEventOccurrence, RigStatusEvent, AIProcessMetric
 from rigs.models import Rig
 from audit.middleware import compute_error_hash
 
@@ -170,6 +170,9 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                         'image': container.get('image', ''),
                         'status': container.get('status', ''),
                         'restart_count': container.get('restart_count', 0),
+                        'cpu_pct': container.get('cpu_pct'),
+                        'mem_usage_bytes': container.get('mem_usage_bytes'),
+                        'mem_limit_bytes': container.get('mem_limit_bytes'),
                     },
                 )
 
@@ -212,12 +215,12 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                         previous_status=previous_status,
                     )
 
-            # Process errors (deduplicate)
+            # Process errors (deduplicate + track occurrences)
             for error in errors_data:
                 source = error.get('source', '')
                 message = error.get('message', '')
                 error_hash = compute_error_hash(source, message)
-                ErrorEvent.objects.update_or_create(
+                error_event, _ = ErrorEvent.objects.update_or_create(
                     rig_uuid=rig_uuid,
                     hash=error_hash,
                     defaults={
@@ -225,6 +228,12 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                         'source': source,
                         'message': message[:500],
                     },
+                )
+                # Create occurrence record for time-series tracking
+                ErrorEventOccurrence.objects.create(
+                    error_event=error_event,
+                    rig_uuid=rig_uuid,
+                    timestamp=ts,
                 )
 
             http_status = status.HTTP_200_OK if created else status.HTTP_202_ACCEPTED

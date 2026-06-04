@@ -135,7 +135,10 @@ class NetworkMetric(models.Model):
 
 
 class DockerContainerMetric(models.Model):
-    """Per-container time-series metrics — one row per container per snapshot."""
+    """Per-container time-series metrics — one row per container per snapshot.
+
+    Stores container status and resource usage for historical tracking.
+    """
     id = models.BigAutoField(primary_key=True)
     snapshot = models.ForeignKey(MetricSnapshot, on_delete=models.CASCADE, related_name='docker_metrics')
     rig_uuid = models.UUIDField(db_index=True)
@@ -144,6 +147,9 @@ class DockerContainerMetric(models.Model):
     image = models.CharField(max_length=255, blank=True, default='')
     status = models.CharField(max_length=32, blank=True, default='')
     restart_count = models.PositiveIntegerField(default=0)
+    cpu_pct = models.FloatField(null=True)
+    mem_usage_bytes = models.BigIntegerField(null=True)
+    mem_limit_bytes = models.BigIntegerField(null=True)
 
     class Meta:
         db_table = 'metrics_dockercontainermetric'
@@ -236,3 +242,24 @@ class ErrorEvent(models.Model):
     class Meta:
         db_table = 'metrics_lasterrors'
         unique_together = ('rig_uuid', 'hash')
+
+
+class ErrorEventOccurrence(models.Model):
+    """Individual error occurrence for time-series error tracking.
+
+    Each time an error is received by the ingest endpoint, an occurrence is
+    created linked to the parent ErrorEvent. This enables error frequency
+    charts and detailed error timeline analysis.
+    """
+    id = models.BigAutoField(primary_key=True)
+    error_event = models.ForeignKey(ErrorEvent, on_delete=models.CASCADE, related_name='occurrences')
+    rig_uuid = models.UUIDField(db_index=True)
+    timestamp = models.DateTimeField(db_index=True)
+
+    class Meta:
+        db_table = 'metrics_error_event_occurrence'
+        ordering = ['-timestamp']
+        indexes = [
+            models.Index(fields=['rig_uuid', '-timestamp']),
+            models.Index(fields=['error_event', '-timestamp']),
+        ]

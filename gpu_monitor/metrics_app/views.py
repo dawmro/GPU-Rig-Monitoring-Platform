@@ -141,19 +141,25 @@ class ChartDataView(APIView):
     """GET /api/v1/rigs/<uuid>/chart-data/ — Historical chart data.
 
     Returns fixed 1-minute buckets for the requested range (default 24h = 1440 points).
-    Empty buckets are zero-filled so offline periods are visible on the chart.
+    Empty buckets are null-filled so offline periods are visible on the chart.
 
     Query parameters:
         metric: Field name to chart. Supported values:
-            - cpu_utilization_pct, cpu_temp_c, mem_used_bytes (from MetricSnapshot)
-            - gpu_temp_c, gpu_util_pct, gpu_mem_used_mb, gpu_power_w (from GPUMetric, gpu_index=0)
+            - cpu_utilization_pct, cpu_temp_c, cpu_load_avg (from MetricSnapshot)
+            - mem_used_bytes, mem_total_bytes, mem_free_bytes, mem_cached_bytes, swap_used_bytes, swap_total_bytes (from MetricSnapshot)
+            - gpu_temp_c, gpu_util_pct, gpu_mem_used_mb, gpu_power_w, gpu_fan_pct (from GPUMetric, gpu_index=0)
             - disk_usage_pct (from StorageMetric, first disk)
         range: Hours of historical data (default: 24)
+        gpu_index: GPU index for per-GPU metrics (default: 0)
     """
     authentication_classes = [SessionAuthentication]
 
-    # Metrics stored directly on MetricSnapshot
-    SNAPSHOT_METRICS = {'cpu_utilization_pct', 'cpu_temp_c', 'mem_used_bytes', 'mem_total_bytes'}
+    # Metrics stored directly on MetricSnapshot (single value per row)
+    SNAPSHOT_METRICS = {
+        'cpu_utilization_pct', 'cpu_temp_c',
+        'mem_total_bytes', 'mem_used_bytes', 'mem_free_bytes', 'mem_cached_bytes',
+        'swap_used_bytes', 'swap_total_bytes',
+    }
     # Metrics stored on GPUMetric (per-GPU)
     # Maps chart/query metric names to actual GPUMetric field names
     GPU_METRICS = {
@@ -168,15 +174,17 @@ class ChartDataView(APIView):
     # Metrics stored on StorageMetric
     STORAGE_METRICS = {'disk_usage_pct'}
 
+    # Metrics that need unit conversion: field_name -> conversion function name
+    BYTE_TO_GB = {'mem_total_bytes', 'mem_used_bytes', 'mem_free_bytes', 'mem_cached_bytes', 'swap_used_bytes', 'swap_total_bytes'}
+
     def _build_buckets(self, range_hours):
         """Build fixed 1-minute bucket labels and empty value array.
 
         Returns (labels, values) where labels are 'HH:MM' strings and
-        values are a list of zeros with length = range_hours * 60.
+        values are a list of Nones with length = range_hours * 60.
         Bucket 0 = oldest, bucket N-1 = newest (now).
         """
         now = timezone.now()
-        # Truncate to the start of the current minute
         end_minute = now.replace(second=0, microsecond=0)
         total_minutes = range_hours * 60
         start_minute = end_minute - timedelta(minutes=total_minutes)
@@ -198,9 +206,7 @@ class ChartDataView(APIView):
         total_minutes = len(labels)
         for row in queryset:
             ts = getattr(row, value_key)
-            # Truncate to minute
             ts_minute = ts.replace(second=0, microsecond=0)
-            # Calculate bucket index
             delta = ts_minute - start_minute
             idx = int(delta.total_seconds() // 60)
             if 0 <= idx < total_minutes:
@@ -208,10 +214,29 @@ class ChartDataView(APIView):
                 if val is not None:
                     values[idx] = val
 
+    def _fill_buckets_multi(self, labels, datasets, start_minute, queryset, field_name, value_key='timestamp'):
+        """Fill bucket values for multi-value metrics (e.g. load_avg with 3 values).
+
+        datasets is a list of dicts: [{'label': '1min', 'data': [...]}, ...]
+        The field is expected to be a JSON array.
+        """
+        total_minutes = len(labels)
+        num_values = len(datasets)
+        for row in queryset:
+            ts = getattr(row, value_key)
+            ts_minute = ts.replace(second=0, microsecond=0)
+            delta = ts_minute - start_minute
+            idx = int(delta.total_seconds() // 60)
+            if 0 <= idx < total_minutes:
+                val = getattr(row, field_name, None)
+                if val and isinstance(val, (list, tuple)) and len(val) >= num_values:
+                    for i in range(num_values):
+                        datasets[i]['data'][idx] = val[i]
+
     def get(self, request, uuid):
         user = request.user
         rig = get_object_or_404(Rig, uuid=uuid)
-        if rig.owner_id != user.id and not user.is_staff:
+        if rig.owner_id != user.id and not request.user.is_staff:
             return Response({'status': 'error', 'message': 'Forbidden'}, status=403)
 
         metric = request.query_params.get('metric', 'cpu_utilization_pct')
@@ -227,6 +252,24 @@ class ChartDataView(APIView):
                 timestamp__lte=end_minute,
             ).order_by('timestamp')[:10000]
             self._fill_buckets(labels, values, start_minute, snapshots, metric)
+            # Convert bytes to GB for memory metrics
+            if metric in self.BYTE_TO_GB:
+                values = [round(v / (1024**3), 2) if v is not None else None for v in values]
+            datasets = [{'label': metric, 'data': values}]
+
+        elif metric == 'cpu_load_avg':
+            snapshots = MetricSnapshot.objects.filter(
+                rig_uuid=str(uuid),
+                timestamp__gte=start_minute,
+                timestamp__lte=end_minute,
+            ).order_by('timestamp')[:10000]
+            load_datasets = [
+                {'label': 'Load 1m', 'data': [None] * len(labels)},
+                {'label': 'Load 5m', 'data': [None] * len(labels)},
+                {'label': 'Load 15m', 'data': [None] * len(labels)},
+            ]
+            self._fill_buckets_multi(labels, load_datasets, start_minute, snapshots, 'cpu_load_avg_json')
+            datasets = load_datasets
 
         elif metric in self.GPU_METRICS:
             from .models import GPUMetric
@@ -238,6 +281,7 @@ class ChartDataView(APIView):
             ).order_by('timestamp')[:10000]
             field_name = self.GPU_METRICS[metric]
             self._fill_buckets(labels, values, start_minute, gpu_data, field_name)
+            datasets = [{'label': metric, 'data': values}]
 
         elif metric in self.STORAGE_METRICS:
             from .models import StorageMetric
@@ -247,11 +291,12 @@ class ChartDataView(APIView):
                 timestamp__lte=end_minute,
             ).order_by('timestamp')[:10000]
             self._fill_buckets(labels, values, start_minute, storage_data, 'usage_pct')
+            datasets = [{'label': metric, 'data': values}]
 
         else:
             return Response({'status': 'error', 'message': f'Unknown metric: {metric}'}, status=400)
 
         return Response({
             'labels': labels,
-            'datasets': [{'label': metric, 'data': values}],
+            'datasets': datasets,
         })

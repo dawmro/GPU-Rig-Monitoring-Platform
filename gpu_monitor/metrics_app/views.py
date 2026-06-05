@@ -13,7 +13,7 @@ from django.shortcuts import get_object_or_404
 from accounts.authentication import APIKeyAuthentication
 from accounts.models import ApiKey
 from .serializers import process_ingest
-from .models import LatestSnapshot, MetricSnapshot, ErrorEvent
+from .models import LatestSnapshot, MetricSnapshot, ErrorEvent, ErrorEventOccurrence, DockerContainerMetric, AIProcessMetric
 from rigs.models import Rig
 from audit.middleware import log_audit_event
 
@@ -236,6 +236,22 @@ class ChartDataView(APIView):
                     for i in range(num_values):
                         datasets[i]['data'][idx] = val[i]
 
+    def _fill_buckets_from_values(self, labels, values, start_minute, queryset, field_values, value_key='timestamp'):
+        """Fill bucket values from a parallel list of values (one per queryset row)."""
+        total_minutes = len(labels)
+        rows = list(queryset)
+        for i, row in enumerate(rows):
+            if i >= len(field_values):
+                break
+            ts = getattr(row, value_key)
+            ts_minute = ts.replace(second=0, microsecond=0)
+            delta = ts_minute - start_minute
+            idx = int(delta.total_seconds() // 60)
+            if 0 <= idx < total_minutes:
+                val = field_values[i]
+                if val is not None:
+                    values[idx] = val
+
     def _fill_buckets_multi_key(self, labels, datasets, start_minute, queryset, field_name, key_field, value_key='timestamp'):
         """Fill bucket values for multi-key metrics (one dataset per unique key value).
 
@@ -283,6 +299,22 @@ class ChartDataView(APIView):
             if metric in self.BYTE_TO_GB:
                 values = [round(v / (1024**3), 2) if v is not None else None for v in values]
             datasets = [{'label': metric, 'data': values}]
+
+        elif metric == 'uptime_s':
+            # Uptime from software_json (resets on reboot)
+            snapshots = MetricSnapshot.objects.filter(
+                rig_uuid=str(uuid),
+                timestamp__gte=start_minute,
+                timestamp__lte=end_minute,
+            ).order_by('timestamp')[:10000]
+            uptime_values = []
+            for s in snapshots:
+                uptime_s = s.software_json.get('uptime_s') if isinstance(s.software_json, dict) else None
+                uptime_days = round(uptime_s / 86400, 2) if uptime_s is not None else None
+                uptime_values.append(uptime_days)
+            # Fill buckets (last value per minute)
+            self._fill_buckets_from_values(labels, values, start_minute, snapshots, uptime_values)
+            datasets = [{'label': 'Uptime (days)', 'data': values}]
 
         elif metric == 'cpu_load_avg':
             snapshots = MetricSnapshot.objects.filter(
@@ -449,6 +481,89 @@ class ChartDataView(APIView):
                 datasets = [{'label': metric, 'data': values}]
                 if field_name in self.BYTE_TO_MB:
                     datasets[0]['data'] = [round(v / (1024 * 1024), 2) if v is not None else None for v in datasets[0]['data']]
+
+        elif metric.startswith('container_'):
+            # Multi-container metrics: cpu_pct, mem_usage_bytes, restart_count
+            CONTAINER_FIELD_MAP = {
+                'container_cpu_pct': 'cpu_pct',
+                'container_mem_usage_bytes': 'mem_usage_bytes',
+                'container_restart_count': 'restart_count',
+            }
+            if metric not in CONTAINER_FIELD_MAP:
+                return Response({'status': 'error', 'message': f'Unknown container metric: {metric}'}, status=400)
+            field_name = CONTAINER_FIELD_MAP[metric]
+            container_info = (
+                DockerContainerMetric.objects.filter(
+                    rig_uuid=str(uuid),
+                    timestamp__gte=start_minute,
+                    timestamp__lte=end_minute,
+                )
+                .values('name')
+                .distinct()
+                .order_by('name')
+            )
+            seen_containers = [row['name'] for row in container_info if row['name']]
+            container_datasets = [
+                {'_key': name, 'label': name, 'data': [None] * len(labels)}
+                for name in seen_containers
+            ]
+            container_data = DockerContainerMetric.objects.filter(
+                rig_uuid=str(uuid),
+                timestamp__gte=start_minute,
+                timestamp__lte=end_minute,
+            ).order_by('timestamp')[:50000]
+            self._fill_buckets_multi_key(labels, container_datasets, start_minute, container_data, field_name, 'name')
+            datasets = container_datasets
+            if field_name == 'mem_usage_bytes':
+                for ds in datasets:
+                    ds['data'] = [round(v / (1024**3), 2) if v is not None else None for v in ds['data']]
+
+        elif metric.startswith('ai_'):
+            AI_FIELD_MAP = {
+                'ai_gpu_mem_mb': 'gpu_mem_used_mb',
+                'ai_cpu_pct': 'cpu_pct',
+            }
+            if metric not in AI_FIELD_MAP:
+                return Response({'status': 'error', 'message': f'Unknown AI metric: {metric}'}, status=400)
+            field_name = AI_FIELD_MAP[metric]
+            ai_info = (
+                AIProcessMetric.objects.filter(
+                    rig_uuid=str(uuid),
+                    timestamp__gte=start_minute,
+                    timestamp__lte=end_minute,
+                )
+                .values('process_name')
+                .distinct()
+                .order_by('process_name')
+            )
+            seen_procs = [row['process_name'] for row in ai_info if row['process_name']]
+            ai_datasets = [
+                {'_key': name, 'label': name, 'data': [None] * len(labels)}
+                for name in seen_procs
+            ]
+            ai_data = AIProcessMetric.objects.filter(
+                rig_uuid=str(uuid),
+                timestamp__gte=start_minute,
+                timestamp__lte=end_minute,
+            ).order_by('timestamp')[:50000]
+            self._fill_buckets_multi_key(labels, ai_datasets, start_minute, ai_data, field_name, 'process_name')
+            datasets = ai_datasets
+
+        elif metric == 'error_frequency':
+            occurrences = ErrorEventOccurrence.objects.filter(
+                rig_uuid=str(uuid),
+                timestamp__gte=start_minute,
+                timestamp__lte=end_minute,
+            ).order_by('timestamp')[:50000]
+            total_minutes = len(labels)
+            error_counts = [0] * total_minutes
+            for occ in occurrences:
+                ts_minute = occ.timestamp.replace(second=0, microsecond=0)
+                delta = ts_minute - start_minute
+                idx = int(delta.total_seconds() // 60)
+                if 0 <= idx < total_minutes:
+                    error_counts[idx] += 1
+            datasets = [{'label': 'Errors/min', 'data': error_counts}]
 
         else:
             return Response({'status': 'error', 'message': f'Unknown metric: {metric}'}, status=400)

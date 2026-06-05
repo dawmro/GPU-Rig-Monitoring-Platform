@@ -177,6 +177,8 @@ class ChartDataView(APIView):
         'mem_total_bytes', 'mem_used_bytes', 'mem_free_bytes', 'mem_cached_bytes',
         'swap_used_bytes', 'swap_total_bytes',
     }
+    # Byte-delta metrics that should be converted to MB/s in the response
+    BYTE_TO_MB = {'rx_bytes_delta', 'tx_bytes_delta'}
 
     def _build_buckets(self, range_hours):
         """Build fixed 1-minute bucket labels and empty value array.
@@ -234,27 +236,17 @@ class ChartDataView(APIView):
                     for i in range(num_values):
                         datasets[i]['data'][idx] = val[i]
 
-    def _fill_buckets_multi_gpu(self, labels, datasets, start_minute, queryset, field_name, value_key='timestamp'):
-        """Fill bucket values for multi-GPU metrics (one dataset per GPU UUID).
+    def _fill_buckets_multi_key(self, labels, datasets, start_minute, queryset, field_name, key_field, value_key='timestamp'):
+        """Fill bucket values for multi-key metrics (one dataset per unique key value).
 
-        datasets is a list of dicts: [{'label': 'GPU-a322cff... RTX 3060', 'data': [...]}, ...]
-        Rows are matched to datasets by gpu_uuid (extracted from the label).
+        Used for multi-GPU (key_field='gpu_uuid'), multi-disk (key_field='device'),
+        and multi-interface (key_field='interface').
+
+        datasets is a list of dicts with '_key' matching key_field values.
+        The 'label' field is the display label (may include extra info like model name).
         """
         total_minutes = len(labels)
-        # Build lookup: gpu_uuid -> dataset index
-        # Labels are formatted as "UUID MODEL", extract UUID (first space-separated token may
-        # contain hyphens, so we split on the last space to separate model from UUID)
-        uuid_to_idx = {}
-        for i, ds in enumerate(datasets):
-            label = ds['label']
-            # UUID is everything before the last space (model name is after)
-            # But UUID itself contains no spaces, so split on first space after UUID
-            # Format: "GPU-a322cff7-19cf-f056-4a38-b676c04a38aa NVIDIA GeForce RTX 3060"
-            # UUID has no spaces, model name may have spaces
-            parts = label.split(' ')
-            # First part is the UUID (e.g. "GPU-a322cff7-19cf-f056-4a38-b676c04a38aa")
-            guuid = parts[0] if parts else label
-            uuid_to_idx[guuid] = i
+        key_to_idx = {ds['_key']: i for i, ds in enumerate(datasets)}
         for row in queryset:
             ts = getattr(row, value_key)
             ts_minute = ts.replace(second=0, microsecond=0)
@@ -262,9 +254,9 @@ class ChartDataView(APIView):
             idx = int(delta.total_seconds() // 60)
             if 0 <= idx < total_minutes:
                 val = getattr(row, field_name, None)
-                gpu_uuid = row.gpu_uuid
-                if val is not None and gpu_uuid in uuid_to_idx:
-                    datasets[uuid_to_idx[gpu_uuid]]['data'][idx] = val
+                key_val = getattr(row, key_field, None)
+                if val is not None and key_val in key_to_idx:
+                    datasets[key_to_idx[key_val]]['data'][idx] = val
 
     def get(self, request, uuid):
         user = request.user
@@ -276,6 +268,8 @@ class ChartDataView(APIView):
         range_hours = int(request.query_params.get('range', '24'))
         gpu_index = int(request.query_params.get('gpu_index', 0))
         multi_gpu = request.query_params.get('multi_gpu', 'false').lower() == 'true'
+        multi_disk = request.query_params.get('multi_disk', 'false').lower() == 'true'
+        multi_iface = request.query_params.get('multi_iface', 'false').lower() == 'true'
 
         labels, values, start_minute, end_minute = self._build_buckets(range_hours)
 
@@ -309,7 +303,6 @@ class ChartDataView(APIView):
             field_name = self.GPU_METRICS[metric]
             if multi_gpu:
                 # Discover unique GPU UUIDs with their models
-                # Use a subquery to get the latest model name per GPU UUID
                 gpu_info = (
                     GPUMetric.objects.filter(
                         rig_uuid=str(uuid),
@@ -326,24 +319,22 @@ class ChartDataView(APIView):
                     guuid = row['gpu_uuid']
                     seen_uuids.append(guuid)
                     uuid_to_model[guuid] = row['model'] or ''
-                # Build one dataset per GPU UUID, label = "UUID MODEL"
                 gpu_datasets = [
                     {
+                        '_key': guuid,
                         'label': f'{guuid} {uuid_to_model.get(guuid, "")}'.strip(),
                         'data': [None] * len(labels),
                     }
                     for guuid in seen_uuids
                 ]
-                # Query all GPU data (with slice for safety)
                 gpu_data = GPUMetric.objects.filter(
                     rig_uuid=str(uuid),
                     timestamp__gte=start_minute,
                     timestamp__lte=end_minute,
                 ).order_by('timestamp')[:50000]
-                self._fill_buckets_multi_gpu(labels, gpu_datasets, start_minute, gpu_data, field_name)
+                self._fill_buckets_multi_key(labels, gpu_datasets, start_minute, gpu_data, field_name, 'gpu_uuid')
                 datasets = gpu_datasets
             else:
-                # Single GPU mode (backward compatible)
                 gpu_data = GPUMetric.objects.filter(
                     rig_uuid=str(uuid),
                     gpu_index=gpu_index,
@@ -355,13 +346,109 @@ class ChartDataView(APIView):
 
         elif metric in self.STORAGE_METRICS:
             from .models import StorageMetric
-            storage_data = StorageMetric.objects.filter(
-                rig_uuid=str(uuid),
-                timestamp__gte=start_minute,
-                timestamp__lte=end_minute,
-            ).order_by('timestamp')[:10000]
-            self._fill_buckets(labels, values, start_minute, storage_data, 'usage_pct')
-            datasets = [{'label': metric, 'data': values}]
+            field_name = 'usage_pct'  # Always usage_pct for storage
+            if multi_disk:
+                # Discover unique disk devices
+                disk_info = (
+                    StorageMetric.objects.filter(
+                        rig_uuid=str(uuid),
+                        timestamp__gte=start_minute,
+                        timestamp__lte=end_minute,
+                    )
+                    .values('device', 'mountpoint')
+                    .distinct()
+                    .order_by('device')
+                )
+                seen_devices = []
+                device_to_mount = {}
+                for row in disk_info:
+                    dev = row['device']
+                    seen_devices.append(dev)
+                    device_to_mount[dev] = row['mountpoint'] or ''
+                disk_datasets = [
+                    {
+                        '_key': dev,
+                        'label': f'{dev} {device_to_mount.get(dev, "")}'.strip(),
+                        'data': [None] * len(labels),
+                    }
+                    for dev in seen_devices
+                ]
+                storage_data = StorageMetric.objects.filter(
+                    rig_uuid=str(uuid),
+                    timestamp__gte=start_minute,
+                    timestamp__lte=end_minute,
+                ).order_by('timestamp')[:50000]
+                self._fill_buckets_multi_key(labels, disk_datasets, start_minute, storage_data, field_name, 'device')
+                datasets = disk_datasets
+            else:
+                storage_data = StorageMetric.objects.filter(
+                    rig_uuid=str(uuid),
+                    timestamp__gte=start_minute,
+                    timestamp__lte=end_minute,
+                ).order_by('timestamp')[:10000]
+                self._fill_buckets(labels, values, start_minute, storage_data, field_name)
+                datasets = [{'label': metric, 'data': values}]
+
+        elif metric.startswith('net_'):
+            from .models import NetworkMetric
+            # Map chart metric names to NetworkMetric field names
+            NET_FIELD_MAP = {
+                'net_rx_bytes_delta': 'rx_bytes_delta',
+                'net_tx_bytes_delta': 'tx_bytes_delta',
+                'net_rx_errors': 'rx_errors',
+                'net_tx_errors': 'tx_errors',
+            }
+            if metric not in NET_FIELD_MAP:
+                return Response({'status': 'error', 'message': f'Unknown network metric: {metric}'}, status=400)
+            field_name = NET_FIELD_MAP[metric]
+            if multi_iface:
+                # Discover unique interfaces
+                iface_info = (
+                    NetworkMetric.objects.filter(
+                        rig_uuid=str(uuid),
+                        timestamp__gte=start_minute,
+                        timestamp__lte=end_minute,
+                    )
+                    .values('interface', 'ipv4')
+                    .distinct()
+                    .order_by('interface')
+                )
+                seen_ifaces = []
+                iface_to_ip = {}
+                for row in iface_info:
+                    iface = row['interface']
+                    seen_ifaces.append(iface)
+                    iface_to_ip[iface] = row['ipv4'] or ''
+                iface_datasets = [
+                    {
+                        '_key': iface,
+                        'label': f'{iface} {iface_to_ip.get(iface, "")}'.strip(),
+                        'data': [None] * len(labels),
+                    }
+                    for iface in seen_ifaces
+                ]
+                net_data = NetworkMetric.objects.filter(
+                    rig_uuid=str(uuid),
+                    timestamp__gte=start_minute,
+                    timestamp__lte=end_minute,
+                ).order_by('timestamp')[:50000]
+                self._fill_buckets_multi_key(labels, iface_datasets, start_minute, net_data, field_name, 'interface')
+                datasets = iface_datasets
+                # Convert byte deltas to MB/s for network metrics
+                if field_name in self.BYTE_TO_MB:
+                    for ds in datasets:
+                        ds['data'] = [round(v / (1024 * 1024), 2) if v is not None else None for v in ds['data']]
+            else:
+                net_data = NetworkMetric.objects.filter(
+                    rig_uuid=str(uuid),
+                    interface__isnull=False,
+                    timestamp__gte=start_minute,
+                    timestamp__lte=end_minute,
+                ).order_by('timestamp')[:10000]
+                self._fill_buckets(labels, values, start_minute, net_data, field_name)
+                datasets = [{'label': metric, 'data': values}]
+                if field_name in self.BYTE_TO_MB:
+                    datasets[0]['data'] = [round(v / (1024 * 1024), 2) if v is not None else None for v in datasets[0]['data']]
 
         else:
             return Response({'status': 'error', 'message': f'Unknown metric: {metric}'}, status=400)

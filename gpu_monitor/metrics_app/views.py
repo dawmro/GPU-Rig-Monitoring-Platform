@@ -13,7 +13,7 @@ from django.shortcuts import get_object_or_404
 from accounts.authentication import APIKeyAuthentication
 from accounts.models import ApiKey
 from .serializers import process_ingest
-from .models import LatestSnapshot, MetricSnapshot, ErrorEvent
+from .models import LatestSnapshot, MetricSnapshot, ErrorEvent, ErrorEventOccurrence, DockerContainerMetric, AIProcessMetric
 from rigs.models import Rig
 from audit.middleware import log_audit_event
 
@@ -51,7 +51,6 @@ class IngestView(APIView):
         try:
             rig = Rig.objects.get(uuid=rig_uuid)
         except Rig.DoesNotExist:
-            # Auto-create rig on first seen — use agent-suggested name or default
             name = rig_name or 'Unnamed Rig'
             rig = Rig.objects.create(
                 uuid=rig_uuid,
@@ -64,10 +63,6 @@ class IngestView(APIView):
         else:
             if rig.owner_id != user.id:
                 return Response({'status': 'error', 'message': 'UUID already claimed by another user'}, status=409)
-            # Note: rig_name from agent is intentionally NOT applied here.
-            # After initial creation, the rig name is managed exclusively
-            # via the dashboard rename API to prevent config.yaml from
-            # overwriting user-set names on every heartbeat.
 
         # Process the payload
         result, http_status = process_ingest(rig_uuid, data, user.id, rig=rig)
@@ -141,19 +136,28 @@ class ChartDataView(APIView):
     """GET /api/v1/rigs/<uuid>/chart-data/ — Historical chart data.
 
     Returns fixed 1-minute buckets for the requested range (default 24h = 1440 points).
-    Empty buckets are zero-filled so offline periods are visible on the chart.
+    Empty buckets are null-filled so offline periods are visible on the chart.
 
     Query parameters:
         metric: Field name to chart. Supported values:
-            - cpu_utilization_pct, cpu_temp_c, mem_used_bytes (from MetricSnapshot)
-            - gpu_temp_c, gpu_util_pct, gpu_mem_used_mb, gpu_power_w (from GPUMetric, gpu_index=0)
+            - cpu_utilization_pct, cpu_temp_c, cpu_load_avg (from MetricSnapshot)
+            - mem_used_bytes, mem_total_bytes, mem_free_bytes, mem_cached_bytes,
+              swap_used_bytes, swap_total_bytes (from MetricSnapshot)
+            - gpu_temp_c, gpu_util_pct, gpu_mem_used_mb, gpu_power_w, gpu_fan_pct
+              (from GPUMetric; single GPU via gpu_index or all GPUs via multi_gpu)
             - disk_usage_pct (from StorageMetric, first disk)
         range: Hours of historical data (default: 24)
+        gpu_index: GPU index for single-GPU metrics (default: 0)
+        multi_gpu: If 'true', query all GPUs and return one dataset per GPU UUID
     """
     authentication_classes = [SessionAuthentication]
 
-    # Metrics stored directly on MetricSnapshot
-    SNAPSHOT_METRICS = {'cpu_utilization_pct', 'cpu_temp_c', 'mem_used_bytes', 'mem_total_bytes'}
+    # Metrics stored directly on MetricSnapshot (single value per row)
+    SNAPSHOT_METRICS = {
+        'cpu_utilization_pct', 'cpu_temp_c',
+        'mem_total_bytes', 'mem_used_bytes', 'mem_free_bytes', 'mem_cached_bytes',
+        'swap_used_bytes', 'swap_total_bytes',
+    }
     # Metrics stored on GPUMetric (per-GPU)
     # Maps chart/query metric names to actual GPUMetric field names
     GPU_METRICS = {
@@ -168,15 +172,22 @@ class ChartDataView(APIView):
     # Metrics stored on StorageMetric
     STORAGE_METRICS = {'disk_usage_pct'}
 
+    # Byte metrics that should be converted to GB in the response
+    BYTE_TO_GB = {
+        'mem_total_bytes', 'mem_used_bytes', 'mem_free_bytes', 'mem_cached_bytes',
+        'swap_used_bytes', 'swap_total_bytes',
+    }
+    # Byte-delta metrics that should be converted to MB/s in the response
+    BYTE_TO_MB = {'rx_bytes_delta', 'tx_bytes_delta'}
+
     def _build_buckets(self, range_hours):
         """Build fixed 1-minute bucket labels and empty value array.
 
         Returns (labels, values) where labels are 'HH:MM' strings and
-        values are a list of zeros with length = range_hours * 60.
+        values are a list of Nones with length = range_hours * 60.
         Bucket 0 = oldest, bucket N-1 = newest (now).
         """
         now = timezone.now()
-        # Truncate to the start of the current minute
         end_minute = now.replace(second=0, microsecond=0)
         total_minutes = range_hours * 60
         start_minute = end_minute - timedelta(minutes=total_minutes)
@@ -190,7 +201,7 @@ class ChartDataView(APIView):
         return labels, values, start_minute, end_minute
 
     def _fill_buckets(self, labels, values, start_minute, queryset, field_name, value_key='timestamp'):
-        """Fill bucket values from a queryset.
+        """Fill bucket values from a queryset (single-value metrics).
 
         Each row is placed into the bucket matching its truncated minute.
         If multiple rows fall in the same bucket, the last one wins.
@@ -198,9 +209,7 @@ class ChartDataView(APIView):
         total_minutes = len(labels)
         for row in queryset:
             ts = getattr(row, value_key)
-            # Truncate to minute
             ts_minute = ts.replace(second=0, microsecond=0)
-            # Calculate bucket index
             delta = ts_minute - start_minute
             idx = int(delta.total_seconds() // 60)
             if 0 <= idx < total_minutes:
@@ -208,15 +217,75 @@ class ChartDataView(APIView):
                 if val is not None:
                     values[idx] = val
 
+    def _fill_buckets_multi(self, labels, datasets, start_minute, queryset, field_name, value_key='timestamp'):
+        """Fill bucket values for multi-value metrics (e.g. load_avg with 3 values).
+
+        datasets is a list of dicts: [{'label': '1min', 'data': [...]}, ...]
+        The field is expected to be a JSON array.
+        """
+        total_minutes = len(labels)
+        num_values = len(datasets)
+        for row in queryset:
+            ts = getattr(row, value_key)
+            ts_minute = ts.replace(second=0, microsecond=0)
+            delta = ts_minute - start_minute
+            idx = int(delta.total_seconds() // 60)
+            if 0 <= idx < total_minutes:
+                val = getattr(row, field_name, None)
+                if val and isinstance(val, (list, tuple)) and len(val) >= num_values:
+                    for i in range(num_values):
+                        datasets[i]['data'][idx] = val[i]
+
+    def _fill_buckets_from_values(self, labels, values, start_minute, queryset, field_values, value_key='timestamp'):
+        """Fill bucket values from a parallel list of values (one per queryset row)."""
+        total_minutes = len(labels)
+        rows = list(queryset)
+        for i, row in enumerate(rows):
+            if i >= len(field_values):
+                break
+            ts = getattr(row, value_key)
+            ts_minute = ts.replace(second=0, microsecond=0)
+            delta = ts_minute - start_minute
+            idx = int(delta.total_seconds() // 60)
+            if 0 <= idx < total_minutes:
+                val = field_values[i]
+                if val is not None:
+                    values[idx] = val
+
+    def _fill_buckets_multi_key(self, labels, datasets, start_minute, queryset, field_name, key_field, value_key='timestamp'):
+        """Fill bucket values for multi-key metrics (one dataset per unique key value).
+
+        Used for multi-GPU (key_field='gpu_uuid'), multi-disk (key_field='device'),
+        and multi-interface (key_field='interface').
+
+        datasets is a list of dicts with '_key' matching key_field values.
+        The 'label' field is the display label (may include extra info like model name).
+        """
+        total_minutes = len(labels)
+        key_to_idx = {ds['_key']: i for i, ds in enumerate(datasets)}
+        for row in queryset:
+            ts = getattr(row, value_key)
+            ts_minute = ts.replace(second=0, microsecond=0)
+            delta = ts_minute - start_minute
+            idx = int(delta.total_seconds() // 60)
+            if 0 <= idx < total_minutes:
+                val = getattr(row, field_name, None)
+                key_val = getattr(row, key_field, None)
+                if val is not None and key_val in key_to_idx:
+                    datasets[key_to_idx[key_val]]['data'][idx] = val
+
     def get(self, request, uuid):
         user = request.user
         rig = get_object_or_404(Rig, uuid=uuid)
-        if rig.owner_id != user.id and not user.is_staff:
+        if rig.owner_id != user.id and not request.user.is_staff:
             return Response({'status': 'error', 'message': 'Forbidden'}, status=403)
 
         metric = request.query_params.get('metric', 'cpu_utilization_pct')
         range_hours = int(request.query_params.get('range', '24'))
         gpu_index = int(request.query_params.get('gpu_index', 0))
+        multi_gpu = request.query_params.get('multi_gpu', 'false').lower() == 'true'
+        multi_disk = request.query_params.get('multi_disk', 'false').lower() == 'true'
+        multi_iface = request.query_params.get('multi_iface', 'false').lower() == 'true'
 
         labels, values, start_minute, end_minute = self._build_buckets(range_hours)
 
@@ -227,31 +296,279 @@ class ChartDataView(APIView):
                 timestamp__lte=end_minute,
             ).order_by('timestamp')[:10000]
             self._fill_buckets(labels, values, start_minute, snapshots, metric)
+            if metric in self.BYTE_TO_GB:
+                values = [round(v / (1024**3), 2) if v is not None else None for v in values]
+            datasets = [{'label': metric, 'data': values}]
+
+        elif metric == 'uptime_s':
+            # Uptime from software_json (resets on reboot)
+            snapshots = MetricSnapshot.objects.filter(
+                rig_uuid=str(uuid),
+                timestamp__gte=start_minute,
+                timestamp__lte=end_minute,
+            ).order_by('timestamp')[:10000]
+            uptime_values = []
+            for s in snapshots:
+                uptime_s = s.software_json.get('uptime_s') if isinstance(s.software_json, dict) else None
+                uptime_days = round(uptime_s / 86400, 2) if uptime_s is not None else None
+                uptime_values.append(uptime_days)
+            # Fill buckets (last value per minute)
+            self._fill_buckets_from_values(labels, values, start_minute, snapshots, uptime_values)
+            datasets = [{'label': 'Uptime (days)', 'data': values}]
+
+        elif metric == 'cpu_load_avg':
+            snapshots = MetricSnapshot.objects.filter(
+                rig_uuid=str(uuid),
+                timestamp__gte=start_minute,
+                timestamp__lte=end_minute,
+            ).order_by('timestamp')[:10000]
+            load_datasets = [
+                {'label': 'Load 1m', 'data': [None] * len(labels)},
+                {'label': 'Load 5m', 'data': [None] * len(labels)},
+                {'label': 'Load 15m', 'data': [None] * len(labels)},
+            ]
+            self._fill_buckets_multi(labels, load_datasets, start_minute, snapshots, 'cpu_load_avg_json')
+            datasets = load_datasets
 
         elif metric in self.GPU_METRICS:
             from .models import GPUMetric
-            gpu_data = GPUMetric.objects.filter(
-                rig_uuid=str(uuid),
-                gpu_index=gpu_index,
-                timestamp__gte=start_minute,
-                timestamp__lte=end_minute,
-            ).order_by('timestamp')[:10000]
             field_name = self.GPU_METRICS[metric]
-            self._fill_buckets(labels, values, start_minute, gpu_data, field_name)
+            if multi_gpu:
+                # Discover unique GPU UUIDs with their models
+                gpu_info = (
+                    GPUMetric.objects.filter(
+                        rig_uuid=str(uuid),
+                        timestamp__gte=start_minute,
+                        timestamp__lte=end_minute,
+                    )
+                    .values('gpu_uuid', 'model')
+                    .distinct()
+                    .order_by('gpu_uuid')
+                )
+                seen_uuids = []
+                uuid_to_model = {}
+                for row in gpu_info:
+                    guuid = row['gpu_uuid']
+                    seen_uuids.append(guuid)
+                    uuid_to_model[guuid] = row['model'] or ''
+                gpu_datasets = [
+                    {
+                        '_key': guuid,
+                        'label': f'{guuid} {uuid_to_model.get(guuid, "")}'.strip(),
+                        'data': [None] * len(labels),
+                    }
+                    for guuid in seen_uuids
+                ]
+                gpu_data = GPUMetric.objects.filter(
+                    rig_uuid=str(uuid),
+                    timestamp__gte=start_minute,
+                    timestamp__lte=end_minute,
+                ).order_by('timestamp')[:50000]
+                self._fill_buckets_multi_key(labels, gpu_datasets, start_minute, gpu_data, field_name, 'gpu_uuid')
+                datasets = gpu_datasets
+            else:
+                gpu_data = GPUMetric.objects.filter(
+                    rig_uuid=str(uuid),
+                    gpu_index=gpu_index,
+                    timestamp__gte=start_minute,
+                    timestamp__lte=end_minute,
+                ).order_by('timestamp')[:10000]
+                self._fill_buckets(labels, values, start_minute, gpu_data, field_name)
+                datasets = [{'label': f'GPU {gpu_index}', 'data': values}]
 
         elif metric in self.STORAGE_METRICS:
             from .models import StorageMetric
-            storage_data = StorageMetric.objects.filter(
+            field_name = 'usage_pct'  # Always usage_pct for storage
+            if multi_disk:
+                # Discover unique disk devices
+                disk_info = (
+                    StorageMetric.objects.filter(
+                        rig_uuid=str(uuid),
+                        timestamp__gte=start_minute,
+                        timestamp__lte=end_minute,
+                    )
+                    .values('device', 'mountpoint')
+                    .distinct()
+                    .order_by('device')
+                )
+                seen_devices = []
+                device_to_mount = {}
+                for row in disk_info:
+                    dev = row['device']
+                    seen_devices.append(dev)
+                    device_to_mount[dev] = row['mountpoint'] or ''
+                disk_datasets = [
+                    {
+                        '_key': dev,
+                        'label': dev if dev == device_to_mount.get(dev, '') else f'{dev} {device_to_mount.get(dev, "")}'.strip(),
+                        'data': [None] * len(labels),
+                    }
+                    for dev in seen_devices
+                ]
+                storage_data = StorageMetric.objects.filter(
+                    rig_uuid=str(uuid),
+                    timestamp__gte=start_minute,
+                    timestamp__lte=end_minute,
+                ).order_by('timestamp')[:50000]
+                self._fill_buckets_multi_key(labels, disk_datasets, start_minute, storage_data, field_name, 'device')
+                datasets = disk_datasets
+            else:
+                storage_data = StorageMetric.objects.filter(
+                    rig_uuid=str(uuid),
+                    timestamp__gte=start_minute,
+                    timestamp__lte=end_minute,
+                ).order_by('timestamp')[:10000]
+                self._fill_buckets(labels, values, start_minute, storage_data, field_name)
+                datasets = [{'label': metric, 'data': values}]
+
+        elif metric.startswith('net_'):
+            from .models import NetworkMetric
+            # Map chart metric names to NetworkMetric field names
+            NET_FIELD_MAP = {
+                'net_rx_bytes_delta': 'rx_bytes_delta',
+                'net_tx_bytes_delta': 'tx_bytes_delta',
+                'net_rx_errors': 'rx_errors',
+                'net_tx_errors': 'tx_errors',
+            }
+            if metric not in NET_FIELD_MAP:
+                return Response({'status': 'error', 'message': f'Unknown network metric: {metric}'}, status=400)
+            field_name = NET_FIELD_MAP[metric]
+            if multi_iface:
+                # Discover unique interfaces
+                iface_info = (
+                    NetworkMetric.objects.filter(
+                        rig_uuid=str(uuid),
+                        timestamp__gte=start_minute,
+                        timestamp__lte=end_minute,
+                    )
+                    .values('interface', 'ipv4')
+                    .distinct()
+                    .order_by('interface')
+                )
+                seen_ifaces = []
+                iface_to_ip = {}
+                for row in iface_info:
+                    iface = row['interface']
+                    seen_ifaces.append(iface)
+                    iface_to_ip[iface] = row['ipv4'] or ''
+                iface_datasets = [
+                    {
+                        '_key': iface,
+                        'label': f'{iface} {iface_to_ip.get(iface, "")}'.strip() if iface_to_ip.get(iface) else iface,
+                        'data': [None] * len(labels),
+                    }
+                    for iface in seen_ifaces
+                ]
+                net_data = NetworkMetric.objects.filter(
+                    rig_uuid=str(uuid),
+                    timestamp__gte=start_minute,
+                    timestamp__lte=end_minute,
+                ).order_by('timestamp')[:50000]
+                self._fill_buckets_multi_key(labels, iface_datasets, start_minute, net_data, field_name, 'interface')
+                datasets = iface_datasets
+                # Convert byte deltas to MB/s for network metrics
+                if field_name in self.BYTE_TO_MB:
+                    for ds in datasets:
+                        ds['data'] = [round(v / (1024 * 1024), 2) if v is not None else None for v in ds['data']]
+            else:
+                net_data = NetworkMetric.objects.filter(
+                    rig_uuid=str(uuid),
+                    interface__isnull=False,
+                    timestamp__gte=start_minute,
+                    timestamp__lte=end_minute,
+                ).order_by('timestamp')[:10000]
+                self._fill_buckets(labels, values, start_minute, net_data, field_name)
+                datasets = [{'label': metric, 'data': values}]
+                if field_name in self.BYTE_TO_MB:
+                    datasets[0]['data'] = [round(v / (1024 * 1024), 2) if v is not None else None for v in datasets[0]['data']]
+
+        elif metric.startswith('container_'):
+            # Multi-container metrics: cpu_pct, mem_usage_bytes, restart_count
+            CONTAINER_FIELD_MAP = {
+                'container_cpu_pct': 'cpu_pct',
+                'container_mem_usage_bytes': 'mem_usage_bytes',
+                'container_restart_count': 'restart_count',
+            }
+            if metric not in CONTAINER_FIELD_MAP:
+                return Response({'status': 'error', 'message': f'Unknown container metric: {metric}'}, status=400)
+            field_name = CONTAINER_FIELD_MAP[metric]
+            container_info = (
+                DockerContainerMetric.objects.filter(
+                    rig_uuid=str(uuid),
+                    timestamp__gte=start_minute,
+                    timestamp__lte=end_minute,
+                )
+                .values('name')
+                .distinct()
+                .order_by('name')
+            )
+            seen_containers = [row['name'] for row in container_info if row['name']]
+            container_datasets = [
+                {'_key': name, 'label': name, 'data': [None] * len(labels)}
+                for name in seen_containers
+            ]
+            container_data = DockerContainerMetric.objects.filter(
                 rig_uuid=str(uuid),
                 timestamp__gte=start_minute,
                 timestamp__lte=end_minute,
-            ).order_by('timestamp')[:10000]
-            self._fill_buckets(labels, values, start_minute, storage_data, 'usage_pct')
+            ).order_by('timestamp')[:50000]
+            self._fill_buckets_multi_key(labels, container_datasets, start_minute, container_data, field_name, 'name')
+            datasets = container_datasets
+            if field_name == 'mem_usage_bytes':
+                for ds in datasets:
+                    ds['data'] = [round(v / (1024**3), 2) if v is not None else None for v in ds['data']]
+
+        elif metric.startswith('ai_'):
+            AI_FIELD_MAP = {
+                'ai_gpu_mem_mb': 'gpu_mem_used_mb',
+                'ai_cpu_pct': 'cpu_pct',
+            }
+            if metric not in AI_FIELD_MAP:
+                return Response({'status': 'error', 'message': f'Unknown AI metric: {metric}'}, status=400)
+            field_name = AI_FIELD_MAP[metric]
+            ai_info = (
+                AIProcessMetric.objects.filter(
+                    rig_uuid=str(uuid),
+                    timestamp__gte=start_minute,
+                    timestamp__lte=end_minute,
+                )
+                .values('process_name')
+                .distinct()
+                .order_by('process_name')
+            )
+            seen_procs = [row['process_name'] for row in ai_info if row['process_name']]
+            ai_datasets = [
+                {'_key': name, 'label': name, 'data': [None] * len(labels)}
+                for name in seen_procs
+            ]
+            ai_data = AIProcessMetric.objects.filter(
+                rig_uuid=str(uuid),
+                timestamp__gte=start_minute,
+                timestamp__lte=end_minute,
+            ).order_by('timestamp')[:50000]
+            self._fill_buckets_multi_key(labels, ai_datasets, start_minute, ai_data, field_name, 'process_name')
+            datasets = ai_datasets
+
+        elif metric == 'error_frequency':
+            occurrences = ErrorEventOccurrence.objects.filter(
+                rig_uuid=str(uuid),
+                timestamp__gte=start_minute,
+                timestamp__lte=end_minute,
+            ).order_by('timestamp')[:50000]
+            total_minutes = len(labels)
+            error_counts = [0] * total_minutes
+            for occ in occurrences:
+                ts_minute = occ.timestamp.replace(second=0, microsecond=0)
+                delta = ts_minute - start_minute
+                idx = int(delta.total_seconds() // 60)
+                if 0 <= idx < total_minutes:
+                    error_counts[idx] += 1
+            datasets = [{'label': 'Errors/min', 'data': error_counts}]
 
         else:
             return Response({'status': 'error', 'message': f'Unknown metric: {metric}'}, status=400)
 
         return Response({
             'labels': labels,
-            'datasets': [{'label': metric, 'data': values}],
+            'datasets': datasets,
         })

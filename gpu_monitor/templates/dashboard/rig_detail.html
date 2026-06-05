@@ -87,28 +87,34 @@
         </div>
         <div class="space-y-6">
 
-            <!-- GPU Temperature Chart -->
+            <!-- GPU Temperature Chart (multi-GPU) -->
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
                 <h3 class="text-sm font-medium text-gray-300 mb-3">GPU Temperature (24h)</h3>
                 <canvas id="chartGpuTemp"></canvas>
             </div>
 
-            <!-- GPU Utilization Chart -->
+            <!-- GPU Utilization Chart (multi-GPU) -->
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
                 <h3 class="text-sm font-medium text-gray-300 mb-3">GPU Utilization (24h)</h3>
                 <canvas id="chartGpuUtil"></canvas>
             </div>
 
-            <!-- GPU Memory Usage Chart -->
+            <!-- GPU VRAM Usage Chart (multi-GPU) -->
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
                 <h3 class="text-sm font-medium text-gray-300 mb-3">GPU VRAM Usage (24h)</h3>
                 <canvas id="chartGpuMem"></canvas>
             </div>
 
-            <!-- GPU Power Chart -->
+            <!-- GPU Power Chart (multi-GPU) -->
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
                 <h3 class="text-sm font-medium text-gray-300 mb-3">GPU Power Draw (24h)</h3>
                 <canvas id="chartGpuPower"></canvas>
+            </div>
+
+            <!-- GPU Fan Speed Chart (multi-GPU) -->
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
+                <h3 class="text-sm font-medium text-gray-300 mb-3">GPU Fan Speed (24h)</h3>
+                <canvas id="chartGpuFan"></canvas>
             </div>
 
             <!-- CPU Utilization Chart -->
@@ -127,6 +133,78 @@
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
                 <h3 class="text-sm font-medium text-gray-300 mb-3">Memory Usage (24h)</h3>
                 <canvas id="chartMem"></canvas>
+            </div>
+
+            <!-- Memory Free Chart -->
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
+                <h3 class="text-sm font-medium text-gray-300 mb-3">Memory Free (24h)</h3>
+                <canvas id="chartMemFree"></canvas>
+            </div>
+
+            <!-- Swap Usage Chart -->
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
+                <h3 class="text-sm font-medium text-gray-300 mb-3">Swap Usage (24h)</h3>
+                <canvas id="chartSwap"></canvas>
+            </div>
+
+            <!-- CPU Load Average Chart -->
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
+                <h3 class="text-sm font-medium text-gray-300 mb-3">CPU Load Average (24h)</h3>
+                <canvas id="chartCpuLoad"></canvas>
+            </div>
+
+            <!-- Disk Usage Chart (multi-disk) -->
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
+                <h3 class="text-sm font-medium text-gray-300 mb-3">Disk Usage (24h)</h3>
+                <canvas id="chartDiskUsage"></canvas>
+            </div>
+
+            <!-- Network RX Rate Chart (multi-interface) -->
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
+                <h3 class="text-sm font-medium text-gray-300 mb-3">Network RX (24h)</h3>
+                <canvas id="chartNetRx"></canvas>
+            </div>
+
+            <!-- Network TX Rate Chart (multi-interface) -->
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
+                <h3 class="text-sm font-medium text-gray-300 mb-3">Network TX (24h)</h3>
+                <canvas id="chartNetTx"></canvas>
+            </div>
+
+            <!-- Network Errors Chart (multi-interface) -->
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
+                <h3 class="text-sm font-medium text-gray-300 mb-3">Network Errors (24h)</h3>
+                <canvas id="chartNetErrors"></canvas>
+            </div>
+
+            <!-- Uptime Chart -->
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
+                <h3 class="text-sm font-medium text-gray-300 mb-3">Uptime (24h)</h3>
+                <canvas id="chartUptime"></canvas>
+            </div>
+
+            <!-- Container CPU Chart (multi-container) -->
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
+                <h3 class="text-sm font-medium text-gray-300 mb-3">Container CPU % (24h)</h3>
+                <canvas id="chartContainerCpu"></canvas>
+            </div>
+
+            <!-- Container Memory Chart (multi-container) -->
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
+                <h3 class="text-sm font-medium text-gray-300 mb-3">Container Memory (24h)</h3>
+                <canvas id="chartContainerMem"></canvas>
+            </div>
+
+            <!-- AI Process GPU Memory Chart (multi-process) -->
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
+                <h3 class="text-sm font-medium text-gray-300 mb-3">AI Process GPU Memory (24h)</h3>
+                <canvas id="chartAiGpuMem"></canvas>
+            </div>
+
+            <!-- Error Frequency Chart -->
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
+                <h3 class="text-sm font-medium text-gray-300 mb-3">Error Frequency (24h)</h3>
+                <canvas id="chartErrorFreq"></canvas>
             </div>
 
         </div>
@@ -209,15 +287,37 @@ async function loadCharts() {
     var uuid = '{{ rig.uuid }}';
     var range = 24;
 
+    // Single-value charts (standard loadChart)
     await Promise.all([
-        loadChart('chartGpuTemp',    'gpu_temp_c',           uuid, range, '°C',  'rgba(239, 68, 68, 0.8)',  'rgba(239, 68, 68, 0.15)'),
-        loadChart('chartGpuUtil',    'gpu_util_pct',         uuid, range, '%',   'rgba(59, 130, 246, 0.8)', 'rgba(59, 130, 246, 0.15)'),
-        loadChart('chartGpuMem',     'gpu_mem_used_mb',      uuid, range, ' MB', 'rgba(168, 85, 247, 0.8)', 'rgba(168, 85, 247, 0.15)'),
-        loadChart('chartGpuPower',   'gpu_power_w',          uuid, range, 'W',   'rgba(245, 158, 11, 0.8)', 'rgba(245, 158, 11, 0.15)'),
         loadChart('chartCpuUtil',    'cpu_utilization_pct',  uuid, range, '%',   'rgba(16, 185, 129, 0.8)', 'rgba(16, 185, 129, 0.15)'),
         loadChart('chartCpuTemp',    'cpu_temp_c',           uuid, range, '°C',  'rgba(245, 158, 11, 0.8)', 'rgba(245, 158, 11, 0.15)'),
         loadChart('chartMem',        'mem_used_bytes',       uuid, range, ' GB', 'rgba(14, 165, 233, 0.8)', 'rgba(14, 165, 233, 0.15)'),
+        loadChart('chartMemFree',    'mem_free_bytes',       uuid, range, ' GB', 'rgba(34, 197, 94, 0.8)',  'rgba(34, 197, 94, 0.15)'),
+        loadChart('chartSwap',       'swap_used_bytes',      uuid, range, ' GB', 'rgba(239, 68, 68, 0.8)',  'rgba(239, 68, 68, 0.15)'),
     ]);
+    // Multi-series charts (special handling)
+    await loadChartLoadAvg('chartCpuLoad', uuid, range);
+    // GPU multi-GPU charts (one dataset per GPU UUID, all on same chart)
+    await loadChartMultiGpu('chartGpuTemp',  'gpu_temp_c',   uuid, range, '°C');
+    await loadChartMultiGpu('chartGpuUtil',  'gpu_util_pct', uuid, range, '%');
+    await loadChartMultiGpu('chartGpuMem',   'gpu_mem_used_mb', uuid, range, ' MB');
+    await loadChartMultiGpu('chartGpuPower', 'gpu_power_w',  uuid, range, 'W');
+    await loadChartMultiGpu('chartGpuFan',   'gpu_fan_pct',  uuid, range, '%');
+    // Storage multi-disk charts
+    await loadChartMultiKey('chartDiskUsage', 'disk_usage_pct', uuid, range, '%', 'multi_disk');
+    // Network multi-interface charts
+    await loadChartMultiKey('chartNetRx',     'net_rx_bytes_delta',  uuid, range, ' MB', 'multi_iface');
+    await loadChartMultiKey('chartNetTx',     'net_tx_bytes_delta',  uuid, range, ' MB', 'multi_iface');
+    await loadChartMultiKey('chartNetErrors', 'net_rx_errors',       uuid, range, ' err', 'multi_iface');
+    // Uptime chart
+    await loadChart('chartUptime', 'uptime_s', uuid, range, ' days', 'rgba(168, 85, 247, 0.8)', 'rgba(168, 85, 247, 0.15)');
+    // Container multi-series charts (no multi param needed - backend detects by prefix)
+    await loadChartMultiKey('chartContainerCpu', 'container_cpu_pct', uuid, range, '%', 'multi_container');
+    await loadChartMultiKey('chartContainerMem', 'container_mem_usage_bytes', uuid, range, ' GB', 'multi_container');
+    // AI process multi-series charts
+    await loadChartMultiKey('chartAiGpuMem', 'ai_gpu_mem_mb', uuid, range, ' MB', 'multi_ai');
+    // Error frequency chart (bar chart)
+    await loadChart('chartErrorFreq', 'error_frequency', uuid, range, ' err/min', 'rgba(239, 68, 68, 0.8)', 'rgba(239, 68, 68, 0.5)', 'bar');
     // Update refresh clock after all charts finish loading
     var clock = document.getElementById('tab-content-charts-clock');
     if (clock) {
@@ -230,20 +330,18 @@ async function loadCharts() {
 }
 
 // Load a single chart
-async function loadChart(canvasId, metric, uuid, range, unit, borderColor, bgColor) {
+async function loadChart(canvasId, metric, uuid, range, unit, borderColor, bgColor, chartType) {
     var ctx = document.getElementById(canvasId);
     if (!ctx) return;
+    chartType = chartType || 'line';
 
     try {
         var resp = await fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=${metric}&range=${range}`);
         var data = await resp.json();
 
-        // Convert memory from bytes to GB; preserve null for gaps (offline periods)
-        var values = data.datasets[0].data.map(function(v) {
-            if (v === null || v === undefined) return null;
-            if (metric === 'mem_used_bytes') return (v / (1024 * 1024 * 1024)).toFixed(2);
-            return v;
-        });
+        // Server already converts byte metrics to GB; no client-side conversion needed.
+        // Preserve null for gaps (offline periods).
+        var values = data.datasets[0].data;
 
         // Destroy existing chart if any
         if (chartInstances[canvasId]) {
@@ -251,7 +349,7 @@ async function loadChart(canvasId, metric, uuid, range, unit, borderColor, bgCol
         }
 
         chartInstances[canvasId] = new Chart(ctx, {
-            type: 'line',
+            type: chartType,
             data: {
                 labels: data.labels,
                 datasets: [{
@@ -259,8 +357,8 @@ async function loadChart(canvasId, metric, uuid, range, unit, borderColor, bgCol
                     data: values,
                     borderColor: borderColor,
                     backgroundColor: bgColor,
-                    borderWidth: 2,
-                    fill: true,
+                    borderWidth: chartType === 'bar' ? 0 : 2,
+                    fill: chartType === 'line',
                     tension: 0.0,
                     pointRadius: 0,
                     pointHitRadius: 10,
@@ -311,6 +409,334 @@ async function loadChart(canvasId, metric, uuid, range, unit, borderColor, bgCol
         });
     } catch (e) {
         console.error('Failed to load chart ' + metric + ':', e);
+        ctx.parentElement.innerHTML = '<div class="flex items-center justify-center h-48 text-gray-500 text-sm">No data available</div>';
+    }
+}
+
+// Load CPU Load Average chart (multi-series: 1m, 5m, 15m)
+async function loadChartLoadAvg(canvasId, uuid, range) {
+    var ctx = document.getElementById(canvasId);
+    if (!ctx) return;
+
+    try {
+        var resp = await fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=cpu_load_avg&range=${range}`);
+        var data = await resp.json();
+
+        var colors = [
+            { border: 'rgba(16, 185, 129, 0.8)',  bg: 'rgba(16, 185, 129, 0.15)' },  // 1m - green
+            { border: 'rgba(245, 158, 11, 0.8)',  bg: 'rgba(245, 158, 11, 0.15)' },  // 5m - amber
+            { border: 'rgba(239, 68, 68, 0.8)',   bg: 'rgba(239, 68, 68, 0.15)' },  // 15m - red
+        ];
+
+        if (chartInstances[canvasId]) {
+            chartInstances[canvasId].destroy();
+        }
+
+        chartInstances[canvasId] = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: data.labels,
+                datasets: data.datasets.map(function(ds, i) {
+                    return {
+                        label: ds.label,
+                        data: ds.data,
+                        borderColor: colors[i].border,
+                        backgroundColor: colors[i].bg,
+                        borderWidth: 2,
+                        fill: false,
+                        tension: 0.0,
+                        pointRadius: 0,
+                        pointHitRadius: 10,
+                        spanGaps: false,
+                    };
+                })
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: true,
+                        labels: { color: '#9ca3af', boxWidth: 12, padding: 8, font: { size: 11 } },
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        callbacks: {
+                            label: function(ctx) {
+                                return ctx.dataset.label + ': ' + (ctx.parsed.y !== null ? ctx.parsed.y.toFixed(2) : '—');
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { color: 'rgba(255,255,255,0.05)' },
+                        ticks: {
+                            color: '#9ca3af',
+                            maxTicksLimit: 12,
+                            maxRotation: 0,
+                            autoSkip: true,
+                            callback: function(val, index) {
+                                return index % 60 === 0 ? this.getLabelForValue(val) : '';
+                            }
+                        }
+                    },
+                    y: {
+                        grid: { color: 'rgba(255,255,255,0.05)' },
+                        ticks: { color: '#9ca3af' },
+                        beginAtZero: true,
+                        title: { display: true, text: 'Load', color: '#6b7280', font: { size: 11 } }
+                    }
+                },
+                interaction: {
+                    mode: 'nearest',
+                    axis: 'x',
+                    intersect: false
+                }
+            }
+        });
+    } catch (e) {
+        console.error('Failed to load chart cpu_load_avg:', e);
+        ctx.parentElement.innerHTML = '<div class="flex items-center justify-center h-48 text-gray-500 text-sm">No data available</div>';
+    }
+}
+
+// Predefined colors for multi-GPU/distinct datasets (16 colors)
+var GPU_COLORS = [
+    { border: 'rgba(59, 130, 246, 0.9)',  bg: 'rgba(59, 130, 246, 0.15)' },  // blue
+    { border: 'rgba(16, 185, 129, 0.9)',  bg: 'rgba(16, 185, 129, 0.15)' },  // green
+    { border: 'rgba(245, 158, 11, 0.9)',  bg: 'rgba(245, 158, 11, 0.15)' },  // amber
+    { border: 'rgba(239, 68, 68, 0.9)',   bg: 'rgba(239, 68, 68, 0.15)' },   // red
+    { border: 'rgba(168, 85, 247, 0.9)',  bg: 'rgba(168, 85, 247, 0.15)' },  // purple
+    { border: 'rgba(14, 165, 233, 0.9)',  bg: 'rgba(14, 165, 233, 0.15)' },  // sky
+    { border: 'rgb(236, 72, 153, 0.9)',   bg: 'rgb(236, 72, 153, 0.15)' },   // pink
+    { border: 'rgb(251, 146, 60, 0.9)',   bg: 'rgb(251, 146, 60, 0.15)' },   // orange
+    { border: 'rgb(20, 184, 166, 0.9)',   bg: 'rgb(20, 184, 166, 0.15)' },   // teal
+    { border: 'rgb(139, 92, 246, 0.9)',   bg: 'rgb(139, 92, 246, 0.15)' },   // violet
+    { border: 'rgb(244, 114, 182, 0.9)',  bg: 'rgb(244, 114, 182, 0.15)' },  // rose
+    { border: 'rgb(250, 204, 21, 0.9)',   bg: 'rgb(250, 204, 21, 0.15)' },   // yellow
+    { border: 'rgb(45, 212, 191, 0.9)',   bg: 'rgb(45, 212, 191, 0.15)' },   // cyan
+    { border: 'rgb(124, 58, 237, 0.9)',   bg: 'rgb(124, 58, 237, 0.15)' },   // indigo
+    { border: 'rgb(217, 70, 239, 0.9)',   bg: 'rgb(217, 70, 239, 0.15)' },   // fuchsia
+    { border: 'rgb(8, 145, 178, 0.9)',    bg: 'rgb(8, 145, 178, 0.15)' },    // dark cyan
+];
+
+// Load multi-GPU chart (one dataset per GPU UUID, all on same chart)
+async function loadChartMultiGpu(canvasId, metric, uuid, range, unit) {
+    var ctx = document.getElementById(canvasId);
+    if (!ctx) return;
+
+    try {
+        var resp = await fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=${metric}&range=${range}&multi_gpu=true`);
+        var data = await resp.json();
+
+        if (chartInstances[canvasId]) {
+            chartInstances[canvasId].destroy();
+        }
+
+        chartInstances[canvasId] = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: data.labels,
+                datasets: data.datasets.map(function(ds, i) {
+                    var color = GPU_COLORS[i % GPU_COLORS.length];
+                    return {
+                        label: ds.label,  // GPU UUID as label
+                        data: ds.data,
+                        borderColor: color.border,
+                        backgroundColor: color.bg,
+                        borderWidth: 2,
+                        fill: false,
+                        tension: 0.0,
+                        pointRadius: 0,
+                        pointHitRadius: 10,
+                        spanGaps: false,
+                    };
+                })
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: true,
+                        labels: {
+                            color: '#9ca3af',
+                            boxWidth: 12,
+                            padding: 8,
+                            font: { size: 10 },
+                            // Truncate UUID to 12 chars + "…" but keep model name
+                            // Label format: "GPU-a322cff7-...-b676c04a38aa RTX 3060"
+                            // Result:      "GPU-a322cff… RTX 3060"
+                            generateLabels: function(chart) {
+                                var original = Chart.defaults.plugins.legend.labels.generateLabels(chart);
+                                return original.map(function(label) {
+                                    if (label.text) {
+                                        var spaceIdx = label.text.indexOf(' ');
+                                        if (spaceIdx > 0) {
+                                            var uuidPart = label.text.substring(0, spaceIdx);
+                                            var modelPart = label.text.substring(spaceIdx + 1);
+                                            if (uuidPart.length > 12) {
+                                                label.text = uuidPart.substring(0, 12) + '… ' + modelPart;
+                                            }
+                                        } else if (label.text.length > 12) {
+                                            label.text = label.text.substring(0, 12) + '…';
+                                        }
+                                    }
+                                    return label;
+                                });
+                            }
+                        },
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        callbacks: {
+                            title: function(items) {
+                                return items[0].label;
+                            },
+                            label: function(ctx) {
+                                return ctx.dataset.label + ': ' + (ctx.parsed.y !== null ? ctx.parsed.y.toFixed(1) + unit : '—');
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { color: 'rgba(255,255,255,0.05)' },
+                        ticks: {
+                            color: '#9ca3af',
+                            maxTicksLimit: 12,
+                            maxRotation: 0,
+                            autoSkip: true,
+                            callback: function(val, index) {
+                                return index % 60 === 0 ? this.getLabelForValue(val) : '';
+                            }
+                        }
+                    },
+                    y: {
+                        grid: { color: 'rgba(255,255,255,0.05)' },
+                        ticks: { color: '#9ca3af' },
+                        beginAtZero: true,
+                    }
+                },
+                interaction: {
+                    mode: 'nearest',
+                    axis: 'x',
+                    intersect: false
+                }
+            }
+        });
+    } catch (e) {
+        console.error('Failed to load multi-GPU chart ' + metric + ':', e);
+        ctx.parentElement.innerHTML = '<div class="flex items-center justify-center h-48 text-gray-500 text-sm">No data available</div>';
+    }
+}
+
+// Load multi-key chart (generic: works for multi-disk, multi-interface, etc.)
+// multi_param: the query parameter name that enables multi-mode ('multi_disk', 'multi_iface')
+async function loadChartMultiKey(canvasId, metric, uuid, range, unit, multi_param) {
+    var ctx = document.getElementById(canvasId);
+    if (!ctx) return;
+
+    try {
+        var resp = await fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=${metric}&range=${range}&${multi_param}=true`);
+        var data = await resp.json();
+
+        if (chartInstances[canvasId]) {
+            chartInstances[canvasId].destroy();
+        }
+
+        chartInstances[canvasId] = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: data.labels,
+                datasets: data.datasets.map(function(ds, i) {
+                    var color = GPU_COLORS[i % GPU_COLORS.length];
+                    return {
+                        label: ds.label,
+                        data: ds.data,
+                        borderColor: color.border,
+                        backgroundColor: color.bg,
+                        borderWidth: 2,
+                        fill: false,
+                        tension: 0.0,
+                        pointRadius: 0,
+                        pointHitRadius: 10,
+                        spanGaps: false,
+                    };
+                })
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: true,
+                        labels: {
+                            color: '#9ca3af',
+                            boxWidth: 12,
+                            padding: 8,
+                            font: { size: 10 },
+                            generateLabels: function(chart) {
+                                var original = Chart.defaults.plugins.legend.labels.generateLabels(chart);
+                                return original.map(function(label) {
+                                    if (label.text) {
+                                        var spaceIdx = label.text.indexOf(' ');
+                                        if (spaceIdx > 0) {
+                                            var keyPart = label.text.substring(0, spaceIdx);
+                                            var extraPart = label.text.substring(spaceIdx + 1);
+                                            if (keyPart.length > 16) {
+                                                label.text = keyPart.substring(0, 16) + '… ' + extraPart;
+                                            }
+                                        } else if (label.text.length > 20) {
+                                            label.text = label.text.substring(0, 20) + '…';
+                                        }
+                                    }
+                                    return label;
+                                });
+                            }
+                        },
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        callbacks: {
+                            label: function(ctx) {
+                                return ctx.dataset.label + ': ' + (ctx.parsed.y !== null ? ctx.parsed.y.toFixed(1) + unit : '—');
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { color: 'rgba(255,255,255,0.05)' },
+                        ticks: {
+                            color: '#9ca3af',
+                            maxTicksLimit: 12,
+                            maxRotation: 0,
+                            autoSkip: true,
+                            callback: function(val, index) {
+                                return index % 60 === 0 ? this.getLabelForValue(val) : '';
+                            }
+                        }
+                    },
+                    y: {
+                        grid: { color: 'rgba(255,255,255,0.05)' },
+                        ticks: { color: '#9ca3af' },
+                        beginAtZero: true,
+                    }
+                },
+                interaction: {
+                    mode: 'nearest',
+                    axis: 'x',
+                    intersect: false
+                }
+            }
+        });
+    } catch (e) {
+        console.error('Failed to load multi-key chart ' + metric + ':', e);
         ctx.parentElement.innerHTML = '<div class="flex items-center justify-center h-48 text-gray-500 text-sm">No data available</div>';
     }
 }

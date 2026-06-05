@@ -415,16 +415,16 @@ Plus one manual-refresh region:
 
 | Region | Trigger | Data |
 |--------|---------|------|
-| Historical charts | User clicks ↻ button | 7× ChartDataView queries (GPU temp, GPU util, GPU mem, GPU power, CPU util, CPU temp, memory) |
+| Historical charts | User clicks ↻ button | 22× ChartDataView queries (covering all implemented metrics: GPU Temperature/Utilization/Memory/Power/Fan Speed, CPU Utilization/Temperature/Load Average, Memory Usage/Free/Cached/Swap, Storage Usage%/Temperature per disk, Network RX/TX Rate/Errors per interface, Docker Container CPU%/Memory/Restarts, AI Process GPU Memory/CPU%, Rig Health Uptime/Error Frequency) |
 
-**Historical charts are NOT polled automatically** — they load once when the tab is first opened and refresh only when the user clicks the ↻ button. This avoids 7× expensive time-series queries (2000 rows each) every 30 seconds.
+**Historical charts are NOT polled automatically** — they load once when the tab is first opened and refresh only when the user clicks the ↻ button. This avoids 22× expensive time-series queries (2000 rows each) every 30 seconds.
 
 ### 5.4 Tab Layout
 
 The rig detail page has three tabs:
 
 1. **Live Metrics** — cards with CPU%, memory bar, GPU model/temp/util/power/vRAM, Docker container count, storage disks, recent errors
-2. **Historical Charts** — 7 individual Chart.js line charts (GPU temp, GPU util, GPU VRAM, GPU power, CPU util, CPU temp, memory usage) with a ↻ Refresh button in the tab header
+2. **Historical Charts** — Comprehensive chart suite including: GPU (Temperature, Utilization, Memory, Power, Fan Speed), CPU (Utilization, Temperature, Load Average), Memory & Swap (Usage, Free, Cached, Used), Storage (Usage %, Temperature per disk), Network (RX/TX Rate, Errors per interface), Docker (Container CPU%, Memory, Restarts), AI Processes (GPU Memory, CPU%), and Rig Health (Uptime, Error Frequency) — all implemented as Chart.js charts (line/bar/step) with multi-series support where applicable, featuring a ↻ Refresh button in the tab header
 3. **Errors** — recent system errors from journalctl/Windows Event Log
 
 ### 5.5 Data Deduplication
@@ -471,17 +471,20 @@ Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the age
 
 ### 6.3 Metric Field Name Mapping
 
-The `ChartDataView` uses a name-mapping dict because chart-facing metric names differ from model field names:
+The `ChartDataView` uses a name-mapping dict because chart-facing metric names differ from model field names.
+Similar mappings exist for other models (StorageMetric, NetworkMetric, etc.) and are handled via query parameters
+(multi_gpu, multi_disk, multi_iface, etc.) and special handling for JSON fields and aggregated metrics.
 
-| Chart Metric (URL param) | GPUMetric Model Field |
+|| Chart Metric (URL param) | GPUMetric Model Field |
 |--------------------------|----------------------|
-| `gpu_temp_c` | `gpu_temp_c` |
-| `gpu_util_pct` | `gpu_util_pct` |
-| `gpu_mem_used_mb` | `mem_used_mb` |
-| `gpu_mem_total_mb` | `mem_total_mb` |
-| `gpu_power_w` | `power_draw_w` |
-| `gpu_power_limit_w` | `power_limit_w` |
-| `gpu_fan_pct` | `fan_speed_pct` |
+| `gpu_temp_c`             | `gpu_temp_c`         |
+| `gpu_util_pct`           | `gpu_util_pct`       |
+| `gpu_mem_used_mb`        | `mem_used_mb`        |
+| `gpu_mem_total_mb`       | `mem_total_mb`       |
+| `gpu_mem_util_pct`       | `mem_util_pct`       |
+| `gpu_power_w`            | `power_draw_w`       |
+| `gpu_power_limit_w`      | `power_limit_w`      |
+| `gpu_fan_pct`            | `fan_speed_pct`      |
 
 ---
 

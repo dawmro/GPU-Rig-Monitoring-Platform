@@ -295,17 +295,30 @@ class ChartDataView(APIView):
             from .models import GPUMetric
             field_name = self.GPU_METRICS[metric]
             if multi_gpu:
-                # Discover unique GPU UUIDs first (separate query, no slice)
-                seen_uuids = list(
+                # Discover unique GPU UUIDs with their models
+                # Use a subquery to get the latest model name per GPU UUID
+                gpu_info = (
                     GPUMetric.objects.filter(
                         rig_uuid=str(uuid),
                         timestamp__gte=start_minute,
                         timestamp__lte=end_minute,
-                    ).order_by('gpu_uuid').values_list('gpu_uuid', flat=True).distinct()
+                    )
+                    .values('gpu_uuid', 'model')
+                    .distinct()
+                    .order_by('gpu_uuid')
                 )
-                # Build one dataset per GPU UUID
+                seen_uuids = []
+                uuid_to_model = {}
+                for row in gpu_info:
+                    guuid = row['gpu_uuid']
+                    seen_uuids.append(guuid)
+                    uuid_to_model[guuid] = row['model'] or ''
+                # Build one dataset per GPU UUID, label = "UUID MODEL"
                 gpu_datasets = [
-                    {'label': guuid, 'data': [None] * len(labels)}
+                    {
+                        'label': f'{guuid} {uuid_to_model.get(guuid, "")}'.strip(),
+                        'data': [None] * len(labels),
+                    }
                     for guuid in seen_uuids
                 ]
                 # Query all GPU data (with slice for safety)

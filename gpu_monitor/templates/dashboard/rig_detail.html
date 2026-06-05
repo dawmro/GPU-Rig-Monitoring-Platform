@@ -432,7 +432,7 @@ async function loadChartLoadAvg(canvasId, uuid, range) {
     }
 }
 
-// Predefined colors for multi-GPU/distinct datasets
+// Predefined colors for multi-GPU/distinct datasets (16 colors)
 var GPU_COLORS = [
     { border: 'rgba(59, 130, 246, 0.9)',  bg: 'rgba(59, 130, 246, 0.15)' },  // blue
     { border: 'rgba(16, 185, 129, 0.9)',  bg: 'rgba(16, 185, 129, 0.15)' },  // green
@@ -440,8 +440,16 @@ var GPU_COLORS = [
     { border: 'rgba(239, 68, 68, 0.9)',   bg: 'rgba(239, 68, 68, 0.15)' },   // red
     { border: 'rgba(168, 85, 247, 0.9)',  bg: 'rgba(168, 85, 247, 0.15)' },  // purple
     { border: 'rgba(14, 165, 233, 0.9)',  bg: 'rgba(14, 165, 233, 0.15)' },  // sky
-    { border: 'rgb(236, 72, 153, 0.9)', bg: 'rgb(236, 72, 153, 0.15)' },     // pink
-    { border: 'rgb(251, 146, 60, 0.9)', bg: 'rgb(251, 146, 60, 0.15)' },     // orange
+    { border: 'rgb(236, 72, 153, 0.9)',   bg: 'rgb(236, 72, 153, 0.15)' },   // pink
+    { border: 'rgb(251, 146, 60, 0.9)',   bg: 'rgb(251, 146, 60, 0.15)' },   // orange
+    { border: 'rgb(20, 184, 166, 0.9)',   bg: 'rgb(20, 184, 166, 0.15)' },   // teal
+    { border: 'rgb(139, 92, 246, 0.9)',   bg: 'rgb(139, 92, 246, 0.15)' },   // violet
+    { border: 'rgb(244, 114, 182, 0.9)',  bg: 'rgb(244, 114, 182, 0.15)' },  // rose
+    { border: 'rgb(250, 204, 21, 0.9)',   bg: 'rgb(250, 204, 21, 0.15)' },   // yellow
+    { border: 'rgb(45, 212, 191, 0.9)',   bg: 'rgb(45, 212, 191, 0.15)' },   // cyan
+    { border: 'rgb(124, 58, 237, 0.9)',   bg: 'rgb(124, 58, 237, 0.15)' },   // indigo
+    { border: 'rgb(217, 70, 239, 0.9)',   bg: 'rgb(217, 70, 239, 0.15)' },   // fuchsia
+    { border: 'rgb(8, 145, 178, 0.9)',    bg: 'rgb(8, 145, 178, 0.15)' },    // dark cyan
 ];
 
 // Load multi-GPU chart (one dataset per GPU UUID, all on same chart)
@@ -488,12 +496,23 @@ async function loadChartMultiGpu(canvasId, metric, uuid, range, unit) {
                             boxWidth: 12,
                             padding: 8,
                             font: { size: 10 },
-                            // Truncate long UUIDs in legend to first 12 chars
+                            // Truncate UUID to 12 chars + "…" but keep model name
+                            // Label format: "GPU-a322cff7-...-b676c04a38aa RTX 3060"
+                            // Result:      "GPU-a322cff… RTX 3060"
                             generateLabels: function(chart) {
                                 var original = Chart.defaults.plugins.legend.labels.generateLabels(chart);
                                 return original.map(function(label) {
-                                    if (label.text && label.text.length > 12) {
-                                        label.text = label.text.substring(0, 12) + '…';
+                                    if (label.text) {
+                                        var spaceIdx = label.text.indexOf(' ');
+                                        if (spaceIdx > 0) {
+                                            var uuidPart = label.text.substring(0, spaceIdx);
+                                            var modelPart = label.text.substring(spaceIdx + 1);
+                                            if (uuidPart.length > 12) {
+                                                label.text = uuidPart.substring(0, 12) + '… ' + modelPart;
+                                            }
+                                        } else if (label.text.length > 12) {
+                                            label.text = label.text.substring(0, 12) + '…';
+                                        }
                                     }
                                     return label;
                                 });

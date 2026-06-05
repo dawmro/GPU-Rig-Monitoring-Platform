@@ -237,11 +237,24 @@ class ChartDataView(APIView):
     def _fill_buckets_multi_gpu(self, labels, datasets, start_minute, queryset, field_name, value_key='timestamp'):
         """Fill bucket values for multi-GPU metrics (one dataset per GPU UUID).
 
-        datasets is a list of dicts: [{'label': 'GPU-a322cff...', 'data': [...]}, ...]
-        Rows are matched to datasets by gpu_uuid.
+        datasets is a list of dicts: [{'label': 'GPU-a322cff... RTX 3060', 'data': [...]}, ...]
+        Rows are matched to datasets by gpu_uuid (extracted from the label).
         """
         total_minutes = len(labels)
-        uuid_to_idx = {ds['label']: i for i, ds in enumerate(datasets)}
+        # Build lookup: gpu_uuid -> dataset index
+        # Labels are formatted as "UUID MODEL", extract UUID (first space-separated token may
+        # contain hyphens, so we split on the last space to separate model from UUID)
+        uuid_to_idx = {}
+        for i, ds in enumerate(datasets):
+            label = ds['label']
+            # UUID is everything before the last space (model name is after)
+            # But UUID itself contains no spaces, so split on first space after UUID
+            # Format: "GPU-a322cff7-19cf-f056-4a38-b676c04a38aa NVIDIA GeForce RTX 3060"
+            # UUID has no spaces, model name may have spaces
+            parts = label.split(' ')
+            # First part is the UUID (e.g. "GPU-a322cff7-19cf-f056-4a38-b676c04a38aa")
+            guuid = parts[0] if parts else label
+            uuid_to_idx[guuid] = i
         for row in queryset:
             ts = getattr(row, value_key)
             ts_minute = ts.replace(second=0, microsecond=0)

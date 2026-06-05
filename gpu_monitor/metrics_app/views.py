@@ -51,7 +51,6 @@ class IngestView(APIView):
         try:
             rig = Rig.objects.get(uuid=rig_uuid)
         except Rig.DoesNotExist:
-            # Auto-create rig on first seen — use agent-suggested name or default
             name = rig_name or 'Unnamed Rig'
             rig = Rig.objects.create(
                 uuid=rig_uuid,
@@ -64,10 +63,6 @@ class IngestView(APIView):
         else:
             if rig.owner_id != user.id:
                 return Response({'status': 'error', 'message': 'UUID already claimed by another user'}, status=409)
-            # Note: rig_name from agent is intentionally NOT applied here.
-            # After initial creation, the rig name is managed exclusively
-            # via the dashboard rename API to prevent config.yaml from
-            # overwriting user-set names on every heartbeat.
 
         # Process the payload
         result, http_status = process_ingest(rig_uuid, data, user.id, rig=rig)
@@ -146,11 +141,14 @@ class ChartDataView(APIView):
     Query parameters:
         metric: Field name to chart. Supported values:
             - cpu_utilization_pct, cpu_temp_c, cpu_load_avg (from MetricSnapshot)
-            - mem_used_bytes, mem_total_bytes, mem_free_bytes, mem_cached_bytes, swap_used_bytes, swap_total_bytes (from MetricSnapshot)
-            - gpu_temp_c, gpu_util_pct, gpu_mem_used_mb, gpu_power_w, gpu_fan_pct (from GPUMetric, gpu_index=0)
+            - mem_used_bytes, mem_total_bytes, mem_free_bytes, mem_cached_bytes,
+              swap_used_bytes, swap_total_bytes (from MetricSnapshot)
+            - gpu_temp_c, gpu_util_pct, gpu_mem_used_mb, gpu_power_w, gpu_fan_pct
+              (from GPUMetric; single GPU via gpu_index or all GPUs via multi_gpu)
             - disk_usage_pct (from StorageMetric, first disk)
         range: Hours of historical data (default: 24)
-        gpu_index: GPU index for per-GPU metrics (default: 0)
+        gpu_index: GPU index for single-GPU metrics (default: 0)
+        multi_gpu: If 'true', query all GPUs and return one dataset per GPU UUID
     """
     authentication_classes = [SessionAuthentication]
 
@@ -174,8 +172,11 @@ class ChartDataView(APIView):
     # Metrics stored on StorageMetric
     STORAGE_METRICS = {'disk_usage_pct'}
 
-    # Metrics that need unit conversion: field_name -> conversion function name
-    BYTE_TO_GB = {'mem_total_bytes', 'mem_used_bytes', 'mem_free_bytes', 'mem_cached_bytes', 'swap_used_bytes', 'swap_total_bytes'}
+    # Byte metrics that should be converted to GB in the response
+    BYTE_TO_GB = {
+        'mem_total_bytes', 'mem_used_bytes', 'mem_free_bytes', 'mem_cached_bytes',
+        'swap_used_bytes', 'swap_total_bytes',
+    }
 
     def _build_buckets(self, range_hours):
         """Build fixed 1-minute bucket labels and empty value array.
@@ -198,7 +199,7 @@ class ChartDataView(APIView):
         return labels, values, start_minute, end_minute
 
     def _fill_buckets(self, labels, values, start_minute, queryset, field_name, value_key='timestamp'):
-        """Fill bucket values from a queryset.
+        """Fill bucket values from a queryset (single-value metrics).
 
         Each row is placed into the bucket matching its truncated minute.
         If multiple rows fall in the same bucket, the last one wins.
@@ -233,6 +234,25 @@ class ChartDataView(APIView):
                     for i in range(num_values):
                         datasets[i]['data'][idx] = val[i]
 
+    def _fill_buckets_multi_gpu(self, labels, datasets, start_minute, queryset, field_name, value_key='timestamp'):
+        """Fill bucket values for multi-GPU metrics (one dataset per GPU UUID).
+
+        datasets is a list of dicts: [{'label': 'GPU-a322cff...', 'data': [...]}, ...]
+        Rows are matched to datasets by gpu_uuid.
+        """
+        total_minutes = len(labels)
+        uuid_to_idx = {ds['label']: i for i, ds in enumerate(datasets)}
+        for row in queryset:
+            ts = getattr(row, value_key)
+            ts_minute = ts.replace(second=0, microsecond=0)
+            delta = ts_minute - start_minute
+            idx = int(delta.total_seconds() // 60)
+            if 0 <= idx < total_minutes:
+                val = getattr(row, field_name, None)
+                gpu_uuid = row.gpu_uuid
+                if val is not None and gpu_uuid in uuid_to_idx:
+                    datasets[uuid_to_idx[gpu_uuid]]['data'][idx] = val
+
     def get(self, request, uuid):
         user = request.user
         rig = get_object_or_404(Rig, uuid=uuid)
@@ -242,6 +262,7 @@ class ChartDataView(APIView):
         metric = request.query_params.get('metric', 'cpu_utilization_pct')
         range_hours = int(request.query_params.get('range', '24'))
         gpu_index = int(request.query_params.get('gpu_index', 0))
+        multi_gpu = request.query_params.get('multi_gpu', 'false').lower() == 'true'
 
         labels, values, start_minute, end_minute = self._build_buckets(range_hours)
 
@@ -252,7 +273,6 @@ class ChartDataView(APIView):
                 timestamp__lte=end_minute,
             ).order_by('timestamp')[:10000]
             self._fill_buckets(labels, values, start_minute, snapshots, metric)
-            # Convert bytes to GB for memory metrics
             if metric in self.BYTE_TO_GB:
                 values = [round(v / (1024**3), 2) if v is not None else None for v in values]
             datasets = [{'label': metric, 'data': values}]
@@ -273,15 +293,39 @@ class ChartDataView(APIView):
 
         elif metric in self.GPU_METRICS:
             from .models import GPUMetric
-            gpu_data = GPUMetric.objects.filter(
-                rig_uuid=str(uuid),
-                gpu_index=gpu_index,
-                timestamp__gte=start_minute,
-                timestamp__lte=end_minute,
-            ).order_by('timestamp')[:10000]
             field_name = self.GPU_METRICS[metric]
-            self._fill_buckets(labels, values, start_minute, gpu_data, field_name)
-            datasets = [{'label': metric, 'data': values}]
+            if multi_gpu:
+                # Discover unique GPU UUIDs first (separate query, no slice)
+                seen_uuids = list(
+                    GPUMetric.objects.filter(
+                        rig_uuid=str(uuid),
+                        timestamp__gte=start_minute,
+                        timestamp__lte=end_minute,
+                    ).order_by('gpu_uuid').values_list('gpu_uuid', flat=True).distinct()
+                )
+                # Build one dataset per GPU UUID
+                gpu_datasets = [
+                    {'label': guuid, 'data': [None] * len(labels)}
+                    for guuid in seen_uuids
+                ]
+                # Query all GPU data (with slice for safety)
+                gpu_data = GPUMetric.objects.filter(
+                    rig_uuid=str(uuid),
+                    timestamp__gte=start_minute,
+                    timestamp__lte=end_minute,
+                ).order_by('timestamp')[:50000]
+                self._fill_buckets_multi_gpu(labels, gpu_datasets, start_minute, gpu_data, field_name)
+                datasets = gpu_datasets
+            else:
+                # Single GPU mode (backward compatible)
+                gpu_data = GPUMetric.objects.filter(
+                    rig_uuid=str(uuid),
+                    gpu_index=gpu_index,
+                    timestamp__gte=start_minute,
+                    timestamp__lte=end_minute,
+                ).order_by('timestamp')[:10000]
+                self._fill_buckets(labels, values, start_minute, gpu_data, field_name)
+                datasets = [{'label': f'GPU {gpu_index}', 'data': values}]
 
         elif metric in self.STORAGE_METRICS:
             from .models import StorageMetric

@@ -161,13 +161,13 @@
 
             <!-- Network RX Rate Chart (multi-interface) -->
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Network RX Rate (24h)</h3>
+                <h3 class="text-sm font-medium text-gray-300 mb-3">Network RX (24h)</h3>
                 <canvas id="chartNetRx"></canvas>
             </div>
 
             <!-- Network TX Rate Chart (multi-interface) -->
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Network TX Rate (24h)</h3>
+                <h3 class="text-sm font-medium text-gray-300 mb-3">Network TX (24h)</h3>
                 <canvas id="chartNetTx"></canvas>
             </div>
 
@@ -276,9 +276,9 @@ async function loadCharts() {
     // Storage multi-disk charts
     await loadChartMultiKey('chartDiskUsage', 'disk_usage_pct', uuid, range, '%', 'multi_disk');
     // Network multi-interface charts
-    await loadChartMultiKey('chartNetRx',     'net_rx_bytes_delta',  uuid, range, ' MB/s', 'multi_iface');
-    await loadChartMultiKey('chartNetTx',     'net_tx_bytes_delta',  uuid, range, ' MB/s', 'multi_iface');
-    await loadChartMultiKey('chartNetErrors', 'net_rx_errors',       uuid, range, ' err/s', 'multi_iface');
+    await loadChartMultiKey('chartNetRx',     'net_rx_bytes_delta',  uuid, range, ' MB/min', 'multi_iface');
+    await loadChartMultiKey('chartNetTx',     'net_tx_bytes_delta',  uuid, range, ' MB/min', 'multi_iface');
+    await loadChartMultiKey('chartNetErrors', 'net_rx_errors',       uuid, range, ' err/min', 'multi_iface');
     // Update refresh clock after all charts finish loading
     var clock = document.getElementById('tab-content-charts-clock');
     if (clock) {

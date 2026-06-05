@@ -368,7 +368,7 @@ class ChartDataView(APIView):
                 disk_datasets = [
                     {
                         '_key': dev,
-                        'label': f'{dev} {device_to_mount.get(dev, "")}'.strip(),
+                        'label': dev if dev == device_to_mount.get(dev, '') else f'{dev} {device_to_mount.get(dev, "")}'.strip(),
                         'data': [None] * len(labels),
                     }
                     for dev in seen_devices
@@ -422,7 +422,7 @@ class ChartDataView(APIView):
                 iface_datasets = [
                     {
                         '_key': iface,
-                        'label': f'{iface} {iface_to_ip.get(iface, "")}'.strip(),
+                        'label': f'{iface} {iface_to_ip.get(iface, "")}'.strip() if iface_to_ip.get(iface) else iface,
                         'data': [None] * len(labels),
                     }
                     for iface in seen_ifaces

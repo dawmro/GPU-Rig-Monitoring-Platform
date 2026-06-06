@@ -1,12 +1,16 @@
 {# Live Metrics — Detailed Display #}
 {# Polled every 30s via HTMX #}
 {% load gpu_filters %}
-
-<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- ════════════════════════════════════════════════════════════════ -->
 <!-- CPU -->
-<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- ════════════════════════════════════════════════════════════════ -->
 <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
-    <h3 class="text-gray-400 text-sm font-medium mb-2">CPU</h3>
+    <h3 class="text-gray-400 text-sm font-medium mb-2">
+        CPU
+        {% if is_data_stale %}
+        <span class="text-xs text-yellow-400 ml-1">(stale)</span>
+        {% endif %}
+    </h3>
     {% if metric_snapshot %}
     <div class="text-lg font-bold text-white mb-1">
         {{ metric_snapshot.cpu_model|default:"Unknown" }}
@@ -22,7 +26,8 @@
                         {% if metric_snapshot.cpu_utilization_pct > 80 %}bg-red-500
                         {% elif metric_snapshot.cpu_utilization_pct > 60 %}bg-yellow-500
                         {% else %}bg-green-500{% endif %}
-                    {% else %}bg-gray-600{% endif %}"
+                    {% else %}bg-gray-600{% endif %}
+                "
                     style="width: {% if metric_snapshot.cpu_utilization_pct != None %}{{ metric_snapshot.cpu_utilization_pct }}{% else %}0{% endif %}%">
                 </div>
             </div>
@@ -54,17 +59,21 @@
         Utilization: {% if snapshot.cpu_utilization_pct != None %}{{ snapshot.cpu_utilization_pct|floatformat:1 }}%{% else %}—{% endif %}
     </div>
     {% else %}
-    <div class="text-gray-500">No data</div>
+    <div class="text-gray-500">No data{% if is_data_stale %} (rig offline){% endif %}</div>
     {% endif %}
 </div>
 
-<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- ════════════════════════════════════════════════════════════════ -->
 <!-- Memory -->
-<!-- ═══════════════════════════════════════════════════════════════ -->
-{% if metric_snapshot %}
+<!-- ════════════════════════════════════════════════════════════════ -->
 <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
-    <h3 class="text-gray-400 text-sm font-medium mb-2">Memory</h3>
-    {% if metric_snapshot.mem_total_bytes %}
+    <h3 class="text-gray-400 text-sm font-medium mb-2">
+        Memory
+        {% if is_data_stale %}
+        <span class="text-xs text-yellow-400 ml-1">(stale)</span>
+        {% endif %}
+    </h3>
+    {% if metric_snapshot %}
     <div class="flex items-center gap-3 mb-2">
         <div class="flex-1">
             <div class="w-full bg-gray-700 rounded-full h-2">
@@ -72,9 +81,9 @@
                 <div class="h-2 rounded-full
                     {% if mem_pct > 85 %}bg-red-500
                     {% elif mem_pct > 70 %}bg-yellow-500
-                    {% else %}bg-blue-500{% endif %}"
-                    style="width: {{ mem_pct }}%">
-                </div>
+                    {% else %}bg-blue-500{% endif %}
+                "
+                    style="width: {{ mem_pct }}%"></div>
             </div>
         </div>
         <span class="text-sm font-mono text-gray-300 w-14 text-right">{{ mem_pct }}%</span>
@@ -99,32 +108,19 @@
     </div>
     {% endif %}
     {% else %}
-    <div class="text-gray-500">No data</div>
+    <div class="text-gray-500">No data{% if is_data_stale %} (rig offline){% endif %}</div>
     {% endif %}
 </div>
-{% elif snapshot and snapshot.mem_total_bytes %}
-<div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
-    <h3 class="text-gray-400 text-sm font-medium mb-2">Memory</h3>
-    <div class="flex items-center gap-3 mb-2">
-        <div class="flex-1">
-            <div class="w-full bg-gray-700 rounded-full h-2">
-                {% widthratio snapshot.mem_used_bytes snapshot.mem_total_bytes 100 as mem_pct %}
-                <div class="bg-blue-500 h-2 rounded-full" style="width: {{ mem_pct }}%"></div>
-            </div>
-        </div>
-        <span class="text-sm font-mono text-gray-300 w-14 text-right">{{ mem_pct }}%</span>
-    </div>
-    <div class="text-xs text-gray-400">
-        Used: {{ snapshot.mem_used_bytes|filesizeformat }} / Total: {{ snapshot.mem_total_bytes|filesizeformat }}
-    </div>
-</div>
-{% endif %}
-
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <!-- Storage (per device) -->
-<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- ════════════════════════════════════════════════════════════════ -->
 <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
-    <h3 class="text-gray-400 text-sm font-medium mb-2">Storage ({{ storage_metrics|length }})</h3>
+    <h3 class="text-gray-400 text-sm font-medium mb-2">
+        Storage ({{ storage_metrics|length }})
+        {% if is_data_stale %}
+        <span class="text-xs text-yellow-400 ml-1">(stale)</span>
+        {% endif %}
+    </h3>
     {% if storage_metrics %}
         {% for disk in storage_metrics %}
         <div class="mb-3 pb-3 border-b border-gray-700/50 last:border-0 last:mb-0 last:pb-0">
@@ -161,15 +157,20 @@
         </div>
         {% endfor %}
     {% else %}
-    <div class="text-gray-500">No data</div>
+    <div class="text-gray-500">No data{% if is_data_stale %} (rig offline){% endif %}</div>
     {% endif %}
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <!-- GPU (per device) -->
-<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- ════════════════════════════════════════════════════════════════ -->
 <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
-    <h3 class="text-gray-400 text-sm font-medium mb-2">GPU ({{ gpu_metrics|length }})</h3>
+    <h3 class="text-gray-400 text-sm font-medium mb-2">
+        GPU ({{ gpu_metrics|length }})
+        {% if is_data_stale %}
+        <span class="text-xs text-yellow-400 ml-1">(stale)</span>
+        {% endif %}
+    </h3>
     {% if gpu_metrics %}
         {% for gpu in gpu_metrics %}
         <div class="mb-3 pb-3 border-b border-gray-700/50 last:border-0 last:mb-0 last:pb-0">
@@ -221,12 +222,12 @@
                     {{ gpu.mem_used_mb }} / {{ gpu.mem_total_mb }} MB
                     {% if gpu.mem_util_pct != None %}({{ gpu.mem_util_pct|floatformat:1 }}%){% endif %}
                 </span>
-            </div>
-            {% if gpu.mem_free_mb != None %}
-            <div class="text-xs text-gray-500 mb-1">Free: {{ gpu.mem_free_mb }} MB</div>
-            {% endif %}
-            {% endif %}
-            {% if gpu.power_draw_w != None %}
+                </div>
+                {% if gpu.mem_free_mb != None %}
+                <div class="text-xs text-gray-500 mb-1">Free: {{ gpu.mem_free_mb }} MB</div>
+                {% endif %}
+                {% endif %}
+                {% if gpu.power_draw_w != None %}
             <div class="text-xs text-gray-500">
                 Power: <span class="text-gray-400">{{ gpu.power_draw_w|floatformat:1 }}W</span>
                 {% if gpu.power_limit_w %} / {{ gpu.power_limit_w|floatformat:0 }}W{% endif %}
@@ -235,15 +236,19 @@
         </div>
         {% endfor %}
     {% else %}
-    <div class="text-gray-500">No GPU</div>
+    <div class="text-gray-500">No GPU{% if is_data_stale %} (rig offline){% endif %}</div>
     {% endif %}
 </div>
-
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <!-- Network (per interface) -->
-<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- ════════════════════════════════════════════════════════════════ -->
 <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
-    <h3 class="text-gray-400 text-sm font-medium mb-2">Network ({{ network_metrics|length }})</h3>
+    <h3 class="text-gray-400 text-sm font-medium mb-2">
+        Network ({{ network_metrics|length }})
+        {% if is_data_stale %}
+        <span class="text-xs text-yellow-400 ml-1">(stale)</span>
+        {% endif %}
+    </h3>
     {% if network_metrics %}
     <div class="overflow-x-auto">
         <table class="w-full text-xs">
@@ -280,7 +285,7 @@
         </table>
     </div>
     {% else %}
-    <div class="text-gray-500">No data</div>
+    <div class="text-gray-500">No data{% if is_data_stale %} (rig offline){% endif %}</div>
     {% endif %}
 </div>
 

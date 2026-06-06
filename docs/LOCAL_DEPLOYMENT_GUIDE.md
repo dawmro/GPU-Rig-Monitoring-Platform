@@ -428,12 +428,21 @@ sudo chmod 600 /etc/monitoring-agent/config.yaml
 
 ### 4.5 Set Up Sudoers
 
-The agent needs root access for disk SMART data and journal logs:
+The agent needs root access for disk SMART data and journal logs. These are read-only commands that cannot modify the system:
 
 ```bash
 echo 'monitoring-agent ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/bin/nvme, /bin/journalctl' | sudo tee /etc/sudoers.d/monitoring-agent
 sudo chmod 440 /etc/sudoers.d/monitoring-agent
 ```
+
+**What each command does:**
+- `smartctl`: Read disk SMART health data (HDD/SSD health metrics)
+- `nvme`: Read NVMe drive health logs (NVMe-specific metrics)
+- `journalctl`: Read system error logs (for the Errors tab)
+
+**Security:** All three commands are read-only. The agent cannot modify disks, logs, or system state. If a command is missing (e.g., no NVMe drive), the agent logs a warning and continues.
+
+**GPU monitoring** does NOT require root — `pynvml` reads from the NVIDIA driver interface which is accessible to all users.
 
 ### 4.6 Set Up Cron
 
@@ -628,7 +637,7 @@ You should see output like `Updated: 0 stale, 2 offline`. If you see `password a
 │   ├── views.py                # rig_list, rig_detail, htmx_metrics
 │   ├── urls.py
 │   └── templatetags/
-│       └── gpu_filters.py      # Template filters: gpu_model_name, gpu_model_short, time_since
+|       └── gpu_filters.py      # Template filters: gpu_model_name, gpu_model_short, gpu_compact_summary, gpu_temp_cell, gpu_util_cell, gpu_fan_cell, time_since |
 ├── audit/                      # Audit logging
 │   ├── models.py               # AuditLog model
 │   └── middleware.py           # Request audit middleware

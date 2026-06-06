@@ -2,7 +2,7 @@
 
 **Version:** 1.1
 **Status:** Implemented — Living Architecture Reference
-**Last Updated:** 2026-06-05
+|**Last Updated:** 2026-06-07
 
 ---
 
@@ -91,9 +91,10 @@ The GPU Rig Monitoring Platform is a single-server telemetry dashboard for GPU r
 
 ```
 Cron → Agent collects metrics → JSON payload → POST /api/v1/ingest/
-  → Nginx (rate limit, size check)
+  → Nginx (rate limit: per-rig 5/min + per-IP 30/s, payload size check)
   → DRF APIKeyAuthentication (X-API-Key header → Argon2id hash comparison)
-  → DRF throttle (per-key rate limit)
+  → DRF throttle (per-rig rate limit, scoped by rig_uuid)
+  → Timestamp sanity check (reject if >5 min future or >1 hour past)
   → IngestSerializer validation (schema version 1.0 or 1.1)
   → process_ingest() → DB upsert (MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, AIProcessMetric, ErrorEvent, ErrorEventOccurrence, RigStatusEvent, LatestSnapshot)
   → Rig.last_seen and Rig.status updated to ONLINE
@@ -110,7 +111,7 @@ Cron → Agent collects metrics → JSON payload → POST /api/v1/ingest/
 | `metrics_app/serializers.py` | IngestSerializer, process_ingest() |
 | `metrics_app/models.py` | MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, ErrorEvent, ErrorEventOccurrence, RigStatusEvent, AIProcessMetric |
 | `dashboard/views.py` | rig_list, rig_detail, htmx_metrics, htmx_rig_status, rig_rename |
-| `dashboard/templatetags/gpu_filters.py` | gpu_model_name, gpu_model_short, time_since filters |
+| `dashboard/templatetags/gpu_filters.py` | gpu_model_name, gpu_model_short, gpu_compact_summary, gpu_temp_cell, gpu_util_cell, gpu_fan_cell, time_since filters |
 | `rigs/models.py` | Rig, RigTag |
 | `accounts/authentication.py` | APIKeyAuthentication |
 | `rigs/management/commands/update_rig_status.py` | Rig status state machine (creates RigStatusEvent on transitions) |
@@ -151,7 +152,7 @@ debug_mode: false         # Verbose logging
   "rig_name": "my-server",
   "schema_version": "1.1",
   "agent_version": "1.1.0",
-  "timestamp": "2026-06-02T19:54:06Z",
+  "timestamp": "2026-06-07T19:54:06Z",
   "metrics": {
     "cpu": {
       "model": "AMD Ryzen 7 5700X3D 8-Core Processor",
@@ -350,7 +351,7 @@ On every agent heartbeat, `IngestView` sets `Rig.status = ONLINE` and `Rig.last_
 
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
-| POST | `/api/v1/ingest/` | API Key | Telemetry submission |
+| POST | `/api/v1/ingest/` | API Key + X-Rig-UUID header | Telemetry submission (per-rig rate limit, timestamp sanity check) |
 | GET | `/api/v1/health/` | None | Health check (DB + active rigs count) |
 | GET | `/api/v1/rigs/<uuid>/metrics/` | Session | Latest metrics (used by Chart.js direct fetch) |
 | GET | `/api/v1/rigs/<uuid>/chart-data/?metric=X&range=N` | Session | Historical chart data |
@@ -358,6 +359,10 @@ On every agent heartbeat, `IngestView` sets `Rig.status = ONLINE` and `Rig.last_
 | GET | `/dashboard/rigs/<uuid>/htmx-metrics/` | Session | Live metrics partial (30s poll) |
 | GET | `/dashboard/rigs/<uuid>/htmx-status/` | Session | Status badge partial (15s poll) |
 | POST | `/dashboard/rigs/<uuid>/rename/` | Session | Rename rig |
+
+**Agent headers:**
+- `X-API-Key`: User's API key (identifies the user/account)
+- `X-Rig-UUID`: The rig's UUID (identifies the specific rig, used for per-rig rate limiting)
 
 ### 4.7 Cron Jobs
 
@@ -384,7 +389,7 @@ HTMX polls use `hx-swap="innerHTML"` (not `outerHTML`). This is critical: `inner
 **Data source:** `dashboard/views.py rig_list()` queries:
 - `Rig` (all fields including `status`, `last_seen`, `name`)
 - `LatestSnapshot` (cpu_utilization_pct, mem_used_bytes, cpu_temp_c, etc.)
-- `GPUMetric` (gpu_index=0: gpu_temp_c, gpu_util_pct, model)
+- `GPUMetric` (all GPUs per rig, deduplicated by gpu_uuid)
 
 **Sorting:** Alphabetically by `Rig.name` (stable ordering, rigs don't jump around).
 
@@ -396,10 +401,11 @@ HTMX polls use `hx-swap="innerHTML"` (not `outerHTML`). This is critical: `inner
 | Status | Rig.status | Online/Stale/Offline |
 | Last Seen | Rig.last_seen | Relative time |
 | Tags | RigTag M2M | Colored pills |
-| GPU | GPUMetric.model | Cleaned by gpu_model_name filter |
-| GPU Temp | GPUMetric.gpu_temp_c | Color-coded thresholds |
-| GPU Util | GPUMetric.gpu_util_pct | Percentage |
-| CPU | LatestSnapshot.cpu_utilization_pct | Percentage |
+| GPU | GPUMetric.model (all GPUs) | Compact summary with count (e.g., "RTX 3060 ×8") |
+| GPU Temp [°C] | GPUMetric.gpu_temp_c (all GPUs) | Space-separated color-coded values |
+| GPU Util [%] | GPUMetric.gpu_util_pct (all GPUs) | Space-separated color-coded values |
+| GPU Fan [%] | GPUMetric.fan_speed_pct (all GPUs) | Space-separated color-coded values |
+| CPU [%] | LatestSnapshot.cpu_utilization_pct | Percentage |
 
 ### 5.3 Rig Detail Page (`/dashboard/rigs/<uuid>/`)
 
@@ -415,16 +421,16 @@ Plus one manual-refresh region:
 
 | Region | Trigger | Data |
 |--------|---------|------|
-| Historical charts | User clicks ↻ button | 22× ChartDataView queries (covering all implemented metrics: GPU Temperature/Utilization/Memory/Power/Fan Speed, CPU Utilization/Temperature/Load Average, Memory Usage/Free/Cached/Swap, Storage Usage%/Temperature per disk, Network RX/TX Rate/Errors per interface, Docker Container CPU%/Memory/Restarts, AI Process GPU Memory/CPU%, Rig Health Uptime/Error Frequency) |
+| Historical charts | User clicks ↻ button | Combined charts: GPU Temperature/Utilization/Memory/Power/Fan Speed (multi-GPU), CPU Utilization/Temperature/Load Average, Memory & Swap (combined, 3 datasets), Disk Usage (multi-disk), Network Traffic (combined RX/TX/Errors, dual Y-axes), Container CPU/Memory (multi-container), AI Process GPU Memory, Uptime, Error Frequency |
 
-**Historical charts are NOT polled automatically** — they load once when the tab is first opened and refresh only when the user clicks the ↻ button. This avoids 22× expensive time-series queries (2000 rows each) every 30 seconds.
+**Historical charts are NOT polled automatically** — they load once when the tab is first opened and refresh only when the user clicks the ↻ button. This avoids expensive time-series queries every 30 seconds.
 
 ### 5.4 Tab Layout
 
 The rig detail page has three tabs:
 
 1. **Live Metrics** — cards with CPU%, memory bar, GPU model/temp/util/power/vRAM, Docker container count, storage disks, recent errors
-2. **Historical Charts** — Comprehensive chart suite including: GPU (Temperature, Utilization, Memory, Power, Fan Speed), CPU (Utilization, Temperature, Load Average), Memory & Swap (Usage, Free, Cached, Used), Storage (Usage %, Temperature per disk), Network (RX/TX Rate, Errors per interface), Docker (Container CPU%, Memory, Restarts), AI Processes (GPU Memory, CPU%), and Rig Health (Uptime, Error Frequency) — all implemented as Chart.js charts (line/bar/step) with multi-series support where applicable, featuring a ↻ Refresh button in the tab header
+2. **Historical Charts** — Combined chart suite: GPU (Temperature, Utilization, Memory, Power, Fan Speed — multi-GPU), CPU (Utilization, Temperature, Load Average), Memory & Swap (combined single chart, 3 datasets), Disk Usage (multi-disk), Network Traffic (combined RX/TX/Errors, dual Y-axes), Container CPU/Memory (multi-container), AI Process GPU Memory, Uptime, Error Frequency — all implemented as Chart.js charts with multi-series support, featuring a ↻ Refresh button in the tab header
 3. **Errors** — recent system errors from journalctl/Windows Event Log
 
 ### 5.5 Data Deduplication

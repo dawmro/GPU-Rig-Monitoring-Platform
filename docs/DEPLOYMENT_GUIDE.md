@@ -387,6 +387,29 @@ chmod +x /tmp/agent/install.sh
 | 5 | Configures sudoers for SMART disk queries |
 | 6 | Creates cron job (every 60 seconds, with `flock` to prevent overlaps) |
 
+**Agent permissions (what the agent needs and why):**
+
+The `monitoring-agent` system user runs without root privileges but needs elevated access for specific hardware queries:
+
+| Command | Purpose | Risk |
+|---------|---------|------|
+| `/usr/sbin/smartctl` | Read disk SMART health data | Read-only, no disk modification |
+| `/usr/bin/nvme` | Read NVMe drive health/logs | Read-only, no disk modification |
+| `/bin/journalctl` | Read system error logs | Read-only, no log modification |
+
+These are granted via `/etc/sudoers.d/monitoring-agent`:
+```
+monitoring-agent ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/bin/nvme, /bin/journalctl
+```
+
+**Security properties:**
+- `NOPASSWD`: No password required (agent runs non-interactively via cron)
+- Command whitelist: Only these 3 commands are allowed, nothing else
+- Read-only: All three commands only read system state, never modify it
+- If any command is missing (e.g., no NVMe drive), the agent logs a warning and continues
+
+**GPU monitoring** does NOT require root — `pynvml` reads from the NVIDIA driver interface which is accessible to all users.
+
 ### 5.4 Configure the Agent
 
 Edit the config file on the rig:
@@ -474,15 +497,26 @@ The rig detail page has three tabs:
 | Tab | Description |
 |-----|-------------|
 | **Live Metrics** | Auto-refreshing cards showing CPU, memory, GPU, Docker, storage, and errors (30s HTMX polling) |
-| **Historical Charts** | 7 individual charts showing 24-hour trends: GPU temperature, GPU utilization, GPU VRAM usage, GPU power draw, CPU utilization, CPU temperature, memory usage |
+| **Historical Charts** | Combined charts: GPU (Temp/Util/Memory/Power/Fan — multi-GPU), CPU (Util/Temp/Load Avg), Memory & Swap (combined), Disk Usage (multi-disk), Network Traffic (RX/TX/Errors combined), Container CPU/Memory, AI Process GPU Memory, Uptime, Error Frequency. Refresh via ↻ button |
 | **Errors** | Recent system errors from journalctl/Windows Event Log |
 
-**GPU Model Name Display:** The fleet overview table shows cleaned GPU model names (e.g., "RTX 3060" instead of "NVIDIA GeForce RTX 3060"). Hover to see the full model string.
+**Fleet Overview Table:**
+- Shows **all GPUs** per rig (not just GPU 0)
+- GPU column: compact model summary with count (e.g., "RTX 3060 ×8", "RTX 4090, RTX 3060")
+- GPU Temp/Util/Fan columns: space-separated color-coded values, one per GPU
+- Hover tooltips show per-GPU breakdown (GPU1: 72°C, GPU2: 68°C, …)
+- Units in column headers (e.g., "GPU Temp [°C]") — no inline units in cells
 
 **Rig Status:** Rigs are automatically marked as:
 - 🟢 **Online** — reported within last 2 minutes
 - 🟡 **Stale** — not seen for 2–10 minutes
 - 🔴 **Offline** — not seen for 10+ minutes
+
+**Rate Limiting:**
+- Per-rig rate limit: 5 req/min per rig_uuid (each rig gets its own budget)
+- Per-IP rate limit: 30 req/s (burst protection)
+- Timestamp validation: payloads with timestamps >5 min future or >1 hour past are rejected (400)
+- Agents send both `X-API-Key` (user auth) and `X-Rig-UUID` (rig identification) headers
 
 ### 6.3 Log Rotation
 

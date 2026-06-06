@@ -82,6 +82,8 @@
 - loadChartMultiGpu(): For multi-GPU charts (one dataset per GPU)
 - loadChartMultiKey(): Generic multi-series function for disks, interfaces, containers, AI processes
 - loadChartLoadAvg(): Specialized for CPU load average (3-line chart)
+- loadChartMemSwap(): Combined Memory & Swap chart (3 datasets, one request)
+- loadChartNetworkCombined(): Combined Network RX/TX/Errors chart (dual Y-axes, 3 parallel requests)
 - loadChart(): Standard single-series charts
 - All charts use Chart.js with appropriate types (line/bar/step)
 - Null values preserved to show gaps in data (offline periods)

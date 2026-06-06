@@ -52,7 +52,7 @@
                 {# GPU Model column: compact multi-GPU display with count #}
                 <td class="px-2 py-3 whitespace-nowrap">
                     {% if item.gpus %}
-                        <span title="{% for gpu in item.gpus %}{{ gpu.model|default:"Unknown" }}{% if not forloop.last %}, {% endif %}{% endfor %}">
+                        <span title="{% for gpu in item.gpus %}GPU{{ forloop.counter }}: {{ gpu.model|default:"Unknown" }}{% if not forloop.last %} | {% endif %}{% endfor %}">
                             {{ item.gpus|gpu_compact_summary }}
                         </span>
                     {% else %}—{% endif %}

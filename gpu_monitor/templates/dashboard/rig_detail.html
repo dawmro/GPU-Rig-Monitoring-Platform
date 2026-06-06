@@ -147,22 +147,10 @@
                 <canvas id="chartDiskUsage"></canvas>
             </div>
 
-            <!-- Network RX Rate Chart (multi-interface) -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Network RX (24h)</h3>
-                <canvas id="chartNetRx"></canvas>
-            </div>
-
-            <!-- Network TX Rate Chart (multi-interface) -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Network TX (24h)</h3>
-                <canvas id="chartNetTx"></canvas>
-            </div>
-
-            <!-- Network Errors Chart (multi-interface) -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Network Errors (24h)</h3>
-                <canvas id="chartNetErrors"></canvas>
+            <!-- Network Traffic Chart (multi-interface, combined RX/TX/Errors) -->
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[300px]">
+                <h3 class="text-sm font-medium text-gray-300 mb-3">Network Traffic (24h)</h3>
+                <canvas id="chartNetCombined"></canvas>
             </div>
 
             <!-- Uptime Chart -->
@@ -292,10 +280,8 @@ async function loadCharts() {
     await loadChartMultiGpu('chartGpuFan',   'gpu_fan_pct',  uuid, range, '%');
     // Storage multi-disk charts
     await loadChartMultiKey('chartDiskUsage', 'disk_usage_pct', uuid, range, '%', 'multi_disk');
-    // Network multi-interface charts
-    await loadChartMultiKey('chartNetRx',     'net_rx_bytes_delta',  uuid, range, ' MB', 'multi_iface');
-    await loadChartMultiKey('chartNetTx',     'net_tx_bytes_delta',  uuid, range, ' MB', 'multi_iface');
-    await loadChartMultiKey('chartNetErrors', 'net_rx_errors',       uuid, range, ' err', 'multi_iface');
+    // Network combined chart (RX + TX + Errors on one chart with dual Y-axes)
+    await loadChartNetworkCombined('chartNetCombined', uuid, range);
     // Uptime chart
     await loadChart('chartUptime', 'uptime_s', uuid, range, ' days', 'rgba(168, 85, 247, 0.8)', 'rgba(168, 85, 247, 0.15)');
     // Container multi-series charts (no multi param needed - backend detects by prefix)
@@ -575,6 +561,194 @@ async function loadChartMemSwap(canvasId, uuid, range) {
         });
     } catch (e) {
         console.error('Failed to load memory chart:', e);
+        ctx.parentElement.innerHTML = '<div class="flex items-center justify-center h-48 text-gray-500 text-sm">No data available</div>';
+    }
+}
+
+// Load combined Network chart (RX + TX + Errors) with dual Y-axes
+async function loadChartNetworkCombined(canvasId, uuid, range) {
+    var ctx = document.getElementById(canvasId);
+    if (!ctx) return;
+
+    try {
+        // Fetch all three metrics in parallel
+        var [rxResp, txResp, errResp] = await Promise.all([
+            fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=net_rx_bytes_delta&range=${range}&multi_iface=true`),
+            fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=net_tx_bytes_delta&range=${range}&multi_iface=true`),
+            fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=net_rx_errors&range=${range}&multi_iface=true`),
+        ]);
+        var [rxData, txData, errData] = await Promise.all([
+            rxResp.json(), txResp.json(), errResp.json(),
+        ]);
+
+        if (chartInstances[canvasId]) {
+            chartInstances[canvasId].destroy();
+        }
+
+        // Shared labels (same time buckets)
+        var labels = rxData.labels;
+
+        // Assign colors from GPU_COLORS palette: green=0, sky=5, red=3
+        var NET_COLORS = [
+            { border: 'rgba(34, 197, 94, 0.9)',  bg: 'rgba(34, 197, 94, 0.1)'  },   // green - RX
+            { border: 'rgba(14, 165, 233, 0.9)',  bg: 'rgba(14, 165, 233, 0.1)'  },   // blue  - TX
+            { border: 'rgba(239, 68, 68, 0.9)',   bg: 'rgba(239, 68, 68, 0.5)'  },   // red   - Errors
+        ];
+
+        // Build datasets: RX and TX on left Y-axis (MB), Errors on right Y-axis (count)
+        var datasets = [];
+
+        // RX datasets — solid lines, left axis
+        rxData.datasets.forEach(function(ds, i) {
+            var color = NET_COLORS[0];
+            datasets.push({
+                label: ds.label + ' RX',
+                data: ds.data,
+                borderColor: color.border,
+                backgroundColor: color.bg,
+                borderWidth: 2,
+                fill: false,
+                tension: 0.0,
+                pointRadius: 0,
+                pointHitRadius: 10,
+                spanGaps: false,
+                yAxisID: 'y',
+                borderDash: [],  // solid
+            });
+        });
+
+        // TX datasets — dashed lines, left axis
+        txData.datasets.forEach(function(ds, i) {
+            var color = NET_COLORS[1];
+            datasets.push({
+                label: ds.label + ' TX',
+                data: ds.data,
+                borderColor: color.border,
+                backgroundColor: color.bg,
+                borderWidth: 2,
+                fill: false,
+                tension: 0.0,
+                pointRadius: 0,
+                pointHitRadius: 10,
+                spanGaps: false,
+                yAxisID: 'y',
+                borderDash: [6, 3],  // dashed
+            });
+        });
+
+        // Errors datasets — bars, right axis
+        errData.datasets.forEach(function(ds, i) {
+            var color = NET_COLORS[2];
+            datasets.push({
+                label: ds.label + ' Err',
+                data: ds.data,
+                borderColor: color.border,
+                backgroundColor: color.bg,
+                borderWidth: 0,
+                fill: false,
+                tension: 0.0,
+                pointRadius: 0,
+                pointHitRadius: 10,
+                spanGaps: false,
+                yAxisID: 'y1',
+                type: 'bar',
+                barThickness: 2,
+                barPercentage: 0.9,
+                categoryPercentage: 0.8,
+            });
+        });
+
+        chartInstances[canvasId] = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: datasets,
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: true,
+                        labels: {
+                            color: '#9ca3af',
+                            boxWidth: 12,
+                            padding: 6,
+                            font: { size: 10 },
+                            generateLabels: function(chart) {
+                                var original = Chart.defaults.plugins.legend.labels.generateLabels(chart);
+                                return original.map(function(label) {
+                                    if (label.text) {
+                                        var spaceIdx = label.text.indexOf(' ');
+                                        if (spaceIdx > 0) {
+                                            var ifacePart = label.text.substring(0, spaceIdx);
+                                            var dirPart = label.text.substring(spaceIdx + 1);
+                                            // Shorten interface labels: "ens33 192.168.1.10 RX" → "ens33 … RX"
+                                            var parts = ifacePart.split(' ');
+                                            if (parts[0].length > 8) {
+                                                label.text = parts[0].substring(0, 8) + '…' + (parts[1] ? ' ' + parts[1] : '') + ' ' + dirPart;
+                                            }
+                                        }
+                                    }
+                                    return label;
+                                });
+                            }
+                        },
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        callbacks: {
+                            label: function(ctx) {
+                                var val = ctx.parsed.y;
+                                if (val === null) return ctx.dataset.label + ': —';
+                                if (ctx.dataset.yAxisID === 'y1') {
+                                    return ctx.dataset.label + ': ' + val + ' err';
+                                }
+                                return ctx.dataset.label + ': ' + val.toFixed(2) + ' MB';
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { color: 'rgba(255,255,255,0.05)' },
+                        ticks: {
+                            color: '#9ca3af',
+                            maxTicksLimit: 12,
+                            maxRotation: 0,
+                            autoSkip: true,
+                            callback: function(val, index) {
+                                return index % 60 === 0 ? this.getLabelForValue(val) : '';
+                            }
+                        }
+                    },
+                    y: {
+                        type: 'linear',
+                        position: 'left',
+                        grid: { color: 'rgba(255,255,255,0.05)' },
+                        ticks: { color: '#9ca3af' },
+                        beginAtZero: true,
+                        title: { display: true, text: 'MB', color: '#6b7280', font: { size: 11 } },
+                    },
+                    y1: {
+                        type: 'linear',
+                        position: 'right',
+                        grid: { drawOnChartArea: false },
+                        ticks: { color: '#f87171' },
+                        beginAtZero: true,
+                        title: { display: true, text: 'Errors', color: '#f87171', font: { size: 11 } },
+                    },
+                },
+                interaction: {
+                    mode: 'nearest',
+                    axis: 'x',
+                    intersect: false
+                }
+            }
+        });
+    } catch (e) {
+        console.error('Failed to load network chart:', e);
         ctx.parentElement.innerHTML = '<div class="flex items-center justify-center h-48 text-gray-500 text-sm">No data available</div>';
     }
 }

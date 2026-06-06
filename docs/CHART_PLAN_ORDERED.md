@@ -47,10 +47,11 @@
 
 *Implementation: Uses loadChartMultiKey() with multi_disk=true parameter in ChartDataView to return one dataset per unique device, labeled with device and mountpoint.*
 
-### Phase 5: Network ✅ COMPLETE (Multi-interface implemented)
-- Network RX Rate (per interface) ✅
-- Network TX Rate (per interface) ✅
-- Network Errors (per interface) ✅
+### Phase 5: Network ✅ COMPLETE (combined chart)
+- Network Traffic (RX + TX + Errors) ✅ (single combined chart with dual Y-axes via loadChartNetworkCombined)
+- Left Y-axis: RX (solid green) and TX (dashed blue) in MB
+- Right Y-axis: Errors (red bars) in count
+- One dataset per interface with multi_iface=true
 
 *Implementation: Uses loadChartMultiKey() with multi_iface=true parameter in ChartDataView to return one dataset per unique interface, labeled with interface and IPv4 address. Byte deltas converted to MB/s.*
 
@@ -113,7 +114,7 @@ All charts proposed in the ADDITIONAL_CHARTS_PROPOSAL.md have been implemented a
 **Multi-series Functionality Verified:**
 - GPU charts: One chart per metric with multiple datasets (one per GPU)
 - Storage charts: One chart per metric with multiple datasets (one per disk)
-- Network charts: One chart per metric with multiple datasets (one per interface)
+- Network charts: combined RX+TX+Errors into one chart with dual Y-axes
 - Docker charts: One chart per metric with multiple datasets (one per container)
 - AI Process charts: One chart per metric with multiple datasets (one per process)
 

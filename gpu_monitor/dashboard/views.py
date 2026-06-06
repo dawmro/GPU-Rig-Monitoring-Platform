@@ -1,12 +1,83 @@
-from django.shortcuts import render, get_object_or_404
+from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
 from django.http import Http404
-from django.utils import timezone
-from datetime import timedelta
 from django.views.decorators.http import require_POST
 
 from rigs.models import Rig
 from metrics_app.models import MetricSnapshot, LatestSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, ErrorEvent
+
+
+def _fetch_rig_metrics(uuid):
+    """Fetch the latest rig metrics for Live Metrics display.
+
+    Always returns the latest metric per unique device (by gpu_uuid,
+    device path, or interface name) regardless of age.  This ensures
+    the user always sees the last known rig configuration (GPUs,
+    storage devices, network interfaces) even when the rig is offline.
+
+    Returns a dict with keys:
+        gpu_metrics, storage_metrics, network_metrics,
+        docker_metrics, recent_errors, latest_metric_snapshot, snapshot
+    """
+    try:
+        snapshot = LatestSnapshot.objects.get(rig_uuid=str(uuid))
+    except LatestSnapshot.DoesNotExist:
+        snapshot = None
+
+    # GPU: latest metric per unique GPU (dedup by gpu_uuid)
+    gpu_metrics = []
+    seen_gpus = set()
+    for gpu in GPUMetric.objects.filter(rig_uuid=str(uuid)).order_by('-timestamp'):
+        if gpu.gpu_uuid not in seen_gpus:
+            seen_gpus.add(gpu.gpu_uuid)
+            gpu_metrics.append(gpu)
+
+    # Storage: latest metric per unique device (normalize path for dedup)
+    storage_metrics = []
+    seen_devices = set()
+    for s in StorageMetric.objects.filter(rig_uuid=str(uuid)).order_by('-timestamp'):
+        norm_device = s.device.rstrip('/\\') if s.device else ''
+        if norm_device not in seen_devices:
+            seen_devices.add(norm_device)
+            storage_metrics.append(s)
+
+    # Network: latest metric per unique interface
+    network_metrics = []
+    seen_interfaces = set()
+    for n in NetworkMetric.objects.filter(rig_uuid=str(uuid)).order_by('-timestamp'):
+        if n.interface not in seen_interfaces:
+            seen_interfaces.add(n.interface)
+            network_metrics.append(n)
+
+    # Docker containers (last 20)
+    docker_metrics = list(
+        DockerContainerMetric.objects.filter(rig_uuid=str(uuid))
+        .order_by('-timestamp')[:20]
+    )
+
+    # Recent errors
+    recent_errors = list(
+        ErrorEvent.objects.filter(rig_uuid=str(uuid))
+        .order_by('-last_seen')[:5]
+    )
+
+    # Latest MetricSnapshot for motherboard/software JSON
+    try:
+        latest_metric_snapshot = MetricSnapshot.objects.filter(
+            rig_uuid=str(uuid)
+        ).order_by('-timestamp').first()
+    except MetricSnapshot.DoesNotExist:
+        latest_metric_snapshot = None
+
+    return {
+        'snapshot': snapshot,
+        'gpu_metrics': gpu_metrics,
+        'storage_metrics': storage_metrics,
+        'network_metrics': network_metrics,
+        'docker_metrics': docker_metrics,
+        'recent_errors': recent_errors,
+        'metric_snapshot': latest_metric_snapshot,
+    }
 
 
 @login_required
@@ -74,89 +145,11 @@ def rig_detail(request, uuid):
     if rig.owner_id != request.user.id and not request.user.is_staff:
         raise Http404
 
-    try:
-        snapshot = LatestSnapshot.objects.get(rig_uuid=str(uuid))
-    except LatestSnapshot.DoesNotExist:
-        snapshot = None
+    context = _fetch_rig_metrics(uuid)
+    context['rig'] = rig
+    context['is_data_stale'] = rig.status in [Rig.Status.OFFLINE, Rig.Status.STALE]
 
-    # Fetch related metrics from new models (same query as htmx_metrics)
-    gpu_metrics = []
-    storage_metrics = []
-    network_metrics = []
-    docker_metrics = []
-    recent_errors = []
-    latest_metric_snapshot = None
-    is_data_stale = False  # Flag to indicate if displayed data is stale
-
-    if snapshot:
-        # Determine if we should show stale data (for offline rigs) or only recent data
-        # Show stale data if rig is OFFLINE or STALE, otherwise only show recent data (last 1 hour)
-        show_stale_data = rig.status in ['OFFLINE', 'STALE']
-        time_limit = None if show_stale_data else timezone.now() - timedelta(hours=1)
-        
-        if show_stale_data:
-            is_data_stale = True
-
-        # Get latest GPU metric per unique GPU (by gpu_uuid) - similar to storage/network dedup
-        seen_gpus = set()
-        gpu_query = GPUMetric.objects.filter(rig_uuid=str(uuid))
-        if time_limit:
-            gpu_query = gpu_query.filter(timestamp__gte=time_limit)
-        for gpu in gpu_query.order_by('-timestamp'):
-            if gpu.gpu_uuid not in seen_gpus:
-                seen_gpus.add(gpu.gpu_uuid)
-                gpu_metrics.append(gpu)
-
-        seen_devices = set()
-        storage_query = StorageMetric.objects.filter(rig_uuid=str(uuid))
-        if time_limit:
-            storage_query = storage_query.filter(timestamp__gte=time_limit)
-        for s in storage_query.order_by('-timestamp'):
-            # Normalize device path: strip trailing slashes/backslashes for dedup
-            norm_device = s.device.rstrip('/\\\\') if s.device else ''
-            if norm_device not in seen_devices:
-                seen_devices.add(norm_device)
-                storage_metrics.append(s)
-
-        # Get latest network metric per unique interface
-        seen_interfaces = set()
-        network_query = NetworkMetric.objects.filter(rig_uuid=str(uuid))
-        if time_limit:
-            network_query = network_query.filter(timestamp__gte=time_limit)
-        for n in network_query.order_by('-timestamp'):
-            if n.interface not in seen_interfaces:
-                seen_interfaces.add(n.interface)
-                network_metrics.append(n)
-
-        docker_metrics = DockerContainerMetric.objects.filter(
-            rig_uuid=str(uuid)
-        )
-        if time_limit:
-            docker_metrics = docker_metrics.filter(timestamp__gte=time_limit)
-        docker_metrics = docker_metrics.order_by('-timestamp')[:20]
-
-        recent_errors = ErrorEvent.objects.filter(
-            rig_uuid=str(uuid)
-        ).order_by('-last_seen')[:5]
-
-        # Get the latest MetricSnapshot for motherboard/software JSON data
-        try:
-            latest_metric_snapshot = MetricSnapshot.objects.filter(
-                rig_uuid=str(uuid)
-            ).order_by('-timestamp').first()
-        except MetricSnapshot.DoesNotExist:
-            pass
-
-    return render(request, 'dashboard/rig_detail.html', {
-        'rig': rig,
-        'snapshot': snapshot,
-        'gpu_metrics': gpu_metrics,
-        'storage_metrics': storage_metrics,
-        'network_metrics': network_metrics,
-        'docker_metrics': docker_metrics,
-        'recent_errors': recent_errors,
-        'metric_snapshot': latest_metric_snapshot,
-    })
+    return render(request, 'dashboard/rig_detail.html', context)
 
 
 @login_required
@@ -166,92 +159,11 @@ def htmx_metrics(request, uuid):
     if rig.owner_id != request.user.id and not request.user.is_staff:
         raise Http404
 
-    try:
-        snapshot = LatestSnapshot.objects.get(rig_uuid=str(uuid))
-    except LatestSnapshot.DoesNotExist:
-        snapshot = None
+    context = _fetch_rig_metrics(uuid)
+    context['rig'] = rig
+    context['is_data_stale'] = rig.status in [Rig.Status.OFFLINE, Rig.Status.STALE]
 
-    # Fetch related metrics from new models
-    gpu_metrics = []
-    storage_metrics = []
-    network_metrics = []
-    docker_metrics = []
-    recent_errors = []
-    latest_metric_snapshot = None
-    is_data_stale = False  # Flag to indicate if displayed data is stale
-
-    if snapshot:
-        # Determine if we should show stale data (for offline rigs) or only recent data
-        # Show stale data if rig is OFFLINE or STALE, otherwise only show recent data (last 1 hour)
-        show_stale_data = rig.status in ['OFFLINE', 'STALE']
-        time_limit = None if show_stale_data else timezone.now() - timedelta(hours=1)
-        
-        if show_stale_data:
-            is_data_stale = True
-
-        # Get latest GPU metric per unique GPU (by gpu_uuid) - similar to storage/network dedup
-        seen_gpus = set()
-        gpu_query = GPUMetric.objects.filter(rig_uuid=str(uuid))
-        if time_limit:
-            gpu_query = gpu_query.filter(timestamp__gte=time_limit)
-        for gpu in gpu_query.order_by('-timestamp'):
-            if gpu.gpu_uuid not in seen_gpus:
-                seen_gpus.add(gpu.gpu_uuid)
-                gpu_metrics.append(gpu)
-
-        # Get latest storage metric per unique device (normalize path for dedup)
-        storage_metrics = []
-        seen_devices = set()
-        storage_query = StorageMetric.objects.filter(rig_uuid=str(uuid))
-        if time_limit:
-            storage_query = storage_query.filter(timestamp__gte=time_limit)
-        for s in storage_query.order_by('-timestamp'):
-            # Normalize device path: strip trailing slashes/backslashes for dedup
-            norm_device = s.device.rstrip('/\\\\') if s.device else ''
-            if norm_device not in seen_devices:
-                seen_devices.add(norm_device)
-                storage_metrics.append(s)
-
-        # Get latest network metric per unique interface
-        network_metrics = []
-        seen_interfaces = set()
-        network_query = NetworkMetric.objects.filter(rig_uuid=str(uuid))
-        if time_limit:
-            network_query = network_query.filter(timestamp__gte=time_limit)
-        for n in network_query.order_by('-timestamp'):
-            if n.interface not in seen_interfaces:
-                seen_interfaces.add(n.interface)
-                network_metrics.append(n)
-
-        docker_metrics = DockerContainerMetric.objects.filter(
-            rig_uuid=str(uuid)
-        )
-        if time_limit:
-            docker_metrics = docker_metrics.filter(timestamp__gte=time_limit)
-        docker_metrics = docker_metrics.order_by('-timestamp')[:20]
-
-        recent_errors = ErrorEvent.objects.filter(
-            rig_uuid=str(uuid)
-        ).order_by('-last_seen')[:5]
-
-        # Get the latest MetricSnapshot for motherboard/software JSON data
-        try:
-            latest_metric_snapshot = MetricSnapshot.objects.filter(
-                rig_uuid=str(uuid)
-            ).order_by('-timestamp').first()
-        except MetricSnapshot.DoesNotExist:
-            pass
-
-    return render(request, 'dashboard/_metrics_cards.html', {
-        'rig': rig,
-        'snapshot': snapshot,
-        'gpu_metrics': gpu_metrics,
-        'storage_metrics': storage_metrics,
-        'network_metrics': network_metrics,
-        'docker_metrics': docker_metrics,
-        'recent_errors': recent_errors,
-        'metric_snapshot': latest_metric_snapshot,
-    })
+    return render(request, 'dashboard/_metrics_cards.html', context)
 
 
 @login_required

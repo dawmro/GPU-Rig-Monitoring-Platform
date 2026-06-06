@@ -59,7 +59,7 @@
         Utilization: {% if snapshot.cpu_utilization_pct != None %}{{ snapshot.cpu_utilization_pct|floatformat:1 }}%{% else %}—{% endif %}
     </div>
     {% else %}
-    <div class="text-gray-500">No data{% if is_data_stale %} (rig offline){% endif %}</div>
+    <div class="text-gray-500">No data</div>
     {% endif %}
 </div>
 
@@ -108,10 +108,10 @@
     </div>
     {% endif %}
     {% else %}
-    <div class="text-gray-500">No data{% if is_data_stale %} (rig offline){% endif %}</div>
+    <div class="text-gray-500">No data</div>
     {% endif %}
 </div>
-<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- ════════════════════════════════════════════════════════════════ -->
 <!-- Storage (per device) -->
 <!-- ════════════════════════════════════════════════════════════════ -->
 <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
@@ -157,11 +157,11 @@
         </div>
         {% endfor %}
     {% else %}
-    <div class="text-gray-500">No data{% if is_data_stale %} (rig offline){% endif %}</div>
+    <div class="text-gray-500">No data</div>
     {% endif %}
 </div>
 
-<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- ════════════════════════════════════════════════════════════════ -->
 <!-- GPU (per device) -->
 <!-- ════════════════════════════════════════════════════════════════ -->
 <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
@@ -236,10 +236,10 @@
         </div>
         {% endfor %}
     {% else %}
-    <div class="text-gray-500">No GPU{% if is_data_stale %} (rig offline){% endif %}</div>
+    <div class="text-gray-500">No GPU</div>
     {% endif %}
 </div>
-<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- ════════════════════════════════════════════════════════════════ -->
 <!-- Network (per interface) -->
 <!-- ════════════════════════════════════════════════════════════════ -->
 <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
@@ -285,11 +285,11 @@
         </table>
     </div>
     {% else %}
-    <div class="text-gray-500">No data{% if is_data_stale %} (rig offline){% endif %}</div>
+    <div class="text-gray-500">No data</div>
     {% endif %}
 </div>
 
-<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- ════════════════════════════════════════════════════════════════ -->
 <!-- Motherboard -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
 {% if metric_snapshot.motherboard_json %}

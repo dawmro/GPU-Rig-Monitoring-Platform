@@ -5,6 +5,7 @@ from django.views.decorators.http import require_POST
 
 from rigs.models import Rig, RigTag
 from metrics_app.models import MetricSnapshot, LatestSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, ErrorEvent
+from audit.middleware import log_audit_event
 
 
 def _fetch_rig_metrics(uuid):

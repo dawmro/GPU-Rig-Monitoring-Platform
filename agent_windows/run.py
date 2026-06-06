@@ -598,6 +598,7 @@ def send_payload(config, payload):
     headers = {
         'Content-Type': 'application/json',
         'X-API-Key': config['api_key'],
+        'X-Rig-UUID': config['rig_uuid'],
         'User-Agent': f'rig-monitor-agent/{__version__}',
     }
 

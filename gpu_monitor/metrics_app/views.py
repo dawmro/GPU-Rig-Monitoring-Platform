@@ -21,11 +21,19 @@ logger = logging.getLogger(__name__)
 
 
 class IngestRateThrottle(SimpleRateThrottle):
+    """Per-rig rate throttle — each rig_uuid gets its own budget."""
+
     scope = 'ingest'
 
     def get_cache_key(self, request, view):
-        key = request.headers.get('X-API-Key', '')
-        return f'ingest_{key[:16]}'
+        # Throttle per rig_uuid so N rigs each get the full rate
+        rig_uuid = ''
+        if hasattr(request, 'data') and isinstance(request.data, dict):
+            rig_uuid = str(request.data.get('rig_uuid', ''))
+        if not rig_uuid:
+            # Fallback to IP for unauthenticated requests
+            rig_uuid = self.get_ident(request)
+        return f'ingest_{rig_uuid}'
 
 
 @method_decorator(csrf_exempt, name='dispatch')
@@ -33,6 +41,10 @@ class IngestView(APIView):
     """POST /api/v1/ingest/ — Accept telemetry payload from agents."""
     authentication_classes = [APIKeyAuthentication]
     throttle_classes = [IngestRateThrottle]
+
+    # Timestamp sanity check thresholds
+    MAX_FUTURE_S = 300   # 5 minutes
+    MAX_PAST_S = 3600    # 1 hour
 
     def post(self, request):
         user = request.user
@@ -45,6 +57,31 @@ class IngestView(APIView):
         rig_uuid = str(data.get('rig_uuid', ''))
         if not rig_uuid:
             return Response({'status': 'error', 'message': 'Missing rig_uuid'}, status=400)
+
+        # ── Timestamp sanity check ──────────────────────────────────────
+        ts = data.get('timestamp')
+        if ts is not None:
+            try:
+                from datetime import datetime, timezone as dt_timezone
+                from django.utils.dateparse import parse_datetime
+                parsed = parse_datetime(str(ts))
+                if parsed is not None:
+                    if parsed.tzinfo is None:
+                        parsed = parsed.replace(tzinfo=dt_timezone.utc)
+                    now = datetime.now(dt_timezone.utc)
+                    diff = abs((parsed - now).total_seconds())
+                    if diff > self.MAX_PAST_S:
+                        return Response(
+                            {'status': 'error', 'message': f'Timestamp too old: {ts}'},
+                            status=400,
+                        )
+                    if parsed > now + __import__('datetime').timedelta(seconds=self.MAX_FUTURE_S):
+                        return Response(
+                            {'status': 'error', 'message': f'Timestamp too far in future: {ts}'},
+                            status=400,
+                        )
+            except Exception:
+                pass  # If parsing fails, let it through — process_ingest will handle it
 
         # Check ownership
         rig_name = data.get('rig_name', '').strip()

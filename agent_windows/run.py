@@ -828,6 +828,7 @@ def create_windows_task():
         '/tr', arguments,
         '/sc', 'minute',
         '/mo', '1',
+        '/ru', 'SYSTEM',
         '/f',
     ]
 

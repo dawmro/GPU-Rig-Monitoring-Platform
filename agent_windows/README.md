@@ -103,9 +103,10 @@ You should see JSON log output. On success:
 
 > **Note:** The agent is designed to run every 60 seconds (matching the Linux cron schedule). Windows Task Scheduler's minimum interval is 1 minute. The `--install-task` flag configures 1-minute intervals, which is the closest practical equivalent. The built-in file lock prevents overlapping runs.
 
-**Option A — Automatic (run as Administrator):**
+**Option A — Automatic (run CMD as Administrator):**
 
-```powershell
+```cmd
+call venv/Scripts/activate
 python run.py --install-task
 ```
 

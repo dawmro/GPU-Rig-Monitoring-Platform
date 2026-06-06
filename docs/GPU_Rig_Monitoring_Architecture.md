@@ -1,8 +1,8 @@
 # GPU Rig Monitoring Platform — Architecture Document
 
-**Version:** 1.1
+**Version:** 1.2
 **Status:** Implemented — Living Architecture Reference
-|**Last Updated:** 2026-06-07
+**Last Updated:** 2026-06-07
 
 ---
 
@@ -150,8 +150,8 @@ debug_mode: false         # Verbose logging
 {
   "rig_uuid": "UUIDv4",
   "rig_name": "my-server",
-  "schema_version": "1.1",
-  "agent_version": "1.1.0",
+  "schema_version": "1.2",
+  "agent_version": "1.2.0",
   "timestamp": "2026-06-07T19:54:06Z",
   "metrics": {
     "cpu": {
@@ -207,6 +207,22 @@ debug_mode: false         # Verbose logging
         "power_limit_w": 170.0
       }
     ],
+    "gpu_processes": [
+      {
+        "gpu_index": 0,
+        "pid": 2247,
+        "type": "G",
+        "name": "/usr/lib/xorg/Xorg",
+        "gpu_mem_mb": 6
+      },
+      {
+        "gpu_index": 0,
+        "pid": 3199,
+        "type": "C",
+        "name": "./srbminer_custom_bin",
+        "gpu_mem_mb": 2936
+      }
+    ],
     "ai_processes": [
       {
         "process_name": "ollama",
@@ -251,15 +267,11 @@ debug_mode: false         # Verbose logging
 }
 ```
 
-**Changelog from schema 1.0 → 1.1:**
-- Removed `inventory` top-level key (was a 100% duplicate of `metrics`, wasting ~50% of payload size)
-- Added `motherboard` as a top-level key (previously nested inside `inventory`)
-- Each collector now called once per heartbeat (was twice)
-- All metric fields preserved: `gpu_uuid`, `model`, `mem_total_mb`, `capacity_bytes`, etc.
-- Added `ai_processes[]` array for per-process GPU/CPU tracking
-- Added `docker_containers[].cpu_pct`, `mem_usage_bytes`, `mem_limit_bytes` for container resource tracking
-- Added `network[].rx_errors`, `tx_errors` for network error tracking
-- Added `software.nvidia_driver`, `docker_version` for driver/version tracking
+**Changelog from schema 1.1 → 1.2:**
+- Added `gpu_processes[]` array with per-GPU process data from nvidia-smi
+- Each process: `gpu_index`, `pid`, `type` (C/G/C+G), `name`, `gpu_mem_mb`
+- Added `GPUProcessMetric` model for server-side storage (latest snapshot only, delete-before-insert pattern)
+- Server deduplicates by deleting all old process rows per rig before inserting new ones
 
 ### 3.4 Transport
 
@@ -271,8 +283,8 @@ debug_mode: false         # Verbose logging
 
 | Agent | File | Version | Schema | Platform | Scheduling |
 |-------|------|---------|--------|----------|------------|
-| Linux | `agent/run.py` | 1.1.0 | 1.1 | Any Linux, VMware NAT | `cron` every 60s with `flock` |
-| Windows | `agent_windows/run.py` | 1.2.0-win | 1.1 | Windows 10/11 | Task Scheduler with `pythonw.exe` (hidden window) |
+| Linux | `agent/run.py` | 1.2.0 | 1.2 | Any Linux, VMware NAT | `cron` every 60s with `flock` |
+| Windows | `agent_windows/run.py` | 1.3.0-win | 1.2 | Windows 10/11 | Task Scheduler with `pythonw.exe` (hidden window) |
 
 **Versioning rules:**
 - `agent_version` (e.g. `1.1.0`): incremented for agent-side changes (collectors, payload format, bug fixes). Format: `MAJOR.MINOR.PATCH`.
@@ -311,10 +323,12 @@ POST /api/v1/ingest/
   → CsrfViewMiddleware (skipped via @csrf_exempt on IngestView)
   → APIKeyAuthentication validates X-API-Key
   → DRF throttle (per-key rate limit)
-  → IngestSerializer validation (schema version 1.0 or 1.1)
+  → IngestSerializer validation (schema version 1.0, 1.1, or 1.2)
   → process_ingest() in transaction.atomic():
       - Upsert MetricSnapshot (cpu, memory, status fields; motherboard/software as JSON)
       - Upsert GPUMetric per GPU (gpu_index = 0, 1, ...)
+      - Delete + recreate GPUProcessMetric per process (latest snapshot only)
+      - Upsert StorageMetric per disk (with path-normalized dedup)
       - Upsert StorageMetric per disk (with path-normalized dedup)
       - Upsert NetworkMetric per interface (with rx/tx delta calculation)
       - Upsert DockerContainerMetric per container (with cpu%, memory stats)
@@ -429,13 +443,15 @@ Plus one manual-refresh region:
 
 The rig detail page has three tabs:
 
-1. **Live Metrics** — cards with CPU%, memory bar, GPU model/temp/util/power/vRAM, Docker container count, storage disks, recent errors
+1. **Live Metrics** — cards with CPU%, memory bar, GPU model/index/temp/util/power/vRAM, GPU Processes (per-process: name, type badge C/G/C+G, memory), Docker container count, storage disks, recent errors
 2. **Historical Charts** — Combined chart suite: GPU (Temperature, Utilization, Memory, Power, Fan Speed — multi-GPU), CPU (Utilization, Temperature, Load Average), Memory & Swap (combined single chart, 3 datasets), Disk Usage (multi-disk), Network Traffic (combined RX/TX/Errors, dual Y-axes), Container CPU/Memory (multi-container), AI Process GPU Memory, Uptime, Error Frequency — all implemented as Chart.js charts with multi-series support, featuring a ↻ Refresh button in the tab header
 3. **Errors** — recent system errors from journalctl/Windows Event Log
 
 ### 5.5 Data Deduplication
 
 Storage metrics are deduplicated by device: the view queries the latest `StorageMetric` per unique `device` path, preventing duplicate entries when the agent reports the same disk multiple times within the window.
+
+GPU process metrics use a **delete-before-insert** pattern: all existing `GPUProcessMetric` rows for the rig are deleted before inserting the latest snapshot. This ensures only the current process list is stored — no historical process data is needed. The `unique_together` constraint on `(rig_uuid, timestamp, gpu_index, pid)` provides a safety net but is rarely triggered since old rows are deleted first.
 
 Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the agent misses a heartbeat.
 
@@ -453,7 +469,8 @@ Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the age
 | `rigs_rigtag` | rigs | Tags (name, color) |
 | `rigs_rig_tags` | rigs | M2M through table |
 | `metrics_metricsnapshot` | metrics_app | Per-heartbeat metrics (cpu, memory, status fields inline; motherboard/software as JSON) |
-| `metrics_gpumetric` | metrics_app | Per-GPU metrics (temp, util, mem, power; FK to snapshot) |
+|| `metrics_gpumetric` | metrics_app | Per-GPU metrics (temp, util, mem, power; FK to snapshot) |
+| `metrics_gpu_process` | metrics_app | Per-GPU-process metrics (gpu_index, pid, name, type, mem; latest snapshot only) |
 | `metrics_storagemetric` | metrics_app | Per-disk metrics (capacity, usage%, temp, SMART health) |
 | `metrics_networkmetric` | metrics_app | Per-interface metrics (rx/tx bytes, rx/tx deltas, speed, errors) |
 | `metrics_dockercontainermetric` | metrics_app | Per-container metrics (name, image, status, restarts, cpu%, memory) |
@@ -469,6 +486,7 @@ Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the age
 | Table | Constraint |
 |-------|------------|
 | `metrics_gpumetric` | `UNIQUE(rig_uuid, timestamp, gpu_index)` |
+| `metrics_gpu_process` | `UNIQUE(rig_uuid, timestamp, gpu_index, pid)` |
 | `metrics_storagemetric` | `UNIQUE(rig_uuid, timestamp, device)` |
 | `metrics_networkmetric` | `UNIQUE(rig_uuid, timestamp, interface)` |
 | `metrics_dockercontainermetric` | `UNIQUE(rig_uuid, timestamp, name)` |

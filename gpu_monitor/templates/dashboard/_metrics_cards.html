@@ -222,13 +222,12 @@
                     {{ gpu.mem_used_mb }} / {{ gpu.mem_total_mb }} MB
                     {% if gpu.mem_util_pct != None %}({{ gpu.mem_util_pct|floatformat:1 }}%){% endif %}
                 </span>
-            </div>
-            {% endif %}
-            {% if gpu.mem_free_mb != None %}
-            <div class="text-xs text-gray-500 mb-1">Free: {{ gpu.mem_free_mb }} MB</div>
-            {% endif %}
-            {% endif %}
-            {% if gpu.power_draw_w != None %}
+                </div>
+                {% if gpu.mem_free_mb != None %}
+                <div class="text-xs text-gray-500 mb-1">Free: {{ gpu.mem_free_mb }} MB</div>
+                {% endif %}
+                {% endif %}
+                {% if gpu.power_draw_w != None %}
             <div class="text-xs text-gray-500">
                 Power: <span class="text-gray-400">{{ gpu.power_draw_w|floatformat:1 }}W</span>
                 {% if gpu.power_limit_w %} / {{ gpu.power_limit_w|floatformat:0 }}W{% endif %}

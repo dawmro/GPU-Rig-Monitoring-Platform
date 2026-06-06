@@ -13,13 +13,13 @@
 || 6 | CPU Temperature | `cpu_temp_c` | MetricSnapshot | ✅ Works |
 || 7 | Memory Usage | `mem_used_bytes` | MetricSnapshot | ✅ Fixed |
 
-## New Charts Added This Session (3 new)
+## Memory & Swap Charts
 
-||| # | Chart | Metric | Source | Status |
-||---|---|-------|--------|--------|
-|| 8 | Memory Free | `mem_free_bytes` | MetricSnapshot | ✅ New |
-|| 9 | Swap Usage | `swap_used_bytes` | MetricSnapshot | ✅ New |
-|| 10 | CPU Load Average | `cpu_load_avg_json` | MetricSnapshot | ✅ New (3-line) |
+| # | Chart | Metrics | Source | Status |
+|---|---|---|---|---|
+| 8 | Memory & Swap (combined) | `mem_used_bytes`, `mem_free_bytes`, `swap_used_bytes` | MetricSnapshot | ✅ Combined |
+
+*Implementation: Uses loadChartMemSwap() with multi_mem=true parameter to return all 3 datasets in one request. Blue filled area = Memory Used, green = Memory Free, red = Swap Used. Shared Y-axis in GB.*
 
 ## Planned Order (as requested)
 
@@ -37,10 +37,9 @@
 
 *Implementation: Uses loadChartMultiGpu() with multi_gpu=true parameter in ChartDataView to return one dataset per GPU UUID, labeled with GPU index and model.*
 
-### Phase 3: Memory & Swap ✅ COMPLETE
-- Memory Usage ✅
-- Memory Free ✅
-- Swap Usage ✅
+### Phase 3: Memory & Swap ✅ COMPLETE (combined chart)
+- Memory Used + Memory Free + Swap Usage ✅ (single combined chart via loadChartMemSwap with multi_mem=true)
+- Chart shows all 3 datasets with shared Y-axis (blue filled=used, green dashed=free, red=swap)
 
 ### Phase 4: Storage ✅ COMPLETE (Multi-disk implemented)
 - Disk Usage % (all disks, not just first) ✅

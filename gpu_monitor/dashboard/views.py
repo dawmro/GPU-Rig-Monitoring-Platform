@@ -86,23 +86,31 @@ def rig_detail(request, uuid):
     docker_metrics = []
     recent_errors = []
     latest_metric_snapshot = None
+    is_data_stale = False  # Flag to indicate if displayed data is stale
 
     if snapshot:
+        # Determine if we should show stale data (for offline rigs) or only recent data
+        # Show stale data if rig is OFFLINE or STALE, otherwise only show recent data (last 1 hour)
+        show_stale_data = rig.status in ['OFFLINE', 'STALE']
+        time_limit = None if show_stale_data else timezone.now() - timedelta(hours=1)
+        
+        if show_stale_data:
+            is_data_stale = True
+
         # Get latest GPU metric per unique GPU (by gpu_uuid) - similar to storage/network dedup
         seen_gpus = set()
-        for gpu in GPUMetric.objects.filter(
-            rig_uuid=str(uuid),
-            timestamp__gte=timezone.now() - timedelta(hours=1)
-        ).order_by('-timestamp'):
+        gpu_query = GPUMetric.objects.filter(rig_uuid=str(uuid))
+        if time_limit:
+            gpu_query = gpu_query.filter(timestamp__gte=time_limit)
+        for gpu in gpu_query.order_by('-timestamp'):
             if gpu.gpu_uuid not in seen_gpus:
                 seen_gpus.add(gpu.gpu_uuid)
                 gpu_metrics.append(gpu)
 
         seen_devices = set()
-        for s in StorageMetric.objects.filter(
-            rig_uuid=str(uuid),
-            timestamp__gte=timezone.now() - timedelta(hours=1)
-        ).order_by('-timestamp'):
+        for s in StorageMetric.objects.filter(rig_uuid=str(uuid)):
+            if time_limit:
+                s = s.filter(timestamp__gte=time_limit)
             # Normalize device path: strip trailing slashes/backslashes for dedup
             norm_device = s.device.rstrip('/\\\\') if s.device else ''
             if norm_device not in seen_devices:
@@ -111,18 +119,19 @@ def rig_detail(request, uuid):
 
         # Get latest network metric per unique interface
         seen_interfaces = set()
-        for n in NetworkMetric.objects.filter(
-            rig_uuid=str(uuid),
-            timestamp__gte=timezone.now() - timedelta(hours=1)
-        ).order_by('-timestamp'):
+        for n in NetworkMetric.objects.filter(rig_uuid=str(uuid)):
+            if time_limit:
+                n = n.filter(timestamp__gte=time_limit)
             if n.interface not in seen_interfaces:
                 seen_interfaces.add(n.interface)
                 network_metrics.append(n)
 
         docker_metrics = DockerContainerMetric.objects.filter(
-            rig_uuid=str(uuid),
-            timestamp__gte=timezone.now() - timedelta(hours=1)
-        ).order_by('-timestamp')[:20]
+            rig_uuid=str(uuid)
+        )
+        if time_limit:
+            docker_metrics = docker_metrics.filter(timestamp__gte=time_limit)
+        docker_metrics = docker_metrics.order_by('-timestamp')[:20]
 
         recent_errors = ErrorEvent.objects.filter(
             rig_uuid=str(uuid)
@@ -167,14 +176,23 @@ def htmx_metrics(request, uuid):
     docker_metrics = []
     recent_errors = []
     latest_metric_snapshot = None
+    is_data_stale = False  # Flag to indicate if displayed data is stale
 
     if snapshot:
+        # Determine if we should show stale data (for offline rigs) or only recent data
+        # Show stale data if rig is OFFLINE or STALE, otherwise only show recent data (last 1 hour)
+        show_stale_data = rig.status in ['OFFLINE', 'STALE']
+        time_limit = None if show_stale_data else timezone.now() - timedelta(hours=1)
+        
+        if show_stale_data:
+            is_data_stale = True
+
         # Get latest GPU metric per unique GPU (by gpu_uuid) - similar to storage/network dedup
         seen_gpus = set()
-        for gpu in GPUMetric.objects.filter(
-            rig_uuid=str(uuid),
-            timestamp__gte=timezone.now() - timedelta(hours=1)
-        ).order_by('-timestamp'):
+        gpu_query = GPUMetric.objects.filter(rig_uuid=str(uuid))
+        if time_limit:
+            gpu_query = gpu_query.filter(timestamp__gte=time_limit)
+        for gpu in gpu_query.order_by('-timestamp'):
             if gpu.gpu_uuid not in seen_gpus:
                 seen_gpus.add(gpu.gpu_uuid)
                 gpu_metrics.append(gpu)
@@ -182,10 +200,9 @@ def htmx_metrics(request, uuid):
         # Get latest storage metric per unique device (normalize path for dedup)
         storage_metrics = []
         seen_devices = set()
-        for s in StorageMetric.objects.filter(
-            rig_uuid=str(uuid),
-            timestamp__gte=timezone.now() - timedelta(hours=1)
-        ).order_by('-timestamp'):
+        for s in StorageMetric.objects.filter(rig_uuid=str(uuid)):
+            if time_limit:
+                s = s.filter(timestamp__gte=time_limit)
             # Normalize device path: strip trailing slashes/backslashes for dedup
             norm_device = s.device.rstrip('/\\\\') if s.device else ''
             if norm_device not in seen_devices:
@@ -195,18 +212,19 @@ def htmx_metrics(request, uuid):
         # Get latest network metric per unique interface
         network_metrics = []
         seen_interfaces = set()
-        for n in NetworkMetric.objects.filter(
-            rig_uuid=str(uuid),
-            timestamp__gte=timezone.now() - timedelta(hours=1)
-        ).order_by('-timestamp'):
+        for n in NetworkMetric.objects.filter(rig_uuid=str(uuid)):
+            if time_limit:
+                n = n.filter(timestamp__gte=time_limit)
             if n.interface not in seen_interfaces:
                 seen_interfaces.add(n.interface)
                 network_metrics.append(n)
 
         docker_metrics = DockerContainerMetric.objects.filter(
-            rig_uuid=str(uuid),
-            timestamp__gte=timezone.now() - timedelta(hours=1)
-        ).order_by('-timestamp')[:20]
+            rig_uuid=str(uuid)
+        )
+        if time_limit:
+            docker_metrics = docker_metrics.filter(timestamp__gte=time_limit)
+        docker_metrics = docker_metrics.order_by('-timestamp')[:20]
 
         recent_errors = ErrorEvent.objects.filter(
             rig_uuid=str(uuid)

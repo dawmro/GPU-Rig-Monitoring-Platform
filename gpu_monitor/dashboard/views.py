@@ -25,13 +25,14 @@ def _fetch_rig_metrics(uuid):
     except LatestSnapshot.DoesNotExist:
         snapshot = None
 
-    # GPU: latest metric per unique GPU (dedup by gpu_uuid)
+    # GPU: latest metric per unique GPU (dedup by gpu_uuid), sorted by index
     gpu_metrics = []
     seen_gpus = set()
     for gpu in GPUMetric.objects.filter(rig_uuid=str(uuid)).order_by('-timestamp'):
         if gpu.gpu_uuid not in seen_gpus:
             seen_gpus.add(gpu.gpu_uuid)
             gpu_metrics.append(gpu)
+    gpu_metrics.sort(key=lambda g: g.gpu_index)
 
     # Storage: latest metric per unique device (normalize path for dedup)
     storage_metrics = []

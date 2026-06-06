@@ -295,10 +295,26 @@ class ChartDataView(APIView):
                 timestamp__gte=start_minute,
                 timestamp__lte=end_minute,
             ).order_by('timestamp')[:10000]
-            self._fill_buckets(labels, values, start_minute, snapshots, metric)
-            if metric in self.BYTE_TO_GB:
-                values = [round(v / (1024**3), 2) if v is not None else None for v in values]
-            datasets = [{'label': metric, 'data': values}]
+            # Special combined memory chart: return 3 datasets in one response
+            multi_mem = request.query_params.get('multi_mem', 'false').lower() == 'true'
+            if multi_mem:
+                mem_fields = {
+                    'mem_used_bytes': 'Memory Used',
+                    'mem_free_bytes': 'Memory Free',
+                    'swap_used_bytes': 'Swap Used',
+                }
+                mem_datasets = []
+                for field, label in mem_fields.items():
+                    vals = [None] * len(labels)
+                    self._fill_buckets(labels, vals, start_minute, snapshots, field)
+                    vals_gb = [round(v / (1024**3), 2) if v is not None else None for v in vals]
+                    mem_datasets.append({'label': label, 'data': vals_gb})
+                datasets = mem_datasets
+            else:
+                self._fill_buckets(labels, values, start_minute, snapshots, metric)
+                if metric in self.BYTE_TO_GB:
+                    values = [round(v / (1024**3), 2) if v is not None else None for v in values]
+                datasets = [{'label': metric, 'data': values}]
 
         elif metric == 'uptime_s':
             # Uptime from software_json (resets on reboot)

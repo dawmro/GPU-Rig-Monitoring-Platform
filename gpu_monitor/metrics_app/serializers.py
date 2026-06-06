@@ -101,18 +101,19 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                 )
 
             # Store per-GPU process metrics
+            # Delete old process records for this rig first — we only care about
+            # the latest snapshot, not historical process data
+            GPUProcessMetric.objects.filter(rig_uuid=rig_uuid).delete()
             for proc in gpu_process_list:
-                GPUProcessMetric.objects.update_or_create(
+                GPUProcessMetric.objects.create(
                     rig_uuid=rig_uuid,
                     timestamp=ts,
+                    snapshot=snapshot,
                     gpu_index=proc.get('gpu_index', 0),
                     pid=proc.get('pid'),
-                    defaults={
-                        'snapshot': snapshot,
-                        'process_name': proc.get('name', '')[:500],
-                        'type': proc.get('type', ''),
-                        'gpu_mem_mb': proc.get('gpu_mem_mb'),
-                    },
+                    process_name=proc.get('name', '')[:500],
+                    type=proc.get('type', ''),
+                    gpu_mem_mb=proc.get('gpu_mem_mb'),
                 )
 
             # Store per-disk metrics (with capacity — for tracking)

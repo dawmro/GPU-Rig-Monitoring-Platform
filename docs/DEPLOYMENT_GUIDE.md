@@ -1,6 +1,6 @@
 # GPU Rig Monitoring Platform — Deployment Guide
 
-**Version:** 1.1
+**Version:** 1.2
 **Target OS:** Ubuntu 22.04 / 24.04 LTS (single VPS with domain name)
 
 This guide deploys the GPU Rig Monitoring Platform on a **production VPS** with TLS, a domain name, and remote GPU rigs sending telemetry.
@@ -496,16 +496,29 @@ The rig detail page has three tabs:
 
 | Tab | Description |
 |-----|-------------|
-| **Live Metrics** | Auto-refreshing cards showing CPU, memory, GPU, Docker, storage, and errors (30s HTMX polling) |
+|| **Live Metrics** | Auto-refreshing cards showing CPU, memory, GPU (with index), GPU Processes (per-process: name, type badge, memory), Docker, storage, and errors (30s HTMX polling) |
 | **Historical Charts** | Combined charts: GPU (Temp/Util/Memory/Power/Fan — multi-GPU), CPU (Util/Temp/Load Avg), Memory & Swap (combined), Disk Usage (multi-disk), Network Traffic (RX/TX/Errors combined), Container CPU/Memory, AI Process GPU Memory, Uptime, Error Frequency. Refresh via ↻ button |
 | **Errors** | Recent system errors from journalctl/Windows Event Log |
 
 **Fleet Overview Table:**
 - Shows **all GPUs** per rig (not just GPU 0)
-- GPU column: compact model summary with count (e.g., "RTX 3060 ×8", "RTX 4090, RTX 3060")
+- GPU column: compact model summary with count (e.g., "RTX 3060 ×8")
 - GPU Temp/Util/Fan columns: space-separated color-coded values, one per GPU
-- Hover tooltips show per-GPU breakdown (GPU1: 72°C, GPU2: 68°C, …)
+- Hover tooltips show per-GPU breakdown
 - Units in column headers (e.g., "GPU Temp [°C]") — no inline units in cells
+- **Tag filter** dropdown to filter rigs by tag
+- Tags displayed as colored pills per rig
+
+**Rig Detail Page:**
+- Tags displayed below rig UUID with add/remove capability
+- GPU index shown before model name (e.g., "GPU0: RTX 2060 SUPER")
+- GPU Processes section showing per-process: name, type badge (C/G/C+G), memory usage
+
+**Tag Management:**
+- Create, edit, delete tags from dashboard (/accounts/tags/)
+- Tags have name and color
+- Assign/remove tags on rig detail page
+- Filter fleet overview by tag
 
 **Rig Status:** Rigs are automatically marked as:
 - 🟢 **Online** — reported within last 2 minutes

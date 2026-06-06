@@ -108,9 +108,10 @@ def rig_detail(request, uuid):
                 gpu_metrics.append(gpu)
 
         seen_devices = set()
-        for s in StorageMetric.objects.filter(rig_uuid=str(uuid)):
-            if time_limit:
-                s = s.filter(timestamp__gte=time_limit)
+        storage_query = StorageMetric.objects.filter(rig_uuid=str(uuid))
+        if time_limit:
+            storage_query = storage_query.filter(timestamp__gte=time_limit)
+        for s in storage_query.order_by('-timestamp'):
             # Normalize device path: strip trailing slashes/backslashes for dedup
             norm_device = s.device.rstrip('/\\\\') if s.device else ''
             if norm_device not in seen_devices:
@@ -119,9 +120,10 @@ def rig_detail(request, uuid):
 
         # Get latest network metric per unique interface
         seen_interfaces = set()
-        for n in NetworkMetric.objects.filter(rig_uuid=str(uuid)):
-            if time_limit:
-                n = n.filter(timestamp__gte=time_limit)
+        network_query = NetworkMetric.objects.filter(rig_uuid=str(uuid))
+        if time_limit:
+            network_query = network_query.filter(timestamp__gte=time_limit)
+        for n in network_query.order_by('-timestamp'):
             if n.interface not in seen_interfaces:
                 seen_interfaces.add(n.interface)
                 network_metrics.append(n)
@@ -200,9 +202,10 @@ def htmx_metrics(request, uuid):
         # Get latest storage metric per unique device (normalize path for dedup)
         storage_metrics = []
         seen_devices = set()
-        for s in StorageMetric.objects.filter(rig_uuid=str(uuid)):
-            if time_limit:
-                s = s.filter(timestamp__gte=time_limit)
+        storage_query = StorageMetric.objects.filter(rig_uuid=str(uuid))
+        if time_limit:
+            storage_query = storage_query.filter(timestamp__gte=time_limit)
+        for s in storage_query.order_by('-timestamp'):
             # Normalize device path: strip trailing slashes/backslashes for dedup
             norm_device = s.device.rstrip('/\\\\') if s.device else ''
             if norm_device not in seen_devices:
@@ -212,9 +215,10 @@ def htmx_metrics(request, uuid):
         # Get latest network metric per unique interface
         network_metrics = []
         seen_interfaces = set()
-        for n in NetworkMetric.objects.filter(rig_uuid=str(uuid)):
-            if time_limit:
-                n = n.filter(timestamp__gte=time_limit)
+        network_query = NetworkMetric.objects.filter(rig_uuid=str(uuid))
+        if time_limit:
+            network_query = network_query.filter(timestamp__gte=time_limit)
+        for n in network_query.order_by('-timestamp'):
             if n.interface not in seen_interfaces:
                 seen_interfaces.add(n.interface)
                 network_metrics.append(n)

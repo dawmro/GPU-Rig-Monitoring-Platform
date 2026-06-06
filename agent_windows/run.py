@@ -33,8 +33,8 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.2.0-win'
-__schema_version__ = '1.1'
+__version__ = '1.3.0-win'
+__schema_version__ = '1.2'
 
 # ── Config ──────────────────────────────────────────────────────────────────
 
@@ -418,7 +418,11 @@ def collect_gpus():
 
 
 def collect_gpu_processes():
-    """Collect GPU process list from nvidia-smi (Windows version)."""
+    """Collect GPU process list from nvidia-smi (Windows version).
+
+    Same parsing as Linux — nvidia-smi output format is identical
+    across platforms for the Processes section.
+    """
     processes = []
     try:
         out = subprocess.run(
@@ -430,44 +434,60 @@ def collect_gpu_processes():
 
         in_processes = False
         for line in out.stdout.splitlines():
-            if line.strip().startswith('| Processes:'):
+            stripped = line.strip()
+
+            if stripped.startswith('| Processes:'):
                 in_processes = True
                 continue
-            if in_processes:
-                if '---' in line or 'GPU' in line and 'PID' in line:
-                    continue
-                if not line.strip() or line.strip().startswith('+'):
-                    if processes:
-                        break
-                    continue
-                parts = [p.strip() for p in line.split('|') if p.strip()]
-                if len(parts) >= 5:
+
+            if not in_processes:
+                continue
+
+            if stripped.startswith('+') or not stripped:
+                if processes:
+                    break
+                continue
+
+            if '---' in stripped or ('GPU' in stripped and 'PID' in stripped):
+                continue
+
+            if 'ID' in stripped and 'Usage' in stripped and not stripped.startswith('|'):
+                continue
+
+            clean = stripped.replace('|', '').strip()
+            if not clean:
+                continue
+            parts = clean.split()
+
+            if len(parts) < 5:
+                continue
+
+            try:
+                gpu_idx = int(parts[0])
+                pid = int(parts[3])
+                proc_type = parts[4]
+                gpu_mem_str = parts[-1] if len(parts) >= 6 else 'N/A'
+                proc_name = ' '.join(parts[5:-1]) if len(parts) >= 6 else ''
+
+                gpu_mem_mb = None
+                if gpu_mem_str not in ('N/A', ''):
+                    mem_val = gpu_mem_str.replace('MiB', '').replace('GiB', '').strip()
                     try:
-                        gpu_idx = int(parts[0])
-                        pid = int(parts[3])
-                        proc_type = parts[4]
-                        gpu_mem_str = parts[-1] if len(parts) >= 6 else 'N/A'
-                        proc_name = ' '.join(parts[5:-1]) if len(parts) >= 6 else parts[4]
+                        gpu_mem_mb = int(float(mem_val))
+                        if 'GiB' in gpu_mem_str:
+                            gpu_mem_mb = int(gpu_mem_mb * 1024)
+                    except ValueError:
+                        pass
 
-                        gpu_mem_mb = None
-                        if gpu_mem_str not in ('N/A', ''):
-                            mem_val = gpu_mem_str.replace('MiB', '').replace('GiB', '').strip()
-                            try:
-                                gpu_mem_mb = int(float(mem_val))
-                                if 'GiB' in gpu_mem_str:
-                                    gpu_mem_mb *= 1024
-                            except ValueError:
-                                pass
-
-                        processes.append({
-                            'gpu_index': gpu_idx,
-                            'pid': pid,
-                            'type': proc_type,
-                            'name': proc_name,
-                            'gpu_mem_mb': gpu_mem_mb,
-                        })
-                    except (ValueError, IndexError):
-                        continue
+                processes.append({
+                    'gpu_index': gpu_idx,
+                    'pid': pid,
+                    'type': proc_type,
+                    'name': proc_name,
+                    'gpu_mem_mb': gpu_mem_mb,
+                })
+            except (ValueError, IndexError):
+                continue
     except Exception as e:
         logging.getLogger('gpu_processes').warning('GPU process collection failed: %s', e)
     return processes

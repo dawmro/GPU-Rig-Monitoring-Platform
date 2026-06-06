@@ -27,8 +27,8 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.1.0'
-__schema_version__ = '1.1'
+__version__ = '1.2.0'
+__schema_version__ = '1.2'
 
 # ── Config ──────────────────────────────────────────────────────────────────
 
@@ -307,6 +307,10 @@ def collect_gpu_processes():
     Parses the full nvidia-smi output table to get all processes
     (Compute, Graphics, and Compute+Graphics).
 
+    Works on both Linux and Windows. The nvidia-smi output uses | only
+    at the left/right edges of the table; columns are space-separated
+    within. We strip | and split by whitespace.
+
     Returns list of dicts:
         [{gpu_index, pid, type, name, gpu_mem_mb}]
     """
@@ -321,51 +325,74 @@ def collect_gpu_processes():
 
         in_processes = False
         for line in out.stdout.splitlines():
+            stripped = line.strip()
+
             # Detect the Processes section
-            if line.strip().startswith('| Processes:'):
+            if stripped.startswith('| Processes:'):
                 in_processes = True
                 continue
-            if in_processes:
-                # Skip header/separator lines
-                if '---' in line or 'GPU' in line and 'PID' in line:
-                    continue
-                # Empty line or end of section
-                if not line.strip() or line.strip().startswith('+'):
-                    if processes:  # We've collected some processes, section is done
-                        break
-                    continue
-                # Parse process row
-                # Format: |  GPU   GI   CI        PID   Type   Process name      GPU Memory |
-                parts = [p.strip() for p in line.split('|') if p.strip()]
-                if len(parts) >= 5:
+
+            if not in_processes:
+                continue
+
+            # End of section: +----+ border or empty line after we have data
+            if stripped.startswith('+') or not stripped:
+                if processes:
+                    break
+                continue
+
+            # Skip header/separator lines
+            if '---' in stripped or ('GPU' in stripped and 'PID' in stripped):
+                continue
+
+            # Skip sub-header line (ID ID Usage)
+            if 'ID' in stripped and 'Usage' in stripped and not stripped.startswith('|'):
+                continue
+
+            # Strip | from edges and split by whitespace
+            clean = stripped.replace('|', '').strip()
+            if not clean:
+                continue
+            parts = clean.split()
+
+            # Need at least: GPU, GI, CI, PID, Type, [name], [mem]
+            if len(parts) < 5:
+                continue
+
+            try:
+                gpu_idx = int(parts[0])
+                pid = int(parts[3])
+                proc_type = parts[4]
+
+                # Memory is the last field (e.g. "6MiB", "2936MiB", "N/A")
+                gpu_mem_str = parts[-1] if len(parts) >= 6 else 'N/A'
+
+                # Process name is everything between Type and Memory
+                if len(parts) >= 6:
+                    proc_name = ' '.join(parts[5:-1])
+                else:
+                    proc_name = ''
+
+                # Parse memory
+                gpu_mem_mb = None
+                if gpu_mem_str not in ('N/A', ''):
+                    mem_val = gpu_mem_str.replace('MiB', '').replace('GiB', '').strip()
                     try:
-                        gpu_idx = int(parts[0])
-                        pid = int(parts[3])
-                        proc_type = parts[4]
-                        # Process name may contain spaces, memory is last
-                        gpu_mem_str = parts[-1] if len(parts) >= 6 else 'N/A'
-                        proc_name = ' '.join(parts[5:-1]) if len(parts) >= 6 else parts[4]
+                        gpu_mem_mb = int(float(mem_val))
+                        if 'GiB' in gpu_mem_str:
+                            gpu_mem_mb = int(gpu_mem_mb * 1024)
+                    except ValueError:
+                        pass
 
-                        gpu_mem_mb = None
-                        if gpu_mem_str not in ('N/A', ''):
-                            # Parse memory like "2936MiB" or "6MiB"
-                            mem_val = gpu_mem_str.replace('MiB', '').replace('GiB', '').strip()
-                            try:
-                                gpu_mem_mb = int(float(mem_val))
-                                if 'GiB' in gpu_mem_str:
-                                    gpu_mem_mb *= 1024
-                            except ValueError:
-                                pass
-
-                        processes.append({
-                            'gpu_index': gpu_idx,
-                            'pid': pid,
-                            'type': proc_type,
-                            'name': proc_name,
-                            'gpu_mem_mb': gpu_mem_mb,
-                        })
-                    except (ValueError, IndexError):
-                        continue
+                processes.append({
+                    'gpu_index': gpu_idx,
+                    'pid': pid,
+                    'type': proc_type,
+                    'name': proc_name,
+                    'gpu_mem_mb': gpu_mem_mb,
+                })
+            except (ValueError, IndexError):
+                continue
     except Exception as e:
         logging.getLogger('gpu_processes').warning('GPU process collection failed: %s', e)
     return processes

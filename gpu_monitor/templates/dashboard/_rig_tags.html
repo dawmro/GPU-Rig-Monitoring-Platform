@@ -3,7 +3,7 @@
     <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs"
           style="background: {{ tag.color }}22; color: {{ tag.color }}">
         {{ tag.name }}
-        <form hx-post="{% url 'dashboard:rig-toggle-tag' rig.uuid tag.id %}" hx-target="#rig-tags" hx-swap="outerHTML" class="inline">
+        <form method="post" action="{% url 'dashboard:rig-toggle-tag' rig.uuid tag.id %}" class="inline">
             {% csrf_token %}
             <button type="submit" class="hover:text-white text-[10px] leading-none ml-0.5" title="Remove tag">×</button>
         </form>
@@ -21,7 +21,7 @@
         <div id="tag-add-menu-{{ rig.uuid }}" class="hidden absolute top-full left-0 mt-1 bg-gray-800 border border-gray-700 rounded shadow-lg z-10 min-w-40 max-h-48 overflow-y-auto">
             {% for tag in user_tags %}
             {% if tag not in rig.tags.all %}
-            <form hx-post="{% url 'dashboard:rig-toggle-tag' rig.uuid tag.id %}" hx-target="#rig-tags" hx-swap="outerHTML">
+            <form method="post" action="{% url 'dashboard:rig-toggle-tag' rig.uuid tag.id %}">
                 {% csrf_token %}
                 <button type="submit" class="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-700 flex items-center gap-2">
                     <span class="w-3 h-3 rounded-full flex-shrink-0" style="background: {{ tag.color }}"></span>

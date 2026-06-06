@@ -6,6 +6,7 @@ from django.contrib import messages
 from django.http import HttpResponse
 from .models import ApiKey, User
 from audit.middleware import log_audit_event
+from rigs.models import RigTag
 
 
 def login_view(request):
@@ -75,10 +76,7 @@ def revoke_api_key(request, key_id):
     return redirect('accounts:api-keys')
 
 
-# ── Tag CRUD ──────────────────────────────────────────────────────────────
-
-from rigs.models import RigTag
-from django.http import Http404
+# ── Tag CRUD (no HTMX, plain form posts) ──────────────────────────────────
 
 @login_required
 def tags(request):
@@ -89,34 +87,32 @@ def tags(request):
 
 @login_required
 def create_tag(request):
-    """Create a new tag."""
+    """Create a new tag. Plain form POST, redirect on success."""
     if request.method == 'POST':
         name = request.POST.get('name', '').strip()
         color = request.POST.get('color', '#6B7280').strip()
         if not name:
             messages.error(request, 'Tag name is required')
-            return redirect('accounts:tags')
-        if not color.startswith('#') or len(color) != 7:
-            color = '#6B7280'
-        tag, created = RigTag.objects.get_or_create(
-            user=request.user,
-            name=name[:100],
-            defaults={'color': color},
-        )
-        if not created:
-            messages.error(request, f'Tag "{name}" already exists')
+        elif not color.startswith('#') or len(color) != 7:
+            messages.error(request, 'Invalid color format')
         else:
-            log_audit_event(request, 'tag.created', 'RigTag', tag.id, {'name': tag.name, 'color': tag.color})
-        if request.headers.get('HX-Request'):
-            # Re-render the entire tag list so the new tag appears
-            user_tags = RigTag.objects.filter(user=request.user).order_by('name')
-            return render(request, 'accounts/_tag_list.html', {'tags': user_tags})
+            tag, created = RigTag.objects.get_or_create(
+                user=request.user,
+                name=name[:100],
+                defaults={'color': color},
+            )
+            if created:
+                log_audit_event(request, 'tag.created', 'RigTag', tag.id,
+                                {'name': tag.name, 'color': tag.color})
+                messages.success(request, f'Tag "{tag.name}" created')
+            else:
+                messages.error(request, f'Tag "{name}" already exists')
     return redirect('accounts:tags')
 
 
 @login_required
 def update_tag(request, tag_id):
-    """Update an existing tag (name and color)."""
+    """Update an existing tag. Plain form POST, redirect on success."""
     if request.method == 'POST':
         tag = get_object_or_404(RigTag, id=tag_id, user=request.user)
         name = request.POST.get('name', '').strip()
@@ -126,19 +122,18 @@ def update_tag(request, tag_id):
         if color and color.startswith('#') and len(color) == 7:
             tag.color = color
         tag.save(update_fields=['name', 'color'])
-        log_audit_event(request, 'tag.updated', 'RigTag', tag.id, {'name': tag.name, 'color': tag.color})
-        if request.headers.get('HX-Request'):
-            return render(request, 'accounts/_tag_row.html', {'tag': tag})
+        log_audit_event(request, 'tag.updated', 'RigTag', tag.id,
+                        {'name': tag.name, 'color': tag.color})
+        messages.success(request, f'Tag "{tag.name}" updated')
     return redirect('accounts:tags')
 
 
 @login_required
 def delete_tag(request, tag_id):
-    """Delete a tag."""
+    """Delete a tag. Plain form POST, redirect on success."""
     if request.method == 'POST':
         tag = get_object_or_404(RigTag, id=tag_id, user=request.user)
         log_audit_event(request, 'tag.deleted', 'RigTag', tag.id, {'name': tag.name})
         tag.delete()
-        if request.headers.get('HX-Request'):
-            return HttpResponse('')
+        messages.success(request, f'Tag "{tag.name}" deleted')
     return redirect('accounts:tags')

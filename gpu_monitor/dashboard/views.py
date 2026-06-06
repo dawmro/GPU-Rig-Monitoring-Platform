@@ -88,11 +88,15 @@ def rig_detail(request, uuid):
     latest_metric_snapshot = None
 
     if snapshot:
-        gpu_metrics = GPUMetric.objects.filter(
+        # Get latest GPU metric per unique GPU (by gpu_uuid) - similar to storage/network dedup
+        seen_gpus = set()
+        for gpu in GPUMetric.objects.filter(
             rig_uuid=str(uuid),
-            timestamp__gte=timezone.now() - timedelta(hours=1),
-            gpu_index=0
-        ).order_by('-timestamp')[:1]
+            timestamp__gte=timezone.now() - timedelta(hours=1)
+        ).order_by('-timestamp'):
+            if gpu.gpu_uuid not in seen_gpus:
+                seen_gpus.add(gpu.gpu_uuid)
+                gpu_metrics.append(gpu)
 
         seen_devices = set()
         for s in StorageMetric.objects.filter(
@@ -100,7 +104,7 @@ def rig_detail(request, uuid):
             timestamp__gte=timezone.now() - timedelta(hours=1)
         ).order_by('-timestamp'):
             # Normalize device path: strip trailing slashes/backslashes for dedup
-            norm_device = s.device.rstrip('/\\') if s.device else ''
+            norm_device = s.device.rstrip('/\\\\') if s.device else ''
             if norm_device not in seen_devices:
                 seen_devices.add(norm_device)
                 storage_metrics.append(s)
@@ -165,11 +169,15 @@ def htmx_metrics(request, uuid):
     latest_metric_snapshot = None
 
     if snapshot:
-        gpu_metrics = GPUMetric.objects.filter(
+        # Get latest GPU metric per unique GPU (by gpu_uuid) - similar to storage/network dedup
+        seen_gpus = set()
+        for gpu in GPUMetric.objects.filter(
             rig_uuid=str(uuid),
-            timestamp__gte=timezone.now() - timedelta(hours=1),
-            gpu_index=0
-        ).order_by('-timestamp')[:1]
+            timestamp__gte=timezone.now() - timedelta(hours=1)
+        ).order_by('-timestamp'):
+            if gpu.gpu_uuid not in seen_gpus:
+                seen_gpus.add(gpu.gpu_uuid)
+                gpu_metrics.append(gpu)
 
         # Get latest storage metric per unique device (normalize path for dedup)
         storage_metrics = []
@@ -179,7 +187,7 @@ def htmx_metrics(request, uuid):
             timestamp__gte=timezone.now() - timedelta(hours=1)
         ).order_by('-timestamp'):
             # Normalize device path: strip trailing slashes/backslashes for dedup
-            norm_device = s.device.rstrip('/\\') if s.device else ''
+            norm_device = s.device.rstrip('/\\\\') if s.device else ''
             if norm_device not in seen_devices:
                 seen_devices.add(norm_device)
                 storage_metrics.append(s)

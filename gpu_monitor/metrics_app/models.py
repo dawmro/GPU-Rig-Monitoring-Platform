@@ -227,6 +227,39 @@ class AIProcessMetric(models.Model):
         ]
 
 
+class GPUProcessMetric(models.Model):
+    """Per-GPU-process metrics — one row per process per GPU per snapshot.
+
+    Collected from nvidia-smi process table. Enables the Live Metrics
+    "GPU Processes" display showing which processes use each GPU.
+
+    Fields:
+        gpu_index: GPU device index (0, 1, 2, ...)
+        pid: Process ID from OS
+        process_name: Process executable path/name
+        type: Process type — C (Compute), G (Graphics), C+G (Both)
+        gpu_mem_mb: GPU memory used by this process (MB)
+    """
+    id = models.BigAutoField(primary_key=True)
+    snapshot = models.ForeignKey(MetricSnapshot, on_delete=models.CASCADE, related_name='gpu_processes')
+    rig_uuid = models.UUIDField(db_index=True)
+    timestamp = models.DateTimeField(db_index=True)
+
+    gpu_index = models.PositiveSmallIntegerField(default=0)
+    pid = models.PositiveIntegerField(null=True)
+    process_name = models.CharField(max_length=500, blank=True, default='')
+    type = models.CharField(max_length=10, blank=True, default='')  # C, G, C+G
+    gpu_mem_mb = models.PositiveIntegerField(null=True)
+
+    class Meta:
+        db_table = 'metrics_gpu_process'
+        ordering = ['-gpu_mem_mb']
+        unique_together = ('rig_uuid', 'timestamp', 'gpu_index', 'pid')
+        indexes = [
+            models.Index(fields=['rig_uuid', '-timestamp']),
+        ]
+
+
 class ErrorEvent(models.Model):
     """Deduplicated error events."""
     id = models.BigAutoField(primary_key=True)

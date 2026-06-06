@@ -1,6 +1,6 @@
 # GPU Rig Monitoring Platform — Local Deployment Guide
 
-**Version:** 1.1
+**Version:** 1.2
 **Target OS:** Ubuntu 24.04 LTS (local testing, no domain name)
 
 This guide walks through deploying the complete GPU Rig Monitoring Platform on a **local Ubuntu machine** for development, testing, or evaluation before deploying to production hardware.

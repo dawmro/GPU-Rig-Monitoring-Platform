@@ -112,9 +112,7 @@ def rig_list(request):
     # Each key maps directly to a template variable in the table cells:
     #   rig_data[]['rig']      -> Rig model (name, status, last_seen, tags, uuid)
     #   rig_data[]['snapshot'] -> LatestSnapshot (cpu_utilization_pct, cpu_temp_c, mem_*)
-    #   rig_data[]['gpu']      -> GPUMetric gpu_index=0 (gpu_temp_c, gpu_util_pct, model)
-    #   rig_data[]['storage']  -> first StorageMetric (usage_pct) -- add key when needed
-    #   rig_data[]['docker']   -> DockerContainerMetric count -- add key when needed
+    #   rig_data[]['gpus']     -> list of latest GPUMetric per unique GPU (by gpu_uuid)
     rig_data = []
     for rig in rigs:
         try:
@@ -122,11 +120,17 @@ def rig_list(request):
         except LatestSnapshot.DoesNotExist:
             snap = None
 
-        gpu = GPUMetric.objects.filter(
-            rig_uuid=str(rig.uuid), gpu_index=0
-        ).order_by('-timestamp').first()
+        # Fetch latest GPU metric per unique GPU (dedup by gpu_uuid)
+        gpus = []
+        seen_uuids = set()
+        for gpu in GPUMetric.objects.filter(
+            rig_uuid=str(rig.uuid)
+        ).order_by('-timestamp'):
+            if gpu.gpu_uuid not in seen_uuids:
+                seen_uuids.add(gpu.gpu_uuid)
+                gpus.append(gpu)
 
-        rig_data.append({'rig': rig, 'snapshot': snap, 'gpu': gpu})
+        rig_data.append({'rig': rig, 'snapshot': snap, 'gpus': gpus})
 
     if request.headers.get('HX-Request'):
         return render(request, 'dashboard/_rig_table.html', {'rig_data': rig_data})

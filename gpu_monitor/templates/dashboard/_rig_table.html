@@ -8,10 +8,10 @@
                 <th class="text-left px-4 py-3 font-medium">Last Seen</th>
                 <th class="text-left px-4 py-3 font-medium">Tags</th>
                 <th class="text-left px-4 py-3 font-medium">GPU</th>
-                <th class="text-left px-4 py-3 font-medium">GPU Temp</th>
-                <th class="text-left px-4 py-3 font-medium">GPU Util</th>
-                <th class="text-left px-4 py-3 font-medium">GPU Fan</th>
-                <th class="text-left px-4 py-3 font-medium">CPU</th>
+                <th class="text-left px-4 py-3 font-medium">GPU Temp [°C]</th>
+                <th class="text-left px-4 py-3 font-medium">GPU Util [%]</th>
+                <th class="text-left px-4 py-3 font-medium">GPU Fan [%]</th>
+                <th class="text-left px-4 py-3 font-medium">CPU [%]</th>
             </tr>
         </thead>
         <tbody>
@@ -57,32 +57,32 @@
                         </span>
                     {% else %}—{% endif %}
                 </td>
-                {# GPU Temp column: comma-separated color-coded values #}
+                {# GPU Temp column: space-separated color-coded values #}
                 <td class="px-4 py-3">
                     {% if item.gpus %}
                         <span title="{% for gpu in item.gpus %}GPU{{ forloop.counter }}: {% if gpu.gpu_temp_c != None %}{{ gpu.gpu_temp_c|floatformat:1 }}°C{% else %}N/A{% endif %}{% if not forloop.last %} | {% endif %}{% endfor %}">
                             {% for gpu in item.gpus %}
-                                {% gpu_temp_cell gpu.gpu_temp_c %}{% if not forloop.last %}<span class="text-gray-600">,</span>{% endif %}
+                                {% gpu_temp_cell gpu.gpu_temp_c %}{% if not forloop.last %} {% endif %}
                             {% endfor %}
                         </span>
                     {% else %}—{% endif %}
                 </td>
-                {# GPU Util column: comma-separated color-coded values #}
+                {# GPU Util column: space-separated color-coded values #}
                 <td class="px-4 py-3">
                     {% if item.gpus %}
                         <span title="{% for gpu in item.gpus %}GPU{{ forloop.counter }}: {% if gpu.gpu_util_pct != None %}{{ gpu.gpu_util_pct|floatformat:1 }}%{% else %}N/A{% endif %}{% if not forloop.last %} | {% endif %}{% endfor %}">
                             {% for gpu in item.gpus %}
-                                {% gpu_util_cell gpu.gpu_util_pct %}{% if not forloop.last %}<span class="text-gray-600">,</span>{% endif %}
+                                {% gpu_util_cell gpu.gpu_util_pct %}{% if not forloop.last %} {% endif %}
                             {% endfor %}
                         </span>
                     {% else %}—{% endif %}
                 </td>
-                {# GPU Fan Speed column: comma-separated color-coded values #}
+                {# GPU Fan Speed column: space-separated color-coded values #}
                 <td class="px-4 py-3">
                     {% if item.gpus %}
                         <span title="{% for gpu in item.gpus %}GPU{{ forloop.counter }}: {% if gpu.fan_speed_pct != None %}{{ gpu.fan_speed_pct|floatformat:0 }}%{% else %}N/A{% endif %}{% if not forloop.last %} | {% endif %}{% endfor %}">
                             {% for gpu in item.gpus %}
-                                {% gpu_fan_cell gpu.fan_speed_pct %}{% if not forloop.last %}<span class="text-gray-600">,</span>{% endif %}
+                                {% gpu_fan_cell gpu.fan_speed_pct %}{% if not forloop.last %} {% endif %}
                             {% endfor %}
                         </span>
                     {% else %}—{% endif %}
@@ -90,7 +90,7 @@
                 {# CPU column #}
                 <td class="px-4 py-3 text-gray-400">
                     {% if item.snapshot and item.snapshot.cpu_utilization_pct != None %}
-                        {{ item.snapshot.cpu_utilization_pct|floatformat:1 }}%
+                        {{ item.snapshot.cpu_utilization_pct|floatformat:1 }}
                     {% else %}—{% endif %}
                 </td>
             </tr>

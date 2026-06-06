@@ -13,5 +13,4 @@ urlpatterns = [
     path('accounts/tags/create/', views.create_tag, name='create-tag'),
     path('accounts/tags/<str:tag_id>/update/', views.update_tag, name='update-tag'),
     path('accounts/tags/<str:tag_id>/delete/', views.delete_tag, name='delete-tag'),
-    path('dashboard/rigs/<str:uuid>/tags/<str:tag_id>/toggle/', views.rig_toggle_tag, name='rig-toggle-tag'),
 ]

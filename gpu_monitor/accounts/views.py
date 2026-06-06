@@ -108,7 +108,9 @@ def create_tag(request):
         else:
             log_audit_event(request, 'tag.created', 'RigTag', tag.id, {'name': tag.name, 'color': tag.color})
         if request.headers.get('HX-Request'):
-            return redirect('accounts:tags')
+            # Re-render the entire tag list so the new tag appears
+            user_tags = RigTag.objects.filter(user=request.user).order_by('name')
+            return render(request, 'accounts/_tag_list.html', {'tags': user_tags})
     return redirect('accounts:tags')
 
 
@@ -140,25 +142,3 @@ def delete_tag(request, tag_id):
         if request.headers.get('HX-Request'):
             return HttpResponse('')
     return redirect('accounts:tags')
-
-
-# ── Rig Tag Assignment ───────────────────────────────────────────────────
-
-@login_required
-def rig_toggle_tag(request, uuid, tag_id):
-    """Toggle a tag on/off for a rig."""
-    if request.method == 'POST':
-        rig = get_object_or_404(Rig, uuid=uuid)
-        if rig.owner_id != request.user.id and not request.user.is_staff:
-            raise Http404
-        tag = get_object_or_404(RigTag, id=tag_id, user=request.user)
-        if tag in rig.tags.all():
-            rig.tags.remove(tag)
-            action = 'tag.removed'
-        else:
-            rig.tags.add(tag)
-            action = 'tag.added'
-        log_audit_event(request, action, 'Rig', rig.uuid, {'tag': tag.name})
-        if request.headers.get('HX-Request'):
-            return render(request, 'dashboard/_rig_tags.html', {'rig': rig})
-    return redirect('dashboard:rig-detail', uuid=uuid)

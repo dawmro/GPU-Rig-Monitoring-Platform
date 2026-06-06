@@ -50,7 +50,7 @@
                     {% endfor %}
                 </td>
                 {# GPU Model column: compact multi-GPU display with count #}
-                <td class="px-4 py-3">
+                <td class="px-2 py-3 whitespace-nowrap">
                     {% if item.gpus %}
                         <span title="{% for gpu in item.gpus %}{{ gpu.model|default:"Unknown" }}{% if not forloop.last %}, {% endif %}{% endfor %}">
                             {{ item.gpus|gpu_compact_summary }}
@@ -58,7 +58,7 @@
                     {% else %}—{% endif %}
                 </td>
                 {# GPU Temp column: space-separated color-coded values #}
-                <td class="px-4 py-3">
+                <td class="px-2 py-3 whitespace-nowrap">
                     {% if item.gpus %}
                         <span title="{% for gpu in item.gpus %}GPU{{ forloop.counter }}: {% if gpu.gpu_temp_c != None %}{{ gpu.gpu_temp_c|floatformat:1 }}°C{% else %}N/A{% endif %}{% if not forloop.last %} | {% endif %}{% endfor %}">
                             {% for gpu in item.gpus %}
@@ -68,7 +68,7 @@
                     {% else %}—{% endif %}
                 </td>
                 {# GPU Util column: space-separated color-coded values #}
-                <td class="px-4 py-3">
+                <td class="px-2 py-3 whitespace-nowrap">
                     {% if item.gpus %}
                         <span title="{% for gpu in item.gpus %}GPU{{ forloop.counter }}: {% if gpu.gpu_util_pct != None %}{{ gpu.gpu_util_pct|floatformat:1 }}%{% else %}N/A{% endif %}{% if not forloop.last %} | {% endif %}{% endfor %}">
                             {% for gpu in item.gpus %}
@@ -78,7 +78,7 @@
                     {% else %}—{% endif %}
                 </td>
                 {# GPU Fan Speed column: space-separated color-coded values #}
-                <td class="px-4 py-3">
+                <td class="px-2 py-3 whitespace-nowrap">
                     {% if item.gpus %}
                         <span title="{% for gpu in item.gpus %}GPU{{ forloop.counter }}: {% if gpu.fan_speed_pct != None %}{{ gpu.fan_speed_pct|floatformat:0 }}%{% else %}N/A{% endif %}{% if not forloop.last %} | {% endif %}{% endfor %}">
                             {% for gpu in item.gpus %}
@@ -88,7 +88,7 @@
                     {% else %}—{% endif %}
                 </td>
                 {# CPU column #}
-                <td class="px-4 py-3 text-gray-400">
+                <td class="px-2 py-3 text-gray-400 whitespace-nowrap">
                     {% if item.snapshot and item.snapshot.cpu_utilization_pct != None %}
                         {{ item.snapshot.cpu_utilization_pct|floatformat:1 }}
                     {% else %}—{% endif %}

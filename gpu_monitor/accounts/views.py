@@ -73,3 +73,92 @@ def revoke_api_key(request, key_id):
             return HttpResponse('')
         messages.success(request, f'Key "{key.name}" revoked')
     return redirect('accounts:api-keys')
+
+
+# ── Tag CRUD ──────────────────────────────────────────────────────────────
+
+from rigs.models import RigTag
+from django.http import Http404
+
+@login_required
+def tags(request):
+    """List all tags for the current user."""
+    user_tags = RigTag.objects.filter(user=request.user).order_by('name')
+    return render(request, 'accounts/tags.html', {'tags': user_tags})
+
+
+@login_required
+def create_tag(request):
+    """Create a new tag."""
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()
+        color = request.POST.get('color', '#6B7280').strip()
+        if not name:
+            messages.error(request, 'Tag name is required')
+            return redirect('accounts:tags')
+        if not color.startswith('#') or len(color) != 7:
+            color = '#6B7280'
+        tag, created = RigTag.objects.get_or_create(
+            user=request.user,
+            name=name[:100],
+            defaults={'color': color},
+        )
+        if not created:
+            messages.error(request, f'Tag "{name}" already exists')
+        else:
+            log_audit_event(request, 'tag.created', 'RigTag', tag.id, {'name': tag.name, 'color': tag.color})
+        if request.headers.get('HX-Request'):
+            return redirect('accounts:tags')
+    return redirect('accounts:tags')
+
+
+@login_required
+def update_tag(request, tag_id):
+    """Update an existing tag (name and color)."""
+    if request.method == 'POST':
+        tag = get_object_or_404(RigTag, id=tag_id, user=request.user)
+        name = request.POST.get('name', '').strip()
+        color = request.POST.get('color', '').strip()
+        if name:
+            tag.name = name[:100]
+        if color and color.startswith('#') and len(color) == 7:
+            tag.color = color
+        tag.save(update_fields=['name', 'color'])
+        log_audit_event(request, 'tag.updated', 'RigTag', tag.id, {'name': tag.name, 'color': tag.color})
+        if request.headers.get('HX-Request'):
+            return render(request, 'accounts/_tag_row.html', {'tag': tag})
+    return redirect('accounts:tags')
+
+
+@login_required
+def delete_tag(request, tag_id):
+    """Delete a tag."""
+    if request.method == 'POST':
+        tag = get_object_or_404(RigTag, id=tag_id, user=request.user)
+        log_audit_event(request, 'tag.deleted', 'RigTag', tag.id, {'name': tag.name})
+        tag.delete()
+        if request.headers.get('HX-Request'):
+            return HttpResponse('')
+    return redirect('accounts:tags')
+
+
+# ── Rig Tag Assignment ───────────────────────────────────────────────────
+
+@login_required
+def rig_toggle_tag(request, uuid, tag_id):
+    """Toggle a tag on/off for a rig."""
+    if request.method == 'POST':
+        rig = get_object_or_404(Rig, uuid=uuid)
+        if rig.owner_id != request.user.id and not request.user.is_staff:
+            raise Http404
+        tag = get_object_or_404(RigTag, id=tag_id, user=request.user)
+        if tag in rig.tags.all():
+            rig.tags.remove(tag)
+            action = 'tag.removed'
+        else:
+            rig.tags.add(tag)
+            action = 'tag.added'
+        log_audit_event(request, action, 'Rig', rig.uuid, {'tag': tag.name})
+        if request.headers.get('HX-Request'):
+            return render(request, 'dashboard/_rig_tags.html', {'rig': rig})
+    return redirect('dashboard:rig-detail', uuid=uuid)

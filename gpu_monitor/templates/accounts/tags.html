@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Tags{% endblock %}
+{% block content %}
+<div class="max-w-3xl mx-auto">
+    <h2 class="text-xl font-bold mb-4">Tags</h2>
+    <p class="text-gray-400 mb-4">Tags help you organize and filter your rigs in the fleet overview.</p>
+
+    {# Create tag form #}
+    <form hx-post="{% url 'accounts:create-tag' %}" hx-target="#tag-list" hx-swap="afterbegin"
+          class="flex gap-2 mb-6 items-end">
+        {% csrf_token %}
+        <div class="flex-1">
+            <label class="block text-xs text-gray-500 mb-1">Tag Name</label>
+            <input type="text" name="name" placeholder="e.g., production, farm-01, a100-gpus" required
+                   class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white">
+        </div>
+        <div>
+            <label class="block text-xs text-gray-500 mb-1">Color</label>
+            <div class="flex gap-1">
+                <input type="color" name="color" value="#6B7280"
+                       class="w-10 h-10 rounded cursor-pointer bg-transparent border-0">
+            </div>
+        </div>
+        <button type="submit" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-white font-medium">
+            Create
+        </button>
+    </form>
+
+    {# Tag list #}
+    <div id="tag-list" class="space-y-2">
+        {% for tag in tags %}
+        {% include "accounts/_tag_row.html" with tag=tag %}
+        {% empty %}
+        <p class="text-gray-500">No tags yet. Create one above.</p>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

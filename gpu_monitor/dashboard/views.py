@@ -3,7 +3,7 @@ from django.contrib.auth.decorators import login_required
 from django.http import Http404
 from django.views.decorators.http import require_POST
 
-from rigs.models import Rig
+from rigs.models import Rig, RigTag
 from metrics_app.models import MetricSnapshot, LatestSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, ErrorEvent
 
 
@@ -135,10 +135,14 @@ def rig_list(request):
     if request.headers.get('HX-Request'):
         return render(request, 'dashboard/_rig_table.html', {'rig_data': rig_data})
 
+    all_tags = RigTag.objects.filter(user=user).order_by('name')
+
     return render(request, 'dashboard/rig_list.html', {
         'rig_data': rig_data,
         'status_filter': status_filter,
         'search': search,
+        'all_tags': all_tags,
+        'tag_filter': tag_filter,
     })
 
 

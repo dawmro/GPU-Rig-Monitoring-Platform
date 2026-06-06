@@ -1,0 +1,38 @@
+<div class="bg-gray-800 border border-gray-700 rounded p-3 flex items-center justify-between" id="tag-{{ tag.id }}">
+    <div class="flex items-center gap-3">
+        <span class="w-4 h-4 rounded-full flex-shrink-0" style="background: {{ tag.color }}"></span>
+        <span class="font-medium tag-name">{{ tag.name }}</span>
+        <span class="text-xs text-gray-500 tag-count">{{ tag.rigs.count }} rig{{ tag.rigs.count|pluralize }}</span>
+    </div>
+    <div class="flex items-center gap-2">
+        {# Edit button toggles inline edit form #}
+        <button onclick="document.getElementById('tag-edit-{{ tag.id }}').classList.toggle('hidden')"
+                class="text-gray-400 hover:text-white text-sm px-2 py-1 rounded hover:bg-gray-700">Edit</button>
+        <form hx-post="{% url 'accounts:delete-tag' tag.id %}" hx-target="#tag-{{ tag.id }}" hx-swap="outerHTML"
+              onsubmit="return confirm('Delete tag &quot;{{ tag.name }}&quot;?')">
+            {% csrf_token %}
+            <button type="submit" class="text-red-400 hover:text-red-300 text-sm px-2 py-1 rounded hover:bg-gray-700">Delete</button>
+        </form>
+    </div>
+
+    {# Inline edit form (hidden by default) #}
+    <div id="tag-edit-{{ tag.id }}" class="hidden mt-3 pt-3 border-t border-gray-700">
+        <form hx-post="{% url 'accounts:update-tag' tag.id %}" hx-target="#tag-{{ tag.id }}" hx-swap="outerHTML"
+              class="flex gap-2 items-end">
+            {% csrf_token %}
+            <div class="flex-1">
+                <label class="block text-xs text-gray-500 mb-1">Name</label>
+                <input type="text" name="name" value="{{ tag.name }}" required
+                       class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-white text-sm">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Color</label>
+                <input type="color" name="color" value="{{ tag.color }}"
+                       class="w-8 h-8 rounded cursor-pointer bg-transparent border-0">
+            </div>
+            <button type="submit" class="bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded text-white text-sm">Save</button>
+            <button type="button" onclick="document.getElementById('tag-edit-{{ tag.id }}').classList.add('hidden')"
+                    class="bg-gray-600 hover:bg-gray-500 px-3 py-1.5 rounded text-white text-sm">Cancel</button>
+        </form>
+    </div>
+</div>

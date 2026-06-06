@@ -3,8 +3,9 @@ from django.contrib.auth.decorators import login_required
 from django.http import Http404
 from django.views.decorators.http import require_POST
 
-from rigs.models import Rig
+from rigs.models import Rig, RigTag
 from metrics_app.models import MetricSnapshot, LatestSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, ErrorEvent
+from audit.middleware import log_audit_event
 
 
 def _fetch_rig_metrics(uuid):
@@ -135,11 +136,35 @@ def rig_list(request):
     if request.headers.get('HX-Request'):
         return render(request, 'dashboard/_rig_table.html', {'rig_data': rig_data})
 
+    all_tags = RigTag.objects.filter(user=user).order_by('name')
+
     return render(request, 'dashboard/rig_list.html', {
         'rig_data': rig_data,
         'status_filter': status_filter,
         'search': search,
+        'all_tags': all_tags,
+        'tag_filter': tag_filter,
     })
+
+
+@login_required
+def rig_toggle_tag(request, uuid, tag_id):
+    """Toggle a tag on/off for a rig."""
+    if request.method == 'POST':
+        rig = get_object_or_404(Rig, uuid=uuid)
+        if rig.owner_id != request.user.id and not request.user.is_staff:
+            raise Http404
+        tag = get_object_or_404(RigTag, id=tag_id, user=request.user)
+        if tag in rig.tags.all():
+            rig.tags.remove(tag)
+            action = 'tag.removed'
+        else:
+            rig.tags.add(tag)
+            action = 'tag.added'
+        log_audit_event(request, action, 'Rig', rig.uuid, {'tag': tag.name})
+        if request.headers.get('HX-Request'):
+            return render(request, 'dashboard/_rig_tags.html', {'rig': rig})
+    return redirect('dashboard:rig-detail', uuid=uuid)
 
 
 @login_required

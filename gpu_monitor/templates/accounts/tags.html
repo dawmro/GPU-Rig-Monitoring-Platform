@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Tags{% endblock %}
+{% block content %}
+<div class="max-w-3xl mx-auto">
+    <h2 class="text-xl font-bold mb-4">Tags</h2>
+    <p class="text-gray-400 mb-4">Tags help you organize and filter your rigs in the fleet overview.</p>
+
+    {# Create tag form — plain POST, no HTMX #}
+    <form method="post" action="{% url 'accounts:create-tag' %}" class="flex gap-2 mb-6 items-end">
+        {% csrf_token %}
+        <div class="flex-1">
+            <label class="block text-xs text-gray-500 mb-1">Tag Name</label>
+            <input type="text" name="name" placeholder="e.g., production, farm-01, a100-gpus" required
+                   class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white">
+        </div>
+        <div>
+            <label class="block text-xs text-gray-500 mb-1">Color</label>
+            <input type="color" name="color" value="#6B7280"
+                   class="w-10 h-10 rounded cursor-pointer bg-transparent border-0">
+        </div>
+        <button type="submit" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-white font-medium">
+            Create
+        </button>
+    </form>
+
+    {# Tag list — plain loop, no HTMX #}
+    <div class="space-y-2">
+        {% for tag in tags %}
+        <div class="bg-gray-800 border border-gray-700 rounded p-3 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <span class="w-4 h-4 rounded-full flex-shrink-0" style="background: {{ tag.color }}"></span>
+                <span class="font-medium">{{ tag.name }}</span>
+                <span class="text-xs text-gray-500">{{ tag.rigs.count }} rig{{ tag.rigs.count|pluralize }}</span>
+            </div>
+            <div class="flex items-center gap-2">
+                {# Edit button toggles inline edit form via JS #}
+                <button onclick="document.getElementById('tag-edit-{{ tag.id }}').classList.toggle('hidden')"
+                        class="text-gray-400 hover:text-white text-sm px-2 py-1 rounded hover:bg-gray-700">Edit</button>
+                <form method="post" action="{% url 'accounts:delete-tag' tag.id %}"
+                      onsubmit="return confirm('Delete tag &quot;{{ tag.name }}&quot;?')">
+                    {% csrf_token %}
+                    <button type="submit" class="text-red-400 hover:text-red-300 text-sm px-2 py-1 rounded hover:bg-gray-700">Delete</button>
+                </form>
+            </div>
+
+            {# Inline edit form (hidden by default) #}
+            <div id="tag-edit-{{ tag.id }}" class="hidden mt-3 pt-3 border-t border-gray-700">
+                <form method="post" action="{% url 'accounts:update-tag' tag.id %}" class="flex gap-2 items-end">
+                    {% csrf_token %}
+                    <div class="flex-1">
+                        <label class="block text-xs text-gray-500 mb-1">Name</label>
+                        <input type="text" name="name" value="{{ tag.name }}" required
+                               class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-white text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-500 mb-1">Color</label>
+                        <input type="color" name="color" value="{{ tag.color }}"
+                               class="w-8 h-8 rounded cursor-pointer bg-transparent border-0">
+                    </div>
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded text-white text-sm">Save</button>
+                    <button type="button" onclick="document.getElementById('tag-edit-{{ tag.id }}').classList.add('hidden')"
+                            class="bg-gray-600 hover:bg-gray-500 px-3 py-1.5 rounded text-white text-sm">Cancel</button>
+                </form>
+            </div>
+        </div>
+        {% empty %}
+        <p class="text-gray-500">No tags yet. Create one above.</p>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

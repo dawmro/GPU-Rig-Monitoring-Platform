@@ -15,6 +15,12 @@
                     <option value="stale" {% if status_filter == 'stale' %}selected{% endif %}>Stale</option>
                     <option value="offline" {% if status_filter == 'offline' %}selected{% endif %}>Offline</option>
                 </select>
+                <select name="tag" class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white">
+                    <option value="">All Tags</option>
+                    {% for tag in all_tags %}
+                    <option value="{{ tag.name }}" {% if tag_filter == tag.name %}selected{% endif %}>{{ tag.name }}</option>
+                    {% endfor %}
+                </select>
             </form>
         </div>
     </div>

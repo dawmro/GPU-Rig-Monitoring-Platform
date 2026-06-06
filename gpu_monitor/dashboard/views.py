@@ -4,7 +4,7 @@ from django.http import Http404
 from django.views.decorators.http import require_POST
 
 from rigs.models import Rig, RigTag
-from metrics_app.models import MetricSnapshot, LatestSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, ErrorEvent
+from metrics_app.models import MetricSnapshot, LatestSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, DockerContainerMetric, ErrorEvent
 from audit.middleware import log_audit_event
 
 
@@ -70,9 +70,16 @@ def _fetch_rig_metrics(uuid):
     except MetricSnapshot.DoesNotExist:
         latest_metric_snapshot = None
 
+    # GPU processes (latest per GPU per pid)
+    gpu_processes = list(
+        GPUProcessMetric.objects.filter(rig_uuid=str(uuid))
+        .order_by('-timestamp')[:50]
+    )
+
     return {
         'snapshot': snapshot,
         'gpu_metrics': gpu_metrics,
+        'gpu_processes': gpu_processes,
         'storage_metrics': storage_metrics,
         'network_metrics': network_metrics,
         'docker_metrics': docker_metrics,

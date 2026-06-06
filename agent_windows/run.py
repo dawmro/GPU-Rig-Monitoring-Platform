@@ -417,8 +417,63 @@ def collect_gpus():
         return []
 
 
+def collect_gpu_processes():
+    """Collect GPU process list from nvidia-smi (Windows version)."""
+    processes = []
+    try:
+        out = subprocess.run(
+            ['nvidia-smi'],
+            capture_output=True, text=True, timeout=10
+        )
+        if out.returncode != 0:
+            return processes
+
+        in_processes = False
+        for line in out.stdout.splitlines():
+            if line.strip().startswith('| Processes:'):
+                in_processes = True
+                continue
+            if in_processes:
+                if '---' in line or 'GPU' in line and 'PID' in line:
+                    continue
+                if not line.strip() or line.strip().startswith('+'):
+                    if processes:
+                        break
+                    continue
+                parts = [p.strip() for p in line.split('|') if p.strip()]
+                if len(parts) >= 5:
+                    try:
+                        gpu_idx = int(parts[0])
+                        pid = int(parts[3])
+                        proc_type = parts[4]
+                        gpu_mem_str = parts[-1] if len(parts) >= 6 else 'N/A'
+                        proc_name = ' '.join(parts[5:-1]) if len(parts) >= 6 else parts[4]
+
+                        gpu_mem_mb = None
+                        if gpu_mem_str not in ('N/A', ''):
+                            mem_val = gpu_mem_str.replace('MiB', '').replace('GiB', '').strip()
+                            try:
+                                gpu_mem_mb = int(float(mem_val))
+                                if 'GiB' in gpu_mem_str:
+                                    gpu_mem_mb *= 1024
+                            except ValueError:
+                                pass
+
+                        processes.append({
+                            'gpu_index': gpu_idx,
+                            'pid': pid,
+                            'type': proc_type,
+                            'name': proc_name,
+                            'gpu_mem_mb': gpu_mem_mb,
+                        })
+                    except (ValueError, IndexError):
+                        continue
+    except Exception as e:
+        logging.getLogger('gpu_processes').warning('GPU process collection failed: %s', e)
+    return processes
+
+
 def collect_docker():
-    """Collect Docker container info with resource usage stats."""
     try:
         import docker
         client = docker.from_env()
@@ -570,6 +625,7 @@ def build_payload(config):
         'storage': collect_storage(),
         'network': collect_network(),
         'gpus': collect_gpus(),
+        'gpu_processes': collect_gpu_processes(),
         'ai_processes': [],
         'docker_containers': collect_docker(),
     }

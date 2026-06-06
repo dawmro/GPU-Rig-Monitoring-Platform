@@ -45,6 +45,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
     cpu = metrics_data.get('cpu', {})
     memory = metrics_data.get('memory', {})
     gpu_list = metrics_data.get('gpus', [])
+    gpu_process_list = metrics_data.get('gpu_processes', [])
     storage_list = metrics_data.get('storage', [])
     network_list = metrics_data.get('network', [])
     ai_processes = metrics_data.get('ai_processes', [])
@@ -96,6 +97,21 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                         'mem_util_pct': gpu.get('mem_util_pct'),
                         'power_draw_w': gpu.get('power_draw_w'),
                         'power_limit_w': gpu.get('power_limit_w'),
+                    },
+                )
+
+            # Store per-GPU process metrics
+            for proc in gpu_process_list:
+                GPUProcessMetric.objects.update_or_create(
+                    rig_uuid=rig_uuid,
+                    timestamp=ts,
+                    gpu_index=proc.get('gpu_index', 0),
+                    pid=proc.get('pid'),
+                    defaults={
+                        'snapshot': snapshot,
+                        'process_name': proc.get('name', '')[:500],
+                        'type': proc.get('type', ''),
+                        'gpu_mem_mb': proc.get('gpu_mem_mb'),
                     },
                 )
 

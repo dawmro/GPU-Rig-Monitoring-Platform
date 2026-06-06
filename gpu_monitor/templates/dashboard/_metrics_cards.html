@@ -239,6 +239,44 @@
     <div class="text-gray-500">No GPU</div>
     {% endif %}
 </div>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<!-- GPU Processes (from nvidia-smi) -->
+<!-- ════════════════════════════════════════════════════════════════ -->
+{% if gpu_processes %}
+<div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
+    <h3 class="text-gray-400 text-sm font-medium mb-2">
+        GPU Processes ({{ gpu_processes|length }})
+        {% if is_data_stale %}
+        <span class="text-xs text-yellow-400 ml-1">(stale)</span>
+        {% endif %}
+    </h3>
+    <div class="space-y-1">
+        {% for proc in gpu_processes %}
+        <div class="flex items-center justify-between text-xs py-1 border-b border-gray-700/30 last:border-0">
+            <div class="flex items-center gap-2 min-w-0">
+                <span class="text-gray-500 flex-shrink-0">GPU{{ proc.gpu_index }}</span>
+                <span class="truncate text-gray-300" title="{{ proc.process_name }}">{{ proc.process_name|default:"unknown" }}</span>
+            </div>
+            <div class="flex items-center gap-2 flex-shrink-0">
+                <span class="px-1.5 py-0.5 rounded text-[10px]
+                    {% if proc.type == 'C' %}bg-blue-900/50 text-blue-300
+                    {% elif proc.type == 'G' %}bg-green-900/50 text-green-300
+                    {% elif 'C+G' in proc.type %}bg-yellow-900/50 text-yellow-300
+                    {% else %}bg-gray-700 text-gray-400{% endif %}">
+                    {{ proc.type|default:"?" }}
+                </span>
+                {% if proc.gpu_mem_mb != None %}
+                <span class="text-gray-400 w-16 text-right">{{ proc.gpu_mem_mb }} MB</span>
+                {% else %}
+                <span class="text-gray-600 w-16 text-right">N/A</span>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
 <!-- ════════════════════════════════════════════════════════════════ -->
 <!-- Network (per interface) -->
 <!-- ════════════════════════════════════════════════════════════════ -->

@@ -3,7 +3,7 @@ import logging
 from rest_framework import serializers, status
 from django.db import transaction
 from django.utils import timezone
-from .models import MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, ErrorEvent, ErrorEventOccurrence, RigStatusEvent, AIProcessMetric
+from .models import MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, ErrorEvent, ErrorEventOccurrence, RigStatusEvent, AIProcessMetric
 from rigs.models import Rig
 from audit.middleware import compute_error_hash
 

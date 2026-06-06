@@ -143,9 +143,9 @@ fi
 
 # ── Step 9: Restart Gunicorn ───────────────────────────────────────
 echo "--- Restarting Gunicorn ---"
-pkill -f "gunicorn.*gpu_monitor" 2>/dev/null || true
+sudo systemctl restart gunicorn
 sleep 2
-gunicorn gpu_monitor.wsgi:application --bind 127.0.0.1:8000 --workers 4 --timeout 30 &
+sudo systemctl status gunicorn --no-pager
 
 sleep 2
 echo "=== Done ==="

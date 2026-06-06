@@ -28,12 +28,13 @@
 - CPU Temperature ✅
 - CPU Load Average ✅ (3-line: 1m/5m/15m)
 
-### Phase 2: GPU ✅ COMPLETE (Multi-GPU implemented)
+### Phase 2: GPU ✅ COMPLETE (Multi-GPU implemented + fleet overview)
 - GPU Temperature ✅ (multi-GPU via loadChartMultiGpu)
 - GPU Utilization ✅ (multi-GPU via loadChartMultiGpu)
 - GPU Memory ✅ (multi-GPU via loadChartMultiGpu)
 - GPU Power ✅ (multi-GPU via loadChartMultiGpu)
 - GPU Fan Speed ✅ (multi-GPU via loadChartMultiGpu)
+- Fleet Overview table: all GPUs shown ✅
 
 *Implementation: Uses loadChartMultiGpu() with multi_gpu=true parameter in ChartDataView to return one dataset per GPU UUID, labeled with GPU index and model.*
 

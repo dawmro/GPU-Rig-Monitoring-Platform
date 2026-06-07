@@ -45,7 +45,7 @@
                 </td>
                 <td class="px-4 py-3 text-gray-400">
                     {% if item.rig.last_seen %}
-                        {{ item.rig.last_seen|timesince }} ago
+                        {{ item.rig.last_seen|last_seen_short }} ago
                     {% else %}
                         Never
                     {% endif %}

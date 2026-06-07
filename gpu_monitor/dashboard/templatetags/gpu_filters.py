@@ -183,3 +183,57 @@ def time_since(seconds):
     if not parts:
         parts.append('0s')
     return ' '.join(parts)
+
+
+@register.filter
+def last_seen_short(value):
+    """Format a datetime as a short relative time string.
+
+    For anything >= 7 days, shows total days only (e.g. '400d') to keep
+    the fleet table compact. For recent times, shows mixed units.
+    Examples:
+        '1 year, 1 month' -> '400d'
+        '3 months, 1 week' -> '97d'
+        '2 weeks' -> '14d'
+        '1 week, 2 days' -> '9d'
+        '1 day, 3 hours' -> '1d, 3h'
+        '2 hours, 15 minutes' -> '2h, 15m'
+        '45 minutes' -> '45m'
+        '0 minutes' -> 'just now'
+    """
+    if not value:
+        return 'Never'
+    from django.utils.timesince import timesince
+    from datetime import datetime, timezone
+    try:
+        ts = timesince(value)
+    except Exception:
+        return '—'
+    # For old rigs (contains year/month/week), show total days only
+    if any(unit in ts for unit in ('year', 'month', 'week')):
+        try:
+            now = datetime.now(timezone.utc)
+            if value.tzinfo is None:
+                value = value.replace(tzinfo=timezone.utc)
+            total_days = (now - value).days
+            return f'{total_days}d'
+        except Exception:
+            pass
+    # Shorten unit names (no space between number and unit)
+    replacements = [
+        ('days', 'd'),
+        ('day', 'd'),
+        ('hours', 'h'),
+        ('hour', 'h'),
+        ('minutes', 'm'),
+        ('minute', 'm'),
+    ]
+    for full, short in replacements:
+        ts = ts.replace(full, short)
+    # Remove space between number and unit
+    import re
+    ts = re.sub(r'(\d)\s+([dhm])', r'\1\2', ts)
+    # Handle "0 m" / "0 minutes" case
+    if ts.strip() in ('0m', '0 m', '0 minutes'):
+        return 'just now'
+    return ts

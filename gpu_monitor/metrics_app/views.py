@@ -1,4 +1,5 @@
 import logging
+import statistics
 from django.utils import timezone
 from datetime import timedelta
 from rest_framework.views import APIView
@@ -267,7 +268,6 @@ class ChartDataView(APIView):
             aggregate: Aggregation function for multi-row buckets:
                        'median', 'avg', 'max', 'min', or None (last value wins)
         """
-        import statistics
         total_buckets = len(labels)
         if total_buckets == 0:
             return
@@ -318,7 +318,6 @@ class ChartDataView(APIView):
         datasets is a list of dicts: [{'label': '1min', 'data': [...]}, ...]
         The field is expected to be a JSON array.
         """
-        import statistics
         total_buckets = len(labels)
         if total_buckets == 0:
             return
@@ -387,7 +386,6 @@ class ChartDataView(APIView):
         datasets is a list of dicts with '_key' matching key_field values.
         The 'label' field is the display label (may include extra info like model name).
         """
-        import statistics
         total_buckets = len(labels)
         if total_buckets == 0:
             return

@@ -183,3 +183,40 @@ def time_since(seconds):
     if not parts:
         parts.append('0s')
     return ' '.join(parts)
+
+
+@register.filter
+def last_seen_short(value):
+    """Format a datetime as a short relative time string.
+
+    Converts Django's 'timesince' output to abbreviated form.
+    Examples:
+        '5 days, 21 hours' -> '5 d, 21 h'
+        '1 day, 3 hours' -> '1 d, 3 h'
+        '2 hours, 15 minutes' -> '2 h, 15 m'
+        '45 minutes' -> '45 m'
+        '0 minutes' -> 'just now'
+    """
+    if not value:
+        return 'Never'
+    # Get Django's timesince output (e.g. "5 days, 21 hours")
+    from django.utils.timesince import timesince
+    try:
+        ts = timesince(value)
+    except Exception:
+        return '—'
+    # Shorten unit names
+    replacements = [
+        ('days', 'd'),
+        ('day', 'd'),
+        ('hours', 'h'),
+        ('hour', 'h'),
+        ('minutes', 'm'),
+        ('minute', 'm'),
+    ]
+    for full, short in replacements:
+        ts = ts.replace(full, short)
+    # Handle "0 minutes" case
+    if ts.strip() in ('0 m', '0 minutes'):
+        return 'just now'
+    return ts

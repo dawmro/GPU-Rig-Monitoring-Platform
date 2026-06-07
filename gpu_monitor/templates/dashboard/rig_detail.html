@@ -198,7 +198,7 @@
                 <div class="py-2 border-b border-gray-700/50 last:border-0">
                     <div class="flex items-center gap-2 mb-1">
                         <span class="text-xs px-2 py-0.5 rounded bg-red-900/50 text-red-300">{{ err.source|default:"unknown" }}</span>
-                        <span class="text-xs text-gray-500">{{ err.last_seen|timesince }} ago</span>
+                        <span class="text-xs text-gray-500">{{ err.last_seen|last_seen_short }} ago</span>
                         <span class="text-xs text-gray-600">×{{ err.count }}</span>
                     </div>
                     <p class="text-sm text-gray-400 font-mono">{{ err.message|truncatechars:200 }}</p>

@@ -27,7 +27,7 @@
                             {{ item.rig.name }}
                         {% endif %}
                     </a>
-                    {% if user.is_admin and item.rig.owner != user %}
+                    {% if user.is_staff and item.rig.owner != user %}
                     <div class="text-xs text-gray-500 mt-0.5">{{ item.rig.owner.email }}</div>
                     {% endif %}
                 </td>

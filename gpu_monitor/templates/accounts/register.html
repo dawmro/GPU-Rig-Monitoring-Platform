@@ -3,37 +3,46 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GPU Rig Monitor - Login</title>
-    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <title>GPU Rig Monitor - Register</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-900 text-gray-100 min-h-screen flex items-center justify-center">
     <div class="bg-gray-800 p-8 rounded-xl shadow-lg w-full max-w-md">
-        <h1 class="text-2xl font-bold text-center mb-6">🖥️ GPU Rig Monitor</h1>
+        <h1 class="text-2xl font-bold text-center mb-2">🖥️ GPU Rig Monitor</h1>
+        <p class="text-gray-400 text-center mb-6">Create your account</p>
+
         {% if messages %}
         {% for message in messages %}
         <div class="bg-red-900/50 border border-red-500 text-red-200 px-4 py-2 rounded mb-4">{{ message }}</div>
         {% endfor %}
         {% endif %}
+
         <form method="post" class="space-y-4">
             {% csrf_token %}
             <div>
                 <label class="block text-sm text-gray-400 mb-1">Email</label>
-                <input type="email" name="email" required
+                <input type="email" name="email" required value="{{ request.POST.email }}"
                     class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-500">
             </div>
             <div>
                 <label class="block text-sm text-gray-400 mb-1">Password</label>
-                <input type="password" name="password" required
+                <input type="password" name="password" required minlength="8"
+                    class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-500">
+                <p class="text-xs text-gray-500 mt-1">Minimum 8 characters</p>
+            </div>
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">Confirm Password</label>
+                <input type="password" name="password_confirm" required minlength="8"
                     class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-500">
             </div>
             <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded transition">
-                Sign In
+                Create Account
             </button>
         </form>
+
         <p class="text-center text-gray-400 text-sm mt-6">
-            Don't have an account?
-            <a href="{% url 'accounts:register' %}" class="text-blue-400 hover:text-blue-300">Create Account</a>
+            Already have an account?
+            <a href="{% url 'accounts:login' %}" class="text-blue-400 hover:text-blue-300">Sign In</a>
         </p>
     </div>
 </body>

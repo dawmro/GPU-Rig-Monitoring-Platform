@@ -9,6 +9,55 @@ from audit.middleware import log_audit_event
 from rigs.models import RigTag
 
 
+def register_view(request):
+    """User registration page. First user becomes admin automatically."""
+    if request.user.is_authenticated:
+        return redirect('dashboard:rig-list')
+
+    if request.method == 'POST':
+        email = request.POST.get('email', '').strip().lower()
+        password = request.POST.get('password', '')
+        password_confirm = request.POST.get('password_confirm', '')
+
+        # Validation
+        if not email or not password:
+            messages.error(request, 'Email and password are required')
+            return render(request, 'accounts/register.html')
+
+        if password != password_confirm:
+            messages.error(request, 'Passwords do not match')
+            return render(request, 'accounts/register.html')
+
+        if len(password) < 8:
+            messages.error(request, 'Password must be at least 8 characters')
+            return render(request, 'accounts/register.html')
+
+        if User.objects.filter(email=email).exists():
+            messages.error(request, 'An account with this email already exists')
+            return render(request, 'accounts/register.html')
+
+        # Create user — first user becomes admin
+        is_first_user = User.objects.count() == 0
+        user = User.objects.create_user(
+            username=email,
+            email=email,
+            password=password,
+            is_admin=is_first_user,
+        )
+
+        log_audit_event(request, 'user.registered', 'User', user.id, {
+            'email': email,
+            'is_admin': is_first_user,
+        })
+
+        # Log the user in
+        login(request, user)
+        messages.success(request, 'Account created successfully!')
+        return redirect('dashboard:rig-list')
+
+    return render(request, 'accounts/register.html')
+
+
 def login_view(request):
     if request.method == 'POST':
         email = request.POST.get('email', '')

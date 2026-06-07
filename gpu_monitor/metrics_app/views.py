@@ -458,7 +458,7 @@ class ChartDataView(APIView):
             snapshots = MetricSnapshot.objects.filter(
                 rig_uuid=str(uuid),
                 timestamp__gte=start_bucket,
-                timestamp__lte=end_minute,
+                timestamp__lte=end_bucket,
             ).order_by('timestamp')[:10000]
             # Special combined memory chart: return 3 datasets in one response
             multi_mem = request.query_params.get('multi_mem', 'false').lower() == 'true'
@@ -486,7 +486,7 @@ class ChartDataView(APIView):
             snapshots = MetricSnapshot.objects.filter(
                 rig_uuid=str(uuid),
                 timestamp__gte=start_bucket,
-                timestamp__lte=end_minute,
+                timestamp__lte=end_bucket,
             ).order_by('timestamp')[:10000]
             uptime_values = []
             for s in snapshots:
@@ -501,7 +501,7 @@ class ChartDataView(APIView):
             snapshots = MetricSnapshot.objects.filter(
                 rig_uuid=str(uuid),
                 timestamp__gte=start_bucket,
-                timestamp__lte=end_minute,
+                timestamp__lte=end_bucket,
             ).order_by('timestamp')[:10000]
             load_datasets = [
                 {'label': 'Load 1m', 'data': [None] * len(labels)},
@@ -520,7 +520,7 @@ class ChartDataView(APIView):
                     GPUMetric.objects.filter(
                         rig_uuid=str(uuid),
                         timestamp__gte=start_bucket,
-                        timestamp__lte=end_minute,
+                        timestamp__lte=end_bucket,
                     )
                     .values('gpu_uuid', 'model')
                     .distinct()
@@ -543,7 +543,7 @@ class ChartDataView(APIView):
                 gpu_data = GPUMetric.objects.filter(
                     rig_uuid=str(uuid),
                     timestamp__gte=start_bucket,
-                    timestamp__lte=end_minute,
+                    timestamp__lte=end_bucket,
                 ).order_by('timestamp')[:50000]
                 self._fill_buckets_multi_key(labels, gpu_datasets, start_bucket, gpu_data, field_name, 'gpu_uuid')
                 datasets = gpu_datasets
@@ -552,7 +552,7 @@ class ChartDataView(APIView):
                     rig_uuid=str(uuid),
                     gpu_index=gpu_index,
                     timestamp__gte=start_bucket,
-                    timestamp__lte=end_minute,
+                    timestamp__lte=end_bucket,
                 ).order_by('timestamp')[:10000]
                 self._fill_buckets(labels, values, start_bucket, gpu_data, field_name, bucket_minutes=self._bucket_minutes, aggregate=self._aggregate)
                 datasets = [{'label': f'GPU {gpu_index}', 'data': values}]
@@ -566,7 +566,7 @@ class ChartDataView(APIView):
                     StorageMetric.objects.filter(
                         rig_uuid=str(uuid),
                         timestamp__gte=start_bucket,
-                        timestamp__lte=end_minute,
+                        timestamp__lte=end_bucket,
                     )
                     .values('device', 'mountpoint')
                     .distinct()
@@ -589,7 +589,7 @@ class ChartDataView(APIView):
                 storage_data = StorageMetric.objects.filter(
                     rig_uuid=str(uuid),
                     timestamp__gte=start_bucket,
-                    timestamp__lte=end_minute,
+                    timestamp__lte=end_bucket,
                 ).order_by('timestamp')[:50000]
                 self._fill_buckets_multi_key(labels, disk_datasets, start_bucket, storage_data, field_name, 'device')
                 datasets = disk_datasets
@@ -597,7 +597,7 @@ class ChartDataView(APIView):
                 storage_data = StorageMetric.objects.filter(
                     rig_uuid=str(uuid),
                     timestamp__gte=start_bucket,
-                    timestamp__lte=end_minute,
+                    timestamp__lte=end_bucket,
                 ).order_by('timestamp')[:10000]
                 self._fill_buckets(labels, values, start_bucket, storage_data, field_name, bucket_minutes=self._bucket_minutes, aggregate=self._aggregate)
                 datasets = [{'label': metric, 'data': values}]
@@ -620,7 +620,7 @@ class ChartDataView(APIView):
                     NetworkMetric.objects.filter(
                         rig_uuid=str(uuid),
                         timestamp__gte=start_bucket,
-                        timestamp__lte=end_minute,
+                        timestamp__lte=end_bucket,
                     )
                     .values('interface', 'ipv4')
                     .distinct()
@@ -643,7 +643,7 @@ class ChartDataView(APIView):
                 net_data = NetworkMetric.objects.filter(
                     rig_uuid=str(uuid),
                     timestamp__gte=start_bucket,
-                    timestamp__lte=end_minute,
+                    timestamp__lte=end_bucket,
                 ).order_by('timestamp')[:50000]
                 self._fill_buckets_multi_key(labels, iface_datasets, start_bucket, net_data, field_name, 'interface')
                 datasets = iface_datasets
@@ -656,7 +656,7 @@ class ChartDataView(APIView):
                     rig_uuid=str(uuid),
                     interface__isnull=False,
                     timestamp__gte=start_bucket,
-                    timestamp__lte=end_minute,
+                    timestamp__lte=end_bucket,
                 ).order_by('timestamp')[:10000]
                 self._fill_buckets(labels, values, start_bucket, net_data, field_name, bucket_minutes=self._bucket_minutes, aggregate=self._aggregate)
                 datasets = [{'label': metric, 'data': values}]
@@ -677,7 +677,7 @@ class ChartDataView(APIView):
                 DockerContainerMetric.objects.filter(
                     rig_uuid=str(uuid),
                     timestamp__gte=start_bucket,
-                    timestamp__lte=end_minute,
+                    timestamp__lte=end_bucket,
                 )
                 .values('name')
                 .distinct()
@@ -691,7 +691,7 @@ class ChartDataView(APIView):
             container_data = DockerContainerMetric.objects.filter(
                 rig_uuid=str(uuid),
                 timestamp__gte=start_bucket,
-                timestamp__lte=end_minute,
+                timestamp__lte=end_bucket,
             ).order_by('timestamp')[:50000]
             self._fill_buckets_multi_key(labels, container_datasets, start_bucket, container_data, field_name, 'name')
             datasets = container_datasets
@@ -711,7 +711,7 @@ class ChartDataView(APIView):
                 AIProcessMetric.objects.filter(
                     rig_uuid=str(uuid),
                     timestamp__gte=start_bucket,
-                    timestamp__lte=end_minute,
+                    timestamp__lte=end_bucket,
                 )
                 .values('process_name')
                 .distinct()
@@ -725,7 +725,7 @@ class ChartDataView(APIView):
             ai_data = AIProcessMetric.objects.filter(
                 rig_uuid=str(uuid),
                 timestamp__gte=start_bucket,
-                timestamp__lte=end_minute,
+                timestamp__lte=end_bucket,
             ).order_by('timestamp')[:50000]
             self._fill_buckets_multi_key(labels, ai_datasets, start_bucket, ai_data, field_name, 'process_name')
             datasets = ai_datasets
@@ -734,7 +734,7 @@ class ChartDataView(APIView):
             occurrences = ErrorEventOccurrence.objects.filter(
                 rig_uuid=str(uuid),
                 timestamp__gte=start_bucket,
-                timestamp__lte=end_minute,
+                timestamp__lte=end_bucket,
             ).order_by('timestamp')[:50000]
             total_minutes = len(labels)
             error_counts = [0] * total_minutes

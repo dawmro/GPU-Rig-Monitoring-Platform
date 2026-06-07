@@ -67,15 +67,25 @@ def load_config(path=DEFAULT_CONFIG_PATH):
 
 def setup_logging(debug=False):
     log_dir = Path('/var/log/monitoring-agent')
-    log_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+    except PermissionError:
+        # Fallback to /tmp if /var/log is not writable (e.g., during testing)
+        log_dir = Path('/tmp/monitoring-agent')
+        log_dir.mkdir(parents=True, exist_ok=True)
 
     level = logging.DEBUG if debug else logging.INFO
     fmt = '{"ts":"%(asctime)s","level":"%(levelname)s","module":"%(name)s","msg":"%(message)s"}'
 
-    handler = logging.handlers.RotatingFileHandler(
-        log_dir / 'agent.log', maxBytes=10*1024*1024, backupCount=3
-    )
-    handler.setFormatter(logging.Formatter(fmt))
+    try:
+        handler = logging.handlers.RotatingFileHandler(
+            log_dir / 'agent.log', maxBytes=10*1024*1024, backupCount=3
+        )
+        handler.setFormatter(logging.Formatter(fmt))
+    except PermissionError:
+        # If we can't write to the log file, just use console
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter(fmt))
 
     console = logging.StreamHandler()
     console.setFormatter(logging.Formatter(fmt))
@@ -89,9 +99,12 @@ def setup_logging(debug=False):
 def log_payload(payload):
     """Save the latest full JSON payload to payload.json for local analysis."""
     log_dir = Path('/var/log/monitoring-agent')
-    log_dir.mkdir(parents=True, exist_ok=True)
-    payload_path = log_dir / 'payload.json'
-    payload_path.write_text(json.dumps(payload, indent=2, default=str) + '\n')
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        payload_path = log_dir / 'payload.json'
+        payload_path.write_text(json.dumps(payload, indent=2, default=str) + '\n')
+    except PermissionError:
+        pass  # Silently skip if we can't write (e.g., testing as non-root)
 
 
 # ── Metric Collectors (all-in-one, no duplication) ─────────────────────────
@@ -228,14 +241,50 @@ def collect_storage():
                         capture_output=True, text=True, timeout=5
                     )
                     for line in out.stdout.splitlines():
-                        if 'Temperature' in line and 'Celsius' in line:
+                        line_lower = line.lower()
+                        if 'temperature' in line_lower:
+                            # Parse temperature value from various formats:
+                            # SATA: "Temperature_Celsius     0x0022   40   60   40  Old_age   Always       -       40 (Min/Max 32/62)"
+                            # NVME: "Temperature:                        45 Celsius"
                             parts_w = line.split()
                             for i, w in enumerate(parts_w):
-                                if w.replace('.', '').isdigit() and i > 0:
-                                    disk['temp_c'] = float(w)
-                                    break
+                                # Match numbers like "45", "45.0", but skip hex like "0x0022"
+                                clean = w.replace('.', '').replace('-', '')
+                                if clean.isdigit() and i > 0:
+                                    val = float(w)
+                                    # Skip unrealistic values (>150°C is likely a raw SMART value, not temp)
+                                    if 0 < val <= 120:
+                                        disk['temp_c'] = val
+                                        break
+                            if disk['temp_c'] is not None:
+                                break
                 except Exception:
                     pass
+                # Fallback: try nvme CLI for NVMe drives
+                if disk['temp_c'] is None and 'nvme' in part.device:
+                    try:
+                        out = subprocess.run(
+                            ['sudo', 'nvme', 'smart-log', part.device],
+                            capture_output=True, text=True, timeout=5
+                        )
+                        for line in out.stdout.splitlines():
+                            if 'temperature' in line.lower():
+                                # Format: "temperature : 45 Celsius" or "temperature : 318 Kelvin"
+                                parts_w = line.split(':')
+                                if len(parts_w) >= 2:
+                                    val_str = parts_w[1].split()[0]
+                                    try:
+                                        val = float(val_str)
+                                        # Convert Kelvin to Celsius if needed
+                                        if 'kelvin' in line.lower():
+                                            val = val - 273.15
+                                        if 0 < val <= 120:
+                                            disk['temp_c'] = round(val, 1)
+                                            break
+                                    except ValueError:
+                                        pass
+                    except Exception:
+                        pass
                 disks.append(disk)
             except PermissionError:
                 continue
@@ -504,11 +553,11 @@ def collect_software():
 
 
 def collect_errors():
-    """Collect recent system errors."""
+    """Collect recent system errors from journalctl."""
     errors = []
     try:
         out = subprocess.run(
-            ['journalctl', '-p', 'err..crit', '--since', '5 min ago', '--no-pager', '-o', 'short-iso'],
+            ['sudo', 'journalctl', '-p', 'err..crit', '--since', '5 min ago', '--no-pager', '-o', 'short-iso'],
             capture_output=True, text=True, timeout=10
         )
         seen = set()

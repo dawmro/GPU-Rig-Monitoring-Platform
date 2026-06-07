@@ -393,22 +393,25 @@ The `monitoring-agent` system user runs without root privileges but needs elevat
 
 | Command | Purpose | Risk |
 |---------|---------|------|
-| `/usr/sbin/smartctl` | Read disk SMART health data | Read-only, no disk modification |
-| `/usr/bin/nvme` | Read NVMe drive health/logs | Read-only, no disk modification |
-| `/bin/journalctl` | Read system error logs | Read-only, no log modification |
+| `/usr/sbin/smartctl` or `/usr/bin/smartctl` | Read disk SMART health data (SATA) | Read-only, no disk modification |
+| `/usr/sbin/nvme` or `/usr/bin/nvme` | Read NVMe drive health/temperature | Read-only, no disk modification |
+| `/bin/journalctl` or `/usr/bin/journalctl` | Read system error logs | Read-only, no log modification |
 
 These are granted via `/etc/sudoers.d/monitoring-agent`:
 ```
-monitoring-agent ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/bin/nvme, /bin/journalctl
+monitoring-agent ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/bin/smartctl, /bin/journalctl, /usr/bin/journalctl, /usr/sbin/nvme, /usr/bin/nvme
 ```
 
 **Security properties:**
 - `NOPASSWD`: No password required (agent runs non-interactively via cron)
-- Command whitelist: Only these 3 commands are allowed, nothing else
-- Read-only: All three commands only read system state, never modify it
+- Command whitelist: Only these commands are allowed, nothing else
+- Read-only: All commands only read system state, never modify it
 - If any command is missing (e.g., no NVMe drive), the agent logs a warning and continues
+- Both common binary paths are included (`/usr/sbin/` and `/usr/bin/`) for cross-distro compatibility
 
 **GPU monitoring** does NOT require root — `pynvml` reads from the NVIDIA driver interface which is accessible to all users.
+
+**Note:** The agent calls `sudo journalctl` (not bare `journalctl`) to ensure it can read system-level error logs. The sudoers config above allows this without a password prompt.
 
 ### 5.4 Configure the Agent
 

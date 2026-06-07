@@ -109,10 +109,38 @@ def collect_cpu():
         try:
             temps = psutil.sensors_temperatures()
             if temps:
-                for name, entries in temps.items():
-                    if entries:
-                        temp_c = entries[0].current
-                        break
+                # Strategy: find the highest temperature among CPU core sensors.
+                # Priority:
+                #   1. Known CPU sensor names (coretemp, k10temp) — take highest core temp
+                #   2. Any sensor with "Core" in label — take highest
+                #   3. Fallback: first available reading
+                cpu_sensor_names = ('coretemp', 'k10temp')
+                best_temp = None
+
+                # First pass: known CPU sensors
+                for name in cpu_sensor_names:
+                    if name in temps:
+                        for entry in temps[name]:
+                            if entry.current is not None:
+                                if best_temp is None or entry.current > best_temp:
+                                    best_temp = entry.current
+
+                # Second pass: any entry with "Core" in label
+                if best_temp is None:
+                    for name, entries in temps.items():
+                        for entry in entries:
+                            if entry.current is not None and 'Core' in entry.label:
+                                if best_temp is None or entry.current > best_temp:
+                                    best_temp = entry.current
+
+                # Third pass: any temperature reading at all
+                if best_temp is None:
+                    for name, entries in temps.items():
+                        if entries and entries[0].current is not None:
+                            best_temp = entries[0].current
+                            break
+
+                temp_c = best_temp
         except Exception:
             pass
 

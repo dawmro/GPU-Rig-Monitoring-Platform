@@ -42,7 +42,7 @@ def register_view(request):
             username=email,
             email=email,
             password=password,
-            is_admin=is_first_user,
+            is_staff=is_first_user,
         )
 
         log_audit_event(request, 'user.registered', 'User', user.id, {

@@ -67,15 +67,25 @@ def load_config(path=DEFAULT_CONFIG_PATH):
 
 def setup_logging(debug=False):
     log_dir = Path('/var/log/monitoring-agent')
-    log_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+    except PermissionError:
+        # Fallback to /tmp if /var/log is not writable (e.g., during testing)
+        log_dir = Path('/tmp/monitoring-agent')
+        log_dir.mkdir(parents=True, exist_ok=True)
 
     level = logging.DEBUG if debug else logging.INFO
     fmt = '{"ts":"%(asctime)s","level":"%(levelname)s","module":"%(name)s","msg":"%(message)s"}'
 
-    handler = logging.handlers.RotatingFileHandler(
-        log_dir / 'agent.log', maxBytes=10*1024*1024, backupCount=3
-    )
-    handler.setFormatter(logging.Formatter(fmt))
+    try:
+        handler = logging.handlers.RotatingFileHandler(
+            log_dir / 'agent.log', maxBytes=10*1024*1024, backupCount=3
+        )
+        handler.setFormatter(logging.Formatter(fmt))
+    except PermissionError:
+        # If we can't write to the log file, just use console
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter(fmt))
 
     console = logging.StreamHandler()
     console.setFormatter(logging.Formatter(fmt))
@@ -89,9 +99,12 @@ def setup_logging(debug=False):
 def log_payload(payload):
     """Save the latest full JSON payload to payload.json for local analysis."""
     log_dir = Path('/var/log/monitoring-agent')
-    log_dir.mkdir(parents=True, exist_ok=True)
-    payload_path = log_dir / 'payload.json'
-    payload_path.write_text(json.dumps(payload, indent=2, default=str) + '\n')
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        payload_path = log_dir / 'payload.json'
+        payload_path.write_text(json.dumps(payload, indent=2, default=str) + '\n')
+    except PermissionError:
+        pass  # Silently skip if we can't write (e.g., testing as non-root)
 
 
 # ── Metric Collectors (all-in-one, no duplication) ─────────────────────────
@@ -504,11 +517,11 @@ def collect_software():
 
 
 def collect_errors():
-    """Collect recent system errors."""
+    """Collect recent system errors from journalctl."""
     errors = []
     try:
         out = subprocess.run(
-            ['journalctl', '-p', 'err..crit', '--since', '5 min ago', '--no-pager', '-o', 'short-iso'],
+            ['sudo', 'journalctl', '-p', 'err..crit', '--since', '5 min ago', '--no-pager', '-o', 'short-iso'],
             capture_output=True, text=True, timeout=10
         )
         seen = set()

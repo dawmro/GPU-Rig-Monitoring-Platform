@@ -47,9 +47,9 @@ if [ ! -f "$CONFIG_DIR/config.yaml" ]; then
     echo "⚠️  Edit this file with your API key and server endpoint!"
 fi
 
-# Suders for SMART/NVMe access
+# Sudoers for hardware access — only commands the agent actually uses
 cat > /etc/sudoers.d/monitoring-agent << 'EOF'
-monitoring-agent ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/bin/nvme, /bin/journalctl, /usr/bin/systemctl list-units
+monitoring-agent ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/bin/smartctl, /bin/journalctl, /usr/bin/journalctl
 EOF
 chmod 440 /etc/sudoers.d/monitoring-agent
 

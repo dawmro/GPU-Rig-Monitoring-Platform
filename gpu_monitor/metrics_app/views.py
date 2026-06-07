@@ -239,7 +239,8 @@ class ChartDataView(APIView):
         labels = []
         for i in range(total_buckets):
             bucket_time = start_bucket + timedelta(minutes=i * bucket_minutes)
-            if bucket_minutes >= 60:
+            # For ranges > 24h or buckets >= 1h, include date in label
+            if range_hours > 24 or bucket_minutes >= 60:
                 labels.append(bucket_time.strftime('%m-%d %H:%M'))
             else:
                 labels.append(bucket_time.strftime('%H:%M'))
@@ -304,6 +305,8 @@ class ChartDataView(APIView):
                         values[i] = round(statistics.median(bucket_values[i]), 2)
                     elif aggregate == 'avg':
                         values[i] = round(sum(bucket_values[i]) / len(bucket_values[i]), 2)
+                    elif aggregate == 'sum':
+                        values[i] = round(sum(bucket_values[i]), 2)
                     elif aggregate == 'max':
                         values[i] = max(bucket_values[i])
                     elif aggregate == 'min':
@@ -356,6 +359,8 @@ class ChartDataView(APIView):
                             datasets[j]['data'][i] = round(statistics.median(bucket_values[i][j]), 2)
                         elif aggregate == 'avg':
                             datasets[j]['data'][i] = round(sum(bucket_values[i][j]) / len(bucket_values[i][j]), 2)
+                        elif aggregate == 'sum':
+                            datasets[j]['data'][i] = round(sum(bucket_values[i][j]), 2)
                         else:
                             datasets[j]['data'][i] = bucket_values[i][j][-1]
 
@@ -425,6 +430,8 @@ class ChartDataView(APIView):
                             datasets[ds_idx]['data'][i] = round(statistics.median(idx_list[i]), 2)
                         elif aggregate == 'avg':
                             datasets[ds_idx]['data'][i] = round(sum(idx_list[i]) / len(idx_list[i]), 2)
+                        elif aggregate == 'sum':
+                            datasets[ds_idx]['data'][i] = round(sum(idx_list[i]), 2)
                         else:
                             datasets[ds_idx]['data'][i] = idx_list[i][-1]
 
@@ -445,7 +452,16 @@ class ChartDataView(APIView):
         bucket_minutes = int(request.query_params.get('bucket_minutes', '1'))
         aggregate = None
         if bucket_minutes > 1:
-            aggregate = 'median'  # Use median for aggregated buckets
+            aggregate = 'median'  # Default: median for aggregated buckets
+
+        # Per-metric aggregation overrides
+        # Byte-delta metrics (network) and error counts should use sum, not median
+        SUM_AGGREGATE_METRICS = {
+            'rx_bytes_delta', 'tx_bytes_delta',  # Network byte deltas
+            'error_frequency',                      # Error counts
+        }
+        if metric in SUM_AGGREGATE_METRICS and bucket_minutes > 1:
+            aggregate = 'sum'
 
         labels, values, start_bucket, end_bucket = self._build_buckets(range_hours, bucket_minutes)
 
@@ -735,15 +751,23 @@ class ChartDataView(APIView):
                 timestamp__gte=start_bucket,
                 timestamp__lte=end_bucket,
             ).order_by('timestamp')[:50000]
-            total_minutes = len(labels)
-            error_counts = [0] * total_minutes
+            total_buckets = len(labels)
+            error_counts = [0] * total_buckets
+            bucket_seconds = bucket_minutes * 60
             for occ in occurrences:
-                ts_minute = occ.timestamp.replace(second=0, microsecond=0)
-                delta = ts_minute - start_bucket
-                idx = int(delta.total_seconds() // 60)
-                if 0 <= idx < total_minutes:
+                ts = occ.timestamp.replace(second=0, microsecond=0)
+                delta = ts - start_bucket
+                idx = int(delta.total_seconds() // bucket_seconds)
+                if 0 <= idx < total_buckets:
                     error_counts[idx] += 1
-            datasets = [{'label': 'Errors/min', 'data': error_counts}]
+            # For aggregated buckets, label shows the bucket size
+            if bucket_minutes == 1:
+                label = 'Errors/min'
+            elif bucket_minutes == 15:
+                label = 'Errors/15min'
+            else:
+                label = 'Errors/hour'
+            datasets = [{'label': label, 'data': error_counts}]
 
         else:
             return Response({'status': 'error', 'message': f'Unknown metric: {metric}'}, status=400)

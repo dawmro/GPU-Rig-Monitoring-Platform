@@ -189,11 +189,13 @@ def time_since(seconds):
 def last_seen_short(value):
     """Format a datetime as a short relative time string.
 
+    Requires: {% load gpu_filters %} in the template.
+
     For anything >= 7 days, shows total days only (e.g. '400d') to keep
     the fleet table compact. For recent times, shows mixed units.
 
-    NOTE: Do NOT append ' ago' after this filter — the output is already
-    a relative time string. Use directly: {{ err.last_seen|last_seen_short }}
+    NOTE: Do NOT append ' ago' after this filter in error sections — the
+    output is already a relative time string. For fleet table, ' ago' is OK.
 
     Examples:
         '1 year, 1 month' -> '400d'

@@ -25,7 +25,7 @@
             <a href="{% url 'accounts:api-keys' %}" class="text-gray-400 hover:text-white">API Keys</a>
         </div>
         <div class="flex items-center gap-4">
-            <span class="text-gray-400 text-sm">{{ user.email }}</span>
+            <a href="{% url 'accounts:profile' %}" class="text-gray-400 hover:text-white text-sm">{{ user.email }}</a>
             <a href="{% url 'accounts:logout' %}" class="text-gray-400 hover:text-white text-sm">Logout</a>
         </div>
     </nav>
@@ -35,8 +35,7 @@
     </main>
 
     <script>
-    // HTMX refresh clocks — updates elements with id "<target>-clock" after every swap.
-    // Works on any page: harmless when no clock element exists.
+    // HTMX refresh clocks
     document.body.addEventListener('htmx:afterSwap', function(evt) {
         var targetId = evt.detail && evt.detail.target && evt.detail.target.id;
         if (!targetId) return;
@@ -49,6 +48,26 @@
                 String(d.getSeconds()).padStart(2,'0');
         }
     });
+
+    // Toggle all owner emails in fleet overview
+    function toggleAllOwnerEmails() {
+        var btn = document.getElementById('toggle-owner-emails');
+        var showEmails = btn.querySelector('span').textContent === 'Show emails';
+        
+        document.querySelectorAll('.owner-row').forEach(function(row) {
+            var safe = row.querySelector('.owner-safe');
+            var email = row.querySelector('.owner-email');
+            if (showEmails) {
+                safe.classList.add('hidden');
+                email.classList.remove('hidden');
+            } else {
+                safe.classList.remove('hidden');
+                email.classList.add('hidden');
+            }
+        });
+        
+        btn.querySelector('span').textContent = showEmails ? 'Hide emails' : 'Show emails';
+    }
     </script>
 </body>
 </html>

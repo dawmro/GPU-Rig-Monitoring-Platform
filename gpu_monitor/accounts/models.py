@@ -16,6 +16,15 @@ class User(AbstractUser):
     def __str__(self):
         return self.email
 
+    def get_safe_identifier(self):
+        """Return a privacy-safe identifier for display in shared contexts.
+        
+        Uses a short 8-character hex hash of the user's integer primary key.
+        This is anonymous — no email prefix, no username, just a short ID.
+        Example: '00000001', '00000002', etc.
+        """
+        return f'{self.id:08x}'
+
 
 class ApiKey(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

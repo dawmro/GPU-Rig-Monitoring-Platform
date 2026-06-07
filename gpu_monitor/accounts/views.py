@@ -9,6 +9,55 @@ from audit.middleware import log_audit_event
 from rigs.models import RigTag
 
 
+def register_view(request):
+    """User registration page. First user becomes admin automatically."""
+    if request.user.is_authenticated:
+        return redirect('dashboard:rig-list')
+
+    if request.method == 'POST':
+        email = request.POST.get('email', '').strip().lower()
+        password = request.POST.get('password', '')
+        password_confirm = request.POST.get('password_confirm', '')
+
+        # Validation
+        if not email or not password:
+            messages.error(request, 'Email and password are required')
+            return render(request, 'accounts/register.html')
+
+        if password != password_confirm:
+            messages.error(request, 'Passwords do not match')
+            return render(request, 'accounts/register.html')
+
+        if len(password) < 8:
+            messages.error(request, 'Password must be at least 8 characters')
+            return render(request, 'accounts/register.html')
+
+        if User.objects.filter(email=email).exists():
+            messages.error(request, 'An account with this email already exists')
+            return render(request, 'accounts/register.html')
+
+        # Create user — first user becomes admin
+        is_first_user = User.objects.count() == 0
+        user = User.objects.create_user(
+            username=email,
+            email=email,
+            password=password,
+            is_staff=is_first_user,
+        )
+
+        log_audit_event(request, 'user.registered', 'User', user.id, {
+            'email': email,
+            'is_admin': is_first_user,
+        })
+
+        # Log the user in
+        login(request, user)
+        messages.success(request, 'Account created successfully!')
+        return redirect('dashboard:rig-list')
+
+    return render(request, 'accounts/register.html')
+
+
 def login_view(request):
     if request.method == 'POST':
         email = request.POST.get('email', '')
@@ -74,6 +123,31 @@ def revoke_api_key(request, key_id):
             return HttpResponse('')
         messages.success(request, f'Key "{key.name}" revoked')
     return redirect('accounts:api-keys')
+
+
+@login_required
+def profile_view(request):
+    """User profile page — view info and change password."""
+    if request.method == 'POST':
+        current = request.POST.get('current_password', '')
+        new = request.POST.get('new_password', '')
+        confirm = request.POST.get('confirm_password', '')
+
+        if not request.user.check_password(current):
+            messages.error(request, 'Current password is incorrect')
+        elif new != confirm:
+            messages.error(request, 'New passwords do not match')
+        elif len(new) < 8:
+            messages.error(request, 'Password must be at least 8 characters')
+        else:
+            request.user.set_password(new)
+            request.user.save()
+            log_audit_event(request, 'user.password_changed', 'User', request.user.id, {})
+            messages.success(request, 'Password changed successfully')
+            from django.contrib.auth import update_session_auth_hash
+            update_session_auth_hash(request, request.user)
+
+    return render(request, 'accounts/profile.html')
 
 
 # ── Tag CRUD (no HTMX, plain form posts) ──────────────────────────────────

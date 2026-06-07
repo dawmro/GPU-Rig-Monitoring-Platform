@@ -57,17 +57,17 @@ done
 # ── Step 4: Copy agent (Linux) ──────────────────────────────────────
 echo "--- Agent (Linux) ---"
 if [ -f "$WORKSPACE/agent/run.py" ]; then
-    cp "$WORKSPACE/agent/run.py" "$OPT/monitoring-agent/run.py"
-    chmod +x "$OPT/monitoring-agent/run.py"
+    sudo cp "$WORKSPACE/agent/run.py" "$OPT/monitoring-agent/run.py"
+    sudo chmod +x "$OPT/monitoring-agent/run.py"
     echo "  Synced: agent/run.py"
 fi
 
 # ── Step 5: Copy agent (Windows) ────────────────────────────────────
 echo "--- Agent (Windows) ---"
 if [ -f "$WORKSPACE/agent_windows/run.py" ]; then
-    mkdir -p "$OPT/agent_windows"
-    cp "$WORKSPACE/agent_windows/run.py" "$OPT/agent_windows/run.py"
-    chmod +x "$OPT/agent_windows/run.py"
+    sudo mkdir -p "$OPT/agent_windows"
+    sudo cp "$WORKSPACE/agent_windows/run.py" "$OPT/agent_windows/run.py"
+    sudo chmod +x "$OPT/agent_windows/run.py"
     echo "  Synced: agent_windows/run.py"
 fi
 

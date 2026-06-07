@@ -27,6 +27,12 @@
                             {{ item.rig.name }}
                         {% endif %}
                     </a>
+                    {% if user.is_staff and item.rig.owner != user %}
+                    <div class="text-xs text-gray-500 mt-0.5 owner-row">
+                        <span class="owner-safe">{{ item.rig.owner.get_safe_identifier }}</span>
+                        <span class="owner-email hidden">{{ item.rig.owner.email }}</span>
+                    </div>
+                    {% endif %}
                 </td>
                 <td class="px-4 py-3">
                     {% if item.rig.status == 'online' %}

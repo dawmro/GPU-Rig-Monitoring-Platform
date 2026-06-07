@@ -103,7 +103,10 @@ def rig_list(request):
     4. Add the <td> cell in ``_rig_table.html`` <tbody> using the new key.
     """
     user = request.user
-    rigs = Rig.objects.filter(owner=user).prefetch_related('tags').order_by('name')
+    if user.is_admin:
+        rigs = Rig.objects.all().prefetch_related('tags', 'owner').order_by('name')
+    else:
+        rigs = Rig.objects.filter(owner=user).prefetch_related('tags').order_by('name')
 
     status_filter = request.GET.get('status', '')
     if status_filter:

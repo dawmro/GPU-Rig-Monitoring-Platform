@@ -49,18 +49,24 @@
         }
     });
 
-    // Toggle owner email visibility
-    function toggleOwner(btn) {
-        var container = btn.closest('.owner-identifier');
-        var safe = container.querySelector('.owner-safe');
-        var email = container.querySelector('.owner-email');
-        if (safe.classList.contains('hidden')) {
-            safe.classList.remove('hidden');
-            email.classList.add('hidden');
-        } else {
-            safe.classList.add('hidden');
-            email.classList.remove('hidden');
-        }
+    // Toggle all owner emails in fleet overview
+    function toggleAllOwnerEmails() {
+        var btn = document.getElementById('toggle-owner-emails');
+        var showEmails = btn.querySelector('span').textContent === 'Show emails';
+        
+        document.querySelectorAll('.owner-row').forEach(function(row) {
+            var safe = row.querySelector('.owner-safe');
+            var email = row.querySelector('.owner-email');
+            if (showEmails) {
+                safe.classList.add('hidden');
+                email.classList.remove('hidden');
+            } else {
+                safe.classList.remove('hidden');
+                email.classList.add('hidden');
+            }
+        });
+        
+        btn.querySelector('span').textContent = showEmails ? 'Hide emails' : 'Show emails';
     }
     </script>
 </body>

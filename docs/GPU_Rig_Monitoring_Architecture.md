@@ -413,7 +413,7 @@ HTMX polls use `hx-swap="innerHTML"` (not `outerHTML`). This is critical: `inner
 |--------|--------|-------------|
 | Rig Name | Rig.name | Clickable link to detail |
 | Status | Rig.status | Online/Stale/Offline |
-| Last Seen | Rig.last_seen | Relative time |
+|| Last Seen | Rig.last_seen | Short relative time via `last_seen_short` filter (e.g., '5d, 21h', '45m', 'just now') |
 | Tags | RigTag M2M | Colored pills |
 | GPU | GPUMetric.model (all GPUs) | Compact summary with count (e.g., "RTX 3060 ×8") |
 | GPU Temp [°C] | GPUMetric.gpu_temp_c (all GPUs) | Space-separated color-coded values |

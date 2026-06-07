@@ -191,11 +191,14 @@ def last_seen_short(value):
 
     For anything >= 7 days, shows total days only (e.g. '400d') to keep
     the fleet table compact. For recent times, shows mixed units.
+
+    NOTE: Do NOT append ' ago' after this filter — the output is already
+    a relative time string. Use directly: {{ err.last_seen|last_seen_short }}
+
     Examples:
         '1 year, 1 month' -> '400d'
         '3 months, 1 week' -> '97d'
         '2 weeks' -> '14d'
-        '1 week, 2 days' -> '9d'
         '1 day, 3 hours' -> '1d, 3h'
         '2 hours, 15 minutes' -> '2h, 15m'
         '45 minutes' -> '45m'

@@ -360,18 +360,19 @@ class ChartDataView(APIView):
                         else:
                             datasets[j]['data'][i] = bucket_values[i][j][-1]
 
-    def _fill_buckets_from_values(self, labels, values, start_bucket, queryset, field_values, value_key='timestamp'):
+    def _fill_buckets_from_values(self, labels, values, start_bucket, queryset, field_values,
+                                  value_key='timestamp', bucket_minutes=1, aggregate=None):
         """Fill bucket values from a parallel list of values (one per queryset row)."""
-        total_minutes = len(labels)
+        total_buckets = len(labels)
         rows = list(queryset)
         for i, row in enumerate(rows):
             if i >= len(field_values):
                 break
             ts = getattr(row, value_key)
-            ts_minute = ts.replace(second=0, microsecond=0)
-            delta = ts_minute - start_bucket
-            idx = int(delta.total_seconds() // 60)
-            if 0 <= idx < total_minutes:
+            ts = ts.replace(second=0, microsecond=0)
+            delta = ts - start_bucket
+            idx = int(delta.total_seconds() // (bucket_minutes * 60))
+            if 0 <= idx < total_buckets:
                 val = field_values[i]
                 if val is not None:
                     values[idx] = val
@@ -545,7 +546,7 @@ class ChartDataView(APIView):
                     timestamp__gte=start_bucket,
                     timestamp__lte=end_bucket,
                 ).order_by('timestamp')[:50000]
-                self._fill_buckets_multi_key(labels, gpu_datasets, start_bucket, gpu_data, field_name, 'gpu_uuid')
+                self._fill_buckets_multi_key(labels, gpu_datasets, start_bucket, gpu_data, field_name, 'gpu_uuid', bucket_minutes=self._bucket_minutes, aggregate=self._aggregate)
                 datasets = gpu_datasets
             else:
                 gpu_data = GPUMetric.objects.filter(
@@ -591,7 +592,7 @@ class ChartDataView(APIView):
                     timestamp__gte=start_bucket,
                     timestamp__lte=end_bucket,
                 ).order_by('timestamp')[:50000]
-                self._fill_buckets_multi_key(labels, disk_datasets, start_bucket, storage_data, field_name, 'device')
+                self._fill_buckets_multi_key(labels, disk_datasets, start_bucket, storage_data, field_name, 'device', bucket_minutes=self._bucket_minutes, aggregate=self._aggregate)
                 datasets = disk_datasets
             else:
                 storage_data = StorageMetric.objects.filter(
@@ -645,7 +646,7 @@ class ChartDataView(APIView):
                     timestamp__gte=start_bucket,
                     timestamp__lte=end_bucket,
                 ).order_by('timestamp')[:50000]
-                self._fill_buckets_multi_key(labels, iface_datasets, start_bucket, net_data, field_name, 'interface')
+                self._fill_buckets_multi_key(labels, iface_datasets, start_bucket, net_data, field_name, 'interface', bucket_minutes=self._bucket_minutes, aggregate=self._aggregate)
                 datasets = iface_datasets
                 # Convert byte deltas to MB/s for network metrics
                 if field_name in self.BYTE_TO_MB:
@@ -693,7 +694,7 @@ class ChartDataView(APIView):
                 timestamp__gte=start_bucket,
                 timestamp__lte=end_bucket,
             ).order_by('timestamp')[:50000]
-            self._fill_buckets_multi_key(labels, container_datasets, start_bucket, container_data, field_name, 'name')
+            self._fill_buckets_multi_key(labels, container_datasets, start_bucket, container_data, field_name, 'name', bucket_minutes=self._bucket_minutes, aggregate=self._aggregate)
             datasets = container_datasets
             if field_name == 'mem_usage_bytes':
                 for ds in datasets:
@@ -727,7 +728,7 @@ class ChartDataView(APIView):
                 timestamp__gte=start_bucket,
                 timestamp__lte=end_bucket,
             ).order_by('timestamp')[:50000]
-            self._fill_buckets_multi_key(labels, ai_datasets, start_bucket, ai_data, field_name, 'process_name')
+            self._fill_buckets_multi_key(labels, ai_datasets, start_bucket, ai_data, field_name, 'process_name', bucket_minutes=self._bucket_minutes, aggregate=self._aggregate)
             datasets = ai_datasets
 
         elif metric == 'error_frequency':

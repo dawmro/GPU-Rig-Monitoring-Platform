@@ -202,7 +202,7 @@ def last_seen_short(value):
         '1 day, 3 hours' -> '1d, 3h'
         '2 hours, 15 minutes' -> '2h, 15m'
         '45 minutes' -> '45m'
-        '0 minutes' -> 'just now'
+        '0 minutes' -> '0m'
     """
     if not value:
         return 'Never'
@@ -238,5 +238,5 @@ def last_seen_short(value):
     ts = re.sub(r'(\d)\s+([dhm])', r'\1\2', ts)
     # Handle "0 m" / "0 minutes" case
     if ts.strip() in ('0m', '0 m', '0 minutes'):
-        return 'just now'
+        return '0m'
     return ts

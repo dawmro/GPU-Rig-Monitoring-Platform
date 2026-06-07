@@ -9,12 +9,23 @@ from argon2.exceptions import VerifyMismatchError
 class User(AbstractUser):
     email = models.EmailField(unique=True)
     is_admin = models.BooleanField(default=False)
+    display_name = models.CharField(max_length=64, blank=True, default='')
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['username']
 
+    def save(self, *args, **kwargs):
+        if not self.display_name:
+            # Auto-generate from email prefix (before @)
+            self.display_name = self.email.split('@')[0]
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return self.email
+
+    def get_safe_identifier(self):
+        """Return a privacy-safe identifier for display in shared contexts."""
+        return self.display_name or self.email.split('@')[0]
 
 
 class ApiKey(models.Model):

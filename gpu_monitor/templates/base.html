@@ -35,8 +35,7 @@
     </main>
 
     <script>
-    // HTMX refresh clocks — updates elements with id "<target>-clock" after every swap.
-    // Works on any page: harmless when no clock element exists.
+    // HTMX refresh clocks
     document.body.addEventListener('htmx:afterSwap', function(evt) {
         var targetId = evt.detail && evt.detail.target && evt.detail.target.id;
         if (!targetId) return;
@@ -49,6 +48,20 @@
                 String(d.getSeconds()).padStart(2,'0');
         }
     });
+
+    // Toggle owner email visibility
+    function toggleOwner(btn) {
+        var container = btn.closest('.owner-identifier');
+        var safe = container.querySelector('.owner-safe');
+        var email = container.querySelector('.owner-email');
+        if (safe.classList.contains('hidden')) {
+            safe.classList.remove('hidden');
+            email.classList.add('hidden');
+        } else {
+            safe.classList.add('hidden');
+            email.classList.remove('hidden');
+        }
+    }
     </script>
 </body>
 </html>

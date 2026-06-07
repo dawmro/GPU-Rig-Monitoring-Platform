@@ -291,6 +291,7 @@ class ErrorEventOccurrence(models.Model):
     class Meta:
         db_table = 'metrics_error_event_occurrence'
         ordering = ['-timestamp']
+        unique_together = ('error_event', 'rig_uuid', 'timestamp')
         indexes = [
             models.Index(fields=['rig_uuid', '-timestamp']),
             models.Index(fields=['error_event', '-timestamp']),

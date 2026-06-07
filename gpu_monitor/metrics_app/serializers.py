@@ -245,11 +245,15 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                         'message': message[:500],
                     },
                 )
-                # Create occurrence record for time-series tracking
-                ErrorEventOccurrence.objects.create(
+                # Create occurrence record for time-series tracking.
+                # Truncate timestamp to the minute for deduplication — if the same
+                # error is reported in multiple payloads within the same minute,
+                # only one occurrence is recorded.
+                ts_minute = ts.replace(second=0, microsecond=0)
+                ErrorEventOccurrence.objects.get_or_create(
                     error_event=error_event,
                     rig_uuid=rig_uuid,
-                    timestamp=ts,
+                    timestamp=ts_minute,
                 )
 
             http_status = status.HTTP_200_OK if created else status.HTTP_202_ACCEPTED

@@ -393,12 +393,13 @@ The `monitoring-agent` system user runs without root privileges but needs elevat
 
 | Command | Purpose | Risk |
 |---------|---------|------|
-| `/usr/sbin/smartctl` or `/usr/bin/smartctl` | Read disk SMART health data | Read-only, no disk modification |
+| `/usr/sbin/smartctl` or `/usr/bin/smartctl` | Read disk SMART health data (SATA) | Read-only, no disk modification |
+| `/usr/sbin/nvme` or `/usr/bin/nvme` | Read NVMe drive health/temperature | Read-only, no disk modification |
 | `/bin/journalctl` or `/usr/bin/journalctl` | Read system error logs | Read-only, no log modification |
 
 These are granted via `/etc/sudoers.d/monitoring-agent`:
 ```
-monitoring-agent ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/bin/smartctl, /bin/journalctl, /usr/bin/journalctl
+monitoring-agent ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/bin/smartctl, /bin/journalctl, /usr/bin/journalctl, /usr/sbin/nvme, /usr/bin/nvme
 ```
 
 **Security properties:**

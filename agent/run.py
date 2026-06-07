@@ -241,14 +241,50 @@ def collect_storage():
                         capture_output=True, text=True, timeout=5
                     )
                     for line in out.stdout.splitlines():
-                        if 'Temperature' in line and 'Celsius' in line:
+                        line_lower = line.lower()
+                        if 'temperature' in line_lower:
+                            # Parse temperature value from various formats:
+                            # SATA: "Temperature_Celsius     0x0022   40   60   40  Old_age   Always       -       40 (Min/Max 32/62)"
+                            # NVME: "Temperature:                        45 Celsius"
                             parts_w = line.split()
                             for i, w in enumerate(parts_w):
-                                if w.replace('.', '').isdigit() and i > 0:
-                                    disk['temp_c'] = float(w)
-                                    break
+                                # Match numbers like "45", "45.0", but skip hex like "0x0022"
+                                clean = w.replace('.', '').replace('-', '')
+                                if clean.isdigit() and i > 0:
+                                    val = float(w)
+                                    # Skip unrealistic values (>150°C is likely a raw SMART value, not temp)
+                                    if 0 < val <= 120:
+                                        disk['temp_c'] = val
+                                        break
+                            if disk['temp_c'] is not None:
+                                break
                 except Exception:
                     pass
+                # Fallback: try nvme CLI for NVMe drives
+                if disk['temp_c'] is None and 'nvme' in part.device:
+                    try:
+                        out = subprocess.run(
+                            ['sudo', 'nvme', 'smart-log', part.device],
+                            capture_output=True, text=True, timeout=5
+                        )
+                        for line in out.stdout.splitlines():
+                            if 'temperature' in line.lower():
+                                # Format: "temperature : 45 Celsius" or "temperature : 318 Kelvin"
+                                parts_w = line.split(':')
+                                if len(parts_w) >= 2:
+                                    val_str = parts_w[1].split()[0]
+                                    try:
+                                        val = float(val_str)
+                                        # Convert Kelvin to Celsius if needed
+                                        if 'kelvin' in line.lower():
+                                            val = val - 273.15
+                                        if 0 < val <= 120:
+                                            disk['temp_c'] = round(val, 1)
+                                            break
+                                    except ValueError:
+                                        pass
+                    except Exception:
+                        pass
                 disks.append(disk)
             except PermissionError:
                 continue

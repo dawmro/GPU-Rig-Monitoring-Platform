@@ -49,7 +49,7 @@ fi
 
 # Sudoers for hardware access — only commands the agent actually uses
 cat > /etc/sudoers.d/monitoring-agent << 'EOF'
-monitoring-agent ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/bin/smartctl, /bin/journalctl, /usr/bin/journalctl
+monitoring-agent ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/bin/smartctl, /bin/journalctl, /usr/bin/journalctl, /usr/sbin/nvme, /usr/bin/nvme
 EOF
 chmod 440 /etc/sudoers.d/monitoring-agent
 

@@ -317,7 +317,6 @@ function setChartRange(rangeHours, bucketMinutes) {
 async function loadCharts() {
     var uuid = '{{ rig.uuid }}';
     var range = chartRange;
-    var bucket = chartBucketMinutes;
 
     // Single-value charts (standard loadChart)
     await Promise.all([
@@ -365,7 +364,7 @@ async function loadChart(canvasId, metric, uuid, range, unit, borderColor, bgCol
     chartType = chartType || 'line';
 
     try {
-        var resp = await fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=${metric}&range=${range}&bucket_minutes=${bucket}`);
+        var resp = await fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=${metric}&range=${range}&bucket_minutes=${chartBucketMinutes}`);
         var data = await resp.json();
 
         // Server already converts byte metrics to GB; no client-side conversion needed.
@@ -448,7 +447,7 @@ async function loadChartLoadAvg(canvasId, uuid, range) {
     if (!ctx) return;
 
     try {
-        var resp = await fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=cpu_load_avg&range=${range}&bucket_minutes=${bucket}`);
+        var resp = await fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=cpu_load_avg&range=${range}&bucket_minutes=${chartBucketMinutes}`);
         var data = await resp.json();
 
         var colors = [
@@ -537,7 +536,7 @@ async function loadChartMemSwap(canvasId, uuid, range) {
     if (!ctx) return;
 
     try {
-        var resp = await fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=mem_used_bytes&range=${range}&bucket_minutes=${bucket}&multi_mem=true`);
+        var resp = await fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=mem_used_bytes&range=${range}&bucket_minutes=${chartBucketMinutes}&multi_mem=true`);
         var data = await resp.json();
 
         if (chartInstances[canvasId]) {
@@ -629,9 +628,9 @@ async function loadChartNetworkCombined(canvasId, uuid, range) {
     try {
         // Fetch all three metrics in parallel
         var [rxResp, txResp, errResp] = await Promise.all([
-            fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=net_rx_bytes_delta&range=${range}&bucket_minutes=${bucket}&multi_iface=true`),
-            fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=net_tx_bytes_delta&range=${range}&bucket_minutes=${bucket}&multi_iface=true`),
-            fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=net_rx_errors&range=${range}&bucket_minutes=${bucket}&multi_iface=true`),
+            fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=net_rx_bytes_delta&range=${range}&bucket_minutes=${chartBucketMinutes}&multi_iface=true`),
+            fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=net_tx_bytes_delta&range=${range}&bucket_minutes=${chartBucketMinutes}&multi_iface=true`),
+            fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=net_rx_errors&range=${range}&bucket_minutes=${chartBucketMinutes}&multi_iface=true`),
         ]);
         var [rxData, txData, errData] = await Promise.all([
             rxResp.json(), txResp.json(), errResp.json(),
@@ -835,7 +834,7 @@ async function loadChartMultiGpu(canvasId, metric, uuid, range, unit) {
     if (!ctx) return;
 
     try {
-        var resp = await fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=${metric}&range=${range}&bucket_minutes=${bucket}&multi_gpu=true`);
+        var resp = await fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=${metric}&range=${range}&bucket_minutes=${chartBucketMinutes}&multi_gpu=true`);
         var data = await resp.json();
 
         if (chartInstances[canvasId]) {
@@ -948,7 +947,7 @@ async function loadChartMultiKey(canvasId, metric, uuid, range, unit, multi_para
     if (!ctx) return;
 
     try {
-        var resp = await fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=${metric}&range=${range}&bucket_minutes=${bucket}&${multi_param}=true`);
+        var resp = await fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=${metric}&range=${range}&bucket_minutes=${chartBucketMinutes}&${multi_param}=true`);
         var data = await resp.json();
 
         if (chartInstances[canvasId]) {

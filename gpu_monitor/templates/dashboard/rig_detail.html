@@ -63,6 +63,14 @@
                       onclick="event.stopPropagation(); loadCharts();"
                       title="Reload charts">↻</span>
             </button>
+            <div id="chart-timeframe" class="hidden flex items-center gap-1 ml-2">
+                <button onclick="setChartRange(24, 1)" id="btn-range-24h"
+                        class="chart-range-btn px-2 py-0.5 rounded text-xs bg-blue-600 text-white">24h</button>
+                <button onclick="setChartRange(168, 15)" id="btn-range-7d"
+                        class="chart-range-btn px-2 py-0.5 rounded text-xs bg-gray-700 text-gray-400 hover:bg-gray-600">7d</button>
+                <button onclick="setChartRange(720, 60)" id="btn-range-30d"
+                        class="chart-range-btn px-2 py-0.5 rounded text-xs bg-gray-700 text-gray-400 hover:bg-gray-600">30d</button>
+            </div>
             <button onclick="switchTab('errors')" id="tab-errors"
                     class="tab-btn pb-3 px-1 border-b-2 border-transparent text-gray-400 hover:text-gray-200">
                 Errors
@@ -92,97 +100,97 @@
 
             <!-- GPU Temperature Chart (multi-GPU) -->
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">GPU Temperature (24h)</h3>
+                <h3 class="text-sm font-medium text-gray-300 mb-3">GPU Temperature (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartGpuTemp"></canvas>
             </div>
 
             <!-- GPU Utilization Chart (multi-GPU) -->
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">GPU Utilization (24h)</h3>
+                <h3 class="text-sm font-medium text-gray-300 mb-3">GPU Utilization (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartGpuUtil"></canvas>
             </div>
 
             <!-- GPU VRAM Usage Chart (multi-GPU) -->
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">GPU VRAM Usage (24h)</h3>
+                <h3 class="text-sm font-medium text-gray-300 mb-3">GPU VRAM Usage (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartGpuMem"></canvas>
             </div>
 
             <!-- GPU Power Chart (multi-GPU) -->
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">GPU Power Draw (24h)</h3>
+                <h3 class="text-sm font-medium text-gray-300 mb-3">GPU Power Draw (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartGpuPower"></canvas>
             </div>
 
             <!-- GPU Fan Speed Chart (multi-GPU) -->
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">GPU Fan Speed (24h)</h3>
+                <h3 class="text-sm font-medium text-gray-300 mb-3">GPU Fan Speed (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartGpuFan"></canvas>
             </div>
 
             <!-- CPU Utilization Chart -->
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">CPU Utilization (24h)</h3>
+                <h3 class="text-sm font-medium text-gray-300 mb-3">CPU Utilization (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartCpuUtil"></canvas>
             </div>
 
             <!-- CPU Temperature Chart -->
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">CPU Temperature (24h)</h3>
+                <h3 class="text-sm font-medium text-gray-300 mb-3">CPU Temperature (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartCpuTemp"></canvas>
             </div>
 
             <!-- Memory & Swap Combined Chart -->
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Memory & Swap (24h)</h3>
+                <h3 class="text-sm font-medium text-gray-300 mb-3">Memory & Swap (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartMemSwap"></canvas>
             </div>
 
             <!-- CPU Load Average Chart -->
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">CPU Load Average (24h)</h3>
+                <h3 class="text-sm font-medium text-gray-300 mb-3">CPU Load Average (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartCpuLoad"></canvas>
             </div>
 
             <!-- Disk Usage Chart (multi-disk) -->
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Disk Usage (24h)</h3>
+                <h3 class="text-sm font-medium text-gray-300 mb-3">Disk Usage (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartDiskUsage"></canvas>
             </div>
 
             <!-- Network Traffic Chart (multi-interface, combined RX/TX/Errors) -->
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[300px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Network Traffic (24h)</h3>
+                <h3 class="text-sm font-medium text-gray-300 mb-3">Network Traffic (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartNetCombined"></canvas>
             </div>
 
             <!-- Uptime Chart -->
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Uptime (24h)</h3>
+                <h3 class="text-sm font-medium text-gray-300 mb-3">Uptime (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartUptime"></canvas>
             </div>
 
             <!-- Container CPU Chart (multi-container) -->
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Container CPU % (24h)</h3>
+                <h3 class="text-sm font-medium text-gray-300 mb-3">Container CPU % (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartContainerCpu"></canvas>
             </div>
 
             <!-- Container Memory Chart (multi-container) -->
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Container Memory (24h)</h3>
+                <h3 class="text-sm font-medium text-gray-300 mb-3">Container Memory (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartContainerMem"></canvas>
             </div>
 
             <!-- AI Process GPU Memory Chart (multi-process) -->
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">AI Process GPU Memory (24h)</h3>
+                <h3 class="text-sm font-medium text-gray-300 mb-3">AI Process GPU Memory (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartAiGpuMem"></canvas>
             </div>
 
             <!-- Error Frequency Chart -->
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Error Frequency (24h)</h3>
+                <h3 class="text-sm font-medium text-gray-300 mb-3">Error Frequency (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartErrorFreq"></canvas>
             </div>
 
@@ -229,6 +237,15 @@ function switchTab(tabName) {
         loadCharts();
         window.chartsLoaded = true;
     }
+    // Show/hide timeframe buttons
+    var tf = document.getElementById('chart-timeframe');
+    if (tf) {
+        if (tabName === 'charts') {
+            tf.classList.remove('hidden');
+        } else {
+            tf.classList.add('hidden');
+        }
+    }
 }
 
 // Inline rename form toggle
@@ -261,10 +278,46 @@ document.body.addEventListener('htmx:afterSettle', function(evt) {
 // Chart instances
 var chartInstances = {};
 
+// Chart timeframe state
+var chartRange = 24;        // hours
+var chartBucketMinutes = 1;  // bucket size in minutes
+
+function setChartRange(rangeHours, bucketMinutes) {
+    chartRange = rangeHours;
+    chartBucketMinutes = bucketMinutes;
+    // Update button styles
+    document.querySelectorAll('.chart-range-btn').forEach(function(btn) {
+        btn.classList.remove('bg-blue-600', 'text-white');
+        btn.classList.add('bg-gray-700', 'text-gray-400');
+    });
+    // Highlight active button
+    var activeId = 'btn-range-' + (rangeHours === 24 ? '24h' : rangeHours === 168 ? '7d' : '30d');
+    var activeBtn = document.getElementById(activeId);
+    if (activeBtn) {
+        activeBtn.classList.remove('bg-gray-700', 'text-gray-400');
+        activeBtn.classList.add('bg-blue-600', 'text-white');
+    }
+    // Reload charts with new range
+    loadCharts();
+    // Update chart heading labels
+    var label;
+    if (rangeHours === 24) {
+        label = '24h';
+    } else if (rangeHours === 168) {
+        label = '7d';
+    } else {
+        label = '30d';
+    }
+    document.querySelectorAll('.chart-timeframe-label').forEach(function(el) {
+        el.textContent = label;
+    });
+}
+
 // Load all charts
 async function loadCharts() {
     var uuid = '{{ rig.uuid }}';
-    var range = 24;
+    var range = chartRange;
+    var bucket = chartBucketMinutes;
 
     // Single-value charts (standard loadChart)
     await Promise.all([
@@ -312,7 +365,7 @@ async function loadChart(canvasId, metric, uuid, range, unit, borderColor, bgCol
     chartType = chartType || 'line';
 
     try {
-        var resp = await fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=${metric}&range=${range}`);
+        var resp = await fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=${metric}&range=${range}&bucket_minutes=${bucket}`);
         var data = await resp.json();
 
         // Server already converts byte metrics to GB; no client-side conversion needed.
@@ -395,7 +448,7 @@ async function loadChartLoadAvg(canvasId, uuid, range) {
     if (!ctx) return;
 
     try {
-        var resp = await fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=cpu_load_avg&range=${range}`);
+        var resp = await fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=cpu_load_avg&range=${range}&bucket_minutes=${bucket}`);
         var data = await resp.json();
 
         var colors = [
@@ -484,7 +537,7 @@ async function loadChartMemSwap(canvasId, uuid, range) {
     if (!ctx) return;
 
     try {
-        var resp = await fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=mem_used_bytes&range=${range}&multi_mem=true`);
+        var resp = await fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=mem_used_bytes&range=${range}&bucket_minutes=${bucket}&multi_mem=true`);
         var data = await resp.json();
 
         if (chartInstances[canvasId]) {
@@ -576,9 +629,9 @@ async function loadChartNetworkCombined(canvasId, uuid, range) {
     try {
         // Fetch all three metrics in parallel
         var [rxResp, txResp, errResp] = await Promise.all([
-            fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=net_rx_bytes_delta&range=${range}&multi_iface=true`),
-            fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=net_tx_bytes_delta&range=${range}&multi_iface=true`),
-            fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=net_rx_errors&range=${range}&multi_iface=true`),
+            fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=net_rx_bytes_delta&range=${range}&bucket_minutes=${bucket}&multi_iface=true`),
+            fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=net_tx_bytes_delta&range=${range}&bucket_minutes=${bucket}&multi_iface=true`),
+            fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=net_rx_errors&range=${range}&bucket_minutes=${bucket}&multi_iface=true`),
         ]);
         var [rxData, txData, errData] = await Promise.all([
             rxResp.json(), txResp.json(), errResp.json(),
@@ -782,7 +835,7 @@ async function loadChartMultiGpu(canvasId, metric, uuid, range, unit) {
     if (!ctx) return;
 
     try {
-        var resp = await fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=${metric}&range=${range}&multi_gpu=true`);
+        var resp = await fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=${metric}&range=${range}&bucket_minutes=${bucket}&multi_gpu=true`);
         var data = await resp.json();
 
         if (chartInstances[canvasId]) {
@@ -895,7 +948,7 @@ async function loadChartMultiKey(canvasId, metric, uuid, range, unit, multi_para
     if (!ctx) return;
 
     try {
-        var resp = await fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=${metric}&range=${range}&${multi_param}=true`);
+        var resp = await fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=${metric}&range=${range}&bucket_minutes=${bucket}&${multi_param}=true`);
         var data = await resp.json();
 
         if (chartInstances[canvasId]) {

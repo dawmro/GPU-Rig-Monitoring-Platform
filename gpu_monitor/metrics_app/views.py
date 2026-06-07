@@ -217,63 +217,150 @@ class ChartDataView(APIView):
     # Byte-delta metrics that should be converted to MB/s in the response
     BYTE_TO_MB = {'rx_bytes_delta', 'tx_bytes_delta'}
 
-    def _build_buckets(self, range_hours):
-        """Build fixed 1-minute bucket labels and empty value array.
+    def _build_buckets(self, range_hours, bucket_minutes=1):
+        """Build fixed bucket labels and empty value array.
 
-        Returns (labels, values) where labels are 'HH:MM' strings and
-        values are a list of Nones with length = range_hours * 60.
+        Returns (labels, values, start_bucket, end_bucket) where labels are
+        time strings and values are a list of Nones.
         Bucket 0 = oldest, bucket N-1 = newest (now).
+
+        Args:
+            range_hours: Total hours of historical data
+            bucket_minutes: Size of each bucket in minutes (1, 15, or 60)
         """
         now = timezone.now()
-        end_minute = now.replace(second=0, microsecond=0)
-        total_minutes = range_hours * 60
-        start_minute = end_minute - timedelta(minutes=total_minutes)
+        end_bucket = now.replace(second=0, microsecond=0)
+        # Align end_bucket to bucket boundary
+        end_bucket = end_bucket - timedelta(minutes=end_bucket.minute % bucket_minutes)
+        total_buckets = (range_hours * 60) // bucket_minutes
+        start_bucket = end_bucket - timedelta(minutes=total_buckets * bucket_minutes)
 
         labels = []
-        for i in range(total_minutes):
-            bucket_time = start_minute + timedelta(minutes=i)
-            labels.append(bucket_time.strftime('%H:%M'))
+        for i in range(total_buckets):
+            bucket_time = start_bucket + timedelta(minutes=i * bucket_minutes)
+            if bucket_minutes >= 60:
+                labels.append(bucket_time.strftime('%m-%d %H:%M'))
+            else:
+                labels.append(bucket_time.strftime('%H:%M'))
 
-        values = [None] * total_minutes
-        return labels, values, start_minute, end_minute
+        values = [None] * total_buckets
+        return labels, values, start_bucket, end_bucket
 
-    def _fill_buckets(self, labels, values, start_minute, queryset, field_name, value_key='timestamp'):
-        """Fill bucket values from a queryset (single-value metrics).
+    def _fill_buckets(self, labels, values, start_bucket, queryset, field_name,
+                      value_key='timestamp', bucket_minutes=1, aggregate=None):
+        """Fill bucket values from a queryset.
 
-        Each row is placed into the bucket matching its truncated minute.
-        If multiple rows fall in the same bucket, the last one wins.
+        For bucket_minutes=1: Each row is placed into the bucket matching its
+        truncated minute. Last value wins.
+
+        For bucket_minutes>1: Multiple rows per bucket are collected, and the
+        aggregate function is applied (default: median).
+
+        Args:
+            labels: Bucket label list
+            values: Output values list (modified in place)
+            start_bucket: Datetime of the first bucket
+            queryset: Django queryset to pull rows from
+            field_name: Model field to extract values from
+            value_key: Timestamp field name (default: 'timestamp')
+            bucket_minutes: Size of each bucket in minute (default: 1)
+            aggregate: Aggregation function for multi-row buckets:
+                       'median', 'avg', 'max', 'min', or None (last value wins)
         """
-        total_minutes = len(labels)
-        for row in queryset:
-            ts = getattr(row, value_key)
-            ts_minute = ts.replace(second=0, microsecond=0)
-            delta = ts_minute - start_minute
-            idx = int(delta.total_seconds() // 60)
-            if 0 <= idx < total_minutes:
-                val = getattr(row, field_name, None)
-                if val is not None:
-                    values[idx] = val
+        import statistics
+        total_buckets = len(labels)
+        if total_buckets == 0:
+            return
 
-    def _fill_buckets_multi(self, labels, datasets, start_minute, queryset, field_name, value_key='timestamp'):
+        if bucket_minutes == 1 and aggregate is None:
+            # Fast path: 1-minute buckets, last value wins
+            for row in queryset:
+                ts = getattr(row, value_key)
+                ts_minute = ts.replace(second=0, microsecond=0)
+                delta = ts_minute - start_bucket
+                idx = int(delta.total_seconds() // 60)
+                if 0 <= idx < total_buckets:
+                    val = getattr(row, field_name, None)
+                    if val is not None:
+                        values[idx] = val
+        else:
+            # Aggregate path: collect all values per bucket
+            bucket_values = [[] for _ in range(total_buckets)]
+            bucket_seconds = bucket_minutes * 60
+            for row in queryset:
+                ts = getattr(row, value_key)
+                ts = ts.replace(second=0, microsecond=0)
+                delta = ts - start_bucket
+                idx = int(delta.total_seconds() // bucket_seconds)
+                if 0 <= idx < total_buckets:
+                    val = getattr(row, field_name, None)
+                    if val is not None:
+                        bucket_values[idx].append(val)
+
+            # Apply aggregation
+            for i in range(total_buckets):
+                if bucket_values[i]:
+                    if aggregate == 'median':
+                        values[i] = round(statistics.median(bucket_values[i]), 2)
+                    elif aggregate == 'avg':
+                        values[i] = round(sum(bucket_values[i]) / len(bucket_values[i]), 2)
+                    elif aggregate == 'max':
+                        values[i] = max(bucket_values[i])
+                    elif aggregate == 'min':
+                        values[i] = min(bucket_values[i])
+                    else:
+                        values[i] = bucket_values[i][-1]  # last value wins
+
+    def _fill_buckets_multi(self, labels, datasets, start_bucket, queryset, field_name,
+                            value_key='timestamp', bucket_minutes=1, aggregate=None):
         """Fill bucket values for multi-value metrics (e.g. load_avg with 3 values).
 
         datasets is a list of dicts: [{'label': '1min', 'data': [...]}, ...]
         The field is expected to be a JSON array.
         """
-        total_minutes = len(labels)
+        import statistics
+        total_buckets = len(labels)
+        if total_buckets == 0:
+            return
         num_values = len(datasets)
-        for row in queryset:
-            ts = getattr(row, value_key)
-            ts_minute = ts.replace(second=0, microsecond=0)
-            delta = ts_minute - start_minute
-            idx = int(delta.total_seconds() // 60)
-            if 0 <= idx < total_minutes:
-                val = getattr(row, field_name, None)
-                if val and isinstance(val, (list, tuple)) and len(val) >= num_values:
-                    for i in range(num_values):
-                        datasets[i]['data'][idx] = val[i]
+        bucket_seconds = bucket_minutes * 60
 
-    def _fill_buckets_from_values(self, labels, values, start_minute, queryset, field_values, value_key='timestamp'):
+        if bucket_minutes == 1 and aggregate is None:
+            # Fast path: 1-minute buckets
+            for row in queryset:
+                ts = getattr(row, value_key)
+                ts_minute = ts.replace(second=0, microsecond=0)
+                delta = ts_minute - start_bucket
+                idx = int(delta.total_seconds() // 60)
+                if 0 <= idx < total_buckets:
+                    val = getattr(row, field_name, None)
+                    if val and isinstance(val, (list, tuple)) and len(val) >= num_values:
+                        for i in range(num_values):
+                            datasets[i]['data'][idx] = val[i]
+        else:
+            # Aggregate path: collect all values per bucket
+            bucket_values = [[[] for _ in range(num_values)] for _ in range(total_buckets)]
+            for row in queryset:
+                ts = getattr(row, value_key)
+                ts = ts.replace(second=0, microsecond=0)
+                delta = ts - start_bucket
+                idx = int(delta.total_seconds() // bucket_seconds)
+                if 0 <= idx < total_buckets:
+                    val = getattr(row, field_name, None)
+                    if val and isinstance(val, (list, tuple)) and len(val) >= num_values:
+                        for i in range(num_values):
+                            bucket_values[idx][i].append(val[i])
+            for i in range(total_buckets):
+                for j in range(num_values):
+                    if bucket_values[i][j]:
+                        if aggregate == 'median':
+                            datasets[j]['data'][i] = round(statistics.median(bucket_values[i][j]), 2)
+                        elif aggregate == 'avg':
+                            datasets[j]['data'][i] = round(sum(bucket_values[i][j]) / len(bucket_values[i][j]), 2)
+                        else:
+                            datasets[j]['data'][i] = bucket_values[i][j][-1]
+
+    def _fill_buckets_from_values(self, labels, values, start_bucket, queryset, field_values, value_key='timestamp'):
         """Fill bucket values from a parallel list of values (one per queryset row)."""
         total_minutes = len(labels)
         rows = list(queryset)
@@ -282,14 +369,15 @@ class ChartDataView(APIView):
                 break
             ts = getattr(row, value_key)
             ts_minute = ts.replace(second=0, microsecond=0)
-            delta = ts_minute - start_minute
+            delta = ts_minute - start_bucket
             idx = int(delta.total_seconds() // 60)
             if 0 <= idx < total_minutes:
                 val = field_values[i]
                 if val is not None:
                     values[idx] = val
 
-    def _fill_buckets_multi_key(self, labels, datasets, start_minute, queryset, field_name, key_field, value_key='timestamp'):
+    def _fill_buckets_multi_key(self, labels, datasets, start_bucket, queryset, field_name, key_field,
+                                value_key='timestamp', bucket_minutes=1, aggregate=None):
         """Fill bucket values for multi-key metrics (one dataset per unique key value).
 
         Used for multi-GPU (key_field='gpu_uuid'), multi-disk (key_field='device'),
@@ -298,18 +386,48 @@ class ChartDataView(APIView):
         datasets is a list of dicts with '_key' matching key_field values.
         The 'label' field is the display label (may include extra info like model name).
         """
-        total_minutes = len(labels)
+        import statistics
+        total_buckets = len(labels)
+        if total_buckets == 0:
+            return
         key_to_idx = {ds['_key']: i for i, ds in enumerate(datasets)}
-        for row in queryset:
-            ts = getattr(row, value_key)
-            ts_minute = ts.replace(second=0, microsecond=0)
-            delta = ts_minute - start_minute
-            idx = int(delta.total_seconds() // 60)
-            if 0 <= idx < total_minutes:
-                val = getattr(row, field_name, None)
-                key_val = getattr(row, key_field, None)
-                if val is not None and key_val in key_to_idx:
-                    datasets[key_to_idx[key_val]]['data'][idx] = val
+        bucket_seconds = bucket_minutes * 60
+
+        if bucket_minutes == 1 and aggregate is None:
+            # Fast path: 1-minute buckets
+            for row in queryset:
+                ts = getattr(row, value_key)
+                ts_minute = ts.replace(second=0, microsecond=0)
+                delta = ts_minute - start_bucket
+                idx = int(delta.total_seconds() // 60)
+                if 0 <= idx < total_buckets:
+                    val = getattr(row, field_name, None)
+                    key_val = getattr(row, key_field, None)
+                    if val is not None and key_val in key_to_idx:
+                        datasets[key_to_idx[key_val]]['data'][idx] = val
+        else:
+            # Aggregate path: collect all values per bucket per key
+            bucket_values = {ds['_key']: [[] for _ in range(total_buckets)] for ds in datasets}
+            for row in queryset:
+                ts = getattr(row, value_key)
+                ts = ts.replace(second=0, microsecond=0)
+                delta = ts - start_bucket
+                idx = int(delta.total_seconds() // bucket_seconds)
+                if 0 <= idx < total_buckets:
+                    val = getattr(row, field_name, None)
+                    key_val = getattr(row, key_field, None)
+                    if val is not None and key_val in key_to_idx:
+                        bucket_values[key_val][idx].append(val)
+            for key_val, idx_list in bucket_values.items():
+                ds_idx = key_to_idx[key_val]
+                for i in range(total_buckets):
+                    if idx_list[i]:
+                        if aggregate == 'median':
+                            datasets[ds_idx]['data'][i] = round(statistics.median(idx_list[i]), 2)
+                        elif aggregate == 'avg':
+                            datasets[ds_idx]['data'][i] = round(sum(idx_list[i]) / len(idx_list[i]), 2)
+                        else:
+                            datasets[ds_idx]['data'][i] = idx_list[i][-1]
 
     def get(self, request, uuid):
         user = request.user
@@ -324,12 +442,22 @@ class ChartDataView(APIView):
         multi_disk = request.query_params.get('multi_disk', 'false').lower() == 'true'
         multi_iface = request.query_params.get('multi_iface', 'false').lower() == 'true'
 
-        labels, values, start_minute, end_minute = self._build_buckets(range_hours)
+        # Determine bucket size and aggregation based on range
+        bucket_minutes = int(request.query_params.get('bucket_minutes', '1'))
+        aggregate = None
+        if bucket_minutes > 1:
+            aggregate = 'median'  # Use median for aggregated buckets
+
+        labels, values, start_bucket, end_bucket = self._build_buckets(range_hours, bucket_minutes)
+
+        # Store for use in helper methods that don't receive these params
+        self._bucket_minutes = bucket_minutes
+        self._aggregate = aggregate
 
         if metric in self.SNAPSHOT_METRICS:
             snapshots = MetricSnapshot.objects.filter(
                 rig_uuid=str(uuid),
-                timestamp__gte=start_minute,
+                timestamp__gte=start_bucket,
                 timestamp__lte=end_minute,
             ).order_by('timestamp')[:10000]
             # Special combined memory chart: return 3 datasets in one response
@@ -343,12 +471,12 @@ class ChartDataView(APIView):
                 mem_datasets = []
                 for field, label in mem_fields.items():
                     vals = [None] * len(labels)
-                    self._fill_buckets(labels, vals, start_minute, snapshots, field)
+                    self._fill_buckets(labels, vals, start_bucket, snapshots, field, bucket_minutes=self._bucket_minutes, aggregate=self._aggregate)
                     vals_gb = [round(v / (1024**3), 2) if v is not None else None for v in vals]
                     mem_datasets.append({'label': label, 'data': vals_gb})
                 datasets = mem_datasets
             else:
-                self._fill_buckets(labels, values, start_minute, snapshots, metric)
+                self._fill_buckets(labels, values, start_bucket, snapshots, metric, bucket_minutes=self._bucket_minutes, aggregate=self._aggregate)
                 if metric in self.BYTE_TO_GB:
                     values = [round(v / (1024**3), 2) if v is not None else None for v in values]
                 datasets = [{'label': metric, 'data': values}]
@@ -357,7 +485,7 @@ class ChartDataView(APIView):
             # Uptime from software_json (resets on reboot)
             snapshots = MetricSnapshot.objects.filter(
                 rig_uuid=str(uuid),
-                timestamp__gte=start_minute,
+                timestamp__gte=start_bucket,
                 timestamp__lte=end_minute,
             ).order_by('timestamp')[:10000]
             uptime_values = []
@@ -366,13 +494,13 @@ class ChartDataView(APIView):
                 uptime_days = round(uptime_s / 86400, 2) if uptime_s is not None else None
                 uptime_values.append(uptime_days)
             # Fill buckets (last value per minute)
-            self._fill_buckets_from_values(labels, values, start_minute, snapshots, uptime_values)
+            self._fill_buckets_from_values(labels, values, start_bucket, snapshots, uptime_values, bucket_minutes=self._bucket_minutes, aggregate=self._aggregate)
             datasets = [{'label': 'Uptime (days)', 'data': values}]
 
         elif metric == 'cpu_load_avg':
             snapshots = MetricSnapshot.objects.filter(
                 rig_uuid=str(uuid),
-                timestamp__gte=start_minute,
+                timestamp__gte=start_bucket,
                 timestamp__lte=end_minute,
             ).order_by('timestamp')[:10000]
             load_datasets = [
@@ -380,7 +508,7 @@ class ChartDataView(APIView):
                 {'label': 'Load 5m', 'data': [None] * len(labels)},
                 {'label': 'Load 15m', 'data': [None] * len(labels)},
             ]
-            self._fill_buckets_multi(labels, load_datasets, start_minute, snapshots, 'cpu_load_avg_json')
+            self._fill_buckets_multi(labels, load_datasets, start_bucket, snapshots, 'cpu_load_avg_json', bucket_minutes=self._bucket_minutes, aggregate=self._aggregate)
             datasets = load_datasets
 
         elif metric in self.GPU_METRICS:
@@ -391,7 +519,7 @@ class ChartDataView(APIView):
                 gpu_info = (
                     GPUMetric.objects.filter(
                         rig_uuid=str(uuid),
-                        timestamp__gte=start_minute,
+                        timestamp__gte=start_bucket,
                         timestamp__lte=end_minute,
                     )
                     .values('gpu_uuid', 'model')
@@ -414,19 +542,19 @@ class ChartDataView(APIView):
                 ]
                 gpu_data = GPUMetric.objects.filter(
                     rig_uuid=str(uuid),
-                    timestamp__gte=start_minute,
+                    timestamp__gte=start_bucket,
                     timestamp__lte=end_minute,
                 ).order_by('timestamp')[:50000]
-                self._fill_buckets_multi_key(labels, gpu_datasets, start_minute, gpu_data, field_name, 'gpu_uuid')
+                self._fill_buckets_multi_key(labels, gpu_datasets, start_bucket, gpu_data, field_name, 'gpu_uuid')
                 datasets = gpu_datasets
             else:
                 gpu_data = GPUMetric.objects.filter(
                     rig_uuid=str(uuid),
                     gpu_index=gpu_index,
-                    timestamp__gte=start_minute,
+                    timestamp__gte=start_bucket,
                     timestamp__lte=end_minute,
                 ).order_by('timestamp')[:10000]
-                self._fill_buckets(labels, values, start_minute, gpu_data, field_name)
+                self._fill_buckets(labels, values, start_bucket, gpu_data, field_name, bucket_minutes=self._bucket_minutes, aggregate=self._aggregate)
                 datasets = [{'label': f'GPU {gpu_index}', 'data': values}]
 
         elif metric in self.STORAGE_METRICS:
@@ -437,7 +565,7 @@ class ChartDataView(APIView):
                 disk_info = (
                     StorageMetric.objects.filter(
                         rig_uuid=str(uuid),
-                        timestamp__gte=start_minute,
+                        timestamp__gte=start_bucket,
                         timestamp__lte=end_minute,
                     )
                     .values('device', 'mountpoint')
@@ -460,18 +588,18 @@ class ChartDataView(APIView):
                 ]
                 storage_data = StorageMetric.objects.filter(
                     rig_uuid=str(uuid),
-                    timestamp__gte=start_minute,
+                    timestamp__gte=start_bucket,
                     timestamp__lte=end_minute,
                 ).order_by('timestamp')[:50000]
-                self._fill_buckets_multi_key(labels, disk_datasets, start_minute, storage_data, field_name, 'device')
+                self._fill_buckets_multi_key(labels, disk_datasets, start_bucket, storage_data, field_name, 'device')
                 datasets = disk_datasets
             else:
                 storage_data = StorageMetric.objects.filter(
                     rig_uuid=str(uuid),
-                    timestamp__gte=start_minute,
+                    timestamp__gte=start_bucket,
                     timestamp__lte=end_minute,
                 ).order_by('timestamp')[:10000]
-                self._fill_buckets(labels, values, start_minute, storage_data, field_name)
+                self._fill_buckets(labels, values, start_bucket, storage_data, field_name, bucket_minutes=self._bucket_minutes, aggregate=self._aggregate)
                 datasets = [{'label': metric, 'data': values}]
 
         elif metric.startswith('net_'):
@@ -491,7 +619,7 @@ class ChartDataView(APIView):
                 iface_info = (
                     NetworkMetric.objects.filter(
                         rig_uuid=str(uuid),
-                        timestamp__gte=start_minute,
+                        timestamp__gte=start_bucket,
                         timestamp__lte=end_minute,
                     )
                     .values('interface', 'ipv4')
@@ -514,10 +642,10 @@ class ChartDataView(APIView):
                 ]
                 net_data = NetworkMetric.objects.filter(
                     rig_uuid=str(uuid),
-                    timestamp__gte=start_minute,
+                    timestamp__gte=start_bucket,
                     timestamp__lte=end_minute,
                 ).order_by('timestamp')[:50000]
-                self._fill_buckets_multi_key(labels, iface_datasets, start_minute, net_data, field_name, 'interface')
+                self._fill_buckets_multi_key(labels, iface_datasets, start_bucket, net_data, field_name, 'interface')
                 datasets = iface_datasets
                 # Convert byte deltas to MB/s for network metrics
                 if field_name in self.BYTE_TO_MB:
@@ -527,10 +655,10 @@ class ChartDataView(APIView):
                 net_data = NetworkMetric.objects.filter(
                     rig_uuid=str(uuid),
                     interface__isnull=False,
-                    timestamp__gte=start_minute,
+                    timestamp__gte=start_bucket,
                     timestamp__lte=end_minute,
                 ).order_by('timestamp')[:10000]
-                self._fill_buckets(labels, values, start_minute, net_data, field_name)
+                self._fill_buckets(labels, values, start_bucket, net_data, field_name, bucket_minutes=self._bucket_minutes, aggregate=self._aggregate)
                 datasets = [{'label': metric, 'data': values}]
                 if field_name in self.BYTE_TO_MB:
                     datasets[0]['data'] = [round(v / (1024 * 1024), 2) if v is not None else None for v in datasets[0]['data']]
@@ -548,7 +676,7 @@ class ChartDataView(APIView):
             container_info = (
                 DockerContainerMetric.objects.filter(
                     rig_uuid=str(uuid),
-                    timestamp__gte=start_minute,
+                    timestamp__gte=start_bucket,
                     timestamp__lte=end_minute,
                 )
                 .values('name')
@@ -562,10 +690,10 @@ class ChartDataView(APIView):
             ]
             container_data = DockerContainerMetric.objects.filter(
                 rig_uuid=str(uuid),
-                timestamp__gte=start_minute,
+                timestamp__gte=start_bucket,
                 timestamp__lte=end_minute,
             ).order_by('timestamp')[:50000]
-            self._fill_buckets_multi_key(labels, container_datasets, start_minute, container_data, field_name, 'name')
+            self._fill_buckets_multi_key(labels, container_datasets, start_bucket, container_data, field_name, 'name')
             datasets = container_datasets
             if field_name == 'mem_usage_bytes':
                 for ds in datasets:
@@ -582,7 +710,7 @@ class ChartDataView(APIView):
             ai_info = (
                 AIProcessMetric.objects.filter(
                     rig_uuid=str(uuid),
-                    timestamp__gte=start_minute,
+                    timestamp__gte=start_bucket,
                     timestamp__lte=end_minute,
                 )
                 .values('process_name')
@@ -596,23 +724,23 @@ class ChartDataView(APIView):
             ]
             ai_data = AIProcessMetric.objects.filter(
                 rig_uuid=str(uuid),
-                timestamp__gte=start_minute,
+                timestamp__gte=start_bucket,
                 timestamp__lte=end_minute,
             ).order_by('timestamp')[:50000]
-            self._fill_buckets_multi_key(labels, ai_datasets, start_minute, ai_data, field_name, 'process_name')
+            self._fill_buckets_multi_key(labels, ai_datasets, start_bucket, ai_data, field_name, 'process_name')
             datasets = ai_datasets
 
         elif metric == 'error_frequency':
             occurrences = ErrorEventOccurrence.objects.filter(
                 rig_uuid=str(uuid),
-                timestamp__gte=start_minute,
+                timestamp__gte=start_bucket,
                 timestamp__lte=end_minute,
             ).order_by('timestamp')[:50000]
             total_minutes = len(labels)
             error_counts = [0] * total_minutes
             for occ in occurrences:
                 ts_minute = occ.timestamp.replace(second=0, microsecond=0)
-                delta = ts_minute - start_minute
+                delta = ts_minute - start_bucket
                 idx = int(delta.total_seconds() // 60)
                 if 0 <= idx < total_minutes:
                     error_counts[idx] += 1

@@ -77,6 +77,9 @@
 - Returns datasets with '_key' for identification and 'label' for display
 - Handles byte-to-GB and byte-delta-to-MB/s conversions server-side
 - Uses _fill_buckets_multi_key for grouping by unique values
+- Supports variable bucket sizes via `bucket_minutes` parameter (1, 15, or 60 minutes)
+- For bucket_minutes > 1, uses median aggregation across all values in each bucket
+- Timeframe options: 24h (1-min buckets), 7d (15-min buckets), 30d (1-hour buckets)
 
 **Frontend (rig_detail.html):**
 - loadChartMultiGpu(): For multi-GPU charts (one dataset per GPU)
@@ -87,6 +90,7 @@
 - loadChart(): Standard single-series charts
 - All charts use Chart.js with appropriate types (line/bar/step)
 - Null values preserved to show gaps in data (offline periods)
+- Timeframe toggle buttons (24h, 7d, 30d) in chart tab header with dynamic label updates
 
 **Color Coding:**
 - Consistent color palette across chart types

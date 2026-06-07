@@ -372,6 +372,10 @@
         <div class="text-gray-500">Docker:</div>
         <div class="text-gray-300">{{ metric_snapshot.software_json.docker_version }}</div>
         {% endif %}
+        {% if metric_snapshot.agent_version %}
+        <div class="text-gray-500">Agent:</div>
+        <div class="text-gray-300">{{ metric_snapshot.agent_version }}</div>
+        {% endif %}
     </div>
 </div>
 {% endif %}

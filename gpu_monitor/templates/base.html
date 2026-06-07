@@ -25,7 +25,7 @@
             <a href="{% url 'accounts:api-keys' %}" class="text-gray-400 hover:text-white">API Keys</a>
         </div>
         <div class="flex items-center gap-4">
-            <span class="text-gray-400 text-sm">{{ user.email }}</span>
+            <a href="{% url 'accounts:profile' %}" class="text-gray-400 hover:text-white text-sm">{{ user.email }}</a>
             <a href="{% url 'accounts:logout' %}" class="text-gray-400 hover:text-white text-sm">Logout</a>
         </div>
     </nav>

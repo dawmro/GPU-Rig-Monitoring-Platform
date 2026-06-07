@@ -125,6 +125,31 @@ def revoke_api_key(request, key_id):
     return redirect('accounts:api-keys')
 
 
+@login_required
+def profile_view(request):
+    """User profile page — view info and change password."""
+    if request.method == 'POST':
+        current = request.POST.get('current_password', '')
+        new = request.POST.get('new_password', '')
+        confirm = request.POST.get('confirm_password', '')
+
+        if not request.user.check_password(current):
+            messages.error(request, 'Current password is incorrect')
+        elif new != confirm:
+            messages.error(request, 'New passwords do not match')
+        elif len(new) < 8:
+            messages.error(request, 'Password must be at least 8 characters')
+        else:
+            request.user.set_password(new)
+            request.user.save()
+            log_audit_event(request, 'user.password_changed', 'User', request.user.id, {})
+            messages.success(request, 'Password changed successfully')
+            from django.contrib.auth import update_session_auth_hash
+            update_session_auth_hash(request, request.user)
+
+    return render(request, 'accounts/profile.html')
+
+
 # ── Tag CRUD (no HTMX, plain form posts) ──────────────────────────────────
 
 @login_required

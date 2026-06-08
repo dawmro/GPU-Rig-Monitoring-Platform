@@ -157,12 +157,20 @@ class Command(BaseCommand):
         select_parts = [f"{bucket_expr} AS bucket_ts"]
         for field, agg_type in agg_fields.items():
             if agg_type == 'avg':
-                select_parts.append(f"AVG({field}) AS {field}")
+                # Use MEDIAN (PERCENTILE_CONT) to match ChartDataView default
+                # MEDIAN is more robust against outliers than AVG
+                select_parts.append(
+                    f"PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY {field}) AS {field}"
+                )
             elif agg_type == 'sum':
                 select_parts.append(f"SUM({field}) AS {field}")
             elif agg_type == 'last':
                 # Take the last value (most recent non-null)
                 select_parts.append(f"(ARRAY_AGG({field} ORDER BY timestamp DESC))[1] AS {field}")
+            elif agg_type == 'max':
+                select_parts.append(f"MAX({field}) AS {field}")
+            elif agg_type == 'min':
+                select_parts.append(f"MIN({field}) AS {field}")
         for field in static_fields:
             select_parts.append(f"(ARRAY_AGG({field} ORDER BY timestamp DESC))[1] AS {field}")
 

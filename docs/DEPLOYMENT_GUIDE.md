@@ -270,27 +270,26 @@ sudo -u monitoring bash -c 'cd /opt/gpu_monitor && source venv/bin/activate && s
 
 Enter email, username, and password when prompted. Use the email to log into the dashboard.
 
-### 4.7 Set Up TimescaleDB Hypertables
+### 4.7 Set Up Data Retention
 
-> **NOT YET IMPLEMENTED.** This section describes planned functionality.
-> The current implementation uses plain PostgreSQL without TimescaleDB.
-> Data retention is handled by the `compact_data` and `cleanup_old_data`
-> management commands (see Data Retention Plan).
-
-This step would convert the raw PostgreSQL tables into TimescaleDB hypertables and set up retention policies and continuous aggregates for efficient time-series queries.
+Configure automated data compaction and cleanup:
 
 ```bash
-sudo -u monitoring bash -c 'cd /opt/gpu_monitor && source venv/bin/activate && set -a && source .env && set +a && python manage.py setup_timescale'
+# Add cron job for daily data cleanup (runs at 3 AM)
+echo '0 3 * * * root bash /opt/gpu_monitor/deploy/data_retention.sh >> /var/log/monitoring-agent/cleanup-cron.log 2>&1' | sudo tee /etc/cron.d/monitoring-data-cleanup
 ```
 
-**Expected output:**
+This runs two commands daily:
+1. `compact_data` — Compacts old data into larger buckets (1min -> 15min -> 1hour)
+2. `cleanup_old_data` — Deletes data older than 31 days
 
-```
-Created hypertable: metrics_metricsnapshot
-Added 7-day retention policy
-Created hourly continuous aggregate
-Added hourly refresh policy
-TimescaleDB setup complete
+**Storage impact:** Without compaction, 1,000 rigs would use ~146 GB/month. With compaction: ~9 GB/month (94% savings).
+
+To preview what would be compacted/deleted without making changes:
+
+```bash
+sudo -u monitoring bash -c 'cd /opt/gpu_monitor && source venv/bin/activate && set -a && source .env && set +a && python manage.py compact_data --dry-run --verbose'
+sudo -u monitoring bash -c 'cd /opt/gpu_monitor && source venv/bin/activate && set -a && source .env && set +a && python manage.py cleanup_old_data --dry-run --days=31'
 ```
 
 ### 4.8 Verify the Deployment

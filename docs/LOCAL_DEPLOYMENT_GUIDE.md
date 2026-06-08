@@ -431,7 +431,7 @@ sudo chmod 600 /etc/monitoring-agent/config.yaml
 The agent needs root access for disk SMART data and journal logs. These are read-only commands that cannot modify the system:
 
 ```bash
-echo 'monitoring-agent ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/bin/nvme, /bin/journalctl' | sudo tee /etc/sudoers.d/monitoring-agent
+echo 'monitoring-agent ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/bin/smartctl, /bin/journalctl, /usr/bin/journalctl, /usr/sbin/nvme, /usr/bin/nvme' | sudo tee /etc/sudoers.d/monitoring-agent
 sudo chmod 440 /etc/sudoers.d/monitoring-agent
 ```
 
@@ -439,6 +439,8 @@ sudo chmod 440 /etc/sudoers.d/monitoring-agent
 - `smartctl`: Read disk SMART health data (HDD/SSD health metrics)
 - `nvme`: Read NVMe drive health logs (NVMe-specific metrics)
 - `journalctl`: Read system error logs (for the Errors tab)
+
+**Note:** Both common binary paths are included (`/usr/sbin/` and `/usr/bin/`) for cross-distro compatibility. The agent calls `sudo journalctl` (not bare `journalctl`) to ensure it can read system-level error logs.
 
 **Security:** All three commands are read-only. The agent cannot modify disks, logs, or system state. If a command is missing (e.g., no NVMe drive), the agent logs a warning and continues.
 
@@ -637,7 +639,7 @@ You should see output like `Updated: 0 stale, 2 offline`. If you see `password a
 │   ├── views.py                # rig_list, rig_detail, htmx_metrics
 │   ├── urls.py
 │   └── templatetags/
-|       └── gpu_filters.py      # Template filters: gpu_model_name, gpu_model_short, gpu_compact_summary, gpu_temp_cell, gpu_util_cell, gpu_fan_cell, time_since |
+|       └── gpu_filters.py      # Template filters: gpu_model_name, gpu_model_short, gpu_compact_summary, gpu_temp_cell, gpu_util_cell, gpu_fan_cell, time_since, last_seen_short |
 ├── audit/                      # Audit logging
 │   ├── models.py               # AuditLog model
 │   └── middleware.py           # Request audit middleware

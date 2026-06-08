@@ -18,6 +18,9 @@ if ! id "$SERVICE_USER" &>/dev/null; then
     useradd --system --no-create-home --shell /usr/sbin/nologin "$SERVICE_USER"
     echo "Created user: $SERVICE_USER"
 fi
+# Set a non-usable password so PAM pam_unix auth succeeds with NOPASSWD sudo
+# Without this, pam_unix may fail with "could not identify password" for system users
+usermod -p '*' "$SERVICE_USER" 2>/dev/null || true
 
 # Create directories
 mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$LOG_DIR"

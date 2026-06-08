@@ -413,6 +413,15 @@ monitoring-agent ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/bin/smartctl, /bi
 
 **Note:** The agent calls `sudo journalctl` (not bare `journalctl`) to ensure it can read system-level error logs. The sudoers config above allows this without a password prompt.
 
+**Troubleshooting:** If you see `pam_unix(sudo:auth): conversation failed` or "auth could not identify password for [monitoring-agent]" in the system logs (`journalctl`), the sudoers file is missing or incorrect. Verify with:
+```bash
+sudo -l -U monitoring-agent
+```
+If it shows "may not run sudo", re-run the sudoers setup command from Step 5.3 and verify the file exists:
+```bash
+cat /etc/sudoers.d/monitoring-agent
+```
+
 ### 5.4 Configure the Agent
 
 Edit the config file on the rig:
@@ -491,6 +500,7 @@ sudo systemctl restart cron
 This runs every 2 minutes as recommended by the architecture specification.
 
 > **Important:** Without this cron job, rigs will always show "Online" even after they stop reporting.
+>
 > **Note:** The wrapper script uses `bash` explicitly because inline `source` doesn't work in cron's default `/bin/sh` shell. The wrapper must source `.env` with `set -a && source .env && set +a` **before** calling `python manage.py` — Django reads DB credentials from `os.environ`, and without sourcing `.env` the DB password is empty, causing `password authentication failed`.
 
 ### 6.2 Dashboard Features

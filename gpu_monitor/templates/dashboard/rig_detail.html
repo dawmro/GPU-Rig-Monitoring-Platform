@@ -38,7 +38,7 @@
             </div>
         </div>
         <div class="flex flex-col items-end gap-0.5">
-            <span id="rig-status-container-clock" class="text-gray-500 text-xs"></span>
+            <span id="global-refresh-clock" class="text-gray-500 text-xs"></span>
             <div id="rig-status-container"
                  hx-get="{% url 'dashboard:htmx-rig-status' rig.uuid %}"
                  hx-trigger="every 15s"
@@ -80,7 +80,6 @@
 
     <!-- Tab: Live Metrics (auto-refreshing) -->
     <div id="tab-content-metrics" class="tab-content">
-        <span id="metrics-container-clock" class="text-gray-500 text-xs mb-2 block text-right"></span>
         <div id="metrics-container"
              hx-get="{% url 'dashboard:htmx-metrics' rig.uuid %}"
              hx-trigger="every 30s"
@@ -94,7 +93,6 @@
     <div id="tab-content-charts" class="tab-content hidden">
         <div class="flex items-center justify-between mb-2">
             <span class="text-gray-500 text-xs">24-hour historical trends</span>
-            <span id="tab-content-charts-clock" class="text-gray-500 text-xs"></span>
         </div>
         <div class="space-y-6">
 
@@ -346,15 +344,6 @@ async function loadCharts() {
     await loadChartMultiKey('chartAiGpuMem', 'ai_gpu_mem_mb', uuid, range, ' MB', 'multi_ai');
     // Error frequency chart (bar chart)
     await loadChart('chartErrorFreq', 'error_frequency', uuid, range, ' err/min', 'rgba(239, 68, 68, 0.8)', 'rgba(239, 68, 68, 0.5)', 'bar');
-    // Update refresh clock after all charts finish loading
-    var clock = document.getElementById('tab-content-charts-clock');
-    if (clock) {
-        var d = new Date();
-        clock.textContent = 'Refreshed @ ' +
-            String(d.getHours()).padStart(2,'0') + ':' +
-            String(d.getMinutes()).padStart(2,'0') + ':' +
-            String(d.getSeconds()).padStart(2,'0');
-    }
 }
 
 // Load a single chart

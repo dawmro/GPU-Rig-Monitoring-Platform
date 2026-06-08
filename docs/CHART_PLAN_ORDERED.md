@@ -78,7 +78,7 @@
 - Handles byte-to-GB and byte-delta-to-MB/s conversions server-side
 - Uses _fill_buckets_multi_key for grouping by unique values
 - Supports variable bucket sizes via `bucket_minutes` parameter (1, 15, or 60 minutes)
-- For bucket_minutes > 1, uses per-metric aggregation: median (default), sum (network byte deltas, error counts), avg, max, min
+- For bucket_minutes > 1, uses per-metric aggregation: avg (default), sum (network byte deltas, error counts), median, max, min
 - Timeframe options: 24h (1-min buckets), 7d (15-min buckets), 30d (1-hour buckets)
 
 **Frontend (rig_detail.html):**

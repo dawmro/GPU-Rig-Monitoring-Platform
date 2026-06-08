@@ -256,7 +256,7 @@ class ChartDataView(APIView):
         truncated minute. Last value wins.
 
         For bucket_minutes>1: Multiple rows per bucket are collected, and the
-        aggregate function is applied (default: median).
+        aggregate function is applied (default: avg).
 
         Args:
             labels: Bucket label list
@@ -267,7 +267,7 @@ class ChartDataView(APIView):
             value_key: Timestamp field name (default: 'timestamp')
             bucket_minutes: Size of each bucket in minute (default: 1)
             aggregate: Aggregation function for multi-row buckets:
-                       'median', 'avg', 'max', 'min', or None (last value wins)
+                       'avg' (default), 'median', 'sum', 'max', 'min', or None (last value wins)
         """
         total_buckets = len(labels)
         if total_buckets == 0:
@@ -487,7 +487,7 @@ class ChartDataView(APIView):
             aggregate = 'avg'  # Default: average for aggregated buckets
 
         # Per-metric aggregation overrides
-        # Byte-delta metrics (network) and error counts should use sum, not median
+        # Byte-delta metrics (network) and error counts should use sum, not avg
         SUM_AGGREGATE_METRICS = {
             'net_rx_bytes_delta', 'net_tx_bytes_delta',  # Network byte deltas (URL param names)
             'error_frequency',                             # Error counts

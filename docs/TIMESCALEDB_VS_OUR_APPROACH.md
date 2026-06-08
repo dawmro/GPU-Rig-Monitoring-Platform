@@ -67,7 +67,7 @@
 ### How It Works
 1. **compact_data:** Management command that aggregates old data into larger time buckets
 2. **cleanup_old_data:** Management command that deletes data older than N days
-3. **ChartDataView:** Runtime aggregation for charts using PERCENTILE_CONT/SUM/LAST
+3. **ChartDataView:** Runtime aggregation for charts using AVG/SUM/LAST
 4. **Cron scheduling:** Daily execution at random time
 
 ### Pros
@@ -79,7 +79,7 @@
 - Simple backup/restore procedures
 
 **2. Full Control**
-- Exact control over aggregation logic (MEDIAN vs AVG vs SUM)
+- Exact control over aggregation logic (AVG vs SUM vs LAST)
 - Configurable retention period (--days parameter)
 - Dry-run mode for safe testing
 - Verbose logging for debugging
@@ -93,7 +93,7 @@
 **4. Proven to Work**
 - Already implemented and tested
 - Handles all 4 chart types correctly
-- MEDIAN aggregation matches ChartDataView behavior
+- AVG aggregation matches ChartDataView behavior
 
 ### Cons
 

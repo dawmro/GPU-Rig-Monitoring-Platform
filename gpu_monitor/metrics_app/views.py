@@ -484,7 +484,7 @@ class ChartDataView(APIView):
         bucket_minutes = int(request.query_params.get('bucket_minutes', '1'))
         aggregate = None
         if bucket_minutes > 1:
-            aggregate = 'median'  # Default: median for aggregated buckets
+            aggregate = 'avg'  # Default: average for aggregated buckets
 
         # Per-metric aggregation overrides
         # Byte-delta metrics (network) and error counts should use sum, not median

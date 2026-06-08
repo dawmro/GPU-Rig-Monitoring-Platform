@@ -442,6 +442,8 @@ sudo chmod 440 /etc/sudoers.d/monitoring-agent
 
 **Note:** Both common binary paths are included (`/usr/sbin/` and `/usr/bin/`) for cross-distro compatibility. The agent calls `sudo journalctl` (not bare `journalctl`) to ensure it can read system-level error logs.
 
+**Troubleshooting:** If you see `pam_unix(sudo:auth): conversation failed` or "auth could not identify password for [monitoring-agent]" in the system logs, the sudoers file is missing or incorrect. Re-run the sudoers setup command above and verify with `sudo -l -U monitoring-agent`.
+
 **Security:** All three commands are read-only. The agent cannot modify disks, logs, or system state. If a command is missing (e.g., no NVMe drive), the agent logs a warning and continues.
 
 **GPU monitoring** does NOT require root — `pynvml` reads from the NVIDIA driver interface which is accessible to all users.

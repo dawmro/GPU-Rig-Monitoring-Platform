@@ -413,6 +413,15 @@ monitoring-agent ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/bin/smartctl, /bi
 
 **Note:** The agent calls `sudo journalctl` (not bare `journalctl`) to ensure it can read system-level error logs. The sudoers config above allows this without a password prompt.
 
+**Troubleshooting:** If you see `pam_unix(sudo:auth): conversation failed` or "auth could not identify password for [monitoring-agent]" in the system logs (`journalctl`), the sudoers file is missing or incorrect. Verify with:
+```bash
+sudo -l -U monitoring-agent
+```
+If it shows "may not run sudo", re-run the sudoers setup command from Step 5.3 and verify the file exists:
+```bash
+cat /etc/sudoers.d/monitoring-agent
+```
+
 ### 5.4 Configure the Agent
 
 Edit the config file on the rig:

@@ -457,8 +457,8 @@ class ChartDataView(APIView):
         # Per-metric aggregation overrides
         # Byte-delta metrics (network) and error counts should use sum, not median
         SUM_AGGREGATE_METRICS = {
-            'rx_bytes_delta', 'tx_bytes_delta',  # Network byte deltas
-            'error_frequency',                      # Error counts
+            'net_rx_bytes_delta', 'net_tx_bytes_delta',  # Network byte deltas (URL param names)
+            'error_frequency',                             # Error counts
         }
         if metric in SUM_AGGREGATE_METRICS and bucket_minutes > 1:
             aggregate = 'sum'

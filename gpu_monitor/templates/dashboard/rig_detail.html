@@ -417,8 +417,10 @@ async function loadChart(canvasId, metric, uuid, range, unit, borderColor, bgCol
                             maxRotation: 0,
                             autoSkip: true,
                             callback: function(val, index) {
-                                // Show every 60th label (every hour) to avoid crowding
-                                return index % 60 === 0 ? this.getLabelForValue(val) : '';
+                                // Dynamic skip: show ~12 labels evenly across all buckets
+                                var total = this.getLabels().length;
+                                var skip = Math.max(1, Math.floor(total / 12));
+                                return index % skip === 0 ? this.getLabelForValue(val) : '';
                             }
                         }
                     },
@@ -506,7 +508,8 @@ async function loadChartLoadAvg(canvasId, uuid, range) {
                             maxRotation: 0,
                             autoSkip: true,
                             callback: function(val, index) {
-                                return index % 60 === 0 ? this.getLabelForValue(val) : '';
+                                var skip = Math.max(1, Math.floor(this.getLabels().length / 12));
+                                return index % skip === 0 ? this.getLabelForValue(val) : '';
                             }
                         }
                     },
@@ -596,7 +599,8 @@ async function loadChartMemSwap(canvasId, uuid, range) {
                             maxRotation: 0,
                             autoSkip: true,
                             callback: function(val, index) {
-                                return index % 60 === 0 ? this.getLabelForValue(val) : '';
+                                var skip = Math.max(1, Math.floor(this.getLabels().length / 12));
+                                return index % skip === 0 ? this.getLabelForValue(val) : '';
                             }
                         }
                     },
@@ -774,7 +778,8 @@ async function loadChartNetworkCombined(canvasId, uuid, range) {
                             maxRotation: 0,
                             autoSkip: true,
                             callback: function(val, index) {
-                                return index % 60 === 0 ? this.getLabelForValue(val) : '';
+                                var skip = Math.max(1, Math.floor(this.getLabels().length / 12));
+                                return index % skip === 0 ? this.getLabelForValue(val) : '';
                             }
                         }
                     },
@@ -917,7 +922,8 @@ async function loadChartMultiGpu(canvasId, metric, uuid, range, unit) {
                             maxRotation: 0,
                             autoSkip: true,
                             callback: function(val, index) {
-                                return index % 60 === 0 ? this.getLabelForValue(val) : '';
+                                var skip = Math.max(1, Math.floor(this.getLabels().length / 12));
+                                return index % skip === 0 ? this.getLabelForValue(val) : '';
                             }
                         }
                     },
@@ -1024,7 +1030,8 @@ async function loadChartMultiKey(canvasId, metric, uuid, range, unit, multi_para
                             maxRotation: 0,
                             autoSkip: true,
                             callback: function(val, index) {
-                                return index % 60 === 0 ? this.getLabelForValue(val) : '';
+                                var skip = Math.max(1, Math.floor(this.getLabels().length / 12));
+                                return index % skip === 0 ? this.getLabelForValue(val) : '';
                             }
                         }
                     },

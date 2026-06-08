@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-GPU Rig Monitoring Agent — Auto-Update Checker
+GPU Rig Monitoring Agent - Auto-Update Checker
 
 Checks GitHub for a newer agent version and updates if available.
 Designed to run once daily via cron at a random time.
@@ -9,8 +9,8 @@ Usage:
     python3 check_update.py
 
 Exit codes:
-    0 — No update needed, or update successful
-    1 — Error (network, download, validation)
+    0 - No update needed, or update successful
+    1 - Error (network, download, validation)
 """
 
 import os
@@ -25,7 +25,7 @@ from pathlib import Path
 from urllib.request import urlopen
 from urllib.error import URLError, HTTPError
 
-# ── Configuration ────────────────────────────────────────────────────────────
+# -- Configuration ------------------------------------------------------------
 
 AGENT_DIR = Path(__file__).resolve().parent
 RUN_PY = AGENT_DIR / "run.py"
@@ -38,10 +38,10 @@ GITHUB_RAW_URL = (
     "/main/agent/run.py"
 )
 
-# Only auto-update within same major version (1.x → 1.y, not 1.x → 2.x)
+# Only auto-update within same major version (1.x -> 1.y, not 1.x -> 2.x)
 MAX_MAJOR_VERSION = 1
 
-# ── Logging ──────────────────────────────────────────────────────────────────
+# -- Logging ------------------------------------------------------------------
 
 def setup_logging():
     LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -60,7 +60,7 @@ def setup_logging():
 log = logging.getLogger(__name__)
 
 
-# ── Version Parsing ──────────────────────────────────────────────────────────
+# -- Version Parsing ----------------------------------------------------------
 
 def parse_version(version_str):
     """Parse version string like '1.2.0' or '1.2.0-win' into tuple (1, 2, 0)."""
@@ -100,7 +100,7 @@ def fetch_remote_version():
         return None, None, None
 
 
-# ── Validation ───────────────────────────────────────────────────────────────
+# -- Validation ---------------------------------------------------------------
 
 def validate_python_file(path):
     """Check that a Python file has valid syntax."""
@@ -128,7 +128,7 @@ def check_disk_space(path, min_bytes=10 * 1024 * 1024):
         return True  # Can't check, assume OK
 
 
-# ── Update Logic ─────────────────────────────────────────────────────────────
+# -- Update Logic -------------------------------------------------------------
 
 def perform_update(new_content, new_version_str):
     """Download, validate, backup, and replace run.py."""
@@ -151,7 +151,7 @@ def perform_update(new_content, new_version_str):
     try:
         # Validate syntax
         if not validate_python_file(tmp_path):
-            log.error("Downloaded file has invalid syntax — aborting update")
+            log.error("Downloaded file has invalid syntax - aborting update")
             return False
 
         # Verify version in downloaded file matches expected
@@ -159,7 +159,7 @@ def perform_update(new_content, new_version_str):
             tmp_path.read_text()
         )
         if downloaded_ver is None or downloaded_ver != parse_version(new_version_str):
-            log.error("Version mismatch in downloaded file — aborting update")
+            log.error("Version mismatch in downloaded file - aborting update")
             return False
 
         # Backup current run.py
@@ -190,7 +190,7 @@ def get_local_version_from_content(content):
     return None, None
 
 
-# ── Main ─────────────────────────────────────────────────────────────────────
+# -- Main ---------------------------------------------------------------------
 
 def main():
     setup_logging()
@@ -199,14 +199,14 @@ def main():
     # Get local version
     local_ver_str, local_ver = get_local_version()
     if local_ver is None:
-        log.error("Cannot determine local version — aborting")
+        log.error("Cannot determine local version - aborting")
         return 1
     log.info("Local version: %s (%s)", local_ver_str, local_ver)
 
     # Fetch remote version
     remote_ver_str, remote_ver, remote_content = fetch_remote_version()
     if remote_ver is None:
-        log.warning("Cannot determine remote version — skipping update check")
+        log.warning("Cannot determine remote version - skipping update check")
         return 1
     log.info("Remote version: %s (%s)", remote_ver_str, remote_ver)
 
@@ -218,19 +218,19 @@ def main():
     # Check major version boundary
     if remote_ver[0] > MAX_MAJOR_VERSION:
         log.info(
-            "Major version bump detected (%s → %s) — manual update required",
+            "Major version bump detected (%s -> %s) - manual update required",
             local_ver[0], remote_ver[0]
         )
         return 0
 
     # Update available
-    log.info("Update available: %s → %s", local_ver_str, remote_ver_str)
+    log.info("Update available: %s -> %s", local_ver_str, remote_ver_str)
 
     if perform_update(remote_content, remote_ver_str):
         log.info("Update complete. New version will be used on next cron cycle.")
         return 0
     else:
-        log.error("Update failed — current version unchanged")
+        log.error("Update failed - current version unchanged")
         return 1
 
 

@@ -170,6 +170,9 @@ def perform_update(new_content, new_version_str):
 
         # Atomic replace
         tmp_path.replace(RUN_PY)
+        # Set permissions: owner read/write/execute, group/other execute
+        os.chmod(str(RUN_PY), 0o755)
+        os.chmod(str(BACKUP_PY), 0o755)
         log.info("Successfully updated to version %s", new_version_str)
         return True
 

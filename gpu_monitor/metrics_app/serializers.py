@@ -97,6 +97,10 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                         'mem_util_pct': gpu.get('mem_util_pct'),
                         'power_draw_w': gpu.get('power_draw_w'),
                         'power_limit_w': gpu.get('power_limit_w'),
+                        'pcie_current_gen': gpu.get('pcie_current_gen'),
+                        'pcie_max_gen': gpu.get('pcie_max_gen'),
+                        'pcie_current_width': gpu.get('pcie_current_width'),
+                        'pcie_max_width': gpu.get('pcie_max_width'),
                     },
                 )
 

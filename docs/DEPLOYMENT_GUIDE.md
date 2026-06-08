@@ -500,6 +500,7 @@ sudo systemctl restart cron
 This runs every 2 minutes as recommended by the architecture specification.
 
 > **Important:** Without this cron job, rigs will always show "Online" even after they stop reporting.
+>
 > **Note:** The wrapper script uses `bash` explicitly because inline `source` doesn't work in cron's default `/bin/sh` shell. The wrapper must source `.env` with `set -a && source .env && set +a` **before** calling `python manage.py` — Django reads DB credentials from `os.environ`, and without sourcing `.env` the DB password is empty, causing `password authentication failed`.
 
 ### 6.2 Dashboard Features

@@ -35,11 +35,12 @@
     </main>
 
     <script>
-    // HTMX refresh clocks
+    // HTMX refresh clock — update on any HTMX swap
     document.body.addEventListener('htmx:afterSwap', function(evt) {
         var targetId = evt.detail && evt.detail.target && evt.detail.target.id;
         if (!targetId) return;
-        var clock = document.getElementById(targetId + '-clock');
+        // Only update the single global refresh clock
+        var clock = document.getElementById('global-refresh-clock');
         if (clock) {
             var d = new Date();
             clock.textContent = 'Refreshed @ ' +

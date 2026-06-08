@@ -272,24 +272,89 @@ Enter email, username, and password when prompted. Use the email to log into the
 
 ### 4.7 Set Up Data Retention
 
-Configure automated data compaction and cleanup:
+Configure automated data compaction and cleanup. This is essential for long-term storage management — without it, the database grows indefinitely (~146 GB/month at 1,000 rigs). With compaction: ~9 GB/month (94% savings).
+
+#### Quick Setup
 
 ```bash
 # Add cron job for daily data cleanup (runs at 3 AM)
 echo '0 3 * * * root bash /opt/gpu_monitor/deploy/data_retention.sh >> /var/log/monitoring-agent/cleanup-cron.log 2>&1' | sudo tee /etc/cron.d/monitoring-data-cleanup
 ```
 
-This runs two commands daily:
-1. `compact_data` — Compacts old data into larger buckets (1min -> 15min -> 1hour)
-2. `cleanup_old_data` — Deletes data older than 31 days
+#### What It Does
 
-**Storage impact:** Without compaction, 1,000 rigs would use ~146 GB/month. With compaction: ~9 GB/month (94% savings).
+The `data_retention.sh` wrapper runs two commands daily:
 
-To preview what would be compacted/deleted without making changes:
+1. **`compact_data`** — Aggregates old data into larger time buckets:
+   - Data > 1 day old → compressed to 15-minute buckets (15× reduction)
+   - Data > 7 days old → compressed to 1-hour buckets (60× reduction)
+   - Uses AVG for metrics, SUM for counters, LAST for static fields
+
+2. **`cleanup_old_data`** — Deletes data older than 31 days:
+   - Processes tables in dependency order (children first)
+   - Deletes in batches of 10,000 rows to avoid long locks
+   - 31 days provides 1-day safety margin beyond the 30-day max chart range
+
+#### Manual Run
 
 ```bash
-sudo -u monitoring bash -c 'cd /opt/gpu_monitor && source venv/bin/activate && set -a && source .env && set +a && python manage.py compact_data --dry-run --verbose'
-sudo -u monitoring bash -c 'cd /opt/gpu_monitor && source venv/bin/activate && set -a && source .env && set +a && python manage.py cleanup_old_data --dry-run --days=31'
+# Run both commands manually
+cd /opt/gpu_monitor
+source venv/bin/activate
+set -a && source .env && set +a
+
+# Compact data (dry run first)
+python manage.py compact_data --dry-run --verbose
+
+# Compact data (actual)
+python manage.py compact_data --verbose
+
+# Cleanup old data (dry run first)
+python manage.py cleanup_old_data --dry-run --days=31 --verbose
+
+# Cleanup old data (actual)
+python manage.py cleanup_old_data --days=31 --verbose
+```
+
+#### Command Options
+
+**compact_data:**
+| Flag | Description |
+|---|---|
+| `--dry-run` | Preview without making changes |
+| `--verbose` | Show per-table row counts |
+
+**cleanup_old_data:**
+| Flag | Description |
+|---|---|
+| `--days N` | Delete data older than N days (default: 31) |
+| `--dry-run` | Preview without making changes |
+| `--verbose` | Show per-table row counts |
+
+#### Storage Impact
+
+| Retention | Raw Storage (1,000 rigs) | After Compaction |
+|---|---|---|
+| 1 day | 4.7 GB | 4.7 GB |
+| 7 days | 32.9 GB | 6.9 GB |
+| 31 days | 146 GB | ~9 GB |
+
+#### Troubleshooting
+
+**Check cron job is running:**
+```bash
+cat /etc/cron.d/monitoring-data-cleanup
+tail -f /var/log/monitoring-agent/cleanup-cron.log
+```
+
+**Check if data is being compacted:**
+```bash
+sudo -u postgres psql -d gpu_monitor -c "SELECT COUNT(*), MIN(timestamp), MAX(timestamp) FROM metrics_metricsnapshot;"
+```
+
+**Manual cleanup if cron failed:**
+```bash
+sudo bash /opt/gpu_monitor/deploy/data_retention.sh
 ```
 
 ### 4.8 Verify the Deployment

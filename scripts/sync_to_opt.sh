@@ -89,19 +89,15 @@ if [ -f "$WORKSPACE/agent_windows/check_update.py" ]; then
     echo "  Synced: agent_windows/check_update.py"
 fi
 
-# ── Step 6: Copy scripts (new ones only) ────────────────────────────
+# ── Step 6: Copy scripts (always sync — content may change) ───────────
 echo "--- Scripts ---"
 mkdir -p "$OPT/gpu_monitor/deploy"
 for script in "$WORKSPACE/scripts/"*.sh; do
     [ -f "$script" ] || continue
     base=$(basename "$script")
-    if [ ! -f "$OPT/gpu_monitor/deploy/$base" ]; then
-        cp "$script" "$OPT/gpu_monitor/deploy/$base"
-        chmod +x "$OPT/gpu_monitor/deploy/$base"
-        echo "  New script: $base"
-    else
-        echo "  Skipped (exists): $base"
-    fi
+    cp "$script" "$OPT/gpu_monitor/deploy/$base"
+    chmod +x "$OPT/gpu_monitor/deploy/$base"
+    echo "  Synced: $base"
 done
 
 # ── Step 7: Fix permissions ────────────────────────────────────────

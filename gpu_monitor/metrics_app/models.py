@@ -74,6 +74,10 @@ class GPUMetric(models.Model):
     mem_util_pct = models.FloatField(null=True)
     power_draw_w = models.FloatField(null=True)
     power_limit_w = models.FloatField(null=True)
+    pcie_current_gen = models.PositiveSmallIntegerField(null=True)
+    pcie_max_gen = models.PositiveSmallIntegerField(null=True)
+    pcie_current_width = models.PositiveSmallIntegerField(null=True)
+    pcie_max_width = models.PositiveSmallIntegerField(null=True)
 
     class Meta:
         db_table = 'metrics_gpumetric'

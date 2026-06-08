@@ -33,8 +33,8 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.3.0-win'
-__schema_version__ = '1.2'
+__version__ = '1.4.0-win'
+__schema_version__ = '1.3'
 
 # ── Config ──────────────────────────────────────────────────────────────────
 
@@ -397,6 +397,19 @@ def collect_gpus():
                 power = None
                 power_limit = None
 
+            # Collect PCIe link info
+            pcie_current_gen = None
+            pcie_max_gen = None
+            pcie_current_width = None
+            pcie_max_width = None
+            try:
+                pcie_current_gen = pynvml.nvmlDeviceGetCurrPcieLinkGeneration(handle)
+                pcie_max_gen = pynvml.nvmlDeviceGetMaxPcieLinkGeneration(handle)
+                pcie_current_width = pynvml.nvmlDeviceGetCurrPcieLinkWidth(handle)
+                pcie_max_width = pynvml.nvmlDeviceGetMaxPcieLinkWidth(handle)
+            except Exception:
+                pass  # PCIe info not available on all GPUs/systems
+
             gpus.append({
                 'uuid': pynvml.nvmlDeviceGetUUID(handle),
                 'model': pynvml.nvmlDeviceGetName(handle),
@@ -409,6 +422,10 @@ def collect_gpus():
                 'fan_speed_pct': fan,
                 'power_draw_w': power,
                 'power_limit_w': power_limit,
+                'pcie_current_gen': pcie_current_gen,
+                'pcie_max_gen': pcie_max_gen,
+                'pcie_current_width': pcie_current_width,
+                'pcie_max_width': pcie_max_width,
             })
         pynvml.nvmlShutdown()
         return gpus

@@ -235,6 +235,18 @@
                 {% if gpu.power_limit_w %} / {{ gpu.power_limit_w|floatformat:0 }}W{% endif %}
             </div>
             {% endif %}
+            {% if gpu.pcie_current_gen != None and gpu.pcie_current_width != None %}
+            <div class="text-xs text-gray-500">
+                PCIe:
+                {% if gpu.pcie_current_gen < gpu.pcie_max_gen or gpu.pcie_current_width < gpu.pcie_max_width %}
+                    <span class="text-red-400" title="Max: Gen{{ gpu.pcie_max_gen }} x{{ gpu.pcie_max_width }}">
+                        Gen{{ gpu.pcie_current_gen }} x{{ gpu.pcie_current_width }} ⚠
+                    </span>
+                {% else %}
+                    <span class="text-green-400">Gen{{ gpu.pcie_current_gen }} x{{ gpu.pcie_current_width }} ✓</span>
+                {% endif %}
+            </div>
+            {% endif %}
         </div>
         {% endfor %}
     {% else %}

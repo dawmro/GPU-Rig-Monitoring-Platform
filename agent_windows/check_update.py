@@ -75,7 +75,7 @@ def get_local_version():
     """Extract __version__ from local run.py."""
     if not RUN_PY.exists():
         return None, None
-    content = RUN_PY.read_text()
+    content = RUN_PY.read_text(encoding="utf-8")
     match = re.search(r"__version__\s*=\s*['\"]([^'\"]+)['\"]", content)
     if match:
         ver_str = match.group(1)
@@ -123,7 +123,8 @@ def perform_update(new_content, new_version_str):
     # Write to temp file first
     try:
         with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".py", dir=str(AGENT_DIR), delete=False
+            mode="w", suffix=".py", dir=str(AGENT_DIR), delete=False,
+            encoding="utf-8"
         ) as tmp:
             tmp.write(new_content)
             tmp_path = Path(tmp.name)
@@ -138,7 +139,7 @@ def perform_update(new_content, new_version_str):
             return False
 
         # Verify version in downloaded file
-        downloaded_content = tmp_path.read_text()
+        downloaded_content = tmp_path.read_text(encoding="utf-8")
         match = re.search(r"__version__\s*=\s*['\"]([^'\"]+)['\"]", downloaded_content)
         if not match:
             log.error("No version found in downloaded file - aborting")

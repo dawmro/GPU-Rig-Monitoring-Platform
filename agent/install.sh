@@ -63,11 +63,26 @@ cat > "$CRON_FILE" << EOF
 EOF
 chmod 644 "$CRON_FILE"
 
+# Auto-update check — random time once per day to prevent thundering herd
+HOUR=$((RANDOM % 24))
+MINUTE=$((RANDOM % 60))
+UPDATE_CRON_FILE="/etc/cron.d/monitoring-agent-update"
+cat > "$UPDATE_CRON_FILE" << EOF
+# GPU Rig Monitoring Agent — Auto-update check (daily at ${HOUR}:${MINUTE})
+${MINUTE} ${HOUR} * * * $SERVICE_USER $INSTALL_DIR/venv/bin/python $INSTALL_DIR/check_update.py >> $LOG_DIR/update.log 2>&1
+EOF
+chmod 644 "$UPDATE_CRON_FILE"
+# Also copy check_update.py
+cp check_update.py "$INSTALL_DIR/check_update.py"
+chmod +x "$INSTALL_DIR/check_update.py"
+echo "Auto-update: daily check scheduled at $(printf '%02d:%02d' $HOUR $MINUTE)"
+
 echo ""
 echo "=== Installation Complete ==="
-echo "Config: $CONFIG_DIR/config.yaml"
-echo "Logs:   $LOG_DIR/agent.log"
-echo "Agent:  $INSTALL_DIR/run.py"
+echo "Config:    $CONFIG_DIR/config.yaml"
+echo "Logs:      $LOG_DIR/agent.log"
+echo "Agent:     $INSTALL_DIR/run.py"
+echo "Update log: $LOG_DIR/update.log"
 echo ""
 echo "Next steps:"
 echo "  1. Edit $CONFIG_DIR/config.yaml with your API key"

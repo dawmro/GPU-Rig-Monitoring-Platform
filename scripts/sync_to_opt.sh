@@ -61,6 +61,18 @@ if [ -f "$WORKSPACE/agent/run.py" ]; then
     sudo chmod +x "$OPT/monitoring-agent/run.py"
     echo "  Synced: agent/run.py"
 fi
+# Sync check_update.py (auto-update checker)
+if [ -f "$WORKSPACE/agent/check_update.py" ]; then
+    sudo cp "$WORKSPACE/agent/check_update.py" "$OPT/monitoring-agent/check_update.py"
+    sudo chmod +x "$OPT/monitoring-agent/check_update.py"
+    echo "  Synced: agent/check_update.py"
+fi
+# Sync install.sh
+if [ -f "$WORKSPACE/agent/install.sh" ]; then
+    sudo cp "$WORKSPACE/agent/install.sh" "$OPT/monitoring-agent/install.sh"
+    sudo chmod +x "$OPT/monitoring-agent/install.sh"
+    echo "  Synced: agent/install.sh"
+fi
 
 # ── Step 5: Copy agent (Windows) ────────────────────────────────────
 echo "--- Agent (Windows) ---"
@@ -70,20 +82,22 @@ if [ -f "$WORKSPACE/agent_windows/run.py" ]; then
     sudo chmod +x "$OPT/agent_windows/run.py"
     echo "  Synced: agent_windows/run.py"
 fi
+# Sync check_update.py (Windows)
+if [ -f "$WORKSPACE/agent_windows/check_update.py" ]; then
+    sudo cp "$WORKSPACE/agent_windows/check_update.py" "$OPT/agent_windows/check_update.py"
+    sudo chmod +x "$OPT/agent_windows/check_update.py"
+    echo "  Synced: agent_windows/check_update.py"
+fi
 
-# ── Step 6: Copy scripts (new ones only) ────────────────────────────
+# ── Step 6: Copy scripts (always sync — content may change) ───────────
 echo "--- Scripts ---"
 mkdir -p "$OPT/gpu_monitor/deploy"
 for script in "$WORKSPACE/scripts/"*.sh; do
     [ -f "$script" ] || continue
     base=$(basename "$script")
-    if [ ! -f "$OPT/gpu_monitor/deploy/$base" ]; then
-        cp "$script" "$OPT/gpu_monitor/deploy/$base"
-        chmod +x "$OPT/gpu_monitor/deploy/$base"
-        echo "  New script: $base"
-    else
-        echo "  Skipped (exists): $base"
-    fi
+    cp "$script" "$OPT/gpu_monitor/deploy/$base"
+    chmod +x "$OPT/gpu_monitor/deploy/$base"
+    echo "  Synced: $base"
 done
 
 # ── Step 7: Fix permissions ────────────────────────────────────────

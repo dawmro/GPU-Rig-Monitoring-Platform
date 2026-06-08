@@ -272,7 +272,12 @@ Enter email, username, and password when prompted. Use the email to log into the
 
 ### 4.7 Set Up TimescaleDB Hypertables
 
-This step converts the raw PostgreSQL tables into TimescaleDB hypertables and sets up retention policies and continuous aggregates for efficient time-series queries.
+> **NOT YET IMPLEMENTED.** This section describes planned functionality.
+> The current implementation uses plain PostgreSQL without TimescaleDB.
+> Data retention is handled by the `compact_data` and `cleanup_old_data`
+> management commands (see Data Retention Plan).
+
+This step would convert the raw PostgreSQL tables into TimescaleDB hypertables and set up retention policies and continuous aggregates for efficient time-series queries.
 
 ```bash
 sudo -u monitoring bash -c 'cd /opt/gpu_monitor && source venv/bin/activate && set -a && source .env && set +a && python manage.py setup_timescale'

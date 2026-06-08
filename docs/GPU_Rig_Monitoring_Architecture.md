@@ -33,6 +33,17 @@ The GPU Rig Monitoring Platform is a single-server telemetry dashboard for GPU r
 
 **Scale target:** ~1,000 rigs reporting at 1-minute intervals.
 
+**Measured storage per rig (100% uptime):** ~4.7 MB/day
+- At 50% uptime: ~2.35 MB/day
+- 31-day retention with tiered compaction: ~9 GB total for 1,000 rigs
+- Without compaction: ~146 GB for 1,000 rigs
+
+**Data retention:** 31 days (matches 30-day max chart range + 1 day safety margin)
+- 0-1 day: raw per-minute data
+- 1-7 days: compacted to 15-minute buckets
+- 7-31 days: compacted to 1-hour buckets
+- 31+ days: deleted
+
 ### 1.1 Non-Goals (v1)
 
 | Excluded | Rationale |

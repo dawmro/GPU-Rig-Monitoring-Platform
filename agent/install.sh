@@ -77,6 +77,20 @@ cp check_update.py "$INSTALL_DIR/check_update.py"
 chmod +x "$INSTALL_DIR/check_update.py"
 echo "Auto-update: daily check scheduled at $(printf '%02d:%02d' $HOUR $MINUTE)"
 
+# Data cleanup — random time daily (2-4 AM) to prevent thundering herd
+CLONE_HOUR=$((2 + RANDOM % 3))
+CLONE_MINUTE=$((RANDOM % 60))
+CLEANUP_CRON_FILE="/etc/cron.d/monitoring-data-cleanup"
+cat > "$CLEANUP_CRON_FILE" << EOF
+# GPU Rig Monitoring Platform — Data retention cleanup (daily at ${CLONE_HOUR}:${CLONE_MINUTE})
+${CLONE_MINUTE} ${CLONE_HOUR} * * * root bash /opt/gpu_monitor/deploy/data_retention.sh >> /var/log/monitoring-agent/cleanup-cron.log 2>&1
+EOF
+chmod 644 "$CLEANUP_CRON_FILE"
+# Copy cleanup script
+cp gpu_monitor/deploy/data_retention.sh "$OPT/gpu_monitor/deploy/data_retention.sh"
+chmod +x "$OPT/gpu_monitor/deploy/data_retention.sh"
+echo "Data cleanup: daily at $(printf '%02d:%02d' $CLONE_HOUR $CLONE_MINUTE)"
+
 echo ""
 echo "=== Installation Complete ==="
 echo "Config:    $CONFIG_DIR/config.yaml"

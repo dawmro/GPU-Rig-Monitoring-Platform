@@ -369,17 +369,49 @@ class ChartDataView(APIView):
         """Fill bucket values from a parallel list of values (one per queryset row)."""
         total_buckets = len(labels)
         rows = list(queryset)
-        for i, row in enumerate(rows):
-            if i >= len(field_values):
-                break
-            ts = getattr(row, value_key)
-            ts = ts.replace(second=0, microsecond=0)
-            delta = ts - start_bucket
-            idx = int(delta.total_seconds() // (bucket_minutes * 60))
-            if 0 <= idx < total_buckets:
-                val = field_values[i]
-                if val is not None:
-                    values[idx] = val
+        bucket_seconds = bucket_minutes * 60
+
+        if bucket_minutes == 1 and aggregate is None:
+            # Fast path: 1-minute buckets, last value wins
+            for i, row in enumerate(rows):
+                if i >= len(field_values):
+                    break
+                ts = getattr(row, value_key)
+                ts = ts.replace(second=0, microsecond=0)
+                delta = ts - start_bucket
+                idx = int(delta.total_seconds() // 60)
+                if 0 <= idx < total_buckets:
+                    val = field_values[i]
+                    if val is not None:
+                        values[idx] = val
+        else:
+            # Aggregate path: collect all values per bucket
+            bucket_values = [[] for _ in range(total_buckets)]
+            for i, row in enumerate(rows):
+                if i >= len(field_values):
+                    break
+                ts = getattr(row, value_key)
+                ts = ts.replace(second=0, microsecond=0)
+                delta = ts - start_bucket
+                idx = int(delta.total_seconds() // bucket_seconds)
+                if 0 <= idx < total_buckets:
+                    val = field_values[i]
+                    if val is not None:
+                        bucket_values[idx].append(val)
+            for i in range(total_buckets):
+                if bucket_values[i]:
+                    if aggregate == 'median':
+                        values[i] = round(statistics.median(bucket_values[i]), 2)
+                    elif aggregate == 'avg':
+                        values[i] = round(sum(bucket_values[i]) / len(bucket_values[i]), 2)
+                    elif aggregate == 'sum':
+                        values[i] = round(sum(bucket_values[i]), 2)
+                    elif aggregate == 'max':
+                        values[i] = max(bucket_values[i])
+                    elif aggregate == 'min':
+                        values[i] = min(bucket_values[i])
+                    else:
+                        values[i] = bucket_values[i][-1]
 
     def _fill_buckets_multi_key(self, labels, datasets, start_bucket, queryset, field_name, key_field,
                                 value_key='timestamp', bucket_minutes=1, aggregate=None):

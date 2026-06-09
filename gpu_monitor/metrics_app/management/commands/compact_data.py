@@ -1,4 +1,6 @@
 import logging
+import os
+import sys
 from datetime import timedelta
 from django.core.management.base import BaseCommand
 from django.utils import timezone
@@ -10,8 +12,6 @@ logger = logging.getLogger(__name__)
 class Command(BaseCommand):
     help = 'Compact old metric data into larger time buckets to save storage'
 
-    # Tables and their aggregation configs
-    # Each entry: (table, id_field, value_fields, foreign_key_field)
     COMPACT_CONFIG = {
         'metrics_metricsnapshot': {
             'group_by': ['rig_uuid'],
@@ -72,16 +72,10 @@ class Command(BaseCommand):
     }
 
     def add_arguments(self, parser):
-        parser.add_argument(
-            '--dry-run',
-            action='store_true',
-            help='Preview what would be compacted without making changes',
-        )
-        parser.add_argument(
-            '--verbose',
-            action='store_true',
-            help='Show detailed per-table statistics',
-        )
+        parser.add_argument('--dry-run', action='store_true',
+                            help='Preview without making changes')
+        parser.add_argument('--verbose', action='store_true',
+                            help='Show detailed per-table statistics')
 
     def handle(self, *args, **options):
         dry_run = options['dry_run']
@@ -92,68 +86,34 @@ class Command(BaseCommand):
 
         now = timezone.now()
 
-        # Phase 1: Compact data older than 1 day into 15-minute buckets
         cutoff_1d = now - timedelta(days=1)
-        self.stdout.write(self.style.MIGRATE_HEADING('Phase 1: Compacting 1-minute -> 15-minute buckets (data older than 1 day)'))
-        self._compact_to_buckets(
-            cutoff=cutoff_1d,
-            bucket_minutes=15,
-            label='15-min',
-            dry_run=dry_run,
-            verbose=verbose,
-        )
+        self.stdout.write(self.style.MIGRATE_HEADING(
+            'Phase 1: Compacting 1-minute -> 15-minute buckets (data older than 1 day)'))
+        self._compact_to_buckets(cutoff_1d, 15, '15-min', dry_run, verbose)
 
-        # Phase 2: Compact data older than 7 days into 1-hour buckets
         cutoff_7d = now - timedelta(days=7)
-        self.stdout.write(self.style.MIGRATE_HEADING('Phase 2: Compacting 15-minute -> 1-hour buckets (data older than 7 days)'))
-        self._compact_to_buckets(
-            cutoff=cutoff_7d,
-            bucket_minutes=60,
-            label='1-hour',
-            dry_run=dry_run,
-            verbose=verbose,
-        )
+        self.stdout.write(self.style.MIGRATE_HEADING(
+            'Phase 2: Compacting 15-minute -> 1-hour buckets (data older than 7 days)'))
+        self._compact_to_buckets(cutoff_7d, 60, '1-hour', dry_run, verbose)
 
         self.stdout.write(self.style.SUCCESS('Compaction complete'))
 
     def _compact_to_buckets(self, cutoff, bucket_minutes, label, dry_run, verbose):
-        """Compact raw data older than cutoff into time buckets.
-
-        Strategy for each table:
-        1. SELECT rows older of cutoff, grouped by time bucket
-        2. For each bucket, compute aggregated values (avg for metrics, last for static)
-        3. Delete the original rows
-        4. Insert the aggregated rows
-        """
         for table_name, config in self.COMPACT_CONFIG.items():
-            self._compact_table(
-                table_name=table_name,
-                config=config,
-                cutoff=cutoff,
-                bucket_minutes=bucket_minutes,
-                label=label,
-                dry_run=dry_run,
-                verbose=verbose,
-            )
+            self._compact_table(table_name, config, cutoff, bucket_minutes, label, dry_run, verbose)
 
     def _compact_table(self, table_name, config, cutoff, bucket_minutes, label, dry_run, verbose):
-        """Compact a single table into time buckets."""
         group_by = config['group_by']
         agg_fields = config['agg_fields']
         static_fields = config['static_fields']
-
-        # Build the SQL for time bucketing and aggregation
         group_cols = ', '.join(group_by)
 
-        # Time bucket expression (PostgreSQL)
-        # date_trunc to bucket boundary, then add offset for exact minute alignment
-        bucket_expr = f"""
-            date_trunc('hour', timestamp) +
-            INTERVAL '{bucket_minutes} min' *
-            (EXTRACT(MINUTE FROM timestamp)::int / {bucket_minutes})
-        """
+        bucket_expr = (
+            f"date_trunc('hour', timestamp) + "
+            f"INTERVAL '{bucket_minutes} min' * "
+            f"(EXTRACT(MINUTE FROM timestamp)::int / {bucket_minutes})"
+        )
 
-        # Build aggregate expressions
         select_parts = [f"{bucket_expr} AS bucket_ts"]
         for field, agg_type in agg_fields.items():
             if agg_type == 'avg':
@@ -161,7 +121,6 @@ class Command(BaseCommand):
             elif agg_type == 'sum':
                 select_parts.append(f"SUM({field}) AS {field}")
             elif agg_type == 'last':
-                # Take the last value (most recent non-null)
                 select_parts.append(f"(ARRAY_AGG({field} ORDER BY timestamp DESC))[1] AS {field}")
             elif agg_type == 'max':
                 select_parts.append(f"MAX({field}) AS {field}")
@@ -171,12 +130,9 @@ class Command(BaseCommand):
             select_parts.append(f"(ARRAY_AGG({field} ORDER BY timestamp DESC))[1] AS {field}")
 
         select_clause = ',\n            '.join(select_parts)
-        group_clause = group_cols
 
-        # Count rows that would be compacted
-        count_sql = f"SELECT COUNT(*) FROM {table_name} WHERE timestamp < %s"
         with connection.cursor() as cursor:
-            cursor.execute(count_sql, [cutoff])
+            cursor.execute(f"SELECT COUNT(*) FROM {table_name} WHERE timestamp < %s", [cutoff])
             row_count = cursor.fetchone()[0]
 
         if row_count == 0:
@@ -190,46 +146,27 @@ class Command(BaseCommand):
         if dry_run:
             return
 
-        # Perform compaction in a transaction
         try:
             with connection.cursor() as cursor:
-                # Step 1: Create temp table with aggregated data
                 cursor.execute(f"""
                     CREATE TEMP TABLE _compact_tmp AS
-                    SELECT
-                        {select_clause}
+                    SELECT {select_clause}
                     FROM {table_name}
                     WHERE timestamp < %s
-                    GROUP BY {group_clause}, bucket_ts
+                    GROUP BY {group_cols}, bucket_ts
                 """, [cutoff])
 
-                # Step 2: Delete original rows
-                cursor.execute(f"""
-                    DELETE FROM {table_name}
-                    WHERE timestamp < %s
-                """, [cutoff])
+                cursor.execute(f"DELETE FROM {table_name} WHERE timestamp < %s", [cutoff])
 
-                # Step 3: Re-insert aggregated data
-                # Build INSERT from temp table
                 all_fields = ['timestamp'] + list(agg_fields.keys()) + static_fields + group_by
                 cols = ', '.join(all_fields)
                 vals = ', '.join(['bucket_ts' if f == 'timestamp' else f for f in all_fields])
 
-                cursor.execute(f"""
-                    INSERT INTO {table_name} ({cols})
-                    SELECT {vals}
-                    FROM _compact_tmp
-                """)
-
-                # Step 4: Clean up temp table
+                cursor.execute(f"INSERT INTO {table_name} ({cols}) SELECT {vals} FROM _compact_tmp")
                 cursor.execute("DROP TABLE _compact_tmp")
 
-            self.stdout.write(
-                self.style.SUCCESS(f'  {table_name}: compacted {row_count:,} rows into {label} buckets')
-            )
-
+            self.stdout.write(self.style.SUCCESS(
+                f'  {table_name}: compacted {row_count:,} rows into {label} buckets'))
         except Exception as e:
-            self.stdout.write(
-                self.style.ERROR(f'  {table_name}: FAILED — {e}')
-            )
+            self.stdout.write(self.style.ERROR(f'  {table_name}: FAILED — {e}'))
             logger.exception('Compaction failed for %s', table_name)

@@ -119,6 +119,23 @@ CSRF_COOKIE_SAMESITE = 'Lax'
 CSRF_TRUSTED_ORIGINS = ['http://*', 'https://*']
 SESSION_ENGINE = 'django.contrib.sessions.backends.db'
 
+# Only configure file logging if the log directory is writable
+_log_dir = BASE_DIR / 'logs'
+_log_file = _log_dir / 'app.log'
+_handlers = ['console']
+try:
+    _log_dir.mkdir(parents=True, exist_ok=True)
+    # Check if we can write to the log file (or create it)
+    if _log_file.exists():
+        # File exists — check if writable by trying to open for append
+        with open(str(_log_file), 'a'):
+            pass
+    else:
+        _log_file.touch()
+    _handlers = ['file', 'console']
+except (OSError, PermissionError):
+    pass  # Log directory/file not writable, use console only
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -131,7 +148,7 @@ LOGGING = {
         'file': {
             'level': 'INFO',
             'class': 'logging.handlers.RotatingFileHandler',
-            'filename': BASE_DIR / 'logs' / 'app.log',
+            'filename': str(_log_file),
             'maxBytes': 10 * 1024 * 1024,
             'backupCount': 3,
             'formatter': 'json',
@@ -142,7 +159,7 @@ LOGGING = {
         },
     },
     'root': {
-        'handlers': ['file', 'console'],
+        'handlers': _handlers,
         'level': 'INFO',
     },
 }

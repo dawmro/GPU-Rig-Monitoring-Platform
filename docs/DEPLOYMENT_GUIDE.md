@@ -291,8 +291,7 @@ echo '0 3 * * * qrv bash /opt/gpu_monitor/deploy/data_retention.sh >> /var/log/m
 The `data_retention.sh` wrapper runs two commands daily:
 
 1. **`compact_data`** — Two-phase aggregation of old data:
-   - **Phase 1:** Data > 1 day old → 15-minute buckets (15× reduction)
-   - **Phase 2:** Data > 7 days old → 1-hour buckets (60× reduction)
+   - **Phase 1:** Data > 1 day old → 1-hour buckets (60× reduction)
    - Aggregation per metric: AVG (temperature, utilization, power), SUM (network bytes, errors), LAST (model names, UUIDs)
    - Parent table (`metrics_metricsnapshot`) compacted first; child tables after
    - FK-safe: parent rows referenced by children are excluded from compaction

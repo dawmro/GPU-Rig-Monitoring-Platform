@@ -134,17 +134,11 @@ class Command(BaseCommand):
 
         now = timezone.now()
 
-        # Phase 1: Compact data older than 1 day into 15-minute buckets
+        # Phase 1: Compact data older than 1 day into 1-hour buckets
         cutoff_1d = now - timedelta(days=1)
         self.stdout.write(self.style.MIGRATE_HEADING(
-            'Phase 1: Compacting 1-minute -> 15-minute buckets (data older than 1 day)'))
-        self._compact_phase(cutoff_1d, 15, '15-min', dry_run, verbose)
-
-        # Phase 2: Compact data older than 7 days into 1-hour buckets
-        cutoff_7d = now - timedelta(days=7)
-        self.stdout.write(self.style.MIGRATE_HEADING(
-            'Phase 2: Compacting 15-minute -> 1-hour buckets (data older than 7 days)'))
-        self._compact_phase(cutoff_7d, 60, '1-hour', dry_run, verbose)
+            'Phase 1: Compacting 1-minute -> 1-hour buckets (data older than 1 day)'))
+        self._compact_phase(cutoff_1d, 60, '1-hour', dry_run, verbose)
 
         self.stdout.write(self.style.SUCCESS('Compaction complete'))
 

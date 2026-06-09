@@ -40,8 +40,7 @@ The GPU Rig Monitoring Platform is a single-server telemetry dashboard for GPU r
 
 **Data retention:** 31 days (matches 30-day max chart range + 1 day safety margin)
 - 0-1 day: raw per-minute data
-- 1-7 days: compacted to 15-minute buckets
-- 7-31 days: compacted to 1-hour buckets
+- 1-31 days: compacted to 1-hour buckets
 - 31+ days: deleted
 
 ### 1.1 Non-Goals (v1)
@@ -496,7 +495,7 @@ Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the age
 | Command | Purpose | Schedule |
 |---|---|---|
 | `update_rig_status` | Updates rig online/stale/offline status based on last_seen | Every 2 min (cron) |
-| `compact_data` | Aggregates old metric data into larger time buckets (15-min, 1-hour) | Daily at 3 AM (cron) |
+| `compact_data` | Aggregates old metric data into 1-hour buckets | Daily at 3 AM (cron) |
 | `cleanup_old_data` | Deletes data older than 31 days in batches of 10,000 | Daily at 3 AM (cron, after compact) |
 
 ### 6.2 Key Constraints
@@ -618,8 +617,7 @@ The platform uses **tiered compaction** to manage long-term storage growth. With
 | Tier | Age | Bucket | Rows/Day/Rig | Savings |
 |---|---|---|---|---|
 | Raw | 0-1 day | 1-minute | 1,440 | — |
-| Compacted | 1-7 days | 15-minute | 96 | 15× |
-| Compacted | 7-31 days | 1-hour | 24 | 60× |
+| Compacted | 1-31 days | 1-hour | 24 | 60× |
 | Deleted | 31+ days | — | 0 | 100× |
 
 #### Management Commands
@@ -627,8 +625,7 @@ The platform uses **tiered compaction** to manage long-term storage growth. With
 Two Django management commands handle retention:
 
 **`compact_data`** — Aggregates old data into larger time buckets:
-- Phase 1: data > 1 day → 15-minute buckets
-- Phase 2: data > 7 days → 1-hour buckets
+- Phase 1: data > 1 day → 1-hour buckets
 - Aggregation: AVG (temperature, utilization, power), SUM (network bytes, errors), LAST (model names, UUIDs)
 - Parent table (`metrics_metricsnapshot`) compacted first; child tables after
 - FK-safe: parent rows referenced by children are excluded from compaction

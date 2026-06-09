@@ -205,81 +205,64 @@ class ChartDataView(APIView):
         return labels, start_bucket, end_bucket
 
     def get(self, request, uuid):
+        from django.db.models import Avg, Sum, Count
+        from django.db.models.functions import TruncMinute, TruncHour
+
         user = request.user
         rig = get_object_or_404(Rig, uuid=uuid)
         if rig.owner_id != user.id and not request.user.is_staff:
             return Response({'status': 'error', 'message': 'Forbidden'}, status=403)
 
         metric = request.query_params.get('metric', 'cpu_utilization_pct')
-        range_hours = int(request.query_params.get('range', '24'))
+        range_hours = int(request.query_params.get('range', 24))
         gpu_index = int(request.query_params.get('gpu_index', 0))
         multi_gpu = request.query_params.get('multi_gpu', 'false').lower() == 'true'
         multi_disk = request.query_params.get('multi_disk', 'false').lower() == 'true'
         multi_iface = request.query_params.get('multi_iface', 'false').lower() == 'true'
 
-        # Auto-select bucket size based on range
-        if range_hours <= 24:
-            bucket_minutes = 1
-        elif range_hours <= 168:
-            bucket_minutes = 15
-        else:
-            bucket_minutes = 60
-
+        # Bucket size: 1-min for 24h, 1-hour for 7d/30d
+        bucket_minutes = 1 if range_hours <= 24 else 60
         labels, start_bucket, end_bucket = self._build_buckets(range_hours, bucket_minutes)
         total_buckets = len(labels)
-        bucket_seconds = bucket_minutes * 60
+        trunc = TruncMinute if bucket_minutes == 1 else TruncHour
+        agg_func = Sum if metric in {'net_rx_bytes_delta', 'net_tx_bytes_delta', 'error_frequency'} else Avg
 
-        SUM_METRICS = {'net_rx_bytes_delta', 'net_tx_bytes_delta', 'error_frequency'}
-        agg = 'sum' if metric in SUM_METRICS else 'avg'
-
-        from django.db.models import Avg, Sum, Count
-        from django.db.models.functions import TruncMinute, TruncHour
-
-        trunc_func = TruncMinute if bucket_minutes == 1 else TruncHour
-        agg_func = Sum if agg == 'sum' else Avg
-
-        if metric in self.SNAPSHOT_METRICS:
-            data = list(
-                MetricSnapshot.objects.filter(
-                    rig_uuid=str(uuid), timestamp__gte=start_bucket, timestamp__lte=end_bucket
-                ).annotate(bucket=trunc_func('timestamp')).values('bucket').annotate(val=agg_func(metric)).order_by('bucket')
-            )
+        # Helper: run SQL aggregation and map to values array
+        def chart_values(qs, field):
+            data = list(qs.annotate(bucket=trunc('timestamp')).values('bucket').annotate(val=agg_func(field)).order_by('bucket'))
             values = [None] * total_buckets
             for row in data:
-                idx = int((row['bucket'] - start_bucket).total_seconds() // bucket_seconds)
+                idx = int((row['bucket'] - start_bucket).total_seconds() // (bucket_minutes * 60))
                 if 0 <= idx < total_buckets:
                     values[idx] = round(row['val'], 2) if row['val'] is not None else None
+            return values
+
+        base_filter = dict(rig_uuid=str(uuid), timestamp__gte=start_bucket, timestamp__lte=end_bucket)
+
+        if metric in self.SNAPSHOT_METRICS:
+            values = chart_values(MetricSnapshot.objects.filter(**base_filter), metric)
             if metric in self.BYTE_TO_GB:
                 values = [round(v / (1024**3), 2) if v is not None else None for v in values]
             datasets = [{'label': metric, 'data': values}]
 
         elif metric == 'cpu_load_avg':
-            snapshots = list(MetricSnapshot.objects.filter(
-                rig_uuid=str(uuid), timestamp__gte=start_bucket, timestamp__lte=end_bucket
-            ).order_by('timestamp'))
-            load_datasets = [{'label': 'Load 1m', 'data': [None]*total_buckets},
-                             {'label': 'Load 5m', 'data': [None]*total_buckets},
-                             {'label': 'Load 15m', 'data': [None]*total_buckets}]
+            snapshots = list(MetricSnapshot.objects.filter(**base_filter).order_by('timestamp'))
+            load_datasets = [{'label': f'Load {m}m', 'data': [None]*total_buckets} for m in [1, 5, 15]]
             for s in snapshots:
                 ts = s.timestamp.replace(second=0, microsecond=0)
-                delta = ts - start_bucket
-                idx = int(delta.total_seconds() // bucket_seconds)
+                idx = int((ts - start_bucket).total_seconds() // (bucket_minutes * 60))
                 if 0 <= idx < total_buckets and s.cpu_load_avg_json:
-                    for i, key in enumerate([0, 1, 2]):
-                        if key < len(s.cpu_load_avg_json):
-                            load_datasets[i]['data'][idx] = s.cpu_load_avg_json[key]
+                    for i in range(min(3, len(s.cpu_load_avg_json))):
+                        load_datasets[i]['data'][idx] = s.cpu_load_avg_json[i]
             datasets = load_datasets
 
         elif metric == 'uptime_s':
-            snapshots = list(MetricSnapshot.objects.filter(
-                rig_uuid=str(uuid), timestamp__gte=start_bucket, timestamp__lte=end_bucket
-            ).order_by('timestamp'))
+            snapshots = list(MetricSnapshot.objects.filter(**base_filter).order_by('timestamp'))
             values = [None] * total_buckets
             for s in snapshots:
                 ts = s.timestamp.replace(second=0, microsecond=0)
-                delta = ts - start_bucket
-                idx = int(delta.total_seconds() // bucket_seconds)
-                if 0 <= idx < total_buckets and s.software_json:
+                idx = int((ts - start_bucket).total_seconds() // (bucket_minutes * 60))
+                if 0 <= idx < total_buckets and isinstance(s.software_json, dict):
                     uptime_s = s.software_json.get('uptime_s')
                     if uptime_s is not None:
                         values[idx] = round(uptime_s / 86400, 2)
@@ -287,116 +270,53 @@ class ChartDataView(APIView):
 
         elif metric in self.GPU_METRICS:
             from .models import GPUMetric
-            field_name = self.GPU_METRICS[metric]
+            fn = self.GPU_METRICS[metric]
+            base_qs = GPUMetric.objects.filter(**base_filter)
             if multi_gpu:
-                gpu_uuids = list(GPUMetric.objects.filter(
-                    rig_uuid=str(uuid), timestamp__gte=start_bucket, timestamp__lte=end_bucket
-                ).values_list('gpu_uuid', flat=True).distinct().order_by('gpu_uuid'))
-                datasets = []
-                for guuid in gpu_uuids:
-                    data = list(GPUMetric.objects.filter(
-                        rig_uuid=str(uuid), gpu_uuid=guuid,
-                        timestamp__gte=start_bucket, timestamp__lte=end_bucket
-                    ).annotate(bucket=trunc_func('timestamp')).values('bucket').annotate(val=agg_func(field_name)).order_by('bucket'))
-                    values = [None] * total_buckets
-                    for row in data:
-                        idx = int((row['bucket'] - start_bucket).total_seconds() // bucket_seconds)
-                        if 0 <= idx < total_buckets:
-                            values[idx] = round(row['val'], 2) if row['val'] is not None else None
-                    datasets.append({'label': guuid, 'data': values})
+                datasets = [{'label': guuid, 'data': chart_values(base_qs.filter(gpu_uuid=guuid), fn)}
+                            for guuid in base_qs.values_list('gpu_uuid', flat=True).distinct().order_by('gpu_uuid')]
             else:
-                data = list(GPUMetric.objects.filter(
-                    rig_uuid=str(uuid), gpu_index=gpu_index,
-                    timestamp__gte=start_bucket, timestamp__lte=end_bucket
-                ).annotate(bucket=trunc_func('timestamp')).values('bucket').annotate(val=agg_func(field_name)).order_by('bucket'))
-                values = [None] * total_buckets
-                for row in data:
-                    idx = int((row['bucket'] - start_bucket).total_seconds() // bucket_seconds)
-                    if 0 <= idx < total_buckets:
-                        values[idx] = round(row['val'], 2) if row['val'] is not None else None
-                datasets = [{'label': f'GPU {gpu_index}', 'data': values}]
+                datasets = [{'label': f'GPU {gpu_index}', 'data': chart_values(base_qs.filter(gpu_index=gpu_index), fn)}]
 
         elif metric in self.STORAGE_METRICS:
             from .models import StorageMetric
+            base_qs = StorageMetric.objects.filter(**base_filter)
             if multi_disk:
-                devices = list(StorageMetric.objects.filter(
-                    rig_uuid=str(uuid), timestamp__gte=start_bucket, timestamp__lte=end_bucket
-                ).values_list('device', flat=True).distinct().order_by('device'))
-                datasets = []
-                for dev in devices:
-                    data = list(StorageMetric.objects.filter(
-                        rig_uuid=str(uuid), device=dev,
-                        timestamp__gte=start_bucket, timestamp__lte=end_bucket
-                    ).annotate(bucket=trunc_func('timestamp')).values('bucket').annotate(val=Avg('usage_pct')).order_by('bucket'))
-                    values = [None] * total_buckets
-                    for row in data:
-                        idx = int((row['bucket'] - start_bucket).total_seconds() // bucket_seconds)
-                        if 0 <= idx < total_buckets:
-                            values[idx] = round(row['val'], 2) if row['val'] is not None else None
-                    datasets.append({'label': dev, 'data': values})
+                datasets = [{'label': dev, 'data': chart_values(base_qs.filter(device=dev), 'usage_pct')}
+                            for dev in base_qs.values_list('device', flat=True).distinct().order_by('device')]
             else:
-                data = list(StorageMetric.objects.filter(
-                    rig_uuid=str(uuid), timestamp__gte=start_bucket, timestamp__lte=end_bucket
-                ).annotate(bucket=trunc_func('timestamp')).values('bucket').annotate(val=Avg('usage_pct')).order_by('bucket'))
-                values = [None] * total_buckets
-                for row in data:
-                    idx = int((row['bucket'] - start_bucket).total_seconds() // bucket_seconds)
-                    if 0 <= idx < total_buckets:
-                        values[idx] = round(row['val'], 2) if row['val'] is not None else None
-                datasets = [{'label': 'Disk Usage %', 'data': values}]
+                datasets = [{'label': 'Disk Usage %', 'data': chart_values(base_qs, 'usage_pct')}]
 
         elif metric.startswith('net_'):
             from .models import NetworkMetric
-            NET_FIELD_MAP = {'net_rx_bytes_delta': 'rx_bytes_delta', 'net_tx_bytes_delta': 'tx_bytes_delta', 'net_rx_errors': 'rx_errors', 'net_tx_errors': 'tx_errors'}
-            if metric not in NET_FIELD_MAP:
+            fn = {'net_rx_bytes_delta': 'rx_bytes_delta', 'net_tx_bytes_delta': 'tx_bytes_delta',
+                  'net_rx_errors': 'rx_errors', 'net_tx_errors': 'tx_errors'}.get(metric)
+            if not fn:
                 return Response({'status': 'error', 'message': f'Unknown network metric: {metric}'}, status=400)
-            field_name = NET_FIELD_MAP[metric]
+            base_qs = NetworkMetric.objects.filter(**base_filter)
+            byte_metric = fn in self.BYTE_TO_MB
             if multi_iface:
-                ifaces = list(NetworkMetric.objects.filter(
-                    rig_uuid=str(uuid), timestamp__gte=start_bucket, timestamp__lte=end_bucket
-                ).values_list('interface', flat=True).distinct().order_by('interface'))
                 datasets = []
-                for iface in ifaces:
-                    data = list(NetworkMetric.objects.filter(
-                        rig_uuid=str(uuid), interface=iface,
-                        timestamp__gte=start_bucket, timestamp__lte=end_bucket
-                    ).annotate(bucket=trunc_func('timestamp')).values('bucket').annotate(val=agg_func(field_name)).order_by('bucket'))
-                    values = [None] * total_buckets
-                    for row in data:
-                        idx = int((row['bucket'] - start_bucket).total_seconds() // bucket_seconds)
-                        if 0 <= idx < total_buckets:
-                            val = round(row['val'], 2) if row['val'] is not None else None
-                            if field_name in self.BYTE_TO_MB and val is not None:
-                                val = round(val / (1024 * 1024), 2)
-                            values[idx] = val
-                    datasets.append({'label': iface, 'data': values})
+                for iface in base_qs.values_list('interface', flat=True).distinct().order_by('interface'):
+                    v = chart_values(base_qs.filter(interface=iface), fn)
+                    if byte_metric:
+                        v = [round(x / (1024*1024), 2) if x is not None else None for x in v]
+                    datasets.append({'label': iface, 'data': v})
             else:
-                data = list(NetworkMetric.objects.filter(
-                    rig_uuid=str(uuid), interface__isnull=False,
-                    timestamp__gte=start_bucket, timestamp__lte=end_bucket
-                ).annotate(bucket=trunc_func('timestamp')).values('bucket').annotate(val=agg_func(field_name)).order_by('bucket'))
-                values = [None] * total_buckets
-                for row in data:
-                    idx = int((row['bucket'] - start_bucket).total_seconds() // bucket_seconds)
-                    if 0 <= idx < total_buckets:
-                        val = round(row['val'], 2) if row['val'] is not None else None
-                        if field_name in self.BYTE_TO_MB and val is not None:
-                            val = round(val / (1024 * 1024), 2)
-                        values[idx] = val
-                datasets = [{'label': metric, 'data': values}]
+                v = chart_values(base_qs.filter(interface__isnull=False), fn)
+                if byte_metric:
+                    v = [round(x / (1024*1024), 2) if x is not None else None for x in v]
+                datasets = [{'label': metric, 'data': v}]
 
         elif metric == 'error_frequency':
-            from django.db.models.functions import TruncHour, TruncMinute
-            trunc = TruncMinute if bucket_minutes == 1 else TruncHour
-            data = list(ErrorEventOccurrence.objects.filter(
-                rig_uuid=str(uuid), timestamp__gte=start_bucket, timestamp__lte=end_bucket
-            ).annotate(bucket=trunc('timestamp')).values('bucket').annotate(count=Count('id')).order_by('bucket'))
+            data = list(ErrorEventOccurrence.objects.filter(**base_filter)
+                        .annotate(bucket=trunc('timestamp')).values('bucket').annotate(count=Count('id')).order_by('bucket'))
             values = [0] * total_buckets
             for row in data:
-                idx = int((row['bucket'] - start_bucket).total_seconds() // bucket_seconds)
+                idx = int((row['bucket'] - start_bucket).total_seconds() // (bucket_minutes * 60))
                 if 0 <= idx < total_buckets:
                     values[idx] = row['count']
-            label = 'Errors/min' if bucket_minutes == 1 else ('Errors/15min' if bucket_minutes == 15 else 'Errors/hour')
+            label = 'Errors/min' if bucket_minutes == 1 else 'Errors/hour'
             datasets = [{'label': label, 'data': values}]
 
         else:

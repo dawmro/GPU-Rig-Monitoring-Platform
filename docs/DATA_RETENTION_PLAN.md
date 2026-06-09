@@ -30,17 +30,12 @@
 - Keep all per-minute data unchanged
 - Needed for Live Metrics and 24h charts (1-minute buckets)
 
-### Tier 2: 15-Minute Buckets (1-7 days)
-- Compact data older than 1 day into 15-minute buckets
-- Reduces 1,440 rows/day to 96 rows/day (15× savings)
-- 7d charts use 15-minute buckets anyway
-
-### Tier 3: 1-Hour Buckets (7-31 days)
-- Compact data older than 7 days into 1-hour buckets
+### Tier 2: 1-Hour Buckets (1-31 days)
+- Compact data older than 1 day into 1-hour buckets
 - Reduces 1,440 rows/day to 24 rows/day (60× savings)
-- 30d charts use 1-hour buckets anyway
+- 7d and 30d charts use 1-hour buckets
 
-### Tier 4: Delete (31+ days)
+### Tier 3: Delete (31+ days)
 - Remove all data older than 31 days
 - 31 days provides 1-day safety margin beyond the 30-day max chart range
 
@@ -56,11 +51,10 @@
 | Tier | Period | Raw Size | Factor | Compact Size |
 |---|---|---|---|---|
 | Raw | Day 0-1 | 4.7 GB | 1x | 4.7 GB |
-| 15-min | Day 1-7 | 32.9 GB | 15x | 2.2 GB |
-| 1-hour | Day 7-31 | 112.8 GB | 60x | 1.9 GB |
-| **Total** | **31 days** | **150.4 GB** | | **~9 GB** |
+| 1-hour | Day 1-31 | 141.3 GB | 60x | 2.4 GB |
+| **Total** | **31 days** | **146.0 GB** | | **~7 GB** |
 
-**94% storage reduction** through compaction.
+**95% storage reduction** through compaction.
 
 ---
 
@@ -68,25 +62,20 @@
 
 ### `compact_data` — Aggregate Old Data into Larger Buckets
 
-**Purpose:** Reduces storage by aggregating per-minute rows into 15-minute or 1-hour buckets.
+**Purpose:** Reduces storage by aggregating per-minute rows into 1-hour buckets.
 
 **How It Works:**
 
-Two phases run sequentially:
+Single phase:
 
 **Phase 1** (data > 1 day old):
-- Creates 15-minute buckets from per-minute data
-- Groups rows by `rig_uuid` (and `gpu_index`, `device`, etc.) into 15-minute windows
+- Creates 1-hour buckets from per-minute data
+- Groups rows by `rig_uuid` (and `gpu_index`, `device`, etc.) into 1-hour windows
 - Applies aggregation per metric type:
   - `AVG` for gauges: temperature, utilization, power, memory usage
   - `SUM` for counters: network byte deltas, error counts
   - `LAST` for static fields: model names, UUIDs, capacity
 - Deletes original per-minute rows, inserts aggregated rows
-
-**Phase 2** (data > 7 days old):
-- Creates 1-hour buckets from 15-minute data (or per-minute if Phase 1 hasn't run yet)
-- Same aggregation logic, but with 60-minute windows
-- Further reduces row count by 4× compared to 15-minute buckets
 
 **Table Processing Order:**
 1. `metrics_metricsnapshot` (parent) — compacted first, excluding rows still referenced by children
@@ -97,7 +86,6 @@ Two phases run sequentially:
 **FK Handling:**
 - Parent table rows referenced by children are excluded from compaction (to avoid FK violations)
 - Child tables keep their `snapshot_id` pointing to the parent for data integrity
-- Compacted child rows have `snapshot_id` set to the original parent's ID
 
 **Options:**
 | Flag | Description |
@@ -107,23 +95,13 @@ Two phases run sequentially:
 
 **Example Output:**
 ```
-Phase 1: Compacting 1-minute -> 15-minute buckets (data older than 1 day)
-  metrics_metricsnapshot: 50 rows older than 15-min cutoff
-  metrics_metricsnapshot: compacted 50 rows into 15-min buckets
-  metrics_gpumetric: 390 rows older than 15-min cutoff
-  metrics_gpumetric: compacted 390 rows into 15-min buckets
-  metrics_storagemetric: 357 rows older than 15-min cutoff
-  metrics_storagemetric: compacted 357 rows into 15-min buckets
-  metrics_networkmetric: 197 rows older than 15-min cutoff
-  metrics_networkmetric: compacted 197 rows into 15-min buckets
-  metrics_dockercontainermetric: nothing to compact
-  metrics_ai_process: nothing to compact
-  metrics_gpu_process: nothing to compact
-  metrics_error_event_occurrence: 31,079 rows older than 15-min cutoff
-  metrics_error_event_occurrence: compacted 31,079 rows into 15-min buckets
-Phase 2: Compacting 15-minute -> 1-hour buckets (data older than 7 days)
-  metrics_metricsnapshot: nothing to compact
-  ...
+Phase 1: Compacting 1-minute -> 1-hour buckets (data older than 1 day)
+  metrics_metricsnapshot: 50,000 rows compacted
+  metrics_gpumetric: 390,000 rows compacted
+  metrics_storagemetric: 357,000 rows compacted
+  metrics_networkmetric: 197,000 rows compacted
+  metrics_error_event_occurrence: 31,079 rows compacted
+Compaction complete
 Compaction complete
 ```
 
@@ -239,7 +217,7 @@ python manage.py cleanup_old_data --days=31 --verbose
 
 ### Compaction fails with FK violation
 **Cause:** Parent table rows are referenced by child table rows.
-**Fix:** The command handles this automatically — parent rows still referenced by children are excluded from compaction. These rows remain at the previous compaction level (e.g., 15-minute buckets instead of 1-hour).
+**Fix:** The command handles this automatically — parent rows still referenced by children are excluded from compaction.
 
 ### Compaction fails with "relation already exists"
 **Cause:** A previous run was interrupted, leaving a temp table behind.

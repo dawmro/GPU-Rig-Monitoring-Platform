@@ -495,6 +495,7 @@ Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the age
 | `update_rig_status` | Updates rig online/stale/offline status based on last_seen | Every 2 min (cron) |
 | `compact_data` | Aggregates old metric data into 1-hour buckets | Daily at 3 AM (cron) |
 | `cleanup_old_data` | Deletes data older than 31 days in batches of 10,000 | Daily at 3 AM (cron, after compact) |
+| `backfill_historical_data` | Creates test data by repeating recent data with shifted timestamps | Manual (testing only) |
 
 ### 6.2 Key Constraints
 

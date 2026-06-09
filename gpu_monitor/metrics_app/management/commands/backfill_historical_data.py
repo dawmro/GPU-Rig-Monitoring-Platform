@@ -62,7 +62,8 @@ class Command(BaseCommand):
         ng = len(src['gpu'])
         nd = len(src['disk'])
         nn = len(src['network'])
-        self.stdout.write(f'  {ns:,} snapshots, {ng:,} gpu, {nd:,} disk, {nn:,} net')
+        ne = sum(s.get('error_count', 0) for s in src['snapshots'])
+        self.stdout.write(f'  {ns:,} snapshots, {ng:,} gpu, {nd:,} disk, {nn:,} net, {ne:,} errors')
 
         # ── Step 2: Compute repetition plan ───────────────────────────────
         total_hours = target_days * 24
@@ -74,7 +75,7 @@ class Command(BaseCommand):
         self.stdout.write(f'  Full reps : {n_full_reps} × {source_hours}h = {n_full_reps * source_hours}h ({(n_full_reps * source_hours) / 24:.1f} days)')
         self.stdout.write(f'  Remainder : {remainder_h}h')
         projected = (ns + ng + nd + nn) * n_full_reps
-        self.stdout.write(f'  Projected : ~{projected:,} rows')
+        self.stdout.write(f'  Projected : ~{projected:,} rows ({ne * n_full_reps:,} error points)')
 
         if dry_run:
             self.stdout.write(self.style.WARNING('  DRY RUN — no data inserted'))
@@ -168,7 +169,8 @@ class Command(BaseCommand):
                       "mem_used_bytes, mem_free_bytes, mem_cached_bytes, "
                       "swap_used_bytes, swap_total_bytes, status, "
                       "cpu_model, cpu_physical_cores, cpu_logical_cores, "
-                      "mem_total_bytes, software_json, motherboard_json "
+                      "mem_total_bytes, software_json, motherboard_json, "
+                      "error_count, error_json "
                       "FROM metrics_metricsnapshot "
                       "WHERE timestamp >= %s AND timestamp < %s ORDER BY timestamp", [start, end])
             cols = [col[0] for col in c.description]
@@ -215,7 +217,8 @@ class Command(BaseCommand):
                 'mem_used_bytes, mem_free_bytes, mem_cached_bytes, '
                 'swap_used_bytes, swap_total_bytes, status, '
                 'cpu_model, cpu_physical_cores, cpu_logical_cores, '
-                'mem_total_bytes, software_json, motherboard_json')
+                'mem_total_bytes, software_json, motherboard_json, '
+                'error_count, error_json')
 
         # Build value tuples: (..., old_id) for tracking
         all_vals = []
@@ -230,6 +233,7 @@ class Command(BaseCommand):
                 s['status'], s['cpu_model'], s['cpu_physical_cores'],
                 s['cpu_logical_cores'], s['mem_total_bytes'],
                 s['software_json'], s['motherboard_json'],
+                s.get('error_count', 0), s.get('error_json', []),
                 s['id'],  # temp: old_id for mapping
             ))
 

@@ -13,7 +13,8 @@ data retention, and compaction. The source is the last 9 hours of real data.
 | metrics_gpumetric | 7,801 | Per-GPU metrics (5 rigs, 1-8 GPUs each) |
 | metrics_storagemetric | 7,679 | Per-disk metrics (1-5 disks per rig) |
 | metrics_networkmetric | 4,418 | Per-interface metrics (1-4 ifaces per rig) |
-| **TOTAL** | **22,705** | |
+| error_count per snapshot | ~3,683 total | Error frequency data (carried forward per snapshot) |
+| **TOTAL** | **22,705** | (plus error data on each snapshot) |
 
 ### Rig Inventory (5 active rigs)
 | Rig | GPUs | Disks | Ifaces | Snapshots |

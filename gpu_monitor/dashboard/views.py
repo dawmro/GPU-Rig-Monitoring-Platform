@@ -23,7 +23,7 @@ def _fetch_rig_metrics(uuid):
         GPUMetric.objects.filter(rig_uuid=str(uuid))
         .order_by('gpu_uuid', '-timestamp')
         .distinct('gpu_uuid')
-        .order_by('gpu_index')
+        .order_by('gpu_uuid', 'gpu_index')
     )
 
     # Storage: latest metric per unique device using DISTINCT ON
@@ -123,7 +123,7 @@ def rig_list(request):
             GPUMetric.objects.filter(rig_uuid=str(rig.uuid))
             .order_by('gpu_uuid', '-timestamp')
             .distinct('gpu_uuid')
-            .order_by('gpu_index')
+            .order_by('gpu_uuid', 'gpu_index')
         )
 
         rig_data.append({'rig': rig, 'snapshot': snap, 'gpus': gpus})

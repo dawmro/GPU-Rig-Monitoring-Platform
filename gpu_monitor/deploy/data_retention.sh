@@ -4,7 +4,7 @@
 # Designed to be called by cron
 
 OPT="/opt/gpu_monitor"
-LOG_DIR="/var/log/monitoring-agent"
+LOG_DIR="/opt/gpu_monitor/logs"
 RETENTION_DAYS="${1:-31}"
 
 # Ensure log directory exists

@@ -89,9 +89,17 @@ if [ -f "$WORKSPACE/agent_windows/check_update.py" ]; then
     echo "  Synced: agent_windows/check_update.py"
 fi
 
-# ── Step 6: Copy scripts (always sync — content may change) ───────────
-echo "--- Scripts ---"
+# ── Step 6: Copy deploy scripts (always sync — content may change) ─────
+echo "--- Deploy scripts ---"
 mkdir -p "$OPT/gpu_monitor/deploy"
+for script in "$WORKSPACE/gpu_monitor/deploy/"*.sh; do
+    [ -f "$script" ] || continue
+    base=$(basename "$script")
+    cp "$script" "$OPT/gpu_monitor/deploy/$base"
+    chmod +x "$OPT/gpu_monitor/deploy/$base"
+    echo "  Synced: $base"
+done
+# Also copy top-level scripts
 for script in "$WORKSPACE/scripts/"*.sh; do
     [ -f "$script" ] || continue
     base=$(basename "$script")

@@ -8,10 +8,32 @@ from django.db import connection
 
 logger = logging.getLogger(__name__)
 
-# Tables in dependency order — child tables FIRST, then parents
-# Each table is compacted independently using its own timestamp field
+# Tables in dependency order — parent FIRST, then children
+# Parent is compacted first so its CASCADE delete removes old child rows.
+# Then children are compacted independently.
 COMPACT_TABLES = [
-    # Child tables of MetricSnapshot (compact first)
+    # Parent table FIRST (compacts and cascades to children)
+    {
+        'table': 'metrics_metricsnapshot',
+        'group_by': ['rig_uuid'],
+        'agg_fields': {
+            'cpu_utilization_pct': 'avg',
+            'cpu_temp_c': 'avg',
+            'cpu_load_avg_json': 'last',
+            'mem_used_bytes': 'avg',
+            'mem_free_bytes': 'avg',
+            'mem_cached_bytes': 'avg',
+            'swap_used_bytes': 'avg',
+            'swap_total_bytes': 'last',
+            'status': 'last',
+        },
+        'static_fields': [
+            'cpu_model', 'cpu_physical_cores', 'cpu_logical_cores',
+            'mem_total_bytes', 'schema_version', 'agent_version',
+            'software_json', 'motherboard_json',
+        ],
+    },
+    # Child tables (compacted after parent, with their own timestamps)
     {
         'table': 'metrics_gpumetric',
         'group_by': ['rig_uuid', 'gpu_index'],
@@ -83,35 +105,13 @@ COMPACT_TABLES = [
         },
         'static_fields': ['name', 'type', 'snapshot_id'],
     },
-    # Parent table (compact last)
-    {
-        'table': 'metrics_metricsnapshot',
-        'group_by': ['rig_uuid'],
-        'agg_fields': {
-            'cpu_utilization_pct': 'avg',
-            'cpu_temp_c': 'avg',
-            'cpu_load_avg_json': 'last',
-            'mem_used_bytes': 'avg',
-            'mem_free_bytes': 'avg',
-            'mem_cached_bytes': 'avg',
-            'swap_used_bytes': 'avg',
-            'swap_total_bytes': 'last',
-            'status': 'last',
-        },
-        'static_fields': [
-            'cpu_model', 'cpu_physical_cores', 'cpu_logical_cores',
-            'mem_total_bytes', 'schema_version', 'agent_version',
-        ],
-    },
     # Error tables (independent, no FK dependency)
     {
         'table': 'metrics_error_event_occurrence',
         'group_by': ['rig_uuid', 'error_event_id'],
-        'agg_fields': {
-            # For occurrences, we keep the latest timestamp per error
-        },
+        'agg_fields': {},
         'static_fields': [],
-        'special': 'count_per_error',  # Custom handling below
+        'special': 'count_per_error',
     },
 ]
 
@@ -149,7 +149,15 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS('Compaction complete'))
 
     def _compact_phase(self, cutoff, bucket_minutes, label, dry_run, verbose):
-        """Compact all tables for a given phase."""
+        """Compact all tables for a given phase.
+
+        Strategy:
+        1. Compact parent table (metrics_metricsnapshot) FIRST.
+           Its CASCADE delete removes old child rows automatically.
+        2. Compact child tables SECOND.
+           Old child rows are already gone (cascaded from parent).
+           Only compact remaining rows (if any).
+        """
         for config in COMPACT_TABLES:
             table_name = config['table']
             if config.get('special') == 'count_per_error':
@@ -171,6 +179,8 @@ class Command(BaseCommand):
         )
 
         select_parts = [f"{bucket_expr} AS bucket_ts"]
+        for col in group_by:
+            select_parts.append(col)
         for field, agg_type in agg_fields.items():
             if agg_type == 'avg':
                 select_parts.append(f"AVG({field}) AS {field}")
@@ -187,8 +197,32 @@ class Command(BaseCommand):
 
         select_clause = ',\n            '.join(select_parts)
 
+        # For parent table, only compact rows NOT referenced by child tables
+        # to avoid FK violations
+        if table_name == 'metrics_metricsnapshot':
+            where_sql = """
+                timestamp < %s
+                AND id NOT IN (
+                    SELECT DISTINCT snapshot_id FROM metrics_gpumetric WHERE timestamp < %s AND snapshot_id IS NOT NULL
+                    UNION
+                    SELECT DISTINCT snapshot_id FROM metrics_storagemetric WHERE timestamp < %s AND snapshot_id IS NOT NULL
+                    UNION
+                    SELECT DISTINCT snapshot_id FROM metrics_networkmetric WHERE timestamp < %s AND snapshot_id IS NOT NULL
+                    UNION
+                    SELECT DISTINCT snapshot_id FROM metrics_dockercontainermetric WHERE timestamp < %s AND snapshot_id IS NOT NULL
+                    UNION
+                    SELECT DISTINCT snapshot_id FROM metrics_ai_process WHERE timestamp < %s AND snapshot_id IS NOT NULL
+                    UNION
+                    SELECT DISTINCT snapshot_id FROM metrics_gpu_process WHERE timestamp < %s AND snapshot_id IS NOT NULL
+                )
+            """
+            params = [cutoff] * 7  # 1 for main WHERE + 6 for UNION subqueries
+        else:
+            where_sql = "timestamp < %s"
+            params = [cutoff]
+
         with connection.cursor() as cursor:
-            cursor.execute(f"SELECT COUNT(*) FROM {table_name} WHERE timestamp < %s", [cutoff])
+            cursor.execute("SELECT COUNT(*) FROM " + table_name + " WHERE " + where_sql, params)
             row_count = cursor.fetchone()[0]
 
         if row_count == 0:
@@ -206,36 +240,29 @@ class Command(BaseCommand):
 
         try:
             with connection.cursor() as cursor:
-                # Drop temp table if it exists from a previous failed run
-                cursor.execute(f"DROP TABLE IF EXISTS {tmp_table}")
+                cursor.execute("DROP TABLE IF EXISTS " + tmp_table)
+                cursor.execute(
+                    "CREATE TEMP TABLE " + tmp_table + " AS "
+                    "SELECT " + select_clause + " "
+                    "FROM " + table_name + " "
+                    "WHERE " + where_sql + " "
+                    "GROUP BY " + group_cols + ", bucket_ts",
+                    params
+                )
 
-                # Create temp table with aggregated data
-                cursor.execute(f"""
-                    CREATE TEMP TABLE {tmp_table} AS
-                    SELECT {select_clause}
-                    FROM {table_name}
-                    WHERE timestamp < %s
-                    GROUP BY {group_cols}, bucket_ts
-                """, [cutoff])
+                cursor.execute("DELETE FROM " + table_name + " WHERE " + where_sql, params)
 
-                # Delete old rows (child tables first, so FK constraints are satisfied)
-                cursor.execute(f"DELETE FROM {table_name} WHERE timestamp < %s", [cutoff])
+                insert_fields = ['timestamp'] + list(agg_fields.keys()) + static_fields + group_by
+                cols = ', '.join(insert_fields)
+                vals = ', '.join(['bucket_ts' if f == 'timestamp' else f for f in insert_fields])
 
-                # Insert aggregated data
-                all_fields = ['timestamp'] + list(agg_fields.keys()) + static_fields + group_by
-                cols = ', '.join(all_fields)
-                vals = ', '.join(['bucket_ts' if f == 'timestamp' else f for f in all_fields])
-
-                cursor.execute(f"INSERT INTO {table_name} ({cols}) SELECT {vals} FROM {tmp_table}")
-
-                # Clean up temp table
-                cursor.execute(f"DROP TABLE IF EXISTS {tmp_table}")
+                cursor.execute("INSERT INTO " + table_name + " (" + cols + ") SELECT " + vals + " FROM " + tmp_table)
+                cursor.execute("DROP TABLE IF EXISTS " + tmp_table)
 
             self.stdout.write(self.style.SUCCESS(
                 f'  {table_name}: compacted {row_count:,} rows into {label} buckets'))
         except Exception as e:
             self.stdout.write(self.style.ERROR(f'  {table_name}: FAILED -- {e}'))
-            # Clean up temp table on failure
             try:
                 with connection.cursor() as cursor:
                     cursor.execute(f"DROP TABLE IF EXISTS {tmp_table}")

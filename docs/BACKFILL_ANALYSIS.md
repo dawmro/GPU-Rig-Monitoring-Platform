@@ -83,24 +83,21 @@ Remainder: [now-768h, now-765h] ← last 3h of source shifted back 768h
 - For the final 3 hours, only use source data from the last 3h of the window
 - Same insertion logic as full repetitions
 
-## Performance Considerations
+## Performance
 
-### Batch Size
-- Snapshots: individual INSERT with RETURNING (needed for ID mapping)
-- Child tables: batched in groups of 2000
-- Errors: batched in groups of 2000
+### Final Implementation (execute_values)
+- **Rate**: ~30,000 rows/second
+- **10 days**: 752K rows in 28 seconds
+- **32 days**: ~3.9M rows in ~2 minutes
 
-### Estimated Time
-- ~240K snapshot inserts × ~5ms each = ~20 minutes
-- ~1.7M child row inserts × ~0.5ms each = ~15 minutes
-- ~2M error inserts × ~0.3ms each = ~10 minutes
-- **Total: ~45 minutes** for 3.9M rows
+### Progress Output Example
+```
+Rep   1/30  (  3.3%)  shift    8h  + 22,014 rows  total       22,014  33,996 rows/s  elapsed 1s  ETA 19s
+Rep  15/30  ( 50.0%)  shift  120h  + 23,002 rows  total      342,066  40,282 rows/s  elapsed 10s  ETA 10s
+Rep  30/30  (100.0%)  shift  240h  + 44,785 rows  total      752,445  16,303 rows/s  elapsed 28s  ETA 0s
 
-### Optimizations Applied
-- Single read pass for source data
-- Batch INSERT for child tables (no RETURNING needed)
-- Temp column for ID mapping instead of per-row lookup
-- Minimal ALTER TABLE (add/drop temp column once)
+Done! 752,445 rows inserted in 28s (27,068 rows/s avg)
+```
 
 ## Edge Cases Handled
 

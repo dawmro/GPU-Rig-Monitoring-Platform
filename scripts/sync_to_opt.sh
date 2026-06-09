@@ -115,6 +115,8 @@ find "$OPT/gpu_monitor/templates" -name "*.html" -exec chmod 644 {} \;
 find "$OPT/gpu_monitor" -type d -exec chmod 755 {} \;
 find "$OPT/gpu_monitor/deploy" -name "*.sh" -exec chmod 755 {} \; 2>/dev/null || true
 find "$OPT/gpu_monitor" -name "manage.py" -exec chmod 755 {} \; 2>/dev/null || true
+# Clear stale .pyc cache (root-owned from gunicorn) to prevent migration loader issues
+find "$OPT/gpu_monitor" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 
 # ── Step 8: Generate + apply migrations in /opt ─────────────────────
 # Source code is already synced, so makemigrations sees the latest models.
@@ -130,6 +132,18 @@ if [[ "$1" != "--no-migrate" ]]; then
     else
         echo "  Model changes detected — creating migrations..."
         python manage.py makemigrations
+
+        # Remove auto-generated ErrorEventOccurrence migrations — table was
+        # manually dropped; keeping the model out of models.py prevents Django
+        # from trying to manage it.
+        for mig_dir in "$OPT/gpu_monitor/"*/migrations/; do
+            [ -d "$mig_dir" ] || continue
+            for f in "$mig_dir"*_erroreventoccurrence*.py; do
+                [ -f "$f" ] || continue
+                echo "  Removing stale migration: $(basename "$f")"
+                rm -f "$f"
+            done
+        done
 
         # Copy new migration files back to workspace for git tracking
         echo "  Copying new migrations back to workspace..."

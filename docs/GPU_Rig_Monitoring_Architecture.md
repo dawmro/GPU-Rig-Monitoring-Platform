@@ -1,8 +1,8 @@
 # GPU Rig Monitoring Platform — Architecture Document
 
-**Version:** 1.2
+**Version:** 1.3
 **Status:** Implemented — Living Architecture Reference
-**Last Updated:** 2026-06-07
+**Last Updated:** 2026-06-10
 
 ---
 
@@ -35,7 +35,7 @@ The GPU Rig Monitoring Platform is a single-server telemetry dashboard for GPU r
 
 **Measured storage per rig (100% uptime):** ~4.7 MB/day
 - At 50% uptime: ~2.35 MB/day
-- 31-day retention with tiered compaction: ~9 GB total for 1,000 rigs
+- 31-day retention with tiered compaction: ~7 GB total for 1,000 rigs
 - Without compaction: ~146 GB for 1,000 rigs
 
 **Data retention:** 31 days (matches 30-day max chart range + 1 day safety margin)
@@ -106,7 +106,7 @@ Cron → Agent collects metrics → JSON payload → POST /api/v1/ingest/
   → DRF throttle (per-rig rate limit, scoped by rig_uuid)
   → Timestamp sanity check (reject if >5 min future or >1 hour past)
   → IngestSerializer validation (schema version 1.0, 1.1, or 1.2)
-  → process_ingest() → DB upsert (MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, AIProcessMetric, ErrorEvent, ErrorEventOccurrence, RigStatusEvent, LatestSnapshot)
+  → process_ingest() → DB upsert (MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, AIProcessMetric, ErrorEvent, RigStatusEvent, LatestSnapshot)
   → Rig.last_seen and Rig.status updated to ONLINE
   → Response: 200 (new) or 202 (duplicate/idempotent)
 ```
@@ -313,7 +313,7 @@ debug_mode: false         # Verbose logging
 | `gpu_monitor` | — | Settings, URL routing, WSGI |
 | `accounts` | User, ApiKey | Login, logout, API key management |
 | `rigs` | Rig, RigTag | `update_rig_status` management command |
-|| `metrics_app` | MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, DockerContainerMetric, AIProcessMetric, LatestSnapshot, ErrorEvent, ErrorEventOccurrence, RigStatusEvent | IngestView, HealthView, ChartDataView, RigMetricsView |
+|| `metrics_app` | MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, DockerContainerMetric, AIProcessMetric, LatestSnapshot, ErrorEvent, RigStatusEvent | IngestView, HealthView, ChartDataView, RigMetricsView |
 | `dashboard` | — | rig_list, rig_detail, htmx_metrics, htmx_rig_status, rig_rename |
 | `audit` | AuditLog | Middleware-based request logging |
 | `dashboard/templatetags` | — | gpu_model_name, gpu_model_short, gpu_compact_summary, gpu_temp_cell, gpu_util_cell, gpu_fan_cell, time_since, last_seen_short filters |
@@ -333,9 +333,9 @@ POST /api/v1/ingest/
   → CsrfViewMiddleware (skipped via @csrf_exempt on IngestView)
   → APIKeyAuthentication validates X-API-Key
   → DRF throttle (per-rig rate limit, scoped by rig_uuid)
-  → IngestSerializer validation (schema version 1.0, 1.1, or 1.2)
+  → IngestSerializer validation (schema version 1.0, 1.1, 1.2, or 1.3)
   → process_ingest() in transaction.atomic():
-      - Upsert MetricSnapshot (cpu, memory, status fields; motherboard/software as JSON)
+      - Upsert MetricSnapshot (cpu, memory, status fields; motherboard/software as JSON; error_count, error_json)
       - Upsert GPUMetric per GPU (gpu_index = 0, 1, ...)
       - Delete + recreate GPUProcessMetric per process (latest snapshot only)
       - Upsert StorageMetric per disk (with path-normalized dedup)
@@ -344,7 +344,6 @@ POST /api/v1/ingest/
       - Upsert AIProcessMetric per AI process (gpu_mem, cpu_pct)
       - Create RigStatusEvent on status transition (e.g. offline→online)
       - Upsert ErrorEvent (deduplicated by hash)
-      - Create ErrorEventOccurrence per error (for time-series tracking)
       - Update LatestSnapshot (denormalized cache for fast dashboard loading)
       - Update Rig.last_seen = now(), Rig.status = ONLINE
       - On Rig.DoesNotExist: auto-create with agent-suggested name
@@ -485,7 +484,6 @@ Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the age
 | `metrics_dockercontainermetric` | metrics_app | Per-container metrics (name, image, status, restarts, cpu%, memory) |
 | `metrics_latestsnapshot` | metrics_app | Denormalized latest snapshot per rig (fast dashboard loading) |
 | `metrics_errorevent` | metrics_app | Deduplicated errors (hash-based dedup, count, last_seen) |
-| `metrics_error_event_occurrence` | metrics_app | Per-occurrence error timestamps for time-series error tracking |
 | `metrics_rig_status_event` | metrics_app | Rig status transition log (online/stale/offline with timestamps) |
 | `metrics_ai_process` | metrics_app | Per-process GPU/CPU usage tracking for AI workloads |
 | `audit_auditlog` | audit | Immutable audit trail |
@@ -610,7 +608,7 @@ Files **never** overwritten: `.env`, `venv/`, `logs/`, `staticfiles/`, `config.y
 
 ### 8.5 Data Retention
 
-The platform uses **tiered compaction** to manage long-term storage growth. Without retention, 1,000 rigs would accumulate ~146 GB/month. With compaction: ~9 GB/month (94% savings).
+The platform uses **tiered compaction** to manage long-term storage growth. Without retention, 1,000 rigs would accumulate ~146 GB/month. With compaction: ~7 GB/month (95% savings).
 
 #### Retention Tiers
 
@@ -625,8 +623,8 @@ The platform uses **tiered compaction** to manage long-term storage growth. With
 Two Django management commands handle retention:
 
 **`compact_data`** — Aggregates old data into larger time buckets:
-- Phase 1: data > 1 day → 1-hour buckets
-- Aggregation: AVG (temperature, utilization, power), SUM (network bytes, errors), LAST (model names, UUIDs)
+- Single phase: data > 1 day → 1-hour buckets
+- Aggregation: AVG (temperature, utilization, power), SUM (network bytes, error_count), LAST (model names, UUIDs)
 - Parent table (`metrics_metricsnapshot`) compacted first; child tables after
 - FK-safe: parent rows referenced by children are excluded from compaction
 
@@ -743,7 +741,7 @@ Each ingest performs multiple database operations:
 | `IngestView` upsert | Every 60s/rig | `update_or_create` + `unique_together` | < 200 ms |
 | `rig_list` fleet table | Every 30s/browser | `prefetch_related('tags')`, indexed `order_by('name')` | < 100 ms |
 | `htmx_metrics` live cards | Every 30s/browser | Single-row lookup from `LatestSnapshot` + `GPUMetric` | < 100 ms |
-| `ChartDataView` per chart | On demand (↻) | Time-range filter, `[:2000]` limit | < 500 ms |
+|| `ChartDataView` per chart | On demand (↻) | Time-range filter, SQL aggregation (TruncHour + Avg/Sum) | < 200 ms |
 | `update_rig_status` | Every 2 min | Bulk `update()`, no per-row queries | < 1 s |
 
 **Concurrency:** 10 dashboard users × 3 pages/min = ~0.5 QPS read load — statistically insignificant vs. agent write load.

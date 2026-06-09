@@ -62,24 +62,24 @@
 - Container Restarts (per container) ✅
 - AI Process GPU Memory (per process) ✅
 - Uptime ✅ (from software_json.uptime_s)
-- Error Frequency ✅ (from ErrorEventOccurrence)
+- Error Frequency ✅ (from MetricSnapshot.error_count)
 
 *Implementation: 
 - Container charts use loadChartMultiKey() with multi_container=true
 - AI Process charts use loadChartMultiKey() with multi_ai=true  
 - Uptime chart uses standard loadChart() with metric='uptime_s'
-- Error Frequency chart uses loadChart() with metric='error_frequency' (bar chart type)*
+- Error Frequency chart uses loadChart() with metric='error_frequency' (bar chart type); data source is MetricSnapshot.error_count*
 
 ## Implementation Notes
 
 **Backend (ChartDataView):**
-- Supports multi_gpu, multi_disk, multi_iface, multi_container, multi_ai parameters
-- Returns datasets with '_key' for identification and 'label' for display
+- Supports multi_gpu, multi_disk, multi_iface, multi_mem parameters
+- Returns datasets with 'label' for display
 - Handles byte-to-GB and byte-delta-to-MB/s conversions server-side
-- Uses _fill_buckets_multi_key for grouping by unique values
-- Supports variable bucket sizes via `bucket_minutes` parameter (1 or 60 minutes)
-- For bucket_minutes > 1, uses per-metric aggregation: avg (default), sum (network byte deltas, error counts), median, max, min
+- Uses Django ORM annotate() with TruncHour/TruncMinute + Avg/Sum for SQL-level aggregation
+- Supports variable bucket sizes: 1-minute (24h chart) or 1-hour (7d/30d charts)
 - Timeframe options: 24h (1-min buckets), 7d (1-hour buckets), 30d (1-hour buckets)
+- Error frequency reads from MetricSnapshot.error_count (no separate ErrorEventOccurrence table)
 
 **Frontend (rig_detail.html):**
 - loadChartMultiGpu(): For multi-GPU charts (one dataset per GPU)

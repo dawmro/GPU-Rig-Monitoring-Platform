@@ -19,7 +19,7 @@ This guide deploys the GPU Rig Monitoring Platform on a **production VPS** with 
    - 4.4 [Run the Install Script](#44-run-the-install-script)
    - 4.5 [Save the Database Password](#45-save-the-database-password)
    - 4.6 [Create an Admin User](#46-create-an-admin-user)
-   - 4.7 [Set Up TimescaleDB Hypertables](#47-set-up-timescaledb-hypertables)
+   - 4.7 [Set Up Data Retention](#47-set-up-data-retention)
    - 4.8 [Verify the Deployment](#48-verify-the-deployment)
 5. [Rig Agent Deployment](#5-rig-agent-deployment)
    - 5.1 [Prerequisites per Rig](#51-prerequisites-per-rig)
@@ -80,7 +80,7 @@ This guide deploys the GPU Rig Monitoring Platform on a **production VPS** with 
 | OS | Ubuntu 22.04 / 24.04 LTS |
 | Compute | 4–8 vCPU |
 | RAM | 16–32 GB |
-| Storage | 500 GB+ NVMe SSD (NVMe required for TimescaleDB) |
+| Storage | 500 GB+ NVMe SSD (NVMe required for write IOPS) |
 | Network | 1 public IPv4, DNS A record |
 | TLS | Let's Encrypt (certbot), auto-renew via systemd timer |
 

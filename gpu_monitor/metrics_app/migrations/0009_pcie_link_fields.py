@@ -4,7 +4,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('metrics_app', '0008_alter_erroreventoccurrence_unique_together'),
+        ('metrics_app', '0007_gpu_process_metric'),
     ]
 
     operations = [

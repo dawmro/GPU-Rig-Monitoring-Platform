@@ -13,8 +13,7 @@ data retention, and compaction. The source is the last 9 hours of real data.
 | metrics_gpumetric | 7,801 | Per-GPU metrics (5 rigs, 1-8 GPUs each) |
 | metrics_storagemetric | 7,679 | Per-disk metrics (1-5 disks per rig) |
 | metrics_networkmetric | 4,418 | Per-interface metrics (1-4 ifaces per rig) |
-| metrics_error_event_occurrence | 23,144 | Error events (9,892 distinct errors across 5 rigs) |
-| **TOTAL** | **45,849** | |
+| **TOTAL** | **22,705** | |
 
 ### Rig Inventory (5 active rigs)
 | Rig | GPUs | Disks | Ifaces | Snapshots |
@@ -32,8 +31,7 @@ data retention, and compaction. The source is the last 9 hours of real data.
 | GPU rows | 7,801 | 20,803 | 665,696 |
 | Disk rows | 7,679 | 20,477 | 655,264 |
 | Network rows | 4,418 | 11,781 | 376,992 |
-| Error occurrences | 23,144 | 61,717 | 1,974,944 |
-| **TOTAL** | **45,849** | **122,264** | **3,912,416** |
+| **TOTAL** | **22,705** | **59,863** | **1,915,616** |
 
 ## Repetition Strategy
 
@@ -74,12 +72,7 @@ Remainder: [now-768h, now-765h] ← last 3h of source shifted back 768h
 - Shift timestamps by the same offset
 - Batch insert in groups of 2000 for performance
 
-### Step 4: Insert Error Occurrences
-- Error occurrences have no FK dependency on snapshots
-- Simply shift timestamps and insert
-- The `error_event_id` references `metrics_lasterrors` which already exists
-
-### Step 5: Handle Remaining Hours
+### Step 4: Handle Remaining Hours
 - For the final 3 hours, only use source data from the last 3h of the window
 - Same insertion logic as full repetitions
 
@@ -102,12 +95,11 @@ Done! 752,445 rows inserted in 28s (27,068 rows/s avg)
 ## Edge Cases Handled
 
 ### ON CONFLICT DO NOTHING
-All INSERT statements use `ON CONFLICT DO NOTHING`:
+All INSERT statements use `INSERT ... ON CONFLICT DO NOTHING`:
 - metrics_metricsnapshot: (rig_uuid, schema_version, timestamp)
 - metrics_gpumetric: (rig_uuid, timestamp, gpu_index)
 - metrics_storagemetric: (rig_uuid, timestamp, device)
 - metrics_networkmetric: (rig_uuid, timestamp, interface)
-- metrics_error_event_occurrence: (rig_uuid, timestamp, error_event_id)
 
 This means:
 - Rows that already exist are silently skipped (no error)
@@ -119,7 +111,6 @@ This means:
 - Parent snapshots inserted first (ON CONFLICT DO NOTHING)
 - If a snapshot already exists, its old_id is NOT in the ID mapping
 - Child rows for skipped snapshots are also skipped (they reference an old_id not in the mapping)
-- Error occurrences reference existing metrics_lasterrors rows (no new errors created)
 
 ### Remaining Hours
 - If target_days × 24 is not evenly divisible by source_hours, a final partial repetition fills the gap

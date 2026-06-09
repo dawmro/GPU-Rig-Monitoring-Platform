@@ -81,7 +81,6 @@ Single phase:
 1. `metrics_metricsnapshot` (parent) — compacted first, excluding rows still referenced by children
 2. `metrics_gpumetric`, `metrics_storagemetric`, `metrics_networkmetric` (children) — compacted after parent
 3. `metrics_dockercontainermetric`, `metrics_ai_process`, `metrics_gpu_process` — compacted if data exists
-4. `metrics_error_event_occurrence` — independent, no FK constraints
 
 **FK Handling:**
 - Parent table rows referenced by children are excluded from compaction (to avoid FK violations)
@@ -100,8 +99,6 @@ Phase 1: Compacting 1-minute -> 1-hour buckets (data older than 1 day)
   metrics_gpumetric: 390,000 rows compacted
   metrics_storagemetric: 357,000 rows compacted
   metrics_networkmetric: 197,000 rows compacted
-  metrics_error_event_occurrence: 31,079 rows compacted
-Compaction complete
 Compaction complete
 ```
 
@@ -120,17 +117,16 @@ Compaction complete
 - Skips tables without a `timestamp` column
 
 **Table Processing Order:**
-1. `metrics_error_event_occurrence` (no FK dependencies)
-2. `metrics_gpu_process` (child of MetricSnapshot)
-3. `metrics_gpumetric` (child of MetricSnapshot)
-4. `metrics_storagemetric` (child of MetricSnapshot)
-5. `metrics_networkmetric` (child of MetricSnapshot)
-6. `metrics_dockercontainermetric` (child of MetricSnapshot)
-7. `metrics_ai_process` (child of MetricSnapshot)
-8. `metrics_rig_status_event` (independent)
-9. `metrics_metricsnapshot` (parent — deleted last so FK constraints are satisfied)
-10. `metrics_latest_snapshot` (independent, uses `rig_uuid` as PK)
-11. `metrics_lasterrors` (independent)
+1. `metrics_gpu_process` (child of MetricSnapshot)
+2. `metrics_gpumetric` (child of MetricSnapshot)
+3. `metrics_storagemetric` (child of MetricSnapshot)
+4. `metrics_networkmetric` (child of MetricSnapshot)
+5. `metrics_dockercontainermetric` (child of MetricSnapshot)
+6. `metrics_ai_process` (child of MetricSnapshot)
+7. `metrics_rig_status_event` (independent)
+8. `metrics_metricsnapshot` (parent — deleted last so FK constraints are satisfied)
+9. `metrics_latest_snapshot` (independent, uses `rig_uuid` as PK)
+10. `metrics_lasterrors` (independent)
 
 **Options:**
 | Flag | Description |
@@ -142,7 +138,6 @@ Compaction complete
 **Example Output:**
 ```
 Cleaning up data older than 31 days (before 2026-05-09 02:18)
-  metrics_error_event_occurrence: nothing to delete
   metrics_gpu_process: nothing to delete
   metrics_gpumetric: nothing to delete
   metrics_storagemetric: nothing to delete
@@ -189,7 +184,7 @@ import os; os.environ['DJANGO_SETTINGS_MODULE'] = 'gpu_monitor.settings'
 import django; django.setup()
 from django.db import connection
 for t in ['metrics_metricsnapshot', 'metrics_gpumetric', 'metrics_storagemetric',
-          'metrics_networkmetric', 'metrics_error_event_occurrence']:
+          'metrics_networkmetric']:
     with connection.cursor() as c:
         c.execute(f'SELECT COUNT(*), MIN(timestamp), MAX(timestamp) FROM {t}')
         row = c.fetchone()

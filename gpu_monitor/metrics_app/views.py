@@ -220,6 +220,8 @@ class ChartDataView(APIView):
         multi_disk = request.query_params.get('multi_disk', 'false').lower() == 'true'
         multi_iface = request.query_params.get('multi_iface', 'false').lower() == 'true'
 
+        multi_mem = request.query_params.get('multi_mem', 'false').lower() == 'true'
+
         # Bucket size: 1-min for 24h, 1-hour for 7d/30d
         bucket_minutes = 1 if range_hours <= 24 else 60
         labels, start_bucket, end_bucket = self._build_buckets(range_hours, bucket_minutes)
@@ -240,10 +242,18 @@ class ChartDataView(APIView):
         base_filter = dict(rig_uuid=str(uuid), timestamp__gte=start_bucket, timestamp__lte=end_bucket)
 
         if metric in self.SNAPSHOT_METRICS:
-            values = chart_values(MetricSnapshot.objects.filter(**base_filter), metric)
-            if metric in self.BYTE_TO_GB:
-                values = [round(v / (1024**3), 2) if v is not None else None for v in values]
-            datasets = [{'label': metric, 'data': values}]
+            if multi_mem:
+                mem_fields = {'mem_used_bytes': 'Memory Used', 'mem_free_bytes': 'Memory Free', 'swap_used_bytes': 'Swap Used'}
+                datasets = []
+                for field, label in mem_fields.items():
+                    v = chart_values(MetricSnapshot.objects.filter(**base_filter), field)
+                    v = [round(x / (1024**3), 2) if x is not None else None for x in v]
+                    datasets.append({'label': label, 'data': v})
+            else:
+                values = chart_values(MetricSnapshot.objects.filter(**base_filter), metric)
+                if metric in self.BYTE_TO_GB:
+                    values = [round(v / (1024**3), 2) if v is not None else None for v in values]
+                datasets = [{'label': metric, 'data': values}]
 
         elif metric == 'cpu_load_avg':
             snapshots = list(MetricSnapshot.objects.filter(**base_filter).order_by('timestamp'))
@@ -307,6 +317,28 @@ class ChartDataView(APIView):
                 if byte_metric:
                     v = [round(x / (1024*1024), 2) if x is not None else None for x in v]
                 datasets = [{'label': metric, 'data': v}]
+
+        elif metric.startswith('container_'):
+            from .models import DockerContainerMetric
+            fn = {'container_cpu_pct': 'cpu_pct', 'container_mem_usage_bytes': 'mem_usage_bytes',
+                  'container_restart_count': 'restart_count'}.get(metric)
+            if not fn:
+                return Response({'status': 'error', 'message': f'Unknown container metric: {metric}'}, status=400)
+            base_qs = DockerContainerMetric.objects.filter(**base_filter)
+            datasets = [{'label': name, 'data': chart_values(base_qs.filter(name=name), fn)}
+                        for name in base_qs.values_list('name', flat=True).distinct().order_by('name')]
+            if fn == 'mem_usage_bytes':
+                for ds in datasets:
+                    ds['data'] = [round(v / (1024**3), 2) if v is not None else None for v in ds['data']]
+
+        elif metric.startswith('ai_'):
+            from .models import AIProcessMetric
+            fn = {'ai_gpu_mem_mb': 'gpu_mem_used_mb', 'ai_cpu_pct': 'cpu_pct'}.get(metric)
+            if not fn:
+                return Response({'status': 'error', 'message': f'Unknown AI metric: {metric}'}, status=400)
+            base_qs = AIProcessMetric.objects.filter(**base_filter)
+            datasets = [{'label': name, 'data': chart_values(base_qs.filter(process_name=name), fn)}
+                        for name in base_qs.values_list('process_name', flat=True).distinct().order_by('process_name')]
 
         elif metric == 'error_frequency':
             data = list(ErrorEventOccurrence.objects.filter(**base_filter)

@@ -531,6 +531,11 @@ async function loadChartMemSwap(canvasId, uuid, range) {
         var resp = await fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=mem_used_bytes&range=${range}&bucket_minutes=${chartBucketMinutes}&multi_mem=true`);
         var data = await resp.json();
 
+        if (!data.datasets || data.datasets.length === 0) {
+            ctx.parentElement.innerHTML = '<div class="flex items-center justify-center h-48 text-gray-500 text-sm">No data available</div>';
+            return;
+        }
+
         if (chartInstances[canvasId]) {
             chartInstances[canvasId].destroy();
         }
@@ -944,6 +949,11 @@ async function loadChartMultiKey(canvasId, metric, uuid, range, unit, multi_para
     try {
         var resp = await fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=${metric}&range=${range}&bucket_minutes=${chartBucketMinutes}&${multi_param}=true`);
         var data = await resp.json();
+
+        if (!data.datasets || data.datasets.length === 0) {
+            ctx.parentElement.innerHTML = '<div class="flex items-center justify-center h-48 text-gray-500 text-sm">No data available</div>';
+            return;
+        }
 
         if (chartInstances[canvasId]) {
             chartInstances[canvasId].destroy();

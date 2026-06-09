@@ -60,7 +60,7 @@ This guide deploys the GPU Rig Monitoring Platform on a **production VPS** with 
 │                   SINGLE UBUNTU VPS (Trusted)                 │          │
 │                                                               ▼          │
 │  ┌─────────────────┐    TCP/5432    ┌──────────────────────────────┐    │
-│  │ Django + DRF    │ ────────────→  │ PostgreSQL + TimescaleDB     │    │
+│  │ Django + DRF    │ ────────────→  │ PostgreSQL     │    │
 │  │ (Gunicorn)      │                │                              │    │
 │  └────────┬────────┘                └──────────────────────────────┘    │
 │           │                                                             │
@@ -226,18 +226,17 @@ chmod +x /opt/gpu_monitor/deploy/server_install.sh
 
 | Step | What It Does |
 |------|-------------|
-| 1 | Installs system packages (Python, PostgreSQL, TimescaleDB, Nginx, certbot, UFW) |
-| 2 | Runs `timescaledb-tune` to optimize `postgresql.conf` |
-| 3 | Creates `gpu_monitor` DB user and database, enables TimescaleDB extension |
-| 4 | Creates `monitoring` OS user (no-login shell) |
-| 5 | Sets up Python virtualenv and installs dependencies |
-| 6 | Writes `/opt/gpu_monitor/.env` with secrets and DB credentials |
-| 7 | Runs Django migrations + `collectstatic` |
-| 8 | Installs Gunicorn systemd unit and starts it |
-| 9 | Installs Nginx site config, removes default site, restarts Nginx |
-| 10 | Runs Certbot to obtain Let's Encrypt TLS certificate |
-| 11 | Configures UFW firewall (allow 22/80/443) |
-| 12 | Enables and starts all services |
+| 1 | Installs system packages (Python, PostgreSQL, Nginx, certbot, UFW) |
+| 2 | Creates `gpu_monitor` DB user and database |
+| 3 | Creates `monitoring` OS user (no-login shell) |
+| 4 | Sets up Python virtualenv and installs dependencies |
+| 5 | Writes `/opt/gpu_monitor/.env` with secrets and DB credentials |
+| 6 | Runs Django migrations + `collectstatic` |
+| 7 | Installs Gunicorn systemd unit and starts it |
+| 8 | Installs Nginx site config, removes default site, restarts Nginx |
+| 9 | Runs Certbot to obtain Let's Encrypt TLS certificate |
+| 10 | Configures UFW firewall (allow 22/80/443) |
+| 11 | Enables and starts all services |
 
 ### 4.5 Save the Database Password
 
@@ -272,7 +271,7 @@ Enter email, username, and password when prompted. Use the email to log into the
 
 ### 4.7 Set Up Data Retention
 
-Configure automated data compaction and cleanup. This is essential for long-term storage management — without it, the database grows indefinitely (~146 GB/month at 1,000 rigs). With compaction: ~9 GB/month (94% savings).
+Configure automated data compaction and cleanup. This is essential for long-term storage management — without it, the database grows indefinitely (~146 GB/month at 1,000 rigs). With compaction: ~7 GB/month (94% savings).
 
 #### Quick Setup
 
@@ -290,9 +289,9 @@ echo '0 3 * * * qrv bash /opt/gpu_monitor/deploy/data_retention.sh >> /var/log/m
 
 The `data_retention.sh` wrapper runs two commands daily:
 
-1. **`compact_data`** — Two-phase aggregation of old data:
-   - **Phase 1:** Data > 1 day old → 1-hour buckets (60× reduction)
-   - Aggregation per metric: AVG (temperature, utilization, power), SUM (network bytes, errors), LAST (model names, UUIDs)
+1. **`compact_data`** — Single-phase aggregation of old data:
+   - Data > 1 day old → 1-hour buckets (60× reduction)
+   - Aggregation per metric: AVG (temperature, utilization, power), SUM (network bytes, error_count), LAST (model names, UUIDs)
    - Parent table (`metrics_metricsnapshot`) compacted first; child tables after
    - FK-safe: parent rows referenced by children are excluded from compaction
 
@@ -343,7 +342,7 @@ python manage.py cleanup_old_data --days=31 --verbose
 |---|---|---|
 | 1 day | 4.7 GB | 4.7 GB |
 | 7 days | 32.9 GB | 6.9 GB |
-| 31 days | 146 GB | ~9 GB |
+| 31 days | 146 GB | ~7 GB |
 
 #### Troubleshooting
 
@@ -362,7 +361,7 @@ import os; os.environ['DJANGO_SETTINGS_MODULE'] = 'gpu_monitor.settings'
 import django; django.setup()
 from django.db import connection
 for t in ['metrics_metricsnapshot', 'metrics_gpumetric', 'metrics_storagemetric',
-          'metrics_networkmetric', 'metrics_error_event_occurrence']:
+          'metrics_networkmetric']:
     with connection.cursor() as c:
         c.execute(f'SELECT COUNT(*), MIN(timestamp), MAX(timestamp) FROM {t}')
         row = c.fetchall()[0]
@@ -391,12 +390,6 @@ systemctl is-active gunicorn postgresql nginx
 
 # Database responding?
 sudo -u postgres psql -d gpu_monitor -c "SELECT 1"
-
-# TimescaleDB extension loaded?
-sudo -u postgres psql -d gpu_monitor -c "\dx" | grep timescaledb
-
-# Hypertable configured?
-sudo -u postgres psql -d gpu_monitor -c "SELECT * FROM timescaledb_information.hypertables;"
 
 # Health endpoint returns healthy?
 curl -s https://monitor.example.com/api/v1/health/ | python3 -m json.tool

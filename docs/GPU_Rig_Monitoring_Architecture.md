@@ -119,7 +119,7 @@ Cron → Agent collects metrics → JSON payload → POST /api/v1/ingest/
 | `agent_windows/run.py` | Windows agent (~916 lines) |
 | `metrics_app/views.py` | IngestView, HealthView, ChartDataView, RigMetricsView |
 | `metrics_app/serializers.py` | IngestSerializer, process_ingest() |
-| `metrics_app/models.py` | MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, ErrorEvent, ErrorEventOccurrence, RigStatusEvent, AIProcessMetric |
+| `metrics_app/models.py` | MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, ErrorEvent, RigStatusEvent, AIProcessMetric |
 | `dashboard/views.py` | rig_list, rig_detail, htmx_metrics, htmx_rig_status, rig_rename |
 | `dashboard/templatetags/gpu_filters.py` | gpu_model_name, gpu_model_short, gpu_compact_summary, gpu_temp_cell, gpu_util_cell, gpu_fan_cell, time_since filters |
 | `rigs/models.py` | Rig, RigTag |

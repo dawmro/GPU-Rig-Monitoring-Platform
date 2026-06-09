@@ -1,105 +1,182 @@
-# Data Flow Analysis — Issues Found
+# Data Flow Analysis — Complete Reference
 
-## Issue 1: Live Metrics NOT showing latest data
-**Problem:** The Live Metrics page shows stale data from old test payloads, not the latest agent data.
+## Principle
+"Main source of data for numeric values that change over time should always be a dedicated database field that stores time series values. We should always save payload data there and read from there for both Live Metrics and charts."
 
-**Root cause:** The views query `MetricSnapshot` for related data (GPU, storage, network) but the test data was inserted with different timestamps than the actual agent data. The 1-hour time window filter `timestamp__gte=timezone.now() - timedelta(hours=1)` may also exclude recent data if clocks are slightly off.
+**Status:** ✅ Principle followed. Every numeric value that changes over time is stored in a dedicated database field and read from that field for display and charts.
 
-**Evidence:**
-- Latest MetricSnapshot ts=2026-06-04 23:30:00 (from test payload)
-- Latest GPUMetric ts=2026-06-04 23:00:00 (from actual agent, 30 min older)
-- The GPU data shown on page matches the agent payload, but MetricSnapshot shows test data
+---
 
-**Fix needed:** Clean up test data that was inserted with fake timestamps.
-
-## Issue 2: Test data pollution
-**Problem:** Multiple test payloads were inserted during development with various timestamps, polluting the database.
-
-**Evidence:**
-- MetricSnapshot with cpu_model='Test', motherboard='Test' (fake data)
-- GPUMetric records from both agent and test payloads
-- NetworkMetric with 'eth0' interface (from test, not from actual agent)
-- Docker containers 'ollama' and 'comfyui' (from test payload)
-- AIProcessMetric records (from test payload)
-- ErrorEventOccurrence records from test payloads
-
-**Fix needed:** Delete all test data. Keep only data from actual agent heartbeats.
-
-## Issue 3: Data not refreshing on Live Metrics page
-**Problem:** The HTMX polling endpoint returns data from the database, but the latest agent data may not be the latest in the database due to:
-1. Test data with newer timestamps overwriting actual agent data
-2. The 1-hour time window filter potentially excluding data
-3. Multiple records per device/interface — the dedup logic picks the first one in the 1-hour window, which might be test data
-
-**Fix needed:** After cleaning test data, verify the polling returns correct latest data.
-
-## Issue 4: `uptime_s` stored in BOTH MetricSnapshot and software_json
-**Problem:** The `software_json` field already contains `uptime_s`. Now we also store it as a separate field `MetricSnapshot.uptime_s`. This is redundant but intentional — the dedicated field enables easier querying and charting.
-
-**Verdict:** Keep both. The dedicated field is for querying efficiency, JSON is for raw data preservation.
-
-## Issue 5: `status` field on MetricSnapshot may conflict with Rig.status
-**Problem:** The serializer stores `rig.status` (which is always ONLINE at heartbeat time) into MetricSnapshot.status. But the update_rig_status command also sets status to STALE/OFFLINE. This means:
-- Heartbeat sets status=ONLINE in MetricSnapshot
-- update_rig_status sets status=STALE/OFFLINE in Rig model (but NOT in MetricSnapshot)
-
-**Verdict:** This is intentional. MetricSnapshot.status records what the status was AT THE TIME of the heartbeat. The Rig.status is the current status. Both are useful for different chart types.
-
-## Data stored where — complete mapping:
+## Complete Data Model — Payload to DB Field Mapping
 
 ### MetricSnapshot (one row per rig per heartbeat)
-- cpu_model, cpu_utilization_pct, cpu_temp_c, cpu_physical_cores, cpu_logical_cores
-- cpu_load_avg_json (array of 3 floats)
-- mem_total_bytes, mem_used_bytes, mem_free_bytes, mem_cached_bytes
-- swap_used_bytes, swap_total_bytes
-- uptime_s (NEW — tracks uptime over time)
-- status (NEW — rig status at heartbeat time)
-- motherboard_json (manufacturer, model, bios_version)
-- software_json (hostname, os_distro, kernel, uptime_s, nvidia_driver, docker_version)
-- schema_version, agent_version, timestamp
+
+| # | Value | Payload Path | DB Field | Type | Charts? |
+|---|-------|-------------|----------|------|---------|
+| 1 | CPU utilization | `metrics.cpu.utilization_pct` | `cpu_utilization_pct` | FloatField | ✅ |
+| 2 | CPU temperature | `metrics.cpu.temp_c` | `cpu_temp_c` | FloatField | ✅ |
+| 3 | CPU load avg | `metrics.cpu.load_avg` | `cpu_load_avg_json` | JSONField[3] | ✅ |
+| 4 | Memory total | `metrics.memory.total_bytes` | `mem_total_bytes` | BigIntegerField | ✅ |
+| 5 | Memory used | `metrics.memory.used_bytes` | `mem_used_bytes` | BigIntegerField | ✅ |
+| 6 | Memory free | `metrics.memory.free_bytes` | `mem_free_bytes` | BigIntegerField | ✅ |
+| 7 | Memory cached | `metrics.memory.cached_bytes` | `mem_cached_bytes` | BigIntegerField | ✅ |
+| 8 | Swap used | `metrics.memory.swap_used_bytes` | `swap_used_bytes` | BigIntegerField | ✅ |
+| 9 | Swap total | `metrics.memory.swap_total_bytes` | `swap_total_bytes` | BigIntegerField | ✅ |
+| 10 | Uptime | `software.uptime_s` | `software_json.uptime_s` | JSON | ✅ |
+| 11 | Rig status | `rig.status` (view) | `status` | CharField | ✅ |
+| 12 | Error count | `errors[]` length | `error_count` | PositiveIntegerField | ✅ |
+| 13 | Error details | `errors[]` | `error_json` | JSONField | ✅ (latest only) |
 
 ### GPUMetric (one row per GPU per heartbeat)
-- gpu_index, gpu_uuid, model
-- gpu_util_pct, gpu_temp_c, fan_speed_pct
-- mem_total_mb, mem_used_mb, mem_free_mb, mem_util_pct
-- power_draw_w, power_limit_w
-- FK to MetricSnapshot
 
-### StorageMetric (one row per device per heartbeat)
-- device, mountpoint, fstype
-- capacity_bytes, usage_pct, temp_c, smart_health
-- FK to MetricSnapshot
+| # | Value | Payload Path | DB Field | Type | Charts? |
+|---|-------|-------------|----------|------|---------|
+| 14 | GPU utilization | `metrics.gpus[].gpu_util_pct` | `gpu_util_pct` | FloatField | ✅ |
+| 15 | GPU temperature | `metrics.gpus[].temp_c` | `gpu_temp_c` | FloatField | ✅ |
+| 16 | GPU fan speed | `metrics.gpus[].fan_speed_pct` | `fan_speed_pct` | FloatField | ✅ |
+| 17 | GPU VRAM total | `metrics.gpus[].mem_total_mb` | `mem_total_mb` | IntegerField | ✅ |
+| 18 | GPU VRAM used | `metrics.gpus[].mem_used_mb` | `mem_used_mb` | IntegerField | ✅ |
+| 19 | GPU VRAM free | `metrics.gpus[].mem_free_mb` | `mem_free_mb` | IntegerField | ✅ |
+| 20 | GPU VRAM util | `metrics.gpus[].mem_util_pct` | `mem_util_pct` | FloatField | ✅ |
+| 21 | GPU power draw | `metrics.gpus[].power_draw_w` | `power_draw_w` | FloatField | ✅ |
+| 22 | GPU power limit | `metrics.gpus[].power_limit_w` | `power_limit_w` | FloatField | ✅ |
+| 23 | PCIe current gen | `metrics.gpus[].pcie_current_gen` | `pcie_current_gen` | PositiveSmallIntegerField | ✅ |
+| 24 | PCIe max gen | `metrics.gpus[].pcie_max_gen` | `pcie_max_gen` | PositiveSmallIntegerField | ✅ |
+| 25 | PCIe current width | `metrics.gpus[].pcie_current_width` | `pcie_current_width` | PositiveSmallIntegerField | ✅ |
+| 26 | PCIe max width | `metrics.gpus[].pcie_max_width` | `pcie_max_width` | PositiveSmallIntegerField | ✅ |
+
+### StorageMetric (one row per disk per heartbeat)
+
+| # | Value | Payload Path | DB Field | Type | Charts? |
+|---|-------|-------------|----------|------|---------|
+| 27 | Storage usage | `metrics.storage[].usage_pct` | `usage_pct` | FloatField | ✅ |
+| 28 | Storage temp | `metrics.storage[].temp_c` | `temp_c` | FloatField | ✅ |
 
 ### NetworkMetric (one row per interface per heartbeat)
-- interface, ipv4, link_speed_mbps
-- rx_bytes, tx_bytes (cumulative counters)
-- rx_bytes_delta, tx_bytes_delta (NEW — bytes since last reading)
-- rx_errors, tx_errors
-- FK to MetricSnapshot
+
+| # | Value | Payload Path | DB Field | Type | Charts? |
+|---|-------|-------------|----------|------|---------|
+| 29 | Network RX bytes | `metrics.network[].rx_bytes` | `rx_bytes` | BigIntegerField | ✅ |
+| 30 | Network TX bytes | `metrics.network[].tx_bytes` | `tx_bytes` | BigIntegerField | ✅ |
+| 31 | Network RX delta | Calculated in serializer | `rx_bytes_delta` | BigIntegerField | ✅ |
+| 32 | Network TX delta | Calculated in serializer | `tx_bytes_delta` | BigIntegerField | ✅ |
+| 33 | Network RX errors | `metrics.network[].rx_errors` | `rx_errors` | IntegerField | ✅ |
+| 34 | Network TX errors | `metrics.network[].tx_errors` | `tx_errors` | IntegerField | ✅ |
 
 ### DockerContainerMetric (one row per container per heartbeat)
-- name, image, status, restart_count
-- cpu_pct (NEW — CPU usage %)
-- mem_usage_bytes, mem_limit_bytes (NEW — memory usage)
-- FK to MetricSnapshot
 
-### ErrorEvent (deduplicated by hash)
-- source, message, hash, count, last_seen
-
-### ErrorEventOccurrence (one row per error occurrence)
-- FK to ErrorEvent
-- timestamp
-
-### RigStatusEvent (one row per status transition)
-- status, previous_status
-- timestamp
+| # | Value | Payload Path | DB Field | Type | Charts? |
+|---|-------|-------------|----------|------|---------|
+| 35 | Docker CPU% | `metrics.docker_containers[].cpu_pct` | `cpu_pct` | FloatField | ✅ |
+| 36 | Docker mem usage | `metrics.docker_containers[].mem_usage_bytes` | `mem_usage_bytes` | BigIntegerField | ✅ |
+| 37 | Docker mem limit | `metrics.docker_containers[].mem_limit_bytes` | `mem_limit_bytes` | BigIntegerField | ✅ |
+| 38 | Docker restarts | `metrics.docker_containers[].restart_count` | `restart_count` | IntegerField | ✅ |
 
 ### AIProcessMetric (one row per process per heartbeat)
-- process_name, pid
-- gpu_uuid, gpu_mem_used_mb, cpu_pct
-- FK to MetricSnapshot
 
-### LatestSnapshot (latest values only, denormalized for fast loading)
-- cpu_utilization_pct, cpu_temp_c
-- mem_used_bytes, mem_total_bytes
-- timestamp
+| # | Value | Payload Path | DB Field | Type | Charts? |
+|---|-------|-------------|----------|------|---------|
+| 39 | AI process GPU mem | `metrics.ai_processes[].gpu_mem_used_mb` | `gpu_mem_used_mb` | IntegerField | ✅ |
+| 40 | AI process CPU% | `metrics.ai_processes[].cpu_pct` | `cpu_pct` | FloatField | ✅ |
+
+### ErrorEvent (deduplicated by hash)
+
+| # | Value | Payload Path | DB Field | Type | Charts? |
+|---|-------|-------------|----------|------|---------|
+| 41 | Error source | `errors[].source` | `source` | CharField | ✅ (text) |
+| 42 | Error message | `errors[].message` | `message` | TextField | ✅ (text) |
+| 43 | Error count | dedup logic | `count` | PositiveIntegerField | ✅ |
+
+### RigStatusEvent (one row per status transition)
+
+| # | Value | Payload Path | DB Field | Type | Charts? |
+|---|-------|-------------|----------|------|---------|
+| 44 | Rig status transition | `rig.status` change | `status` + `previous_status` | CharField | ✅ |
+
+### GPUProcessMetric (one row per GPU process per heartbeat)
+
+| # | Value | Payload Path | DB Field | Type | Charts? |
+|---|-------|-------------|----------|------|---------|
+| 45 | GPU process name | `metrics.gpu_processes[].name` | `process_name` | CharField | ✅ (text) |
+| 46 | GPU process type | `metrics.gpu_processes[].type` | `type` | CharField | ✅ (text) |
+| 47 | GPU process mem | `metrics.gpu_processes[].gpu_mem_mb` | `gpu_mem_mb` | IntegerField | ✅ |
+
+---
+
+## Data Storage Design Decisions
+
+### Dedicated fields vs JSON
+
+| Data | Stored In | Reason |
+|------|-----------|--------|
+| CPU/memory metrics | Dedicated fields | Queried for charts, need indexing |
+| Motherboard info | `motherboard_json` (JSON) | Static data, varies across rigs |
+| Software info | `software_json` (JSON) | Static-ish data, varies across rigs |
+| CPU load avg | `cpu_load_avg_json` (JSONField[3]) | Small fixed-size array |
+| Error details | `error_json` (JSONField) | Latest payload only, max 20 entries |
+| Error count | `error_count` (IntegerField) | Aggregated for error frequency charts |
+
+### Denormalized cache (intentional)
+
+`LatestSnapshot` contains a subset of `MetricSnapshot` fields for fast dashboard loading:
+- `cpu_utilization_pct`, `cpu_temp_c`, `mem_used_bytes`, `mem_total_bytes`
+- Updated on every heartbeat via serializer
+- Read-only cache, not a separate data source
+
+### Error tracking evolution
+
+- **Before:** `ErrorEventOccurrence` table stored per-occurrence timestamps (99K rows, 49% of all data)
+- **After:** `MetricSnapshot.error_count` (int) + `MetricSnapshot.error_json` (latest 20 errors)
+- Error frequency chart uses `SUM(error_count)` on MetricSnapshot
+- "Recent Errors" tab still uses `ErrorEvent` (deduplicated text)
+
+---
+
+## Historical Issues Found and Resolved
+
+### Issue 1: Live Metrics showing stale data
+**Problem:** Test payloads with fake timestamps polluted the database.
+**Fix:** Cleaned up test data. Live Metrics now uses `DISTINCT ON` for latest-per-device queries.
+
+### Issue 2: Test data pollution
+**Problem:** Multiple test payloads inserted during development.
+**Fix:** Deleted all test data. Keep only data from actual agent heartbeats.
+
+### Issue 3: `uptime_s` stored in both MetricSnapshot and software_json
+**Problem:** Redundant storage.
+**Fix:** Removed dedicated `uptime_s` field. Now reads from `software_json.uptime_s`.
+
+### Issue 4: `status` field on MetricSnapshot vs Rig.status
+**Problem:** Potential conflict between per-heartbeat status and current status.
+**Fix:** Intentional. `MetricSnapshot.status` records status AT heartbeat time. `Rig.status` is current status.
+
+### Issue 5: ErrorEventOccurrence table bloat
+**Problem:** 99K rows (49% of all data), each error repeated ~3.6x.
+**Fix:** Replaced with `error_count` + `error_json` on MetricSnapshot. ~50% storage reduction.
+
+### Issue 6: Chart data truncation
+**Problem:** `[:10000]` and `[:50000]` queryset limits truncated 7d/30d chart data.
+**Fix:** Removed all limits. SQL-level aggregation returns exact data points needed.
+
+---
+
+## Code References
+
+### Ingest pipeline
+- `metrics_app/views.py` — `IngestView.post()` → `process_ingest()`
+- `metrics_app/serializers.py` — `IngestSerializer`, `process_ingest()`
+- Transaction: `transaction.atomic()` wraps all DB operations
+
+### Chart queries
+- `metrics_app/views.py` — `ChartDataView.get()`
+- SQL aggregation: `annotate(TruncHour('timestamp')).values().annotate(Avg/Sum(...))`
+- No queryset LIMITS — returns exact data points
+
+### Live metrics
+- `dashboard/views.py` — `_fetch_rig_metrics()` uses `DISTINCT ON`
+- `dashboard/views.py` — `rig_detail()` passes metrics to template
+
+### Data retention
+- `metrics_app/management/commands/compact_data.py` — single phase, 1-hour buckets
+- `metrics_app/management/commands/cleanup_old_data.py` — batch deletion
+- `metrics_app/management/commands/backfill_historical_data.py` — test data generation

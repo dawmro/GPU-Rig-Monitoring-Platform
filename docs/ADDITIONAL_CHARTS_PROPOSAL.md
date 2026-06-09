@@ -74,7 +74,7 @@
 |--------|-------|-------|------|-----------------|----------|--------|
 | Uptime | `MetricSnapshot.software_json.uptime_s` | days | Resets = reboot. Frequent reboots = instability. | **HIGH** | ✅ |
 | Rig Status Events | `RigStatusEvent.status` | enum | Timeline of online/stale/offline transitions. | **HIGH** | ✅ |
-| Error Frequency | `ErrorEventOccurrence.timestamp` | count/min | Errors per minute over time. Spikes = problems. | **HIGH** | ✅ (bar chart) |
+| Error Frequency | `MetricSnapshot.error_count (aggregated).timestamp` | count/min | Errors per minute over time. Spikes = problems. | **HIGH** | ✅ (bar chart) |
 
 ## Implemented New Charts (in priority order)
 
@@ -94,7 +94,7 @@
 | 10 | **Container Memory** (per container) | DockerContainerMetric | Multi-line chart | ✅ |
 | 11 | **Container Restarts** | DockerContainerMetric | Step chart | ✅ |
 | 12 | **Uptime** | MetricSnapshot | Step chart | ✅ |
-| 13 | **Error Frequency** | ErrorEventOccurrence | Bar chart | ✅ |
+| 13 | **Error Frequency** | MetricSnapshot.error_count (aggregated) | Bar chart | ✅ |
 | 14 | **AI Process GPU Memory** (stacked) | AIProcessMetric | Stacked bar | ✅ |
 
 ### Tier 2 — Medium Value (All implemented)

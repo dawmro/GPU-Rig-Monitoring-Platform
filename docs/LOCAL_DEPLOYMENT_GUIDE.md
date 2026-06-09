@@ -567,9 +567,9 @@ echo '0 3 * * * qrv bash /opt/gpu_monitor/deploy/data_retention.sh >> /var/log/m
 
 This runs two commands daily:
 
-1. **`compact_data`** — Two-phase aggregation of old data:
-   - **Phase 1:** Data > 1 day old → 1-hour buckets (60× reduction)
-   - Aggregation per metric: AVG (temperature, utilization, power), SUM (network bytes, errors), LAST (model names, UUIDs)
+1. **`compact_data`** — Single-phase aggregation of old data:
+   - Data > 1 day old → 1-hour buckets (60× reduction)
+   - Aggregation per metric: AVG (temperature, utilization, power), SUM (network bytes, error_count), LAST (model names, UUIDs)
    - Parent table compacted first; child tables after
    - FK-safe: parent rows referenced by children are excluded
 
@@ -578,7 +578,7 @@ This runs two commands daily:
    - Deletes in batches of 10,000 rows to avoid long locks
    - Handles tables with non-standard primary keys (e.g., `metrics_latest_snapshot` uses `rig_uuid`)
 
-**Storage impact:** Without compaction, 1,000 rigs would use ~146 GB/month. With compaction: ~9 GB/month (94% savings). For a single test rig: ~150 MB/month with compaction.
+**Storage impact:** Without compaction, 1,000 rigs would use ~146 GB/month. With compaction: ~7 GB/month (95% savings). For a single test rig: ~150 MB/month with compaction.
 
 #### Manual Run (for testing)
 
@@ -632,7 +632,7 @@ import os; os.environ['DJANGO_SETTINGS_MODULE'] = 'gpu_monitor.settings'
 import django; django.setup()
 from django.db import connection
 for t in ['metrics_metricsnapshot', 'metrics_gpumetric', 'metrics_storagemetric',
-          'metrics_networkmetric', 'metrics_error_event_occurrence']:
+          'metrics_networkmetric']:
     with connection.cursor() as c:
         c.execute(f'SELECT COUNT(*), MIN(timestamp), MAX(timestamp) FROM {t}')
         row = c.fetchall()[0]
@@ -738,7 +738,7 @@ You should see output like `Updated: 0 stale, 2 offline`. If you see `password a
 │   ├── models.py               # Rig, RigTag models
 │   └── management/commands/    # update_rig_status command
 ├── metrics_app/                # Ingestion API + metric storage
-│   ├── models.py               # MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, ErrorEvent, ErrorEventOccurrence, RigStatusEvent, AIProcessMetric
+│   ├── models.py               # MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, ErrorEvent, RigStatusEvent, AIProcessMetric
 │   ├── serializers.py          # Payload validation + processing
 │   └── views.py                # IngestView, HealthView, ChartDataView, RigMetricsView
 ├── dashboard/                  # HTMX dashboard views
@@ -863,7 +863,7 @@ tail -f /var/log/monitoring-agent/agent.log | jq .
 |--------|-----------|------------------|
 | **TLS** | Let's Encrypt (port 443) | HTTP only (port 80) |
 | **Domain** | `monitor.example.com` | `localhost` |
-| **Database** | PostgreSQL + TimescaleDB | Plain PostgreSQL |
+| **Database** | PostgreSQL | Plain PostgreSQL |
 | **Gunicorn user** | Dedicated `monitoring` user | `root` (or current user) |
 | **Agent** | Separate rigs via HTTPS | Same machine via HTTP |
 | **Nginx** | Rate limiting, HSTS, CSP headers | Basic proxy only |

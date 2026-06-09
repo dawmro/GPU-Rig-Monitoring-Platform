@@ -62,8 +62,7 @@ class Command(BaseCommand):
         ng = len(src['gpu'])
         nd = len(src['disk'])
         nn = len(src['network'])
-        ne = len(src['errors'])
-        self.stdout.write(f'  {ns:,} snapshots, {ng:,} gpu, {nd:,} disk, {nn:,} net, {ne:,} errors')
+        self.stdout.write(f'  {ns:,} snapshots, {ng:,} gpu, {nd:,} disk, {nn:,} net')
 
         # ── Step 2: Compute repetition plan ───────────────────────────────
         total_hours = target_days * 24
@@ -104,10 +103,7 @@ class Command(BaseCommand):
             disk_count = self._insert_child_rows(src['disk'],   'disk',   id_map, offset)
             net_count  = self._insert_child_rows(src['network'], 'network', id_map, offset)
 
-            # Errors (no FK dependency)
-            err_count = self._insert_errors(src['errors'], offset)
-
-            rep_total = snap_count + gpu_count + disk_count + net_count + err_count
+            rep_total = snap_count + gpu_count + disk_count + net_count
             grand_total += rep_total
 
             elapsed = time.time() - start_time
@@ -140,14 +136,12 @@ class Command(BaseCommand):
             rem_gpu  = [r for r in src['gpu']     if r['timestamp'] >= cutoff]
             rem_disk = [r for r in src['disk']    if r['timestamp'] >= cutoff]
             rem_net  = [r for r in src['network'] if r['timestamp'] >= cutoff]
-            rem_err  = [r for r in src['errors']  if r['timestamp'] >= cutoff]
 
             id_map = self._insert_snapshots(rem_snap, offset)
             grand_total += len(id_map)
             grand_total += self._insert_child_rows(rem_gpu,  'gpu',     id_map, offset)
             grand_total += self._insert_child_rows(rem_disk, 'disk',   id_map, offset)
             grand_total += self._insert_child_rows(rem_net,  'network', id_map, offset)
-            grand_total += self._insert_errors(rem_err, offset)
 
         total_elapsed = time.time() - start_time
         overall_rate = grand_total / total_elapsed if total_elapsed > 0 else 0
@@ -167,7 +161,7 @@ class Command(BaseCommand):
             return f'{int(seconds // 3600)}h {int((seconds % 3600) // 60)}m'
 
     def _read_source(self, start, end):
-        d = {'snapshots': [], 'gpu': [], 'disk': [], 'network': [], 'errors': []}
+        d = {'snapshots': [], 'gpu': [], 'disk': [], 'network': []}
         with connection.cursor() as c:
             c.execute("SELECT id, rig_uuid, schema_version, agent_version, timestamp, "
                       "cpu_utilization_pct, cpu_temp_c, cpu_load_avg_json, "
@@ -208,11 +202,6 @@ class Command(BaseCommand):
             cols = [col[0] for col in c.description]
             d['network'] = [dict(zip(cols, r)) for r in c.fetchall()]
 
-            c.execute("SELECT id, rig_uuid, timestamp, error_event_id "
-                      "FROM metrics_error_event_occurrence "
-                      "WHERE timestamp >= %s AND timestamp < %s ORDER BY timestamp", [start, end])
-            cols = [col[0] for col in c.description]
-            d['errors'] = [dict(zip(cols, r)) for r in c.fetchall()]
         return d
 
     def _insert_snapshots(self, snapshots, offset):
@@ -339,22 +328,6 @@ class Command(BaseCommand):
                    "link_speed_mbps, rx_bytes, tx_bytes, "
                    "rx_bytes_delta, tx_bytes_delta, rx_errors, tx_errors) "
                    "VALUES %s ON CONFLICT (rig_uuid, timestamp, interface) DO NOTHING")
-
-        with connection.cursor() as c:
-            for i in range(0, len(all_vals), BATCH_SIZE):
-                batch = all_vals[i:i + BATCH_SIZE]
-                execute_values(c, sql, batch, page_size=BATCH_SIZE)
-
-        return len(all_vals)
-
-    def _insert_errors(self, errors, offset):
-        if not errors:
-            return 0
-
-        all_vals = [(e['rig_uuid'], e['timestamp'] - offset, e['error_event_id']) for e in errors]
-        sql = ("INSERT INTO metrics_error_event_occurrence "
-               "(rig_uuid, timestamp, error_event_id) "
-               "VALUES %s ON CONFLICT (rig_uuid, timestamp, error_event_id) DO NOTHING")
 
         with connection.cursor() as c:
             for i in range(0, len(all_vals), BATCH_SIZE):

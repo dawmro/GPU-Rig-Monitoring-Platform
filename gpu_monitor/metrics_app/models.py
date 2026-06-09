@@ -42,6 +42,10 @@ class MetricSnapshot(models.Model):
     # Contains: hostname, os_distro, kernel, uptime_s, nvidia_driver, docker_version
     software_json = models.JSONField(default=dict, blank=True)
 
+    # Error tracking (latest payload only, not historical)
+    error_count = models.PositiveIntegerField(default=0)
+    error_json = models.JSONField(default=list, blank=True)
+
     class Meta:
         db_table = 'metrics_metricsnapshot'
         unique_together = ('rig_uuid', 'schema_version', 'timestamp')
@@ -278,25 +282,3 @@ class ErrorEvent(models.Model):
     class Meta:
         db_table = 'metrics_lasterrors'
         unique_together = ('rig_uuid', 'hash')
-
-
-class ErrorEventOccurrence(models.Model):
-    """Individual error occurrence for time-series error tracking.
-
-    Each time an error is received by the ingest endpoint, an occurrence is
-    created linked to the parent ErrorEvent. This enables error frequency
-    charts and detailed error timeline analysis.
-    """
-    id = models.BigAutoField(primary_key=True)
-    error_event = models.ForeignKey(ErrorEvent, on_delete=models.CASCADE, related_name='occurrences')
-    rig_uuid = models.UUIDField(db_index=True)
-    timestamp = models.DateTimeField(db_index=True)
-
-    class Meta:
-        db_table = 'metrics_error_event_occurrence'
-        ordering = ['-timestamp']
-        unique_together = ('error_event', 'rig_uuid', 'timestamp')
-        indexes = [
-            models.Index(fields=['rig_uuid', '-timestamp']),
-            models.Index(fields=['error_event', '-timestamp']),
-        ]

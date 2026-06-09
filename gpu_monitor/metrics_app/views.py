@@ -13,7 +13,7 @@ from django.shortcuts import get_object_or_404
 from accounts.authentication import APIKeyAuthentication
 from accounts.models import ApiKey
 from .serializers import process_ingest
-from .models import LatestSnapshot, MetricSnapshot, ErrorEvent, ErrorEventOccurrence, DockerContainerMetric, AIProcessMetric
+from .models import LatestSnapshot, MetricSnapshot, ErrorEvent, DockerContainerMetric, AIProcessMetric
 from rigs.models import Rig
 from audit.middleware import log_audit_event
 
@@ -341,13 +341,13 @@ class ChartDataView(APIView):
                         for name in base_qs.values_list('process_name', flat=True).distinct().order_by('process_name')]
 
         elif metric == 'error_frequency':
-            data = list(ErrorEventOccurrence.objects.filter(**base_filter)
-                        .annotate(bucket=trunc('timestamp')).values('bucket').annotate(count=Count('id')).order_by('bucket'))
+            data = list(MetricSnapshot.objects.filter(**base_filter)
+                        .annotate(bucket=trunc('timestamp')).values('bucket').annotate(errors=Sum('error_count')).order_by('bucket'))
             values = [0] * total_buckets
             for row in data:
                 idx = int((row['bucket'] - start_bucket).total_seconds() // (bucket_minutes * 60))
                 if 0 <= idx < total_buckets:
-                    values[idx] = row['count']
+                    values[idx] = row['errors'] or 0
             label = 'Errors/min' if bucket_minutes == 1 else 'Errors/hour'
             datasets = [{'label': label, 'data': values}]
 

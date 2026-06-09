@@ -9,7 +9,6 @@ from django.db import connection
 logger = logging.getLogger(__name__)
 
 CLEANUP_TABLES = [
-    'metrics_error_event_occurrence',
     'metrics_gpu_process',
     'metrics_gpumetric',
     'metrics_storagemetric',

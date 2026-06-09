@@ -105,14 +105,6 @@ COMPACT_TABLES = [
         },
         'static_fields': ['name', 'type', 'snapshot_id'],
     },
-    # Error tables (independent, no FK dependency)
-    {
-        'table': 'metrics_error_event_occurrence',
-        'group_by': ['rig_uuid', 'error_event_id'],
-        'agg_fields': {},
-        'static_fields': [],
-        'special': 'count_per_error',
-    },
 ]
 
 
@@ -154,10 +146,7 @@ class Command(BaseCommand):
         """
         for config in COMPACT_TABLES:
             table_name = config['table']
-            if config.get('special') == 'count_per_error':
-                self._compact_error_occurrences(table_name, cutoff, bucket_minutes, label, dry_run, verbose)
-            else:
-                self._compact_table(table_name, config, cutoff, bucket_minutes, label, dry_run, verbose)
+            self._compact_table(table_name, config, cutoff, bucket_minutes, label, dry_run, verbose)
 
     def _compact_table(self, table_name, config, cutoff, bucket_minutes, label, dry_run, verbose):
         """Compact a single table into time buckets."""
@@ -264,63 +253,3 @@ class Command(BaseCommand):
                 pass
             logger.exception('Compaction failed for %s', table_name)
 
-    def _compact_error_occurrences(self, table_name, cutoff, bucket_minutes, label, dry_run, verbose):
-        """Compact error occurrences — keep count per error per bucket."""
-        with connection.cursor() as cursor:
-            cursor.execute(f"SELECT COUNT(*) FROM {table_name} WHERE timestamp < %s", [cutoff])
-            row_count = cursor.fetchone()[0]
-
-        if row_count == 0:
-            if verbose:
-                self.stdout.write(f'  {table_name}: nothing to compact')
-            return
-
-        if verbose:
-            self.stdout.write(f'  {table_name}: {row_count:,} rows older than {label} cutoff')
-
-        if dry_run:
-            return
-
-        bucket_expr = (
-            f"date_trunc('hour', timestamp) + "
-            f"INTERVAL '{bucket_minutes} min' * "
-            f"(EXTRACT(MINUTE FROM timestamp)::int / {bucket_minutes})"
-        )
-
-        tmp_table = f"_compact_tmp_errors"
-
-        try:
-            with connection.cursor() as cursor:
-                cursor.execute(f"DROP TABLE IF EXISTS {tmp_table}")
-                cursor.execute(f"""
-                    CREATE TEMP TABLE {tmp_table} AS
-                    SELECT
-                        {bucket_expr} AS bucket_ts,
-                        rig_uuid,
-                        error_event_id,
-                        COUNT(*) AS occurrence_count
-                    FROM {table_name}
-                    WHERE timestamp < %s
-                    GROUP BY rig_uuid, error_event_id, bucket_ts
-                """, [cutoff])
-
-                cursor.execute(f"DELETE FROM {table_name} WHERE timestamp < %s", [cutoff])
-
-                cursor.execute(f"""
-                    INSERT INTO {table_name} (timestamp, rig_uuid, error_event_id)
-                    SELECT bucket_ts, rig_uuid, error_event_id
-                    FROM {tmp_table}
-                """)
-
-                cursor.execute(f"DROP TABLE IF EXISTS {tmp_table}")
-
-            self.stdout.write(self.style.SUCCESS(
-                f'  {table_name}: compacted {row_count:,} rows into {label} buckets'))
-        except Exception as e:
-            self.stdout.write(self.style.ERROR(f'  {table_name}: FAILED -- {e}'))
-            try:
-                with connection.cursor() as cursor:
-                    cursor.execute(f"DROP TABLE IF EXISTS {tmp_table}")
-            except Exception:
-                pass
-            logger.exception('Compaction failed for %s', table_name)

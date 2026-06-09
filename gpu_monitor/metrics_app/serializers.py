@@ -3,7 +3,7 @@ import logging
 from rest_framework import serializers, status
 from django.db import transaction
 from django.utils import timezone
-from .models import MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, ErrorEvent, ErrorEventOccurrence, RigStatusEvent, AIProcessMetric
+from .models import MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, ErrorEvent, RigStatusEvent, AIProcessMetric
 from rigs.models import Rig
 from audit.middleware import compute_error_hash
 
@@ -75,6 +75,11 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     'status': rig.status if rig else None,
                     'motherboard_json': motherboard_data,
                     'software_json': software_data,
+                    'error_count': len(errors_data),
+                    'error_json': [
+                        {'source': e.get('source', ''), 'message': e.get('message', '')[:200], 'timestamp': e.get('timestamp', '')}
+                        for e in errors_data[:20]
+                    ],
                 },
             )
 
@@ -235,12 +240,12 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                         previous_status=previous_status,
                     )
 
-            # Process errors (deduplicate + track occurrences)
+            # Process errors: store count + latest text on snapshot, deduplicate for "Recent Errors" tab
             for error in errors_data:
                 source = error.get('source', '')
                 message = error.get('message', '')
                 error_hash = compute_error_hash(source, message)
-                error_event, _ = ErrorEvent.objects.update_or_create(
+                ErrorEvent.objects.update_or_create(
                     rig_uuid=rig_uuid,
                     hash=error_hash,
                     defaults={
@@ -248,16 +253,6 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                         'source': source,
                         'message': message[:500],
                     },
-                )
-                # Create occurrence record for time-series tracking.
-                # Truncate timestamp to the minute for deduplication — if the same
-                # error is reported in multiple payloads within the same minute,
-                # only one occurrence is recorded.
-                ts_minute = ts.replace(second=0, microsecond=0)
-                ErrorEventOccurrence.objects.get_or_create(
-                    error_event=error_event,
-                    rig_uuid=rig_uuid,
-                    timestamp=ts_minute,
                 )
 
             http_status = status.HTTP_200_OK if created else status.HTTP_202_ACCEPTED

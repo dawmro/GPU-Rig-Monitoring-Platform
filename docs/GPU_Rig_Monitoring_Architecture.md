@@ -491,6 +491,14 @@ Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the age
 | `metrics_ai_process` | metrics_app | Per-process GPU/CPU usage tracking for AI workloads |
 | `audit_auditlog` | audit | Immutable audit trail |
 
+### 6.1b Management Commands
+
+| Command | Purpose | Schedule |
+|---|---|---|
+| `update_rig_status` | Updates rig online/stale/offline status based on last_seen | Every 2 min (cron) |
+| `compact_data` | Aggregates old metric data into larger time buckets (15-min, 1-hour) | Daily at 3 AM (cron) |
+| `cleanup_old_data` | Deletes data older than 31 days in batches of 10,000 | Daily at 3 AM (cron, after compact) |
+
 ### 6.2 Key Constraints
 
 | Table | Constraint |
@@ -600,6 +608,57 @@ The sync script handles the full deploy cycle:
 5. Restarts Gunicorn
 
 Files **never** overwritten: `.env`, `venv/`, `logs/`, `staticfiles/`, `config.yaml`, cron jobs, PostgreSQL database.
+
+### 8.5 Data Retention
+
+The platform uses **tiered compaction** to manage long-term storage growth. Without retention, 1,000 rigs would accumulate ~146 GB/month. With compaction: ~9 GB/month (94% savings).
+
+#### Retention Tiers
+
+| Tier | Age | Bucket | Rows/Day/Rig | Savings |
+|---|---|---|---|---|
+| Raw | 0-1 day | 1-minute | 1,440 | — |
+| Compacted | 1-7 days | 15-minute | 96 | 15× |
+| Compacted | 7-31 days | 1-hour | 24 | 60× |
+| Deleted | 31+ days | — | 0 | 100× |
+
+#### Management Commands
+
+Two Django management commands handle retention:
+
+**`compact_data`** — Aggregates old data into larger time buckets:
+- Phase 1: data > 1 day → 15-minute buckets
+- Phase 2: data > 7 days → 1-hour buckets
+- Aggregation: AVG (temperature, utilization, power), SUM (network bytes, errors), LAST (model names, UUIDs)
+- Parent table (`metrics_metricsnapshot`) compacted first; child tables after
+- FK-safe: parent rows referenced by children are excluded from compaction
+
+**`cleanup_old_data`** — Deletes data older than N days (default: 31):
+- Processes tables in dependency order (children first, parent last)
+- Batch deletion (10,000 rows) to avoid long table locks
+- Handles non-standard primary keys (`metrics_latest_snapshot` uses `rig_uuid`)
+
+#### Schedule
+
+Both commands run sequentially via `data_retention.sh` wrapper, called by cron at 3 AM:
+
+```bash
+# /etc/cron.d/monitoring-data-cleanup
+0 3 * * * qrv bash /opt/gpu_monitor/deploy/data_retention.sh >> /var/log/monitoring-agent/cleanup-cron.log 2>&1
+```
+
+#### Verification
+
+```bash
+cd /opt/gpu_monitor
+source venv/bin/activate && set -a && source .env && set +a
+python manage.py compact_data --dry-run --verbose
+python manage.py cleanup_old_data --dry-run --days=31 --verbose
+```
+
+#### Log Location
+
+Retention logs: `/var/log/monitoring-agent/cleanup-cron.log`
 
 ---
 

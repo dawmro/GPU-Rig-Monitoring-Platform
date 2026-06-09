@@ -277,28 +277,35 @@ Configure automated data compaction and cleanup. This is essential for long-term
 #### Quick Setup
 
 ```bash
-# Add cron job for daily data cleanup (runs at 3 AM)
-echo '0 3 * * * root bash /opt/gpu_monitor/deploy/data_retention.sh >> /var/log/monitoring-agent/cleanup-cron.log 2>&1' | sudo tee /etc/cron.d/monitoring-data-cleanup
+# Add cron job for daily data cleanup (runs at 3 AM as qrv user)
+echo '0 3 * * * qrv bash /opt/gpu_monitor/deploy/data_retention.sh >> /var/log/monitoring-agent/cleanup-cron.log 2>&1' | sudo tee /etc/cron.d/monitoring-data-cleanup
 ```
+
+> **Note:** The cron job runs as `qrv` (not root). Ensure `/opt/gpu_monitor/logs/` is owned by `qrv`:
+> ```bash
+> sudo chown -R qrv:qrv /opt/gpu_monitor/logs/
+> ```
 
 #### What It Does
 
 The `data_retention.sh` wrapper runs two commands daily:
 
-1. **`compact_data`** — Aggregates old data into larger time buckets:
-   - Data > 1 day old → compressed to 15-minute buckets (15× reduction)
-   - Data > 7 days old → compressed to 1-hour buckets (60× reduction)
-   - Uses AVG for metrics, SUM for counters, LAST for static fields
+1. **`compact_data`** — Two-phase aggregation of old data:
+   - **Phase 1:** Data > 1 day old → 15-minute buckets (15× reduction)
+   - **Phase 2:** Data > 7 days old → 1-hour buckets (60× reduction)
+   - Aggregation per metric: AVG (temperature, utilization, power), SUM (network bytes, errors), LAST (model names, UUIDs)
+   - Parent table (`metrics_metricsnapshot`) compacted first; child tables after
+   - FK-safe: parent rows referenced by children are excluded from compaction
 
 2. **`cleanup_old_data`** — Deletes data older than 31 days:
-   - Processes tables in dependency order (children first)
-   - Deletes in batches of 10,000 rows to avoid long locks
+   - Processes tables in dependency order (children first, parent last)
+   - Deletes in batches of 10,000 rows to avoid long table locks
    - 31 days provides 1-day safety margin beyond the 30-day max chart range
+   - Handles tables with non-standard primary keys (e.g., `metrics_latest_snapshot` uses `rig_uuid`)
 
 #### Manual Run
 
 ```bash
-# Run both commands manually
 cd /opt/gpu_monitor
 source venv/bin/activate
 set -a && source .env && set +a
@@ -349,12 +356,32 @@ tail -f /var/log/monitoring-agent/cleanup-cron.log
 
 **Check if data is being compacted:**
 ```bash
-sudo -u postgres psql -d gpu_monitor -c "SELECT COUNT(*), MIN(timestamp), MAX(timestamp) FROM metrics_metricsnapshot;"
+cd /opt/gpu_monitor
+source venv/bin/activate && set -a && source .env && set +a
+python -c "
+import os; os.environ['DJANGO_SETTINGS_MODULE'] = 'gpu_monitor.settings'
+import django; django.setup()
+from django.db import connection
+for t in ['metrics_metricsnapshot', 'metrics_gpumetric', 'metrics_storagemetric',
+          'metrics_networkmetric', 'metrics_error_event_occurrence']:
+    with connection.cursor() as c:
+        c.execute(f'SELECT COUNT(*), MIN(timestamp), MAX(timestamp) FROM {t}')
+        row = c.fetchall()[0]
+        print(f'{t}: {row[0]:,} rows, {row[1]} to {row[2]}')
+"
 ```
 
 **Manual cleanup if cron failed:**
 ```bash
-sudo bash /opt/gpu_monitor/deploy/data_retention.sh
+cd /opt/gpu_monitor
+source venv/bin/activate && set -a && source .env && set +a
+python manage.py compact_data --verbose
+python manage.py cleanup_old_data --days=31 --verbose
+```
+
+**Permission denied on logs:**
+```bash
+sudo chown -R qrv:qrv /opt/gpu_monitor/logs/
 ```
 
 ### 4.8 Verify the Deployment

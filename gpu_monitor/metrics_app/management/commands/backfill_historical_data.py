@@ -2,17 +2,14 @@
 """
 GPU Rig Monitoring Platform — Historical Data Backfill Script
 
-Populates the database with 32 days of historical data by repeating
-the last 9 hours of real data. Useful for testing chart visualization,
-data retention, and compaction with realistic data.
+Populates the database with historical data by repeating recent data.
+Useful for testing chart visualization, data retention, and compaction.
 
 How it works:
-1. Reads all metric data from the last 9 hours (source window)
-2. Repeats it 85 times to fill ~32 days, each repetition shifting
-   timestamps back by the source window size
-3. Maintains FK relationships: new snapshot IDs are tracked and
-   child rows reference the correct new parent
-4. Uses batch INSERT with psycopg2.extras.execute_values for performance
+1. Reads metric data from the last N hours (source window)
+2. Repeats it to fill M days, each repetition shifting timestamps back
+3. Uses INSERT ... ON CONFLICT DO NOTHING — overlapping rows are skipped
+4. Progress reported after each repetition with ETA
 
 Usage:
   cd /opt/gpu_monitor
@@ -21,20 +18,20 @@ Usage:
   # Preview
   python manage.py backfill_historical_data --dry-run
 
-  # Insert 32 days based on last 9 hours
+  # Default: 9 hours source → 32 days target
   python manage.py backfill_historical_data
 
-  # Custom parameters
+  # Custom: 6 hours source → 14 days target
   python manage.py backfill_historical_data --hours 6 --days 14
 """
 
 import logging
+import time
 from datetime import timedelta
 
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from django.db import connection
-from psycopg2.extras import execute_values
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +77,7 @@ class Command(BaseCommand):
         nd = len(src['disk'])
         nn = len(src['network'])
         ne = len(src['errors'])
-        self.stdout.write(f'  {ns:,} snapshots, {ng:,} gpu, {nd:,} disk, {nn:,} net, {ne:,} errors')
+        self.stdout.write(f'  Source rows: {ns:,} snapshots, {ng:,} gpu, {nd:,} disk, {nn:,} net, {ne:,} errors')
 
         # ── Step 2: Compute repetition plan ───────────────────────────────
         total_hours = target_days * 24
@@ -99,30 +96,52 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING('  DRY RUN — no data inserted'))
             return
 
-        # ── Step 3: Insert ────────────────────────────────────────────────
+        # ── Step 3: Insert data ───────────────────────────────────────────
         self.stdout.write('')
         self.stdout.write(self.style.MIGRATE_HEADING('Step 3: Inserting data…'))
+        self.stdout.write('')
 
+        start_time = time.time()
         grand_total = 0
 
         for rep in range(n_full_reps):
+            rep_start = time.time()
             shift_h = source_hours * (rep + 1)
             offset = timedelta(hours=shift_h)
 
-            # Parent snapshots (batch insert, collect ID mapping)
-            id_map = self._insert_snapshots_batch(src['snapshots'], offset)
-            grand_total += len(id_map)
+            # Parent snapshots
+            id_map = self._insert_snapshots(src['snapshots'], offset)
+            snap_count = len(id_map)
 
-            # Child tables (batch insert with remapped snapshot_id)
-            grand_total += self._insert_child_batch(src['gpu'],     'gpu',    id_map, offset)
-            grand_total += self._insert_child_batch(src['disk'],    'disk',   id_map, offset)
-            grand_total += self._insert_child_batch(src['network'], 'network', id_map, offset)
+            # Child tables
+            gpu_count  = self._insert_child_rows(src['gpu'],    'gpu',     id_map, offset)
+            disk_count = self._insert_child_rows(src['disk'],   'disk',    id_map, offset)
+            net_count  = self._insert_child_rows(src['network'], 'network', id_map, offset)
 
-            # Errors (batch insert, no FK dependency)
-            grand_total += self._insert_errors_batch(src['errors'], offset)
+            # Errors
+            err_count = self._insert_errors(src['errors'], offset)
 
-            if rep % 10 == 0 or rep == n_full_reps - 1:
-                self.stdout.write(f'  Rep {rep + 1:>3}/{n_full_reps}  (shift {shift_h:>4}h)  total {grand_total:>12,}')
+            rep_total = snap_count + gpu_count + disk_count + net_count + err_count
+            grand_total += rep_total
+
+            # Progress report
+            elapsed = time.time() - start_time
+            rep_elapsed = time.time() - rep_start
+            rate = rep_total / rep_elapsed if rep_elapsed > 0 else 0
+            overall_rate = grand_total / elapsed if elapsed > 0 else 0
+            pct = (rep + 1) / n_full_reps * 100
+            eta = (elapsed / (rep + 1)) * (n_full_reps - rep - 1)
+
+            self.stdout.write(
+                f'  Rep {rep + 1:>3}/{n_full_reps}  '
+                f'({pct:5.1f}%)  '
+                f'shift {shift_h:>4}h  '
+                f'+{rep_total:>7,} rows  '
+                f'total {grand_total:>12,}  '
+                f'{rate:,.0f} rows/s  '
+                f'elapsed {self._fmt_time(elapsed)}  '
+                f'ETA {self._fmt_time(eta)}'
+            )
 
         # ── Step 4: Remaining hours ───────────────────────────────────────
         if remainder_h > 0:
@@ -138,15 +157,35 @@ class Command(BaseCommand):
             rem_net  = [r for r in src['network'] if r['timestamp'] >= cutoff]
             rem_err  = [r for r in src['errors']  if r['timestamp'] >= cutoff]
 
-            id_map = self._insert_snapshots_batch(rem_snap, offset)
+            id_map = self._insert_snapshots(rem_snap, offset)
             grand_total += len(id_map)
-            grand_total += self._insert_child_batch(rem_gpu,  'gpu',    id_map, offset)
-            grand_total += self._insert_child_batch(rem_disk, 'disk',   id_map, offset)
-            grand_total += self._insert_child_batch(rem_net,  'network', id_map, offset)
-            grand_total += self._insert_errors_batch(rem_err, offset)
+            grand_total += self._insert_child_rows(rem_gpu,  'gpu',     id_map, offset)
+            grand_total += self._insert_child_rows(rem_disk, 'disk',    id_map, offset)
+            grand_total += self._insert_child_rows(rem_net,  'network', id_map, offset)
+            grand_total += self._insert_errors(rem_err, offset)
+
+        # ── Done ──────────────────────────────────────────────────────────
+        total_elapsed = time.time() - start_time
+        overall_rate = grand_total / total_elapsed if total_elapsed > 0 else 0
 
         self.stdout.write('')
-        self.stdout.write(self.style.SUCCESS(f'Done! {grand_total:,} rows inserted.'))
+        self.stdout.write(self.style.SUCCESS(
+            f'Done! {grand_total:,} rows inserted in {self._fmt_time(total_elapsed)} '
+            f'({overall_rate:,.0f} rows/s avg)'))
+
+    @staticmethod
+    def _fmt_time(seconds):
+        """Format seconds as human-readable time."""
+        if seconds < 60:
+            return f'{seconds:.0f}s'
+        elif seconds < 3600:
+            m = int(seconds // 60)
+            s = int(seconds % 60)
+            return f'{m}m {s}s'
+        else:
+            h = int(seconds // 3600)
+            m = int((seconds % 3600) // 60)
+            return f'{h}h {m}m'
 
     # ── Read ─────────────────────────────────────────────────────────────
 
@@ -210,10 +249,14 @@ class Command(BaseCommand):
             d['errors'] = [dict(zip(cols, r)) for r in c.fetchall()]
         return d
 
-    # ── Insert snapshots (batch) ─────────────────────────────────────────
+    # ── Insert snapshots ─────────────────────────────────────────────────
 
-    def _insert_snapshots_batch(self, snapshots, offset):
-        """Batch-insert snapshots with shifted timestamps. Returns old_id→new_id map."""
+    def _insert_snapshots(self, snapshots, offset):
+        """
+        Insert snapshot rows with shifted timestamps.
+        Uses ON CONFLICT DO NOTHING — overlapping rows are skipped.
+        Returns dict mapping old_id → new_id (only for actually inserted rows).
+        """
         id_map = {}
         if not snapshots:
             return id_map
@@ -225,55 +268,37 @@ class Command(BaseCommand):
                 ' cpu_model, cpu_physical_cores, cpu_logical_cores,'
                 ' mem_total_bytes, software_json, motherboard_json')
 
-        sql = f"INSERT INTO metrics_metricsnapshot ({cols}) VALUES %s RETURNING id"
-
-        # Build value tuples
-        all_vals = []
-        for s in snapshots:
-            all_vals.append((
-                s['rig_uuid'], s['schema_version'], s['agent_version'],
-                s['timestamp'] - offset,
-                s['cpu_utilization_pct'], s['cpu_temp_c'], s['cpu_load_avg_json'],
-                s['mem_used_bytes'], s['mem_free_bytes'], s['mem_cached_bytes'],
-                s['swap_used_bytes'], s['swap_total_bytes'], s['status'],
-                s['cpu_model'], s['cpu_physical_cores'], s['cpu_logical_cores'],
-                s['mem_total_bytes'], s['software_json'], s['motherboard_json'],
-            ))
-
-        # Batch insert with execute_values, then fetch new IDs
-        # execute_values doesn't support RETURNING directly, so we use a workaround:
-        # Insert in batches and use a temp sequence to map old→new
         with connection.cursor() as c:
-            # Add a temp column to track old IDs
-            c.execute("ALTER TABLE metrics_metricsnapshot ADD COLUMN IF NOT EXISTS _backfill_old_id BIGINT")
-            c.execute("CREATE SEQUENCE IF NOT EXISTS _backfill_seq START 1")
-
-            # Use a CTE-based approach: insert with RETURNING
-            for i in range(0, len(all_vals), BATCH_SIZE):
-                batch = all_vals[i:i + BATCH_SIZE]
-                old_ids = [snapshots[j]['id'] for j in range(i, min(i + BATCH_SIZE, len(snapshots)))]
-
-                # Insert individually within the batch to capture RETURNING
-                for j, vals in enumerate(batch):
+            for i in range(0, len(snapshots), BATCH_SIZE):
+                batch = snapshots[i:i + BATCH_SIZE]
+                for snap in batch:
+                    new_ts = snap['timestamp'] - offset
                     c.execute(f"""
-                        INSERT INTO metrics_metricsnapshot ({cols}, _backfill_old_id)
-                        VALUES ({','.join(['%s'] * (len(vals) + 1))})
+                        INSERT INTO metrics_metricsnapshot ({cols})
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                                %s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                         ON CONFLICT (rig_uuid, schema_version, timestamp) DO NOTHING
                         RETURNING id
-                    """, list(vals) + [old_ids[j]])
+                    """, (
+                        snap['rig_uuid'], snap['schema_version'], snap['agent_version'],
+                        new_ts, snap['cpu_utilization_pct'], snap['cpu_temp_c'],
+                        snap['cpu_load_avg_json'], snap['mem_used_bytes'],
+                        snap['mem_free_bytes'], snap['mem_cached_bytes'],
+                        snap['swap_used_bytes'], snap['swap_total_bytes'],
+                        snap['status'], snap['cpu_model'], snap['cpu_physical_cores'],
+                        snap['cpu_logical_cores'], snap['mem_total_bytes'],
+                        snap['software_json'], snap['motherboard_json'],
+                    ))
                     result = c.fetchone()
                     if result:
-                        id_map[old_ids[j]] = result[0]
-
-            # Clean up temp column
-            c.execute("ALTER TABLE metrics_metricsnapshot DROP COLUMN IF EXISTS _backfill_old_id")
-            c.execute("DROP SEQUENCE IF EXISTS _backfill_seq")
+                        id_map[snap['id']] = result[0]
 
         return id_map
 
-    # ── Insert child rows (batch) ────────────────────────────────────────
+    # ── Insert child rows ────────────────────────────────────────────────
 
-    def _insert_child_batch(self, rows, table, id_map, offset):
+    def _insert_child_rows(self, rows, table, id_map, offset):
+        """Insert child table rows with shifted timestamps and remapped snapshot_id."""
         if not rows or not id_map:
             return 0
 
@@ -296,7 +321,8 @@ class Command(BaseCommand):
                                  power_draw_w, power_limit_w,
                                  pcie_current_gen, pcie_max_gen,
                                  pcie_current_width, pcie_max_width)
-                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                                    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                             ON CONFLICT (rig_uuid, timestamp, gpu_index) DO NOTHING
                         """, (id_map[old_sid], row['rig_uuid'], row['gpu_index'],
                               row['gpu_uuid'], row['model'], new_ts,
@@ -335,9 +361,10 @@ class Command(BaseCommand):
 
         return count
 
-    # ── Insert errors (batch) ────────────────────────────────────────────
+    # ── Insert errors ────────────────────────────────────────────────────
 
-    def _insert_errors_batch(self, errors, offset):
+    def _insert_errors(self, errors, offset):
+        """Insert error occurrences with shifted timestamps."""
         if not errors:
             return 0
 

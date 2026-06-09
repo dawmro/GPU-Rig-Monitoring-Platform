@@ -258,10 +258,12 @@ class Command(BaseCommand):
                     c.execute(f"""
                         INSERT INTO metrics_metricsnapshot ({cols}, _backfill_old_id)
                         VALUES ({','.join(['%s'] * (len(vals) + 1))})
+                        ON CONFLICT (rig_uuid, schema_version, timestamp) DO NOTHING
                         RETURNING id
                     """, list(vals) + [old_ids[j]])
-                    new_id = c.fetchone()[0]
-                    id_map[old_ids[j]] = new_id
+                    result = c.fetchone()
+                    if result:
+                        id_map[old_ids[j]] = result[0]
 
             # Clean up temp column
             c.execute("ALTER TABLE metrics_metricsnapshot DROP COLUMN IF EXISTS _backfill_old_id")
@@ -295,6 +297,7 @@ class Command(BaseCommand):
                                  pcie_current_gen, pcie_max_gen,
                                  pcie_current_width, pcie_max_width)
                             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                            ON CONFLICT (rig_uuid, timestamp, gpu_index) DO NOTHING
                         """, (id_map[old_sid], row['rig_uuid'], row['gpu_index'],
                               row['gpu_uuid'], row['model'], new_ts,
                               row['gpu_util_pct'], row['gpu_temp_c'], row['fan_speed_pct'],
@@ -309,6 +312,7 @@ class Command(BaseCommand):
                                 (snapshot_id, rig_uuid, device, mountpoint, fstype,
                                  timestamp, usage_pct, temp_c, smart_health, capacity_bytes)
                             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                            ON CONFLICT (rig_uuid, timestamp, device) DO NOTHING
                         """, (id_map[old_sid], row['rig_uuid'], row['device'],
                               row['mountpoint'], row['fstype'], new_ts,
                               row['usage_pct'], row['temp_c'], row['smart_health'],
@@ -321,6 +325,7 @@ class Command(BaseCommand):
                                  timestamp, rx_bytes_delta, tx_bytes_delta,
                                  rx_errors, tx_errors, link_speed_mbps)
                             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                            ON CONFLICT (rig_uuid, timestamp, interface) DO NOTHING
                         """, (id_map[old_sid], row['rig_uuid'], row['interface'],
                               row['ipv4'], new_ts, row['rx_bytes_delta'],
                               row['tx_bytes_delta'], row['rx_errors'],
@@ -345,6 +350,7 @@ class Command(BaseCommand):
                         INSERT INTO metrics_error_event_occurrence
                             (rig_uuid, timestamp, error_event_id)
                         VALUES (%s, %s, %s)
+                        ON CONFLICT (rig_uuid, timestamp, error_event_id) DO NOTHING
                     """, (err['rig_uuid'], err['timestamp'] - offset, err['error_event_id']))
                     count += 1
 

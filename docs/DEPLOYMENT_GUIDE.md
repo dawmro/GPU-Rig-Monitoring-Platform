@@ -105,7 +105,7 @@ Before starting, ensure you have:
 | AWS EC2 | t3.xlarge (4 vCPU, 16 GB) | ~$120/mo |
 | Linode | Dedicated 8 GB | ~$60/mo |
 
-> **Why NVMe is mandatory:** TimescaleDB performs chunk compression and continuous aggregate refreshes in the background. SATA SSDs will bottleneck during these operations, causing ingestion lag.
+> **Why NVMe is mandatory:** High write IOPS from 1,000 rigs reporting every 60 seconds. SATA SSDs will bottleneck during compaction and vacuum operations, causing ingestion lag.
 
 ---
 
@@ -761,7 +761,7 @@ systemctl reload gunicorn
 > **Migration safety rules:**
 > 1. Never use `RenameField` or `DeleteModel` in a single deploy
 > 2. Use additive-only evolution: add new field → dual-write → backfill → read from new → drop old
-> 3. Never change column types in TimescaleDB hypertables; add new columns instead
+> 3. Never change column types in production tables; add new columns instead
 
 ---
 
@@ -774,7 +774,7 @@ systemctl reload gunicorn
 | `502 Bad Gateway` from Nginx | `systemctl status gunicorn` | Check `/opt/gpu_monitor/logs/gunicorn-error.log`; usually a Python import error or DB connection failure |
 | `500 Internal Server Error` | Same as above | Verify `/opt/gpu_monitor/.env` exists and has correct DB credentials |
 | Database connection refused | `sudo -u postgres psql -c "SELECT 1"` | `systemctl restart postgresql`; check `/etc/postgresql/16/main/pg_hba.conf` |
-| `timescaledb.control` not found | `sudo -u postgres psql -c "\dx"` | Reinstall TimescaleDB: `sudo apt install --reinstall timescaledb-2-postgresql-16` then `sudo -u postgres psql -c "CREATE EXTENSION IF NOT EXISTS timescaledb;"` |
+|| DB migration fails | `python manage.py migrate` | Check migration order; ensure no missing dependencies |
 | Certbot fails (DNS) | `dig monitor.example.com +short` | Wait for DNS propagation; ensure port 80 is open (check cloud firewall too) |
 | Certbot fails (port) | `curl -I http://monitor.example.com` | Ensure port 8 open in **both** cloud firewall and UFW; certbot uses HTTP-01 challenge |
 | UFW blocks SSH | Locked yourself out | Use VPS provider's console: `ufw disable`, then reconfigure |

@@ -140,7 +140,7 @@ GRANT ALL PRIVILEGES ON DATABASE gpu_monitor TO gpu_monitor;
 EOF
 ```
 
-> **Note:** For local testing we use plain PostgreSQL. TimescaleDB (used in production for time-series optimization) is not required. All metric tables work as regular PostgreSQL tables.
+> **Note:** For local testing we use plain PostgreSQL. All metric tables work as regular PostgreSQL tables.
 
 **Verify the connection:**
 
@@ -871,7 +871,6 @@ tail -f /var/log/monitoring-agent/agent.log | jq .
 | **Backup** | Daily `pg_dump` + rclone | Not configured |
 | **Meta-monitoring** | UptimeRobot | Not configured |
 || **Data retention** | compact_data + cleanup_old_data (31-day retention with tiered compaction) | Same (compact_data + cleanup_old_data) |
-|| **TimescaleDB hypertables** | Planned (not yet implemented) | No (regular tables) |
 
 ---
 

@@ -797,7 +797,7 @@ Tests are organized in a pragmatic pyramid: unit tests (mocked hardware) → int
 
 ### 11.2 Integration Testing (Pipeline & Database)
 
-Integration tests verify Django ORM + DRF + PostgreSQL work together. Requires real DB (TimescaleDB not used in v1 — plain PostgreSQL tables).
+Integration tests verify Django ORM + DRF + PostgreSQL work together.
 
 **Idempotency test** (most critical):
 

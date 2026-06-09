@@ -83,13 +83,16 @@ class Command(BaseCommand):
         if dry_run:
             return row_count
 
+        # Determine primary key column (most tables use 'id', LatestSnapshot uses 'rig_uuid')
+        pk_column = 'rig_uuid' if table_name == 'metrics_latest_snapshot' else 'id'
+
         total_deleted = 0
         try:
             with connection.cursor() as cursor:
                 while True:
                     cursor.execute(
-                        f"DELETE FROM {table_name} WHERE id IN ("
-                        f"  SELECT id FROM {table_name} WHERE timestamp < %s LIMIT %s)",
+                        f"DELETE FROM {table_name} WHERE {pk_column} IN ("
+                        f"  SELECT {pk_column} FROM {table_name} WHERE timestamp < %s LIMIT %s)",
                         [cutoff, self.BATCH_SIZE])
                     deleted = cursor.rowcount
                     total_deleted += deleted

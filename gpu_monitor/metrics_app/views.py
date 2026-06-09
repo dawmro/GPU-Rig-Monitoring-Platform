@@ -506,7 +506,7 @@ class ChartDataView(APIView):
                 rig_uuid=str(uuid),
                 timestamp__gte=start_bucket,
                 timestamp__lte=end_bucket,
-            ).order_by('timestamp')[:10000]
+            ).order_by('timestamp')
             # Special combined memory chart: return 3 datasets in one response
             multi_mem = request.query_params.get('multi_mem', 'false').lower() == 'true'
             if multi_mem:
@@ -534,7 +534,7 @@ class ChartDataView(APIView):
                 rig_uuid=str(uuid),
                 timestamp__gte=start_bucket,
                 timestamp__lte=end_bucket,
-            ).order_by('timestamp')[:10000]
+            ).order_by('timestamp')
             uptime_values = []
             for s in snapshots:
                 uptime_s = s.software_json.get('uptime_s') if isinstance(s.software_json, dict) else None
@@ -549,7 +549,7 @@ class ChartDataView(APIView):
                 rig_uuid=str(uuid),
                 timestamp__gte=start_bucket,
                 timestamp__lte=end_bucket,
-            ).order_by('timestamp')[:10000]
+            ).order_by('timestamp')
             load_datasets = [
                 {'label': 'Load 1m', 'data': [None] * len(labels)},
                 {'label': 'Load 5m', 'data': [None] * len(labels)},
@@ -591,7 +591,7 @@ class ChartDataView(APIView):
                     rig_uuid=str(uuid),
                     timestamp__gte=start_bucket,
                     timestamp__lte=end_bucket,
-                ).order_by('timestamp')[:50000]
+                ).order_by('timestamp')
                 self._fill_buckets_multi_key(labels, gpu_datasets, start_bucket, gpu_data, field_name, 'gpu_uuid', bucket_minutes=self._bucket_minutes, aggregate=self._aggregate)
                 datasets = gpu_datasets
             else:
@@ -600,7 +600,7 @@ class ChartDataView(APIView):
                     gpu_index=gpu_index,
                     timestamp__gte=start_bucket,
                     timestamp__lte=end_bucket,
-                ).order_by('timestamp')[:10000]
+                ).order_by('timestamp')
                 self._fill_buckets(labels, values, start_bucket, gpu_data, field_name, bucket_minutes=self._bucket_minutes, aggregate=self._aggregate)
                 datasets = [{'label': f'GPU {gpu_index}', 'data': values}]
 
@@ -637,7 +637,7 @@ class ChartDataView(APIView):
                     rig_uuid=str(uuid),
                     timestamp__gte=start_bucket,
                     timestamp__lte=end_bucket,
-                ).order_by('timestamp')[:50000]
+                ).order_by('timestamp')
                 self._fill_buckets_multi_key(labels, disk_datasets, start_bucket, storage_data, field_name, 'device', bucket_minutes=self._bucket_minutes, aggregate=self._aggregate)
                 datasets = disk_datasets
             else:
@@ -645,7 +645,7 @@ class ChartDataView(APIView):
                     rig_uuid=str(uuid),
                     timestamp__gte=start_bucket,
                     timestamp__lte=end_bucket,
-                ).order_by('timestamp')[:10000]
+                ).order_by('timestamp')
                 self._fill_buckets(labels, values, start_bucket, storage_data, field_name, bucket_minutes=self._bucket_minutes, aggregate=self._aggregate)
                 datasets = [{'label': metric, 'data': values}]
 
@@ -691,7 +691,7 @@ class ChartDataView(APIView):
                     rig_uuid=str(uuid),
                     timestamp__gte=start_bucket,
                     timestamp__lte=end_bucket,
-                ).order_by('timestamp')[:50000]
+                ).order_by('timestamp')
                 self._fill_buckets_multi_key(labels, iface_datasets, start_bucket, net_data, field_name, 'interface', bucket_minutes=self._bucket_minutes, aggregate=self._aggregate)
                 datasets = iface_datasets
                 # Convert byte deltas to MB/s for network metrics
@@ -704,7 +704,7 @@ class ChartDataView(APIView):
                     interface__isnull=False,
                     timestamp__gte=start_bucket,
                     timestamp__lte=end_bucket,
-                ).order_by('timestamp')[:10000]
+                ).order_by('timestamp')
                 self._fill_buckets(labels, values, start_bucket, net_data, field_name, bucket_minutes=self._bucket_minutes, aggregate=self._aggregate)
                 datasets = [{'label': metric, 'data': values}]
                 if field_name in self.BYTE_TO_MB:
@@ -739,7 +739,7 @@ class ChartDataView(APIView):
                 rig_uuid=str(uuid),
                 timestamp__gte=start_bucket,
                 timestamp__lte=end_bucket,
-            ).order_by('timestamp')[:50000]
+            ).order_by('timestamp')
             self._fill_buckets_multi_key(labels, container_datasets, start_bucket, container_data, field_name, 'name', bucket_minutes=self._bucket_minutes, aggregate=self._aggregate)
             datasets = container_datasets
             if field_name == 'mem_usage_bytes':
@@ -773,7 +773,7 @@ class ChartDataView(APIView):
                 rig_uuid=str(uuid),
                 timestamp__gte=start_bucket,
                 timestamp__lte=end_bucket,
-            ).order_by('timestamp')[:50000]
+            ).order_by('timestamp')
             self._fill_buckets_multi_key(labels, ai_datasets, start_bucket, ai_data, field_name, 'process_name', bucket_minutes=self._bucket_minutes, aggregate=self._aggregate)
             datasets = ai_datasets
 
@@ -782,7 +782,7 @@ class ChartDataView(APIView):
                 rig_uuid=str(uuid),
                 timestamp__gte=start_bucket,
                 timestamp__lte=end_bucket,
-            ).order_by('timestamp')[:50000]
+            ).order_by('timestamp')
             total_buckets = len(labels)
             error_counts = [0] * total_buckets
             bucket_seconds = bucket_minutes * 60

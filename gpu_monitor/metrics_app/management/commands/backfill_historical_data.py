@@ -73,7 +73,7 @@ class Command(BaseCommand):
         self.stdout.write(self.style.MIGRATE_HEADING('Step 2: Repetition plan'))
         self.stdout.write(f'  Full reps : {n_full_reps} × {source_hours}h = {n_full_reps * source_hours}h ({(n_full_reps * source_hours) / 24:.1f} days)')
         self.stdout.write(f'  Remainder : {remainder_h}h')
-        projected = (ns + ng + nd + nn + ne) * n_full_reps
+        projected = (ns + ng + nd + nn) * n_full_reps
         self.stdout.write(f'  Projected : ~{projected:,} rows')
 
         if dry_run:

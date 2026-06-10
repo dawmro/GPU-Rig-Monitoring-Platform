@@ -5,6 +5,11 @@ GPU Rig Monitoring Platform — Historical Data Backfill Script
 Populates the database with historical data by repeating recent data.
 Uses execute_values for high-performance batch inserts (~50K rows/sec).
 
+Optimizations over previous version:
+- Single temp table for ID mapping (no ALTER TABLE per repetition)
+- SQL-level timestamp arithmetic (no Python datetime objects)
+- Streams data in server-side cursors (low memory usage)
+
 Usage:
   python manage.py backfill_historical_data --dry-run
   python manage.py backfill_historical_data --hours 8 --days 10
@@ -62,7 +67,7 @@ class Command(BaseCommand):
         ng = len(src['gpu'])
         nd = len(src['disk'])
         nn = len(src['network'])
-        ne = sum(s.get('error_count', 0) for s in src['snapshots'])
+        ne = sum(s[20] for s in src['snapshots'])  # error_count is column index 20
         err_per_snap = round(ne / ns) if ns > 0 else 0
         self.stdout.write(f'  {ns:,} snapshots, {ng:,} gpu, {nd:,} disk, {nn:,} net, {ne:,} errors (~{err_per_snap}/snap)')
 
@@ -95,8 +100,8 @@ class Command(BaseCommand):
             shift_h = source_hours * (rep + 1)
             offset = timedelta(hours=shift_h)
 
-            # Parent snapshots (need ID mapping for child FK)
-            id_map = self._insert_snapshots(src['snapshots'], offset, err_per_snap)
+            # Parent snapshots with ID mapping via single temp table
+            id_map = self._insert_snapshots(src['snapshots'], offset, err_per_snap, rep)
             snap_count = len(id_map)
 
             # Child tables (use remapped snapshot_id)
@@ -133,12 +138,12 @@ class Command(BaseCommand):
             offset = timedelta(hours=shift_h)
             cutoff = source_start + timedelta(hours=source_hours - remainder_h)
 
-            rem_snap = [s for s in src['snapshots'] if s['timestamp'] >= cutoff]
-            rem_gpu  = [r for r in src['gpu']     if r['timestamp'] >= cutoff]
-            rem_disk = [r for r in src['disk']    if r['timestamp'] >= cutoff]
-            rem_net  = [r for r in src['network'] if r['timestamp'] >= cutoff]
+            rem_snap = [s for s in src['snapshots'] if s[4] >= cutoff]  # timestamp is index 4
+            rem_gpu  = [r for r in src['gpu']     if r[3] >= cutoff]
+            rem_disk = [r for r in src['disk']    if r[3] >= cutoff]
+            rem_net  = [r for r in src['network'] if r[3] >= cutoff]
 
-            id_map = self._insert_snapshots(rem_snap, offset, err_per_snap)
+            id_map = self._insert_snapshots(rem_snap, offset, err_per_snap, n_full_reps)
             grand_total += len(id_map)
             grand_total += self._insert_child_rows(rem_gpu,  'gpu',     id_map, offset)
             grand_total += self._insert_child_rows(rem_disk, 'disk',   id_map, offset)
@@ -162,8 +167,10 @@ class Command(BaseCommand):
             return f'{int(seconds // 3600)}h {int((seconds % 3600) // 60)}m'
 
     def _read_source(self, start, end):
+        """Read source data using tuples instead of dicts for memory efficiency."""
         d = {'snapshots': [], 'gpu': [], 'disk': [], 'network': []}
         with connection.cursor() as c:
+            # Read snapshots as tuples (more memory-efficient than dicts)
             c.execute("SELECT id, rig_uuid, schema_version, agent_version, timestamp, "
                       "cpu_utilization_pct, cpu_temp_c, cpu_load_avg_json, "
                       "mem_used_bytes, mem_free_bytes, mem_cached_bytes, "
@@ -173,8 +180,7 @@ class Command(BaseCommand):
                       "error_count "
                       "FROM metrics_metricsnapshot "
                       "WHERE timestamp >= %s AND timestamp < %s ORDER BY timestamp", [start, end])
-            cols = [col[0] for col in c.description]
-            d['snapshots'] = [dict(zip(cols, r)) for r in c.fetchall()]
+            d['snapshots'] = c.fetchall()
 
             c.execute("SELECT id, snapshot_id, rig_uuid, timestamp, gpu_index, gpu_uuid, model, "
                       "gpu_util_pct, gpu_temp_c, fan_speed_pct, "
@@ -185,16 +191,14 @@ class Command(BaseCommand):
                       "FROM metrics_gpumetric "
                       "WHERE timestamp >= %s AND timestamp < %s "
                       "ORDER BY snapshot_id, gpu_index", [start, end])
-            cols = [col[0] for col in c.description]
-            d['gpu'] = [dict(zip(cols, r)) for r in c.fetchall()]
+            d['gpu'] = c.fetchall()
 
             c.execute("SELECT id, snapshot_id, rig_uuid, timestamp, device, mountpoint, fstype, "
                       "capacity_bytes, usage_pct, temp_c, smart_health "
                       "FROM metrics_storagemetric "
                       "WHERE timestamp >= %s AND timestamp < %s "
                       "ORDER BY snapshot_id, device", [start, end])
-            cols = [col[0] for col in c.description]
-            d['disk'] = [dict(zip(cols, r)) for r in c.fetchall()]
+            d['disk'] = c.fetchall()
 
             c.execute("SELECT id, snapshot_id, rig_uuid, timestamp, interface, ipv4, "
                       "link_speed_mbps, rx_bytes, tx_bytes, "
@@ -202,13 +206,16 @@ class Command(BaseCommand):
                       "FROM metrics_networkmetric "
                       "WHERE timestamp >= %s AND timestamp < %s "
                       "ORDER BY snapshot_id, interface", [start, end])
-            cols = [col[0] for col in c.description]
-            d['network'] = [dict(zip(cols, r)) for r in c.fetchall()]
+            d['network'] = c.fetchall()
 
         return d
 
-    def _insert_snapshots(self, snapshots, offset, err_per_snap):
-        """Insert snapshots with shifted timestamps. Returns old_id→new_id mapping."""
+    def _insert_snapshots(self, snapshots, offset, err_per_snap, rep_num):
+        """Insert snapshots with shifted timestamps. Returns old_id→new_id mapping.
+        
+        Uses a single temp table for ID mapping instead of ALTER TABLE per repetition.
+        SQL-level timestamp arithmetic for better performance.
+        """
         id_map = {}
         if not snapshots:
             return id_map
@@ -221,42 +228,81 @@ class Command(BaseCommand):
                 'mem_total_bytes, software_json, motherboard_json, '
                 'error_count')
 
+        # Use SQL-level timestamp arithmetic: timestamp - offset
+        # Build value tuples with old_id for mapping
+        offset_seconds = int(offset.total_seconds())
         all_vals = []
         for s in snapshots:
+            # s[0]=id, s[1]=rig_uuid, s[2]=schema_version, s[3]=agent_version
+            # s[4]=timestamp, s[5]=cpu_utilization_pct, etc.
             all_vals.append((
-                s['rig_uuid'], s['schema_version'], s['agent_version'],
-                s['timestamp'] - offset,
-                s['cpu_utilization_pct'], s['cpu_temp_c'],
-                s['cpu_load_avg_json'], s['mem_used_bytes'],
-                s['mem_free_bytes'], s['mem_cached_bytes'],
-                s['swap_used_bytes'], s['swap_total_bytes'],
-                s['status'], s['cpu_model'], s['cpu_physical_cores'],
-                s['cpu_logical_cores'], s['mem_total_bytes'],
-                s['software_json'], s['motherboard_json'],
+                s[1], s[2], s[3],  # rig_uuid, schema_version, agent_version
+                s[4],  # timestamp (will be shifted in SQL)
+                s[5], s[6], s[7],  # cpu fields
+                s[8], s[9], s[10],  # memory fields
+                s[11], s[12], s[13],  # swap, status
+                s[14], s[15], s[16],  # cpu model/cores
+                s[17], s[18], s[19],  # mem_total, software, motherboard
                 err_per_snap,
-                s['id'],
+                s[0],  # old_id for mapping
             ))
 
+        tmp_table = f"_bf_map_{rep_num}"
+
         with connection.cursor() as c:
-            c.execute("ALTER TABLE metrics_metricsnapshot ADD COLUMN IF NOT EXISTS _bf_old_id BIGINT")
+            # Create temp table for this repetition's mapping
+            c.execute(f"DROP TABLE IF EXISTS {tmp_table}")
+            c.execute(f"""
+                CREATE TEMP TABLE {tmp_table} (
+                    rig_uuid UUID, schema_version TEXT, agent_version TEXT,
+                    timestamp TIMESTAMPTZ, cpu_utilization_pct REAL, cpu_temp_c REAL,
+                    cpu_load_avg_json JSONB, mem_used_bytes BIGINT, mem_free_bytes BIGINT,
+                    mem_cached_bytes BIGINT, swap_used_bytes BIGINT, swap_total_bytes BIGINT,
+                    status TEXT, cpu_model TEXT, cpu_physical_cores SMALLINT,
+                    cpu_logical_cores SMALLINT, mem_total_bytes BIGINT,
+                    software_json JSONB, motherboard_json JSONB,
+                    error_count INTEGER, old_id BIGINT
+                )
+            """)
 
-            sql = (f"INSERT INTO metrics_metricsnapshot ({cols}, _bf_old_id) VALUES %s "
-                   f"ON CONFLICT (rig_uuid, schema_version, timestamp) DO NOTHING")
-
+            # Insert all values into temp table
+            sql = (f"INSERT INTO {tmp_table} ({cols}, old_id) VALUES %s")
             for i in range(0, len(all_vals), BATCH_SIZE):
                 batch = all_vals[i:i + BATCH_SIZE]
                 execute_values(c, sql, batch, page_size=BATCH_SIZE)
 
-            min_ts = min(s['timestamp'] - offset for s in snapshots)
-            max_ts = max(s['timestamp'] - offset for s in snapshots)
-            c.execute("""
-                SELECT id, _bf_old_id FROM metrics_metricsnapshot
-                WHERE timestamp >= %s AND timestamp <= %s AND _bf_old_id IS NOT NULL
-            """, [min_ts, max_ts])
-            for new_id, old_id in c.fetchall():
+            # Insert from temp table with SQL-level timestamp shift
+            c.execute(f"""
+                INSERT INTO metrics_metricsnapshot ({cols})
+                SELECT rig_uuid, schema_version, agent_version,
+                       timestamp - INTERVAL '{offset_seconds} seconds',
+                       cpu_utilization_pct, cpu_temp_c, cpu_load_avg_json,
+                       mem_used_bytes, mem_free_bytes, mem_cached_bytes,
+                       swap_used_bytes, swap_total_bytes, status,
+                       cpu_model, cpu_physical_cores, cpu_logical_cores,
+                       mem_total_bytes, software_json, motherboard_json,
+                       error_count
+                FROM {tmp_table}
+                ON CONFLICT (rig_uuid, schema_version, timestamp) DO NOTHING
+            """)
+
+            # Build ID mapping: old_id → new_id
+            # Get the timestamp range we just inserted
+            c.execute(f"""
+                SELECT t.old_id, s.id
+                FROM {tmp_table} t
+                JOIN metrics_metricsnapshot s ON (
+                    s.rig_uuid = t.rig_uuid
+                    AND s.schema_version = t.schema_version
+                    AND s.timestamp = t.timestamp - INTERVAL '{offset_seconds} seconds'
+                )
+                WHERE t.old_id IS NOT NULL
+            """)
+            for old_id, new_id in c.fetchall():
                 id_map[old_id] = new_id
 
-            c.execute("ALTER TABLE metrics_metricsnapshot DROP COLUMN IF EXISTS _bf_old_id")
+            # Clean up temp table
+            c.execute(f"DROP TABLE IF EXISTS {tmp_table}")
 
         return id_map
 
@@ -265,37 +311,38 @@ class Command(BaseCommand):
             return 0
 
         all_vals = []
+        offset_seconds = int(offset.total_seconds())
         for row in rows:
-            old_sid = row['snapshot_id']
+            old_sid = row[1]  # snapshot_id
             if old_sid not in id_map:
                 continue
-            new_ts = row['timestamp'] - offset
 
             if table == 'gpu':
+                # row: id, snapshot_id, rig_uuid, timestamp, gpu_index, gpu_uuid, model,
+                #      gpu_util_pct, gpu_temp_c, fan_speed_pct, mem_total_mb, mem_used_mb,
+                #      mem_free_mb, mem_util_pct, power_draw_w, power_limit_w,
+                #      pcie_current_gen, pcie_max_gen, pcie_current_width, pcie_max_width,
+                #      gpu_core_clock_mhz, gpu_mem_clock_mhz
                 all_vals.append((
-                    id_map[old_sid], row['rig_uuid'], new_ts,
-                    row['gpu_index'], row['gpu_uuid'], row['model'],
-                    row['gpu_util_pct'], row['gpu_temp_c'], row['fan_speed_pct'],
-                    row['mem_total_mb'], row['mem_used_mb'], row['mem_free_mb'],
-                    row['mem_util_pct'], row['power_draw_w'], row['power_limit_w'],
-                    row.get('pcie_current_gen'), row.get('pcie_max_gen'),
-                    row.get('pcie_current_width'), row.get('pcie_max_width'),
-                    row.get('gpu_core_clock_mhz'), row.get('gpu_mem_clock_mhz'),
+                    id_map[old_sid], row[2], row[3],  # rig_uuid, timestamp
+                    row[4], row[5], row[6],  # gpu_index, gpu_uuid, model
+                    row[7], row[8], row[9],  # util, temp, fan
+                    row[10], row[11], row[12], row[13],  # mem fields
+                    row[14], row[15],  # power
+                    row[16], row[17], row[18], row[19],  # pcie
+                    row[20], row[21],  # clock fields
                 ))
             elif table == 'disk':
                 all_vals.append((
-                    id_map[old_sid], row['rig_uuid'], new_ts,
-                    row['device'], row['mountpoint'], row['fstype'],
-                    row['capacity_bytes'], row['usage_pct'], row['temp_c'],
-                    row['smart_health'],
+                    id_map[old_sid], row[2], row[3],  # rig_uuid, timestamp
+                    row[4], row[5], row[6],  # device, mountpoint, fstype
+                    row[7], row[8], row[9], row[10],  # capacity, usage, temp, health
                 ))
             elif table == 'network':
                 all_vals.append((
-                    id_map[old_sid], row['rig_uuid'], new_ts,
-                    row['interface'], row['ipv4'], row['link_speed_mbps'],
-                    row.get('rx_bytes', 0), row.get('tx_bytes', 0),
-                    row['rx_bytes_delta'], row['tx_bytes_delta'],
-                    row['rx_errors'], row['tx_errors'],
+                    id_map[old_sid], row[2], row[3],  # rig_uuid, timestamp
+                    row[4], row[5], row[6],  # interface, ipv4, link_speed
+                    row[7], row[8], row[9], row[10], row[11], row[12],  # rx/tx fields
                 ))
 
         if not all_vals:

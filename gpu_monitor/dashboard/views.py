@@ -4,7 +4,7 @@ from django.http import Http404
 from django.views.decorators.http import require_POST
 
 from rigs.models import Rig, RigTag
-from metrics_app.models import MetricSnapshot, LatestSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, DockerContainerMetric, ErrorEvent
+from metrics_app.models import MetricSnapshot, LatestSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, DockerContainerMetric
 from audit.middleware import log_audit_event
 
 
@@ -46,11 +46,8 @@ def _fetch_rig_metrics(uuid):
         .order_by('-timestamp')[:20]
     )
 
-    # Recent errors
-    recent_errors = list(
-        ErrorEvent.objects.filter(rig_uuid=str(uuid))
-        .order_by('-last_seen')[:5]
-    )
+    # Recent errors from Rig.latest_errors_json (latest payload only, like motherboard_json)
+    recent_errors = rig.latest_errors_json if rig else []
 
     # Latest MetricSnapshot for motherboard/software JSON
     latest_metric_snapshot = MetricSnapshot.objects.filter(

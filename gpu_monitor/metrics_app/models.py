@@ -42,9 +42,8 @@ class MetricSnapshot(models.Model):
     # Contains: hostname, os_distro, kernel, uptime_s, nvidia_driver, docker_version
     software_json = models.JSONField(default=dict, blank=True)
 
-    # Error tracking (latest payload only, not historical)
+    # Error count for this snapshot (integer, aggregated for error frequency charts)
     error_count = models.PositiveIntegerField(default=0)
-    error_json = models.JSONField(default=list, blank=True)
 
     class Meta:
         db_table = 'metrics_metricsnapshot'
@@ -268,17 +267,6 @@ class GPUProcessMetric(models.Model):
         ]
 
 
-class ErrorEvent(models.Model):
-    """Deduplicated error events."""
-    id = models.BigAutoField(primary_key=True)
-    rig_uuid = models.UUIDField(db_index=True)
-    timestamp = models.DateTimeField()
-    source = models.CharField(max_length=50, blank=True, default='')
-    message = models.TextField(blank=True, default='')
-    hash = models.CharField(max_length=64, db_index=True)
-    count = models.PositiveIntegerField(default=1)
-    last_seen = models.DateTimeField(auto_now=True)
 
-    class Meta:
-        db_table = 'metrics_lasterrors'
-        unique_together = ('rig_uuid', 'hash')
+
+

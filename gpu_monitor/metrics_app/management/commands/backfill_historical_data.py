@@ -173,7 +173,7 @@ class Command(BaseCommand):
                       "swap_used_bytes, swap_total_bytes, status, "
                       "cpu_model, cpu_physical_cores, cpu_logical_cores, "
                       "mem_total_bytes, software_json, motherboard_json, "
-                      "error_count, error_json "
+                      "error_count "
                       "FROM metrics_metricsnapshot "
                       "WHERE timestamp >= %s AND timestamp < %s ORDER BY timestamp", [start, end])
             cols = [col[0] for col in c.description]
@@ -221,7 +221,7 @@ class Command(BaseCommand):
                 'swap_used_bytes, swap_total_bytes, status, '
                 'cpu_model, cpu_physical_cores, cpu_logical_cores, '
                 'mem_total_bytes, software_json, motherboard_json, '
-                'error_count, error_json')
+                'error_count')
 
         # Build value tuples: (..., old_id) for tracking
         all_vals = []
@@ -236,7 +236,7 @@ class Command(BaseCommand):
                 s['status'], s['cpu_model'], s['cpu_physical_cores'],
                 s['cpu_logical_cores'], s['mem_total_bytes'],
                 s['software_json'], s['motherboard_json'],
-                err_per_snap, [],  # average error count per snapshot, no error_json
+                err_per_snap,  # average error count per snapshot
                 s['id'],  # temp: old_id for mapping
             ))
 

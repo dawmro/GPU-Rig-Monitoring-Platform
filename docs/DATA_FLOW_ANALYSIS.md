@@ -25,7 +25,12 @@
 | 10 | Uptime | `software.uptime_s` | `software_json.uptime_s` | JSON | ✅ |
 | 11 | Rig status | `rig.status` (view) | `status` | CharField | ✅ |
 | 12 | Error count | `errors[]` length | `error_count` | PositiveIntegerField | ✅ |
-| 13 | Error details | `errors[]` | `error_json` | JSONField | ✅ (latest only) |
+
+### Rig (latest error text — updated in place, not per-snapshot)
+
+| # | Value | Payload Path | DB Field | Type | Charts? |
+|---|-------|-------------|----------|------|---------|
+| 48 | Latest errors | `errors[]` | `latest_errors_json` | JSONField | ✅ (latest only) |
 
 ### GPUMetric (one row per GPU per heartbeat)
 
@@ -113,8 +118,8 @@
 | Motherboard info | `motherboard_json` (JSON) | Static data, varies across rigs |
 | Software info | `software_json` (JSON) | Static-ish data, varies across rigs |
 | CPU load avg | `cpu_load_avg_json` (JSONField[3]) | Small fixed-size array |
-| Error details | `error_json` (JSONField) | Latest payload only, max 20 entries |
-| Error count | `error_count` (IntegerField) | Aggregated for error frequency charts |
+| Error count | `error_count` (IntegerField) | Per-snapshot count for error frequency charts |
+| Latest error text | `Rig.latest_errors_json` (JSON) | Latest payload only, like motherboard_json |
 
 ### Denormalized cache (intentional)
 
@@ -126,9 +131,12 @@
 ### Error tracking evolution
 
 - **Before:** `ErrorEventOccurrence` table stored per-occurrence timestamps (99K rows, 49% of all data)
-- **After:** `MetricSnapshot.error_count` (int) + `MetricSnapshot.error_json` (latest 20 errors)
-- Error frequency chart uses `SUM(error_count)` on MetricSnapshot
-- "Recent Errors" tab still uses `ErrorEvent` (deduplicated text)
+- **After (current):**
+  - `MetricSnapshot.error_count` (int) — single integer per snapshot for error frequency charts
+  - `Rig.latest_errors_json` (JSON) — latest error text from most recent payload (like motherboard_json, updated in place)
+  - Error frequency chart uses `SUM(error_count)` grouped by time bucket on MetricSnapshot
+  - "Latest Errors" tab reads from `Rig.latest_errors_json`
+  - No per-snapshot error text storage — only the latest payload's errors are kept
 
 ---
 
@@ -150,9 +158,9 @@
 **Problem:** Potential conflict between per-heartbeat status and current status.
 **Fix:** Intentional. `MetricSnapshot.status` records status AT heartbeat time. `Rig.status` is current status.
 
-### Issue 5: ErrorEventOccurrence table bloat
-**Problem:** 99K rows (49% of all data), each error repeated ~3.6x.
-**Fix:** Replaced with `error_count` + `error_json` on MetricSnapshot. ~50% storage reduction.
+### Issue 5: ErrorEventOccurrence table bloat + ErrorEvent dedup table
+**Problem:** 99K rows (49% of all data) in ErrorEventOccurrence + separate ErrorEvent dedup table. Error text stored per-snapshot in error_json was also wasteful.
+**Fix:** Replaced with single `MetricSnapshot.error_count` (integer) for charts + `Rig.latest_errors_json` (latest error text only, updated in place). Dropped both ErrorEventOccurrence and ErrorEvent tables entirely. ~50% storage reduction.
 
 ### Issue 6: Chart data truncation
 **Problem:** `[:10000]` and `[:50000]` queryset limits truncated 7d/30d chart data.

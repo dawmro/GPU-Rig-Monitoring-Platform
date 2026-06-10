@@ -106,7 +106,8 @@ Cron → Agent collects metrics → JSON payload → POST /api/v1/ingest/
   → DRF throttle (per-rig rate limit, scoped by rig_uuid)
   → Timestamp sanity check (reject if >5 min future or >1 hour past)
   → IngestSerializer validation (schema version 1.0, 1.1, or 1.2)
-  → process_ingest() → DB upsert (MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, AIProcessMetric, ErrorEvent, RigStatusEvent, LatestSnapshot)
+  → process_ingest() → DB upsert (MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, AIProcessMetric, RigStatusEvent, LatestSnapshot)
+  → Rig.latest_errors_json updated with latest error text
   → Rig.last_seen and Rig.status updated to ONLINE
   → Response: 200 (new) or 202 (duplicate/idempotent)
 ```
@@ -119,7 +120,7 @@ Cron → Agent collects metrics → JSON payload → POST /api/v1/ingest/
 | `agent_windows/run.py` | Windows agent (~916 lines) |
 | `metrics_app/views.py` | IngestView, HealthView, ChartDataView, RigMetricsView |
 | `metrics_app/serializers.py` | IngestSerializer, process_ingest() |
-| `metrics_app/models.py` | MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, ErrorEvent, RigStatusEvent, AIProcessMetric |
+| `metrics_app/models.py` | MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, RigStatusEvent, AIProcessMetric |
 | `dashboard/views.py` | rig_list, rig_detail, htmx_metrics, htmx_rig_status, rig_rename |
 | `dashboard/templatetags/gpu_filters.py` | gpu_model_name, gpu_model_short, gpu_compact_summary, gpu_temp_cell, gpu_util_cell, gpu_fan_cell, time_since filters |
 | `rigs/models.py` | Rig, RigTag |
@@ -313,7 +314,7 @@ debug_mode: false         # Verbose logging
 | `gpu_monitor` | — | Settings, URL routing, WSGI |
 | `accounts` | User, ApiKey | Login, logout, API key management |
 | `rigs` | Rig, RigTag | `update_rig_status` management command |
-|| `metrics_app` | MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, DockerContainerMetric, AIProcessMetric, LatestSnapshot, ErrorEvent, RigStatusEvent | IngestView, HealthView, ChartDataView, RigMetricsView |
+|| `metrics_app` | MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, DockerContainerMetric, AIProcessMetric, LatestSnapshot, RigStatusEvent | IngestView, HealthView, ChartDataView, RigMetricsView |
 | `dashboard` | — | rig_list, rig_detail, htmx_metrics, htmx_rig_status, rig_rename |
 | `audit` | AuditLog | Middleware-based request logging |
 | `dashboard/templatetags` | — | gpu_model_name, gpu_model_short, gpu_compact_summary, gpu_temp_cell, gpu_util_cell, gpu_fan_cell, time_since, last_seen_short filters |
@@ -335,7 +336,7 @@ POST /api/v1/ingest/
   → DRF throttle (per-rig rate limit, scoped by rig_uuid)
   → IngestSerializer validation (schema version 1.0, 1.1, 1.2, or 1.3)
   → process_ingest() in transaction.atomic():
-      - Upsert MetricSnapshot (cpu, memory, status fields; motherboard/software as JSON; error_count, error_json)
+      - Upsert MetricSnapshot (cpu, memory, status fields; motherboard/software as JSON; error_count)
       - Upsert GPUMetric per GPU (gpu_index = 0, 1, ...)
       - Delete + recreate GPUProcessMetric per process (latest snapshot only)
       - Upsert StorageMetric per disk (with path-normalized dedup)
@@ -343,7 +344,7 @@ POST /api/v1/ingest/
       - Upsert DockerContainerMetric per container (with cpu%, memory stats)
       - Upsert AIProcessMetric per AI process (gpu_mem, cpu_pct)
       - Create RigStatusEvent on status transition (e.g. offline→online)
-      - Upsert ErrorEvent (deduplicated by hash)
+      - Update Rig.latest_errors_json with latest error text from payload
       - Update LatestSnapshot (denormalized cache for fast dashboard loading)
       - Update Rig.last_seen = now(), Rig.status = ONLINE
       - On Rig.DoesNotExist: auto-create with agent-suggested name
@@ -453,7 +454,7 @@ The rig detail page has three tabs:
 
 1. **Live Metrics** — cards with CPU%, memory bar, GPU model/index/temp/util/power/vRAM, GPU Processes (per-process: name, type badge C/G/C+G, memory), Docker container count, storage disks, recent errors
 2. **Historical Charts** — Combined chart suite: GPU (Temperature, Utilization, Memory, Power, Fan Speed — multi-GPU), CPU (Utilization, Temperature, Load Average), Memory & Swap (combined single chart, 3 datasets), Disk Usage (multi-disk), Network Traffic (combined RX/TX/Errors, dual Y-axes), Container CPU/Memory (multi-container), AI Process GPU Memory, Uptime, Error Frequency — all implemented as Chart.js charts with multi-series support. Timeframe toggle buttons (24h, 7d, 30d) in the tab header with a ↻ Refresh button.
-3. **Errors** — recent system errors from journalctl/Windows Event Log
+3. **Errors** — latest system errors from journalctl/Windows Event Log (stored on Rig model, updated in place)
 
 ### 5.5 Data Deduplication
 

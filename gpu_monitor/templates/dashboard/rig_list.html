@@ -15,16 +15,25 @@
             {% endif %}
         </div>
         <div class="flex items-center gap-3">
-            <form class="flex gap-2">
+            <form class="flex gap-2" hx-get="{% url 'dashboard:rig-list' %}" hx-target="#rig-table-container" hx-swap="innerHTML">
                 <input type="text" name="search" placeholder="Search rigs..." value="{{ search }}"
-                       class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white w-48">
-                <select name="status" class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white">
+                       class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white w-48"
+                       hx-trigger="keyup changed delay:500ms"
+                       hx-get="{% url 'dashboard:rig-list' %}" hx-target="#rig-table-container" hx-swap="innerHTML"
+                       hx-include="[name='status'], [name='tag']">
+                <select name="status" class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white"
+                        hx-trigger="change"
+                        hx-get="{% url 'dashboard:rig-list' %}" hx-target="#rig-table-container" hx-swap="innerHTML"
+                        hx-include="[name='search'], [name='tag']">
                     <option value="">All Status</option>
                     <option value="online" {% if status_filter == 'online' %}selected{% endif %}>Online</option>
                     <option value="stale" {% if status_filter == 'stale' %}selected{% endif %}>Stale</option>
                     <option value="offline" {% if status_filter == 'offline' %}selected{% endif %}>Offline</option>
                 </select>
-                <select name="tag" class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white">
+                <select name="tag" class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white"
+                        hx-trigger="change"
+                        hx-get="{% url 'dashboard:rig-list' %}" hx-target="#rig-table-container" hx-swap="innerHTML"
+                        hx-include="[name='search'], [name='status']">
                     <option value="">All Tags</option>
                     {% for tag in all_tags %}
                     <option value="{{ tag.name }}" {% if tag_filter == tag.name %}selected{% endif %}>{{ tag.name }}</option>
@@ -35,7 +44,7 @@
     </div>
 
     <div id="rig-table-container"
-         hx-get="{% url 'dashboard:rig-list' %}?status={{ status_filter }}&search={{ search }}"
+         hx-get="{% url 'dashboard:rig-list' %}?status={{ status_filter }}&search={{ search }}&tag={{ tag_filter }}"
          hx-trigger="every 30s"
          hx-target="#rig-table-container"
          hx-swap="innerHTML"

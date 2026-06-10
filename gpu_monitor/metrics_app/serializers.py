@@ -20,7 +20,7 @@ class IngestSerializer(serializers.Serializer):
     errors = serializers.ListField(required=False, default=list)
 
     def validate_schema_version(self, value):
-        if value not in ('1.0', '1.1', '1.2', '1.3'):
+        if value not in ('1.0', '1.1', '1.2', '1.3', '1.4'):
             raise serializers.ValidationError(f"Unsupported schema_version: {value}")
         return value
 

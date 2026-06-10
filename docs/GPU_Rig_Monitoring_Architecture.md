@@ -296,6 +296,12 @@ debug_mode: false         # Verbose logging
 }
 ```
 
+**Changelog from schema 1.3 → 1.4:**
+- Added `gpu_core_clock_mhz` and `gpu_mem_clock_mhz` to GPU metrics (pynvml `NVML_CLOCK_GRAPHICS` and `NVML_CLOCK_MEM`)
+- Added `gpu_core_clock_mhz` and `gpu_mem_clock_mhz` fields to `GPUMetric` model
+- Added GPU Core Clock and GPU Memory Clock charts (multi-GPU)
+- Added clock display to Live Metrics GPU card
+
 **Changelog from schema 1.1 → 1.2:**
 - Added `gpu_processes[]` array with per-GPU process data from nvidia-smi
 - Each process: `gpu_index`, `pid`, `type` (C/G/C+G), `name`, `gpu_mem_mb`
@@ -312,8 +318,8 @@ debug_mode: false         # Verbose logging
 
 | Agent | File | Version | Schema | Platform | Scheduling |
 |-------|------|---------|--------|----------|------------|
-|| Linux | `agent/run.py` | 1.3.0 | 1.3 | Any Linux, VMware NAT | `cron` every 60s with `flock` |
-| Windows | `agent_windows/run.py` | 1.4.0-win | 1.3 | Windows 10/11 | Task Scheduler with `pythonw.exe` (hidden window) |
+| Linux | `agent/run.py` | 1.4.0 | 1.4 | Any Linux, VMware NAT | `cron` every 60s with `flock` |
+| Windows | `agent_windows/run.py` | 1.5.0-win | 1.4 | Windows 10/11 | Task Scheduler with `pythonw.exe` (hidden window) |
 
 **Versioning rules:**
 - `agent_version` (e.g. `1.1.0`): incremented for agent-side changes (collectors, payload format, bug fixes). Format: `MAJOR.MINOR.PATCH`.
@@ -352,7 +358,7 @@ POST /api/v1/ingest/
   → CsrfViewMiddleware (skipped via @csrf_exempt on IngestView)
   → APIKeyAuthentication validates X-API-Key
   → DRF throttle (per-rig rate limit, scoped by rig_uuid)
-  → IngestSerializer validation (schema version 1.0, 1.1, 1.2, or 1.3)
+  → IngestSerializer validation (schema version 1.0, 1.1, 1.2, 1.3, or 1.4)
   → process_ingest() in transaction.atomic():
       - Upsert MetricSnapshot (cpu, memory, status fields; motherboard/software as JSON; error_count)
       - Upsert GPUMetric per GPU (gpu_index = 0, 1, ...)

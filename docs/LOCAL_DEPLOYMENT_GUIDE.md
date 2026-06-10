@@ -660,6 +660,49 @@ python manage.py compact_data --verbose
 python manage.py cleanup_old_data --days=31 --verbose
 ```
 
+#### Backfill (Test Data Generation)
+
+For testing charts and data retention, the `backfill_historical_data` command creates
+historical data by repeating recent data with shifted timestamps:
+
+```bash
+# Preview what will be inserted
+python manage.py backfill_historical_data --dry-run
+
+# Full 32-day backfill with 12-hour source window
+python manage.py backfill_historical_data --hours 12 --days 32
+
+# Custom: 6-hour source, 14 days target
+python manage.py backfill_historical_data --hours 6 --days 14
+```
+
+**Options:**
+| Flag | Description |
+|---|---|
+| `--hours N` | Source data window in hours (default: 9) |
+| `--days N` | Target number of days to fill (default: 32) |
+| `--dry-run` | Preview without inserting data |
+
+**⚠️ Important:** After backfill, verify child data was inserted correctly:
+```bash
+python -c "
+from metrics_app.models import MetricSnapshot, GPUMetric
+from django.utils import timezone
+from datetime import timedelta
+cutoff = timezone.now() - timedelta(hours=1)
+snaps = MetricSnapshot.objects.filter(timestamp__lt=cutoff).count()
+gpus = GPUMetric.objects.filter(timestamp__lt=cutoff).count()
+print(f'Snapshots: {snaps:,}, GPU rows: {gpus:,}, ratio: {gpus/max(snaps,1):.2f}')
+print('Expected ratio: ~3.0 for multi-GPU rigs (should be > 1.0)')
+"
+```
+
+**To remove backfilled data:**
+```bash
+# Delete everything older than the source window
+python manage.py cleanup_old_data --days=0 --verbose
+```
+
 **Permission denied on logs:**
 ```bash
 sudo chown -R qrv:qrv /opt/gpu_monitor/logs/

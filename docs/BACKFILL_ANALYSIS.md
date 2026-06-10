@@ -79,19 +79,43 @@ Remainder: [now-768h, now-765h] ← last 3h of source shifted back 768h
 
 ## Performance
 
-### Final Implementation (execute_values)
-- **Rate**: ~30,000 rows/second
-- **10 days**: 752K rows in 28 seconds
-- **32 days**: ~3.9M rows in ~2 minutes
+### Current Implementation (execute_values + ALTER TABLE for ID mapping)
+- **Rate**: ~20,000-25,000 rows/second
+- **32 days** (12h source): ~4.2M rows in ~3 minutes
+- Uses `ALTER TABLE ADD COLUMN _bf_old_id` per repetition for ID mapping
+- Child rows inserted with `ON CONFLICT DO NOTHING`
 
 ### Progress Output Example
 ```
-Rep   1/30  (  3.3%)  shift    8h  + 22,014 rows  total       22,014  33,996 rows/s  elapsed 1s  ETA 19s
-Rep  15/30  ( 50.0%)  shift  120h  + 23,002 rows  total      342,066  40,282 rows/s  elapsed 10s  ETA 10s
-Rep  30/30  (100.0%)  shift  240h  + 44,785 rows  total      752,445  16,303 rows/s  elapsed 28s  ETA 0s
+Rep   1/64  (  1.6%)  shift   12h  + 66,172 rows  total       66,172  20,251 rows/s  elapsed 3s  ETA 3m 25s
+Rep  32/64  ( 50.0%)  shift  384h  + 66,172 rows  total    2,117,504  24,208 rows/s  elapsed 1m 34s  ETA 1m 34s
+Rep  64/64  (100.0%)  shift  768h  + 66,172 rows  total    4,235,008  23,722 rows/s  elapsed 3m 4s  ETA 0s
 
-Done! 752,445 rows inserted in 28s (27,068 rows/s avg)
+Done! 4,235,008 rows inserted in 3m 4s (23,013 rows/s avg)
 ```
+
+## ⚠️ Critical Warning: Child Row Timestamp Shifting
+
+When modifying the backfill script, ensure child row timestamps are correctly shifted:
+
+**The Bug**: If you change the data format (dict→tuple) or move timestamp arithmetic
+from Python to SQL, you MUST ensure `_insert_child_rows` computes `new_ts = row['timestamp'] - offset`
+for every child row. Using the raw/unshifted timestamp causes:
+
+1. All N repetitions write child data to the SAME time slots
+2. `ON CONFLICT DO NOTHING` keeps only the first repetition's data
+3. Result: ~98% of GPU/disk/net data is silently lost
+
+**Verification**: After backfill, check GPU/snap ratio:
+```bash
+python -c "
+from metrics_app.models import MetricSnapshot, GPUMetric
+snaps = MetricSnapshot.objects.filter(timestamp__lt=timezone.now()-timedelta(hours=1)).count()
+gpus = GPUMetric.objects.filter(timestamp__lt=timezone.now()-timedelta(hours=1)).count()
+print(f'GPU/snap ratio: {gpus/max(snaps,1):.2f} (expected ~3.0 for multi-GPU rigs)')
+"
+```
+A ratio < 0.1 indicates the bug is present.
 
 ## Edge Cases Handled
 

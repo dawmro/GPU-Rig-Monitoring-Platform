@@ -72,9 +72,9 @@ Single phase:
 - Creates 1-hour buckets from per-minute data
 - Groups rows by `rig_uuid` (and `gpu_index`, `device`, etc.) into 1-hour windows
 - Applies aggregation per metric type:
-  - `AVG` for gauges: temperature, utilization, power, memory usage
+  - `AVG` for gauges: temperature, utilization, power, memory usage, GPU core/memory clock
   - `SUM` for counters: network byte deltas, error counts
-  - `LAST` for static fields: model names, UUIDs, capacity
+  - `LAST` for static fields: model names, UUIDs, capacity, PCIe link info
 - Deletes original per-minute rows, inserts aggregated rows
 
 **Table Processing Order:**
@@ -125,8 +125,7 @@ Compaction complete
 6. `metrics_ai_process` (child of MetricSnapshot)
 7. `metrics_rig_status_event` (independent)
 8. `metrics_metricsnapshot` (parent — deleted last so FK constraints are satisfied)
-9. `metrics_latest_snapshot` (independent, uses `rig_uuid` as PK)
-10. `metrics_lasterrors` (independent)
+9. `metrics_latest_snapshot` (independent, uses `rig_uuid` as PK, no timestamp column)
 
 **Options:**
 | Flag | Description |
@@ -148,7 +147,6 @@ Cleaning up data older than 31 days (before 2026-05-09 02:18)
   metrics_metricsnapshot: nothing to delete
   metrics_latest_snapshot: 2 rows to delete
   metrics_latest_snapshot: deleted 2 rows
-  metrics_lasterrors: nothing to delete
 Total rows deleted: 2
 ```
 
@@ -165,7 +163,7 @@ Both commands run sequentially via `data_retention.sh` wrapper, called by cron:
 
 The wrapper:
 1. Activates the virtualenv and sources `.env`
-2. Runs `compact_data --verbose` (both phases)
+2. Runs `compact_data --verbose` (single phase: 1-minute → 1-hour buckets)
 3. Runs `cleanup_old_data --days=31` (uses default retention)
 4. Logs all output to `/var/log/monitoring-agent/cleanup-cron.log`
 

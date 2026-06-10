@@ -1,6 +1,21 @@
+#!/usr/bin/env python3
+"""
+GPU Rig Monitoring Platform — Historical Data Compaction Script
+
+Compacts old metric data into larger time buckets to save storage.
+Processes in 1-day time windows to avoid choking on large data volumes.
+
+Strategy:
+1. Compact child tables FIRST (no FK exclusion needed)
+2. Compact parent table SECOND (FK-safe because old child rows are already gone)
+
+Usage:
+  python manage.py compact_data --dry-run
+  python manage.py compact_data --verbose
+"""
+
 import logging
-import os
-import sys
+import time
 from datetime import timedelta
 from django.core.management.base import BaseCommand
 from django.utils import timezone
@@ -8,33 +23,17 @@ from django.db import connection
 
 logger = logging.getLogger(__name__)
 
-# Tables in dependency order — parent FIRST, then children
-# Parent is compacted first so its CASCADE delete removes old child rows.
-# Then children are compacted independently.
+# Child tables FIRST (no FK exclusion needed)
+# Parent table LAST (FK-safe because old child rows are already compacted away)
 COMPACT_TABLES = [
-    # Parent table FIRST (compacts and cascades to children)
     {
-        'table': 'metrics_metricsnapshot',
-        'group_by': ['rig_uuid'],
+        'table': 'metrics_gpu_process',
+        'group_by': ['rig_uuid', 'gpu_index', 'pid'],
         'agg_fields': {
-            'cpu_utilization_pct': 'avg',
-            'cpu_temp_c': 'avg',
-            'cpu_load_avg_json': 'last',
-            'mem_used_bytes': 'avg',
-            'mem_free_bytes': 'avg',
-            'mem_cached_bytes': 'avg',
-            'swap_used_bytes': 'avg',
-            'swap_total_bytes': 'last',
-            'status': 'last',
-            'error_count': 'sum',
+            'gpu_mem_mb': 'avg',
         },
-        'static_fields': [
-            'cpu_model', 'cpu_physical_cores', 'cpu_logical_cores',
-            'mem_total_bytes', 'schema_version', 'agent_version',
-            'software_json', 'motherboard_json',
-        ],
+        'static_fields': ['name', 'type', 'snapshot_id'],
     },
-    # Child tables (compacted after parent, with their own timestamps)
     {
         'table': 'metrics_gpumetric',
         'group_by': ['rig_uuid', 'gpu_index'],
@@ -100,13 +99,27 @@ COMPACT_TABLES = [
         },
         'static_fields': ['gpu_uuid', 'pid', 'snapshot_id'],
     },
+    # Parent table LAST — FK-safe because old child rows are already compacted
     {
-        'table': 'metrics_gpu_process',
-        'group_by': ['rig_uuid', 'gpu_index', 'pid'],
+        'table': 'metrics_metricsnapshot',
+        'group_by': ['rig_uuid'],
         'agg_fields': {
-            'gpu_mem_mb': 'avg',
+            'cpu_utilization_pct': 'avg',
+            'cpu_temp_c': 'avg',
+            'cpu_load_avg_json': 'last',
+            'mem_used_bytes': 'avg',
+            'mem_free_bytes': 'avg',
+            'mem_cached_bytes': 'avg',
+            'swap_used_bytes': 'avg',
+            'swap_total_bytes': 'last',
+            'status': 'last',
+            'error_count': 'sum',
         },
-        'static_fields': ['name', 'type', 'snapshot_id'],
+        'static_fields': [
+            'cpu_model', 'cpu_physical_cores', 'cpu_logical_cores',
+            'mem_total_bytes', 'schema_version', 'agent_version',
+            'software_json', 'motherboard_json',
+        ],
     },
 ]
 
@@ -125,34 +138,23 @@ class Command(BaseCommand):
         verbose = options['verbose']
 
         if dry_run:
-            self.stdout.write(self.style.WARNING('DRY RUN -- no changes will be made'))
+            self.stdout.write(self.style.WARNING('DRY RUN — no changes will be made'))
 
         now = timezone.now()
-
-        # Phase 1: Compact data older than 1 day into 1-hour buckets
         cutoff_1d = now - timedelta(days=1)
+
         self.stdout.write(self.style.MIGRATE_HEADING(
-            'Phase 1: Compacting 1-minute -> 1-hour buckets (data older than 1 day)'))
-        self._compact_phase(cutoff_1d, 60, '1-hour', dry_run, verbose)
+            'Compacting 1-minute -> 1-hour buckets (data older than 1 day)'))
+        self.stdout.write('')
+
+        for config in COMPACT_TABLES:
+            table_name = config['table']
+            self._compact_table(table_name, config, cutoff_1d, 60, dry_run, verbose)
 
         self.stdout.write(self.style.SUCCESS('Compaction complete'))
 
-    def _compact_phase(self, cutoff, bucket_minutes, label, dry_run, verbose):
-        """Compact all tables for a given phase.
-
-        Strategy:
-        1. Compact parent table (metrics_metricsnapshot) FIRST.
-           Its CASCADE delete removes old child rows automatically.
-        2. Compact child tables SECOND.
-           Old child rows are already gone (cascaded from parent).
-           Only compact remaining rows (if any).
-        """
-        for config in COMPACT_TABLES:
-            table_name = config['table']
-            self._compact_table(table_name, config, cutoff, bucket_minutes, label, dry_run, verbose)
-
-    def _compact_table(self, table_name, config, cutoff, bucket_minutes, label, dry_run, verbose):
-        """Compact a single table into time buckets."""
+    def _compact_table(self, table_name, config, cutoff, bucket_minutes, dry_run, verbose):
+        """Compact a single table using 1-day time window batches."""
         group_by = config['group_by']
         agg_fields = config['agg_fields']
         static_fields = config['static_fields']
@@ -183,76 +185,118 @@ class Command(BaseCommand):
 
         select_clause = ',\n            '.join(select_parts)
 
-        # For parent table, only compact rows NOT referenced by child tables
-        # to avoid FK violations
-        if table_name == 'metrics_metricsnapshot':
-            where_sql = """
-                timestamp < %s
-                AND id NOT IN (
-                    SELECT DISTINCT snapshot_id FROM metrics_gpumetric WHERE timestamp < %s AND snapshot_id IS NOT NULL
-                    UNION
-                    SELECT DISTINCT snapshot_id FROM metrics_storagemetric WHERE timestamp < %s AND snapshot_id IS NOT NULL
-                    UNION
-                    SELECT DISTINCT snapshot_id FROM metrics_networkmetric WHERE timestamp < %s AND snapshot_id IS NOT NULL
-                    UNION
-                    SELECT DISTINCT snapshot_id FROM metrics_dockercontainermetric WHERE timestamp < %s AND snapshot_id IS NOT NULL
-                    UNION
-                    SELECT DISTINCT snapshot_id FROM metrics_ai_process WHERE timestamp < %s AND snapshot_id IS NOT NULL
-                    UNION
-                    SELECT DISTINCT snapshot_id FROM metrics_gpu_process WHERE timestamp < %s AND snapshot_id IS NOT NULL
-                )
-            """
-            params = [cutoff] * 7  # 1 for main WHERE + 6 for UNION subqueries
-        else:
-            where_sql = "timestamp < %s"
-            params = [cutoff]
-
+        # Check total rows and find oldest timestamp
         with connection.cursor() as cursor:
-            cursor.execute("SELECT COUNT(*) FROM " + table_name + " WHERE " + where_sql, params)
-            row_count = cursor.fetchone()[0]
+            cursor.execute(f"SELECT COUNT(*) FROM {table_name} WHERE timestamp < %s", [cutoff])
+            total_rows = cursor.fetchone()[0]
+            cursor.execute(f"SELECT MIN(timestamp) FROM {table_name} WHERE timestamp < %s", [cutoff])
+            oldest = cursor.fetchone()[0]
 
-        if row_count == 0:
+        if total_rows == 0 or oldest is None:
             if verbose:
                 self.stdout.write(f'  {table_name}: nothing to compact')
             return
 
         if verbose:
-            self.stdout.write(f'  {table_name}: {row_count:,} rows older than {label} cutoff')
+            self.stdout.write(f'  {table_name}: {total_rows:,} rows to compact')
 
         if dry_run:
             return
 
-        tmp_table = f"_compact_tmp_{table_name.replace('.', '_')}"
+        # Process in 1-day windows
+        batch_window = timedelta(days=1)
+        total_compacted = 0
+        batch_num = 0
+        t_start = time.time()
 
-        try:
-            with connection.cursor() as cursor:
-                cursor.execute("DROP TABLE IF EXISTS " + tmp_table)
-                cursor.execute(
-                    "CREATE TEMP TABLE " + tmp_table + " AS "
-                    "SELECT " + select_clause + " "
-                    "FROM " + table_name + " "
-                    "WHERE " + where_sql + " "
-                    "GROUP BY " + group_cols + ", bucket_ts",
-                    params
-                )
+        current_start = oldest
+        while current_start < cutoff:
+            batch_num += 1
+            current_end = min(current_start + batch_window, cutoff)
 
-                cursor.execute("DELETE FROM " + table_name + " WHERE " + where_sql, params)
+            # Build WHERE for this batch
+            # For parent table, exclude rows still referenced by child tables
+            # to avoid FK violations. Use NOT EXISTS for performance.
+            if table_name == 'metrics_metricsnapshot':
+                where_sql = f"""
+                    timestamp >= %s AND timestamp < %s
+                    AND NOT EXISTS (
+                        SELECT 1 FROM metrics_gpumetric g WHERE g.snapshot_id = {table_name}.id
+                    )
+                    AND NOT EXISTS (
+                        SELECT 1 FROM metrics_storagemetric s WHERE s.snapshot_id = {table_name}.id
+                    )
+                    AND NOT EXISTS (
+                        SELECT 1 FROM metrics_networkmetric n WHERE n.snapshot_id = {table_name}.id
+                    )
+                """
+                params = [current_start, current_end]
+            else:
+                where_sql = "timestamp >= %s AND timestamp < %s"
+                params = [current_start, current_end]
 
-                insert_fields = ['timestamp'] + list(agg_fields.keys()) + static_fields + group_by
-                cols = ', '.join(insert_fields)
-                vals = ', '.join(['bucket_ts' if f == 'timestamp' else f for f in insert_fields])
+            tmp_table = f"_compact_tmp_{table_name.replace('.', '_')}_{batch_num}"
 
-                cursor.execute("INSERT INTO " + table_name + " (" + cols + ") SELECT " + vals + " FROM " + tmp_table)
-                cursor.execute("DROP TABLE IF EXISTS " + tmp_table)
-
-            self.stdout.write(self.style.SUCCESS(
-                f'  {table_name}: compacted {row_count:,} rows into {label} buckets'))
-        except Exception as e:
-            self.stdout.write(self.style.ERROR(f'  {table_name}: FAILED -- {e}'))
             try:
                 with connection.cursor() as cursor:
-                    cursor.execute(f"DROP TABLE IF EXISTS {tmp_table}")
-            except Exception:
-                pass
-            logger.exception('Compaction failed for %s', table_name)
+                    # Count rows in this batch
+                    cursor.execute(f"SELECT COUNT(*) FROM {table_name} WHERE {where_sql}", params)
+                    batch_rows = cursor.fetchone()[0]
 
+                    if batch_rows == 0:
+                        current_start = current_end
+                        continue
+
+                    # Create temp table with aggregated data
+                    cursor.execute(f"DROP TABLE IF EXISTS {tmp_table}")
+                    cursor.execute(
+                        f"CREATE TEMP TABLE {tmp_table} AS "
+                        f"SELECT {select_clause} "
+                        f"FROM {table_name} "
+                        f"WHERE {where_sql} "
+                        f"GROUP BY {group_cols}, bucket_ts",
+                        params
+                    )
+
+                    # Delete any pre-existing rows at the same bucket timestamps
+                    # (from previous compaction runs or overlapping windows)
+                    cursor.execute(f"""
+                        DELETE FROM {table_name}
+                        WHERE timestamp IN (SELECT bucket_ts FROM {tmp_table})
+                    """)
+
+                    # Delete the original 1-minute rows
+                    cursor.execute(f"DELETE FROM {table_name} WHERE {where_sql}", params)
+
+                    # Insert aggregated rows
+                    insert_fields = ['timestamp'] + list(agg_fields.keys()) + static_fields + group_by
+                    cols = ', '.join(insert_fields)
+                    vals = ', '.join(['bucket_ts' if f == 'timestamp' else f for f in insert_fields])
+                    cursor.execute(f"INSERT INTO {table_name} ({cols}) SELECT {vals} FROM {tmp_table}")
+
+                    cursor.execute(f"DROP TABLE IF EXISTS {tmp_table}")
+
+                total_compacted += batch_rows
+
+                if verbose:
+                    elapsed = time.time() - t_start
+                    rate = total_compacted / elapsed if elapsed > 0 else 0
+                    self.stdout.write(
+                        f'    batch {batch_num}: {current_start.strftime("%m-%d %H:%M")} → '
+                        f'{current_end.strftime("%m-%d %H:%M")}: {batch_rows:,} rows '
+                        f'({rate:,.0f} rows/s)')
+
+            except Exception as e:
+                self.stdout.write(self.style.ERROR(f'    batch {batch_num}: FAILED — {e}'))
+                try:
+                    with connection.cursor() as c:
+                        c.execute(f"DROP TABLE IF EXISTS {tmp_table}")
+                except Exception:
+                    pass
+                logger.exception('Compaction failed for %s batch %d', table_name, batch_num)
+
+            current_start = current_end
+
+        elapsed = time.time() - t_start
+        self.stdout.write(self.style.SUCCESS(
+            f'  {table_name}: compacted {total_compacted:,} rows in {batch_num} batches ({elapsed:.1f}s)'))

@@ -18,7 +18,6 @@ CLEANUP_TABLES = [
     'metrics_rig_status_event',
     'metrics_metricsnapshot',
     'metrics_latest_snapshot',
-    'metrics_lasterrors',
 ]
 
 

@@ -377,8 +377,8 @@ def collect_gpus():
             try:
                 gpu_core_clock_mhz = pynvml.nvmlDeviceGetClockInfo(handle, pynvml.NVML_CLOCK_GRAPHICS)
                 gpu_mem_clock_mhz = pynvml.nvmlDeviceGetClockInfo(handle, pynvml.NVML_CLOCK_MEM)
-            except Exception:
-                pass  # Clock info not available on all GPUs/systems
+            except Exception as e:
+                logging.getLogger('gpu').debug('GPU %d clock info not available: %s', i, e)
 
             gpus.append({
                 'uuid': pynvml.nvmlDeviceGetUUID(handle),

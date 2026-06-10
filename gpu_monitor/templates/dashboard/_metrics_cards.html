@@ -426,10 +426,10 @@
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
-<!-- Recent Errors -->
+<!-- Latest Errors (from Rig.latest_errors_json) -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
-    <h3 class="text-gray-400 text-sm font-medium mb-2">Recent Errors</h3>
+    <h3 class="text-gray-400 text-sm font-medium mb-2">Latest Errors</h3>
     {% if recent_errors %}
     <div class="text-2xl font-bold text-red-400 mb-2">{{ recent_errors|length }}</div>
     <div class="space-y-2">
@@ -437,10 +437,7 @@
         <div class="text-xs">
             <div class="flex items-center gap-2 mb-0.5">
                 <span class="px-1.5 py-0.5 rounded bg-red-900/50 text-red-300 text-[10px]">{{ err.source|default:"unknown" }}</span>
-                <span class="text-gray-600">{{ err.last_seen|last_seen_short }}</span>
-                {% if err.count > 1 %}
-                <span class="text-gray-600">×{{ err.count }}</span>
-                {% endif %}
+                <span class="text-gray-600">{{ err.timestamp|default:"" }}</span>
             </div>
             <p class="text-gray-400 font-mono truncate" title="{{ err.message }}">{{ err.message|truncatechars:120 }}</p>
         </div>

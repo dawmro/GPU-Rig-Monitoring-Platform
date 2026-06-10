@@ -247,10 +247,10 @@ function switchTab(tabName) {
     btn.classList.remove('border-transparent', 'text-gray-400');
     btn.classList.add('border-blue-400', 'text-blue-400');
 
-    // Lazy-load charts when tab is first opened
-    if (tabName === 'charts' && !window.chartsLoaded) {
+    // Lazy-load charts when tab is first opened (if not already loaded via DOMContentLoaded)
+    if (tabName === 'charts' && !chartsLoaded) {
+        chartsLoaded = true;
         loadCharts();
-        window.chartsLoaded = true;
     }
     // Show/hide timeframe buttons
     var tf = document.getElementById('chart-timeframe');
@@ -318,10 +318,19 @@ document.getElementById('delete-modal').addEventListener('click', function(evt) 
 
 // Chart instances
 var chartInstances = {};
+var chartsLoaded = false;
 
 // Chart timeframe state
 var chartRange = 24;        // hours
 var chartBucketMinutes = 1;  // bucket size in minutes
+
+// Load charts on page load
+document.addEventListener('DOMContentLoaded', function() {
+    if (!chartsLoaded) {
+        loadCharts();
+        chartsLoaded = true;
+    }
+});
 
 function setChartRange(rangeHours, bucketMinutes) {
     chartRange = rangeHours;
@@ -399,7 +408,13 @@ async function loadChart(canvasId, metric, uuid, range, unit, borderColor, bgCol
 
     try {
         var resp = await fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=${metric}&range=${range}&bucket_minutes=${chartBucketMinutes}`);
+        if (!resp.ok) {
+            throw new Error('HTTP ' + resp.status);
+        }
         var data = await resp.json();
+        if (!data.datasets || !data.datasets[0] || !data.datasets[0].data) {
+            throw new Error('Invalid data format');
+        }
 
         // Server already converts byte metrics to GB; no client-side conversion needed.
         // Preserve null for gaps (offline periods).

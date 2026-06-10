@@ -487,10 +487,19 @@ The `monitoring-agent` system user runs without root privileges but needs elevat
 
 These are granted via `/etc/sudoers.d/monitoring-agent`:
 ```
+Defaults:monitoring-agent !authenticate
 monitoring-agent ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/bin/smartctl, /bin/journalctl, /usr/bin/journalctl, /usr/sbin/nvme, /usr/bin/nvme
 ```
 
+**Critical:** The `Defaults:monitoring-agent !authenticate` line is **required**. Without it, PAM authentication fails for the `monitoring-agent` system user (which has `nologin` shell and no password), producing these errors in system logs:
+```
+pam_unix(sudo:auth): conversation failed
+pam_unix(sudo:auth) auth could not identify password for [monitoring-agent]
+```
+The `!authenticate` default tells sudo to skip PAM entirely for this user. The `NOPASSWD` tag alone is insufficient.
+
 **Security properties:**
+- `!authenticate`: Skip PAM entirely (required for nologin system users)
 - `NOPASSWD`: No password required (agent runs non-interactively via cron)
 - Command whitelist: Only these commands are allowed, nothing else
 - Read-only: All commands only read system state, never modify it
@@ -501,14 +510,11 @@ monitoring-agent ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/bin/smartctl, /bi
 
 **Note:** The agent calls `sudo journalctl` (not bare `journalctl`) to ensure it can read system-level error logs. The sudoers config above allows this without a password prompt.
 
-**Troubleshooting:** If you see `pam_unix(sudo:auth): conversation failed` or "auth could not identify password for [monitoring-agent]" in the system logs (`journalctl`), the sudoers file is missing or incorrect. Verify with:
+**Verify:**
 ```bash
 sudo -l -U monitoring-agent
 ```
-If it shows "may not run sudo", re-run the sudoers setup command from Step 5.3 and verify the file exists:
-```bash
-cat /etc/sudoers.d/monitoring-agent
-```
+Should show the NOPASSWD rules. If it shows "may not run sudo", re-create the sudoers file.
 
 ### 5.4 Configure the Agent
 

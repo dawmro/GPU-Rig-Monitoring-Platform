@@ -18,9 +18,6 @@ if ! id "$SERVICE_USER" &>/dev/null; then
     useradd --system --no-create-home --shell /usr/sbin/nologin "$SERVICE_USER"
     echo "Created user: $SERVICE_USER"
 fi
-# Set a non-usable password so PAM pam_unix auth succeeds with NOPASSWD sudo
-# Without this, pam_unix may fail with "could not identify password" for system users
-usermod -p '*' "$SERVICE_USER" 2>/dev/null || true
 
 # Create directories
 mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$LOG_DIR"
@@ -51,7 +48,10 @@ if [ ! -f "$CONFIG_DIR/config.yaml" ]; then
 fi
 
 # Sudoers for hardware access — only commands the agent actually uses
+# IMPORTANT: The !authenticate default is required for system users with nologin shell.
+# Without it, PAM pam_unix auth fails with "could not identify password" even with NOPASSWD.
 cat > /etc/sudoers.d/monitoring-agent << 'EOF'
+Defaults:monitoring-agent !authenticate
 monitoring-agent ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/bin/smartctl, /bin/journalctl, /usr/bin/journalctl, /usr/sbin/nvme, /usr/bin/nvme
 EOF
 chmod 440 /etc/sudoers.d/monitoring-agent

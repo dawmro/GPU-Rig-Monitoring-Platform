@@ -141,6 +141,24 @@ Cron → Agent collects metrics → JSON payload → POST /api/v1/ingest/
 | User | `monitoring-agent` system user (Linux) |
 | Schedule | Every 60 seconds via cron |
 
+### 3.1b Sudoers Configuration
+
+The agent needs passwordless sudo for read-only hardware queries. Required in `/etc/sudoers.d/monitoring-agent`:
+
+```
+Defaults:monitoring-agent !authenticate
+monitoring-agent ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/bin/smartctl, /bin/journalctl, /usr/bin/journalctl, /usr/sbin/nvme, /usr/bin/nvme
+```
+
+**Critical:** `Defaults:monitoring-agent !authenticate` is required. Without it, PAM fails for system users with `nologin` shell:
+```
+pam_unix(sudo:auth): conversation failed
+pam_unix(sudo:auth) auth could not identify password for [monitoring-agent]
+```
+`NOPASSWD` alone is insufficient — `!authenticate` tells sudo to skip PAM entirely.
+
+**Commands:** `smartctl` (disk SMART), `nvme` (NVMe health), `journalctl` (system errors). All read-only.
+
 ### 3.2 Configuration (`/etc/monitoring-agent/config.yaml`)
 
 ```yaml

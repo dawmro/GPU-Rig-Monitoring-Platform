@@ -431,9 +431,17 @@ sudo chmod 600 /etc/monitoring-agent/config.yaml
 The agent needs root access for disk SMART data and journal logs. These are read-only commands that cannot modify the system:
 
 ```bash
-echo 'monitoring-agent ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/bin/smartctl, /bin/journalctl, /usr/bin/journalctl, /usr/sbin/nvme, /usr/bin/nvme' | sudo tee /etc/sudoers.d/monitoring-agent
+echo 'Defaults:monitoring-agent !authenticate
+monitoring-agent ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/bin/smartctl, /bin/journalctl, /usr/bin/journalctl, /usr/sbin/nvme, /usr/bin/nvme' | sudo tee /etc/sudoers.d/monitoring-agent
 sudo chmod 440 /etc/sudoers.d/monitoring-agent
 ```
+
+**Critical:** The `Defaults:monitoring-agent !authenticate` line is **required** for system users with `nologin` shell. Without it, PAM `pam_unix` authentication fails with:
+```
+pam_unix(sudo:auth): conversation failed
+pam_unix(sudo:auth) auth could not identify password for [monitoring-agent]
+```
+even though `NOPASSWD` is set. The `!authenticate` default tells sudo to skip PAM entirely for this user.
 
 **What each command does:**
 - `smartctl`: Read disk SMART health data (HDD/SSD health metrics)
@@ -442,7 +450,11 @@ sudo chmod 440 /etc/sudoers.d/monitoring-agent
 
 **Note:** Both common binary paths are included (`/usr/sbin/` and `/usr/bin/`) for cross-distro compatibility. The agent calls `sudo journalctl` (not bare `journalctl`) to ensure it can read system-level error logs.
 
-**Troubleshooting:** If you see `pam_unix(sudo:auth): conversation failed` or "auth could not identify password for [monitoring-agent]" in the system logs, the sudoers file is missing or incorrect. Re-run the sudoers setup command above and verify with `sudo -l -U monitoring-agent`.
+**Verify:**
+```bash
+sudo -l -U monitoring-agent
+```
+Should show the NOPASSWD rules without any password prompt.
 
 **Security:** All three commands are read-only. The agent cannot modify disks, logs, or system state. If a command is missing (e.g., no NVMe drive), the agent logs a warning and continues.
 

@@ -309,10 +309,15 @@ function deleteModalEscHandler(evt) {
     }
 }
 
-// Close modal when clicking outside
-document.getElementById('delete-modal').addEventListener('click', function(evt) {
-    if (evt.target === this) {
-        hideDeleteModal();
+// Close modal when clicking outside — defer to ensure DOM is ready
+document.addEventListener('DOMContentLoaded', function() {
+    var modal = document.getElementById('delete-modal');
+    if (modal) {
+        modal.addEventListener('click', function(evt) {
+            if (evt.target === this) {
+                hideDeleteModal();
+            }
+        });
     }
 });
 

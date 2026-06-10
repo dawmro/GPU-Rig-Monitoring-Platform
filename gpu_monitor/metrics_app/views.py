@@ -284,8 +284,8 @@ class ChartDataView(APIView):
             fn = self.GPU_METRICS[metric]
             base_qs = GPUMetric.objects.filter(**base_filter)
             if multi_gpu:
-                datasets = [{'label': guuid, 'data': chart_values(base_qs.filter(gpu_uuid=guuid), fn)}
-                            for guuid in base_qs.values_list('gpu_uuid', flat=True).distinct().order_by('gpu_uuid')]
+                datasets = [{'label': f'GPU{gpu_index}', 'data': chart_values(base_qs.filter(gpu_index=gpu_index), fn)}
+                            for gpu_index in base_qs.values_list('gpu_index', flat=True).distinct().order_by('gpu_index')]
             else:
                 datasets = [{'label': f'GPU {gpu_index}', 'data': chart_values(base_qs.filter(gpu_index=gpu_index), fn)}]
 

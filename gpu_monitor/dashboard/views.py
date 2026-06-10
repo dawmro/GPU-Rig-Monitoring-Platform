@@ -23,8 +23,9 @@ def _fetch_rig_metrics(uuid, rig=None):
         GPUMetric.objects.filter(rig_uuid=str(uuid))
         .order_by('gpu_uuid', '-timestamp')
         .distinct('gpu_uuid')
-        .order_by('gpu_uuid', 'gpu_index')
     )
+    # Re-sort by gpu_index for display
+    gpu_metrics.sort(key=lambda g: g.gpu_index)
 
     # Storage: latest metric per unique device using DISTINCT ON
     storage_metrics = list(

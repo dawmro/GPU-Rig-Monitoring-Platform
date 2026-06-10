@@ -8,7 +8,7 @@ from metrics_app.models import MetricSnapshot, LatestSnapshot, GPUMetric, GPUPro
 from audit.middleware import log_audit_event
 
 
-def _fetch_rig_metrics(uuid):
+def _fetch_rig_metrics(uuid, rig=None):
     """Fetch the latest rig metrics for Live Metrics display.
 
     Uses SQL-level latest-per-device queries instead of fetching all rows.
@@ -166,7 +166,7 @@ def rig_detail(request, uuid):
     if rig.owner_id != request.user.id and not request.user.is_staff:
         raise Http404
 
-    context = _fetch_rig_metrics(uuid)
+    context = _fetch_rig_metrics(uuid, rig)
     context['rig'] = rig
     context['is_data_stale'] = rig.status in [Rig.Status.OFFLINE, Rig.Status.STALE]
 
@@ -180,7 +180,7 @@ def htmx_metrics(request, uuid):
     if rig.owner_id != request.user.id and not request.user.is_staff:
         raise Http404
 
-    context = _fetch_rig_metrics(uuid)
+    context = _fetch_rig_metrics(uuid, rig)
     context['rig'] = rig
     context['is_data_stale'] = rig.status in [Rig.Status.OFFLINE, Rig.Status.STALE]
 

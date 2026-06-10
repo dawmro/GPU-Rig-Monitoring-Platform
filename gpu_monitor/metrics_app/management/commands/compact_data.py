@@ -26,6 +26,7 @@ COMPACT_TABLES = [
             'swap_used_bytes': 'avg',
             'swap_total_bytes': 'last',
             'status': 'last',
+            'error_count': 'sum',
         },
         'static_fields': [
             'cpu_model', 'cpu_physical_cores', 'cpu_logical_cores',
@@ -51,6 +52,8 @@ COMPACT_TABLES = [
             'pcie_max_gen': 'last',
             'pcie_current_width': 'last',
             'pcie_max_width': 'last',
+            'gpu_core_clock_mhz': 'avg',
+            'gpu_mem_clock_mhz': 'avg',
         },
         'static_fields': ['gpu_uuid', 'model', 'snapshot_id'],
     },

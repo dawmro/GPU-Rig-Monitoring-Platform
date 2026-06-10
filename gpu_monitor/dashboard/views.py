@@ -41,11 +41,21 @@ def _fetch_rig_metrics(uuid, rig=None):
         .distinct('interface')
     )
 
-    # Docker containers (last 20)
-    docker_metrics = list(
-        DockerContainerMetric.objects.filter(rig_uuid=str(uuid))
-        .order_by('-timestamp')[:20]
-    )
+    # Docker containers: get all containers from the latest timestamp
+    # Use a subquery to find the max timestamp, then get all containers at that timestamp
+    latest_docker_ts = DockerContainerMetric.objects.filter(
+        rig_uuid=str(uuid)
+    ).order_by('-timestamp').values_list('timestamp', flat=True).first()
+
+    if latest_docker_ts:
+        docker_metrics = list(
+            DockerContainerMetric.objects.filter(
+                rig_uuid=str(uuid),
+                timestamp=latest_docker_ts
+            ).order_by('-uptime_s')
+        )
+    else:
+        docker_metrics = []
 
     # Recent errors from Rig.latest_errors_json (latest payload only, like motherboard_json)
     recent_errors = rig.latest_errors_json if rig else []

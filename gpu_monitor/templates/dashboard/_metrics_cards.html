@@ -402,26 +402,25 @@
 <!-- Docker Containers -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
-    <h3 class="text-gray-400 text-sm font-medium mb-2">Docker</h3>
+    <h3 class="text-gray-400 text-sm font-medium mb-2">Docker{% if docker_metrics %} ({{ docker_metrics|length }}){% endif %}</h3>
     {% if docker_metrics %}
-    <div class="text-sm text-gray-400 mb-2">{{ docker_metrics|length }} container{{ docker_metrics|length|pluralize }}</div>
-    <div class="space-y-1">
-        {% for c in docker_metrics|slice:":10" %}
+    <div class="space-y-1.5">
+        {% for c in docker_metrics %}
         <div class="flex items-center gap-2 text-xs">
-            <span>{% if c.status == 'running' %}🟢{% else %}🔴{% endif %}</span>
-            <span class="text-gray-300 truncate flex-1">{{ c.name }}</span>
-            <span class="text-gray-600 truncate max-w-32" title="{{ c.image }}">{{ c.image|truncatechars:30 }}</span>
+            <span class="flex-shrink-0">{% if c.status == 'running' %}🟢{% else %}🔴{% endif %}</span>
+            <span class="text-gray-300 truncate flex-1" title="{{ c.name }}">{{ c.name }}</span>
+            <span class="text-gray-600 truncate max-w-24" title="{{ c.image }}">{{ c.image|truncatechars:24 }}</span>
+            {% if c.uptime_s %}
+            <span class="text-gray-500 flex-shrink-0" title="Uptime: {{ c.uptime_s }} seconds">{{ c.uptime_s }}s</span>
+            {% endif %}
             {% if c.restart_count > 0 %}
-            <span class="text-yellow-500" title="{{ c.restart_count }} restarts">↻{{ c.restart_count }}</span>
+            <span class="text-yellow-500 flex-shrink-0" title="{{ c.restart_count }} restarts">↻{{ c.restart_count }}</span>
             {% endif %}
         </div>
         {% endfor %}
-        {% if docker_metrics|length > 10 %}
-        <div class="text-xs text-gray-600">+{{ docker_metrics|length|add:"-10" }} more</div>
-        {% endif %}
     </div>
     {% else %}
-    <div class="text-gray-500">No containers</div>
+    <div class="text-gray-500 text-xs">No containers</div>
     {% endif %}
 </div>
 

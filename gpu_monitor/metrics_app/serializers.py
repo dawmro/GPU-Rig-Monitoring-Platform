@@ -188,12 +188,14 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     name=container.get('name', ''),
                     defaults={
                         'snapshot': snapshot,
+                        'container_id': container.get('container_id', ''),
                         'image': container.get('image', ''),
                         'status': container.get('status', ''),
                         'restart_count': container.get('restart_count', 0),
                         'cpu_pct': container.get('cpu_pct'),
                         'mem_usage_bytes': container.get('mem_usage_bytes'),
                         'mem_limit_bytes': container.get('mem_limit_bytes'),
+                        'uptime_s': container.get('uptime_s'),
                     },
                 )
 

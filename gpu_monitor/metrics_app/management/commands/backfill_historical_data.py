@@ -63,8 +63,6 @@ class Command(BaseCommand):
         nd = len(src['disk'])
         nn = len(src['network'])
         ne = sum(s.get('error_count', 0) for s in src['snapshots'])
-        # Per-repetition error count: each rep carries the total errors from source window
-        # Distributed evenly across snapshots so chart SUM aggregates are realistic
         err_per_snap = round(ne / ns) if ns > 0 else 0
         self.stdout.write(f'  {ns:,} snapshots, {ng:,} gpu, {nd:,} disk, {nn:,} net, {ne:,} errors (~{err_per_snap}/snap)')
 
@@ -98,8 +96,7 @@ class Command(BaseCommand):
             offset = timedelta(hours=shift_h)
 
             # Parent snapshots (need ID mapping for child FK)
-            # Use temp column to track old→new ID mapping
-            id_map = self._insert_snapshots(src['snapshots'], offset)
+            id_map = self._insert_snapshots(src['snapshots'], offset, err_per_snap)
             snap_count = len(id_map)
 
             # Child tables (use remapped snapshot_id)
@@ -141,7 +138,7 @@ class Command(BaseCommand):
             rem_disk = [r for r in src['disk']    if r['timestamp'] >= cutoff]
             rem_net  = [r for r in src['network'] if r['timestamp'] >= cutoff]
 
-            id_map = self._insert_snapshots(rem_snap, offset)
+            id_map = self._insert_snapshots(rem_snap, offset, err_per_snap)
             grand_total += len(id_map)
             grand_total += self._insert_child_rows(rem_gpu,  'gpu',     id_map, offset)
             grand_total += self._insert_child_rows(rem_disk, 'disk',   id_map, offset)
@@ -183,7 +180,8 @@ class Command(BaseCommand):
                       "gpu_util_pct, gpu_temp_c, fan_speed_pct, "
                       "mem_total_mb, mem_used_mb, mem_free_mb, mem_util_pct, "
                       "power_draw_w, power_limit_w, "
-                      "pcie_current_gen, pcie_max_gen, pcie_current_width, pcie_max_width "
+                      "pcie_current_gen, pcie_max_gen, pcie_current_width, pcie_max_width, "
+                      "gpu_core_clock_mhz, gpu_mem_clock_mhz "
                       "FROM metrics_gpumetric "
                       "WHERE timestamp >= %s AND timestamp < %s "
                       "ORDER BY snapshot_id, gpu_index", [start, end])
@@ -209,7 +207,7 @@ class Command(BaseCommand):
 
         return d
 
-    def _insert_snapshots(self, snapshots, offset):
+    def _insert_snapshots(self, snapshots, offset, err_per_snap):
         """Insert snapshots with shifted timestamps. Returns old_id→new_id mapping."""
         id_map = {}
         if not snapshots:
@@ -223,7 +221,6 @@ class Command(BaseCommand):
                 'mem_total_bytes, software_json, motherboard_json, '
                 'error_count')
 
-        # Build value tuples: (..., old_id) for tracking
         all_vals = []
         for s in snapshots:
             all_vals.append((
@@ -236,12 +233,11 @@ class Command(BaseCommand):
                 s['status'], s['cpu_model'], s['cpu_physical_cores'],
                 s['cpu_logical_cores'], s['mem_total_bytes'],
                 s['software_json'], s['motherboard_json'],
-                err_per_snap,  # average error count per snapshot
-                s['id'],  # temp: old_id for mapping
+                err_per_snap,
+                s['id'],
             ))
 
         with connection.cursor() as c:
-            # Add temp column
             c.execute("ALTER TABLE metrics_metricsnapshot ADD COLUMN IF NOT EXISTS _bf_old_id BIGINT")
 
             sql = (f"INSERT INTO metrics_metricsnapshot ({cols}, _bf_old_id) VALUES %s "
@@ -251,9 +247,6 @@ class Command(BaseCommand):
                 batch = all_vals[i:i + BATCH_SIZE]
                 execute_values(c, sql, batch, page_size=BATCH_SIZE)
 
-            # Query for the mapping: old_id → new_id for all rows we just inserted
-            # (including those that existed before — we need to map ALL source IDs)
-            # Get all rows in the target time range
             min_ts = min(s['timestamp'] - offset for s in snapshots)
             max_ts = max(s['timestamp'] - offset for s in snapshots)
             c.execute("""
@@ -263,15 +256,6 @@ class Command(BaseCommand):
             for new_id, old_id in c.fetchall():
                 id_map[old_id] = new_id
 
-            # Also get IDs for rows that already existed (not inserted by us)
-            # These are rows in the target range that don't have _bf_old_id
-            # We need to find them by matching (rig_uuid, schema_version, timestamp)
-            # Actually, for ON CONFLICT DO NOTHING, we can't get the existing row's ID
-            # from the INSERT. But we can query for it.
-            # For child tables, we only need the mapping for newly inserted snapshots.
-            # If a snapshot already existed, its children already exist too.
-
-            # Clean up temp column
             c.execute("ALTER TABLE metrics_metricsnapshot DROP COLUMN IF EXISTS _bf_old_id")
 
         return id_map
@@ -296,6 +280,7 @@ class Command(BaseCommand):
                     row['mem_util_pct'], row['power_draw_w'], row['power_limit_w'],
                     row.get('pcie_current_gen'), row.get('pcie_max_gen'),
                     row.get('pcie_current_width'), row.get('pcie_max_width'),
+                    row.get('gpu_core_clock_mhz'), row.get('gpu_mem_clock_mhz'),
                 ))
             elif table == 'disk':
                 all_vals.append((
@@ -322,7 +307,8 @@ class Command(BaseCommand):
                    "gpu_util_pct, gpu_temp_c, fan_speed_pct, "
                    "mem_total_mb, mem_used_mb, mem_free_mb, mem_util_pct, "
                    "power_draw_w, power_limit_w, "
-                   "pcie_current_gen, pcie_max_gen, pcie_current_width, pcie_max_width) "
+                   "pcie_current_gen, pcie_max_gen, pcie_current_width, pcie_max_width, "
+                   "gpu_core_clock_mhz, gpu_mem_clock_mhz) "
                    "VALUES %s ON CONFLICT (rig_uuid, timestamp, gpu_index) DO NOTHING")
         elif table == 'disk':
             sql = ("INSERT INTO metrics_storagemetric "

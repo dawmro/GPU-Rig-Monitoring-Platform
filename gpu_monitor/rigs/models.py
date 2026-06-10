@@ -32,6 +32,10 @@ class Rig(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     tags = models.ManyToManyField(RigTag, blank=True, related_name='rigs')
 
+    # Latest error text from most recent payload (like motherboard_json — updated in place)
+    # Format: [{"source": "kernel", "message": "...", "timestamp": "..."}]
+    latest_errors_json = models.JSONField(default=list, blank=True)
+
     class Meta:
         db_table = 'rigs_rig'
 

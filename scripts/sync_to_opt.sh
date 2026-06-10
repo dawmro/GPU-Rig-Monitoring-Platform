@@ -89,9 +89,17 @@ if [ -f "$WORKSPACE/agent_windows/check_update.py" ]; then
     echo "  Synced: agent_windows/check_update.py"
 fi
 
-# ── Step 6: Copy scripts (always sync — content may change) ───────────
-echo "--- Scripts ---"
+# ── Step 6: Copy deploy scripts (always sync — content may change) ─────
+echo "--- Deploy scripts ---"
 mkdir -p "$OPT/gpu_monitor/deploy"
+for script in "$WORKSPACE/gpu_monitor/deploy/"*.sh; do
+    [ -f "$script" ] || continue
+    base=$(basename "$script")
+    cp "$script" "$OPT/gpu_monitor/deploy/$base"
+    chmod +x "$OPT/gpu_monitor/deploy/$base"
+    echo "  Synced: $base"
+done
+# Also copy top-level scripts
 for script in "$WORKSPACE/scripts/"*.sh; do
     [ -f "$script" ] || continue
     base=$(basename "$script")
@@ -107,6 +115,8 @@ find "$OPT/gpu_monitor/templates" -name "*.html" -exec chmod 644 {} \;
 find "$OPT/gpu_monitor" -type d -exec chmod 755 {} \;
 find "$OPT/gpu_monitor/deploy" -name "*.sh" -exec chmod 755 {} \; 2>/dev/null || true
 find "$OPT/gpu_monitor" -name "manage.py" -exec chmod 755 {} \; 2>/dev/null || true
+# Clear stale .pyc cache (root-owned from gunicorn) to prevent migration loader issues
+find "$OPT/gpu_monitor" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 
 # ── Step 8: Generate + apply migrations in /opt ─────────────────────
 # Source code is already synced, so makemigrations sees the latest models.
@@ -122,6 +132,18 @@ if [[ "$1" != "--no-migrate" ]]; then
     else
         echo "  Model changes detected — creating migrations..."
         python manage.py makemigrations
+
+        # Remove auto-generated ErrorEventOccurrence migrations — table was
+        # manually dropped; keeping the model out of models.py prevents Django
+        # from trying to manage it.
+        for mig_dir in "$OPT/gpu_monitor/"*/migrations/; do
+            [ -d "$mig_dir" ] || continue
+            for f in "$mig_dir"*_erroreventoccurrence*.py; do
+                [ -f "$f" ] || continue
+                echo "  Removing stale migration: $(basename "$f")"
+                rm -f "$f"
+            done
+        done
 
         # Copy new migration files back to workspace for git tracking
         echo "  Copying new migrations back to workspace..."

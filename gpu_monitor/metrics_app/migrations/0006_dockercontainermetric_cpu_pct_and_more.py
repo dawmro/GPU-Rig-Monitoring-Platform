@@ -97,18 +97,4 @@ class Migration(migrations.Migration):
                 'unique_together': {('rig_uuid', 'timestamp', 'process_name')},
             },
         ),
-        migrations.CreateModel(
-            name='ErrorEventOccurrence',
-            fields=[
-                ('id', models.BigAutoField(primary_key=True, serialize=False)),
-                ('rig_uuid', models.UUIDField(db_index=True)),
-                ('timestamp', models.DateTimeField(db_index=True)),
-                ('error_event', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='occurrences', to='metrics_app.errorevent')),
-            ],
-            options={
-                'db_table': 'metrics_error_event_occurrence',
-                'ordering': ['-timestamp'],
-                'indexes': [models.Index(fields=['rig_uuid', '-timestamp'], name='metrics_err_rig_uui_f7631b_idx'), models.Index(fields=['error_event', '-timestamp'], name='metrics_err_error_e_2f364c_idx')],
-            },
-        ),
     ]

@@ -4,52 +4,41 @@ from django.http import Http404
 from django.views.decorators.http import require_POST
 
 from rigs.models import Rig, RigTag
-from metrics_app.models import MetricSnapshot, LatestSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, DockerContainerMetric, ErrorEvent
+from metrics_app.models import MetricSnapshot, LatestSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, DockerContainerMetric
 from audit.middleware import log_audit_event
 
 
-def _fetch_rig_metrics(uuid):
+def _fetch_rig_metrics(uuid, rig=None):
     """Fetch the latest rig metrics for Live Metrics display.
 
-    Always returns the latest metric per unique device (by gpu_uuid,
-    device path, or interface name) regardless of age.  This ensures
-    the user always sees the last known rig configuration (GPUs,
-    storage devices, network interfaces) even when the rig is offline.
-
-    Returns a dict with keys:
-        gpu_metrics, storage_metrics, network_metrics,
-        docker_metrics, recent_errors, latest_metric_snapshot, snapshot
+    Uses SQL-level latest-per-device queries instead of fetching all rows.
     """
     try:
         snapshot = LatestSnapshot.objects.get(rig_uuid=str(uuid))
     except LatestSnapshot.DoesNotExist:
         snapshot = None
 
-    # GPU: latest metric per unique GPU (dedup by gpu_uuid), sorted by index
-    gpu_metrics = []
-    seen_gpus = set()
-    for gpu in GPUMetric.objects.filter(rig_uuid=str(uuid)).order_by('-timestamp'):
-        if gpu.gpu_uuid not in seen_gpus:
-            seen_gpus.add(gpu.gpu_uuid)
-            gpu_metrics.append(gpu)
-    gpu_metrics.sort(key=lambda g: g.gpu_index)
+    # GPU: latest metric per unique GPU using DISTINCT ON
+    gpu_metrics = list(
+        GPUMetric.objects.filter(rig_uuid=str(uuid))
+        .order_by('gpu_uuid', '-timestamp')
+        .distinct('gpu_uuid')
+        .order_by('gpu_uuid', 'gpu_index')
+    )
 
-    # Storage: latest metric per unique device (normalize path for dedup)
-    storage_metrics = []
-    seen_devices = set()
-    for s in StorageMetric.objects.filter(rig_uuid=str(uuid)).order_by('-timestamp'):
-        norm_device = s.device.rstrip('/\\') if s.device else ''
-        if norm_device not in seen_devices:
-            seen_devices.add(norm_device)
-            storage_metrics.append(s)
+    # Storage: latest metric per unique device using DISTINCT ON
+    storage_metrics = list(
+        StorageMetric.objects.filter(rig_uuid=str(uuid))
+        .order_by('device', '-timestamp')
+        .distinct('device')
+    )
 
-    # Network: latest metric per unique interface
-    network_metrics = []
-    seen_interfaces = set()
-    for n in NetworkMetric.objects.filter(rig_uuid=str(uuid)).order_by('-timestamp'):
-        if n.interface not in seen_interfaces:
-            seen_interfaces.add(n.interface)
-            network_metrics.append(n)
+    # Network: latest metric per unique interface using DISTINCT ON
+    network_metrics = list(
+        NetworkMetric.objects.filter(rig_uuid=str(uuid))
+        .order_by('interface', '-timestamp')
+        .distinct('interface')
+    )
 
     # Docker containers (last 20)
     docker_metrics = list(
@@ -57,19 +46,13 @@ def _fetch_rig_metrics(uuid):
         .order_by('-timestamp')[:20]
     )
 
-    # Recent errors
-    recent_errors = list(
-        ErrorEvent.objects.filter(rig_uuid=str(uuid))
-        .order_by('-last_seen')[:5]
-    )
+    # Recent errors from Rig.latest_errors_json (latest payload only, like motherboard_json)
+    recent_errors = rig.latest_errors_json if rig else []
 
     # Latest MetricSnapshot for motherboard/software JSON
-    try:
-        latest_metric_snapshot = MetricSnapshot.objects.filter(
-            rig_uuid=str(uuid)
-        ).order_by('-timestamp').first()
-    except MetricSnapshot.DoesNotExist:
-        latest_metric_snapshot = None
+    latest_metric_snapshot = MetricSnapshot.objects.filter(
+        rig_uuid=str(uuid)
+    ).order_by('-timestamp').first()
 
     # GPU processes (latest per GPU per pid)
     gpu_processes = list(
@@ -132,15 +115,13 @@ def rig_list(request):
         except LatestSnapshot.DoesNotExist:
             snap = None
 
-        # Fetch latest GPU metric per unique GPU (dedup by gpu_uuid)
-        gpus = []
-        seen_uuids = set()
-        for gpu in GPUMetric.objects.filter(
-            rig_uuid=str(rig.uuid)
-        ).order_by('-timestamp'):
-            if gpu.gpu_uuid not in seen_uuids:
-                seen_uuids.add(gpu.gpu_uuid)
-                gpus.append(gpu)
+        # Fetch latest GPU metric per unique GPU using DISTINCT ON
+        gpus = list(
+            GPUMetric.objects.filter(rig_uuid=str(rig.uuid))
+            .order_by('gpu_uuid', '-timestamp')
+            .distinct('gpu_uuid')
+            .order_by('gpu_uuid', 'gpu_index')
+        )
 
         rig_data.append({'rig': rig, 'snapshot': snap, 'gpus': gpus})
 
@@ -185,7 +166,7 @@ def rig_detail(request, uuid):
     if rig.owner_id != request.user.id and not request.user.is_staff:
         raise Http404
 
-    context = _fetch_rig_metrics(uuid)
+    context = _fetch_rig_metrics(uuid, rig)
     context['rig'] = rig
     context['is_data_stale'] = rig.status in [Rig.Status.OFFLINE, Rig.Status.STALE]
 
@@ -199,7 +180,7 @@ def htmx_metrics(request, uuid):
     if rig.owner_id != request.user.id and not request.user.is_staff:
         raise Http404
 
-    context = _fetch_rig_metrics(uuid)
+    context = _fetch_rig_metrics(uuid, rig)
     context['rig'] = rig
     context['is_data_stale'] = rig.status in [Rig.Status.OFFLINE, Rig.Status.STALE]
 

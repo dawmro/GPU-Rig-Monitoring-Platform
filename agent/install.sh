@@ -18,9 +18,6 @@ if ! id "$SERVICE_USER" &>/dev/null; then
     useradd --system --no-create-home --shell /usr/sbin/nologin "$SERVICE_USER"
     echo "Created user: $SERVICE_USER"
 fi
-# Set a non-usable password so PAM pam_unix auth succeeds with NOPASSWD sudo
-# Without this, pam_unix may fail with "could not identify password" for system users
-usermod -p '*' "$SERVICE_USER" 2>/dev/null || true
 
 # Create directories
 mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$LOG_DIR"
@@ -51,7 +48,10 @@ if [ ! -f "$CONFIG_DIR/config.yaml" ]; then
 fi
 
 # Sudoers for hardware access — only commands the agent actually uses
+# IMPORTANT: The !authenticate default is required for system users with nologin shell.
+# Without it, PAM pam_unix auth fails with "could not identify password" even with NOPASSWD.
 cat > /etc/sudoers.d/monitoring-agent << 'EOF'
+Defaults:monitoring-agent !authenticate
 monitoring-agent ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/bin/smartctl, /bin/journalctl, /usr/bin/journalctl, /usr/sbin/nvme, /usr/bin/nvme
 EOF
 chmod 440 /etc/sudoers.d/monitoring-agent
@@ -76,6 +76,20 @@ chmod 644 "$UPDATE_CRON_FILE"
 cp check_update.py "$INSTALL_DIR/check_update.py"
 chmod +x "$INSTALL_DIR/check_update.py"
 echo "Auto-update: daily check scheduled at $(printf '%02d:%02d' $HOUR $MINUTE)"
+
+# Data cleanup — random time daily (2-4 AM) to prevent thundering herd
+CLONE_HOUR=$((2 + RANDOM % 3))
+CLONE_MINUTE=$((RANDOM % 60))
+CLEANUP_CRON_FILE="/etc/cron.d/monitoring-data-cleanup"
+cat > "$CLEANUP_CRON_FILE" << EOF
+# GPU Rig Monitoring Platform — Data retention cleanup (daily at ${CLONE_HOUR}:${CLONE_MINUTE})
+${CLONE_MINUTE} ${CLONE_HOUR} * * * root bash /opt/gpu_monitor/deploy/data_retention.sh >> /var/log/monitoring-agent/cleanup-cron.log 2>&1
+EOF
+chmod 644 "$CLEANUP_CRON_FILE"
+# Copy cleanup script
+cp gpu_monitor/deploy/data_retention.sh "$OPT/gpu_monitor/deploy/data_retention.sh"
+chmod +x "$OPT/gpu_monitor/deploy/data_retention.sh"
+echo "Data cleanup: daily at $(printf '%02d:%02d' $CLONE_HOUR $CLONE_MINUTE)"
 
 echo ""
 echo "=== Installation Complete ==="

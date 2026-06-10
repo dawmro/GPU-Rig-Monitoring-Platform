@@ -33,8 +33,8 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.4.0-win'
-__schema_version__ = '1.3'
+__version__ = '1.5.0-win'
+__schema_version__ = '1.4'
 
 # ── Config ──────────────────────────────────────────────────────────────────
 
@@ -410,6 +410,15 @@ def collect_gpus():
             except Exception:
                 pass  # PCIe info not available on all GPUs/systems
 
+            # Collect GPU clock speeds
+            gpu_core_clock_mhz = None
+            gpu_mem_clock_mhz = None
+            try:
+                gpu_core_clock_mhz = pynvml.nvmlDeviceGetClockInfo(handle, pynvml.NVML_CLOCK_GRAPHICS)
+                gpu_mem_clock_mhz = pynvml.nvmlDeviceGetClockInfo(handle, pynvml.NVML_CLOCK_MEM)
+            except Exception:
+                pass  # Clock info not available on all GPUs/systems
+
             gpus.append({
                 'uuid': pynvml.nvmlDeviceGetUUID(handle),
                 'model': pynvml.nvmlDeviceGetName(handle),
@@ -426,6 +435,8 @@ def collect_gpus():
                 'pcie_max_gen': pcie_max_gen,
                 'pcie_current_width': pcie_current_width,
                 'pcie_max_width': pcie_max_width,
+                'gpu_core_clock_mhz': gpu_core_clock_mhz,
+                'gpu_mem_clock_mhz': gpu_mem_clock_mhz,
             })
         pynvml.nvmlShutdown()
         return gpus

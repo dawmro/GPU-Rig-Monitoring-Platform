@@ -19,7 +19,7 @@ This guide deploys the GPU Rig Monitoring Platform on a **production VPS** with 
    - 4.4 [Run the Install Script](#44-run-the-install-script)
    - 4.5 [Save the Database Password](#45-save-the-database-password)
    - 4.6 [Create an Admin User](#46-create-an-admin-user)
-   - 4.7 [Set Up TimescaleDB Hypertables](#47-set-up-timescaledb-hypertables)
+   - 4.7 [Set Up Data Retention](#47-set-up-data-retention)
    - 4.8 [Verify the Deployment](#48-verify-the-deployment)
 5. [Rig Agent Deployment](#5-rig-agent-deployment)
    - 5.1 [Prerequisites per Rig](#51-prerequisites-per-rig)
@@ -60,7 +60,7 @@ This guide deploys the GPU Rig Monitoring Platform on a **production VPS** with 
 │                   SINGLE UBUNTU VPS (Trusted)                 │          │
 │                                                               ▼          │
 │  ┌─────────────────┐    TCP/5432    ┌──────────────────────────────┐    │
-│  │ Django + DRF    │ ────────────→  │ PostgreSQL + TimescaleDB     │    │
+│  │ Django + DRF    │ ────────────→  │ PostgreSQL     │    │
 │  │ (Gunicorn)      │                │                              │    │
 │  └────────┬────────┘                └──────────────────────────────┘    │
 │           │                                                             │
@@ -80,7 +80,7 @@ This guide deploys the GPU Rig Monitoring Platform on a **production VPS** with 
 | OS | Ubuntu 22.04 / 24.04 LTS |
 | Compute | 4–8 vCPU |
 | RAM | 16–32 GB |
-| Storage | 500 GB+ NVMe SSD (NVMe required for TimescaleDB) |
+| Storage | 500 GB+ NVMe SSD (NVMe required for write IOPS) |
 | Network | 1 public IPv4, DNS A record |
 | TLS | Let's Encrypt (certbot), auto-renew via systemd timer |
 
@@ -105,7 +105,7 @@ Before starting, ensure you have:
 | AWS EC2 | t3.xlarge (4 vCPU, 16 GB) | ~$120/mo |
 | Linode | Dedicated 8 GB | ~$60/mo |
 
-> **Why NVMe is mandatory:** TimescaleDB performs chunk compression and continuous aggregate refreshes in the background. SATA SSDs will bottleneck during these operations, causing ingestion lag.
+> **Why NVMe is mandatory:** High write IOPS from 1,000 rigs reporting every 60 seconds. SATA SSDs will bottleneck during compaction and vacuum operations, causing ingestion lag.
 
 ---
 
@@ -226,18 +226,17 @@ chmod +x /opt/gpu_monitor/deploy/server_install.sh
 
 | Step | What It Does |
 |------|-------------|
-| 1 | Installs system packages (Python, PostgreSQL, TimescaleDB, Nginx, certbot, UFW) |
-| 2 | Runs `timescaledb-tune` to optimize `postgresql.conf` |
-| 3 | Creates `gpu_monitor` DB user and database, enables TimescaleDB extension |
-| 4 | Creates `monitoring` OS user (no-login shell) |
-| 5 | Sets up Python virtualenv and installs dependencies |
-| 6 | Writes `/opt/gpu_monitor/.env` with secrets and DB credentials |
-| 7 | Runs Django migrations + `collectstatic` |
-| 8 | Installs Gunicorn systemd unit and starts it |
-| 9 | Installs Nginx site config, removes default site, restarts Nginx |
-| 10 | Runs Certbot to obtain Let's Encrypt TLS certificate |
-| 11 | Configures UFW firewall (allow 22/80/443) |
-| 12 | Enables and starts all services |
+| 1 | Installs system packages (Python, PostgreSQL, Nginx, certbot, UFW) |
+| 2 | Creates `gpu_monitor` DB user and database |
+| 3 | Creates `monitoring` OS user (no-login shell) |
+| 4 | Sets up Python virtualenv and installs dependencies |
+| 5 | Writes `/opt/gpu_monitor/.env` with secrets and DB credentials |
+| 6 | Runs Django migrations + `collectstatic` |
+| 7 | Installs Gunicorn systemd unit and starts it |
+| 8 | Installs Nginx site config, removes default site, restarts Nginx |
+| 9 | Runs Certbot to obtain Let's Encrypt TLS certificate |
+| 10 | Configures UFW firewall (allow 22/80/443) |
+| 11 | Enables and starts all services |
 
 ### 4.5 Save the Database Password
 
@@ -270,22 +269,117 @@ sudo -u monitoring bash -c 'cd /opt/gpu_monitor && source venv/bin/activate && s
 
 Enter email, username, and password when prompted. Use the email to log into the dashboard.
 
-### 4.7 Set Up TimescaleDB Hypertables
+### 4.7 Set Up Data Retention
 
-This step converts the raw PostgreSQL tables into TimescaleDB hypertables and sets up retention policies and continuous aggregates for efficient time-series queries.
+Configure automated data compaction and cleanup. This is essential for long-term storage management — without it, the database grows indefinitely (~146 GB/month at 1,000 rigs). With compaction: ~7 GB/month (94% savings).
+
+#### Quick Setup
 
 ```bash
-sudo -u monitoring bash -c 'cd /opt/gpu_monitor && source venv/bin/activate && set -a && source .env && set +a && python manage.py setup_timescale'
+# Add cron job for daily data cleanup (runs at 3 AM as qrv user)
+echo '0 3 * * * qrv bash /opt/gpu_monitor/deploy/data_retention.sh >> /var/log/monitoring-agent/cleanup-cron.log 2>&1' | sudo tee /etc/cron.d/monitoring-data-cleanup
 ```
 
-**Expected output:**
+> **Note:** The cron job runs as `qrv` (not root). Ensure `/opt/gpu_monitor/logs/` is owned by `qrv`:
+> ```bash
+> sudo chown -R qrv:qrv /opt/gpu_monitor/logs/
+> ```
 
+#### What It Does
+
+The `data_retention.sh` wrapper runs two commands daily:
+
+1. **`compact_data`** — Single-phase aggregation of old data:
+   - Data > 1 day old → 1-hour buckets (60× reduction)
+   - Aggregation per metric: AVG (temperature, utilization, power), SUM (network bytes, error_count), LAST (model names, UUIDs)
+   - Parent table (`metrics_metricsnapshot`) compacted first; child tables after
+   - FK-safe: parent rows referenced by children are excluded from compaction
+
+2. **`cleanup_old_data`** — Deletes data older than 31 days:
+   - Processes tables in dependency order (children first, parent last)
+   - Deletes in batches of 10,000 rows to avoid long table locks
+   - 31 days provides 1-day safety margin beyond the 30-day max chart range
+   - Handles tables with non-standard primary keys (e.g., `metrics_latest_snapshot` uses `rig_uuid`)
+
+#### Manual Run
+
+```bash
+cd /opt/gpu_monitor
+source venv/bin/activate
+set -a && source .env && set +a
+
+# Compact data (dry run first)
+python manage.py compact_data --dry-run --verbose
+
+# Compact data (actual)
+python manage.py compact_data --verbose
+
+# Cleanup old data (dry run first)
+python manage.py cleanup_old_data --dry-run --days=31 --verbose
+
+# Cleanup old data (actual)
+python manage.py cleanup_old_data --days=31 --verbose
 ```
-Created hypertable: metrics_metricsnapshot
-Added 7-day retention policy
-Created hourly continuous aggregate
-Added hourly refresh policy
-TimescaleDB setup complete
+
+#### Command Options
+
+**compact_data:**
+| Flag | Description |
+|---|---|
+| `--dry-run` | Preview without making changes |
+| `--verbose` | Show per-table row counts |
+
+**cleanup_old_data:**
+| Flag | Description |
+|---|---|
+| `--days N` | Delete data older than N days (default: 31) |
+| `--dry-run` | Preview without making changes |
+| `--verbose` | Show per-table row counts |
+
+#### Storage Impact
+
+| Retention | Raw Storage (1,000 rigs) | After Compaction |
+|---|---|---|
+| 1 day | 4.7 GB | 4.7 GB |
+| 7 days | 32.9 GB | 6.9 GB |
+| 31 days | 146 GB | ~7 GB |
+
+#### Troubleshooting
+
+**Check cron job is running:**
+```bash
+cat /etc/cron.d/monitoring-data-cleanup
+tail -f /var/log/monitoring-agent/cleanup-cron.log
+```
+
+**Check if data is being compacted:**
+```bash
+cd /opt/gpu_monitor
+source venv/bin/activate && set -a && source .env && set +a
+python -c "
+import os; os.environ['DJANGO_SETTINGS_MODULE'] = 'gpu_monitor.settings'
+import django; django.setup()
+from django.db import connection
+for t in ['metrics_metricsnapshot', 'metrics_gpumetric', 'metrics_storagemetric',
+          'metrics_networkmetric']:
+    with connection.cursor() as c:
+        c.execute(f'SELECT COUNT(*), MIN(timestamp), MAX(timestamp) FROM {t}')
+        row = c.fetchall()[0]
+        print(f'{t}: {row[0]:,} rows, {row[1]} to {row[2]}')
+"
+```
+
+**Manual cleanup if cron failed:**
+```bash
+cd /opt/gpu_monitor
+source venv/bin/activate && set -a && source .env && set +a
+python manage.py compact_data --verbose
+python manage.py cleanup_old_data --days=31 --verbose
+```
+
+**Permission denied on logs:**
+```bash
+sudo chown -R qrv:qrv /opt/gpu_monitor/logs/
 ```
 
 ### 4.8 Verify the Deployment
@@ -296,12 +390,6 @@ systemctl is-active gunicorn postgresql nginx
 
 # Database responding?
 sudo -u postgres psql -d gpu_monitor -c "SELECT 1"
-
-# TimescaleDB extension loaded?
-sudo -u postgres psql -d gpu_monitor -c "\dx" | grep timescaledb
-
-# Hypertable configured?
-sudo -u postgres psql -d gpu_monitor -c "SELECT * FROM timescaledb_information.hypertables;"
 
 # Health endpoint returns healthy?
 curl -s https://monitor.example.com/api/v1/health/ | python3 -m json.tool
@@ -399,10 +487,19 @@ The `monitoring-agent` system user runs without root privileges but needs elevat
 
 These are granted via `/etc/sudoers.d/monitoring-agent`:
 ```
+Defaults:monitoring-agent !authenticate
 monitoring-agent ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/bin/smartctl, /bin/journalctl, /usr/bin/journalctl, /usr/sbin/nvme, /usr/bin/nvme
 ```
 
+**Critical:** The `Defaults:monitoring-agent !authenticate` line is **required**. Without it, PAM authentication fails for the `monitoring-agent` system user (which has `nologin` shell and no password), producing these errors in system logs:
+```
+pam_unix(sudo:auth): conversation failed
+pam_unix(sudo:auth) auth could not identify password for [monitoring-agent]
+```
+The `!authenticate` default tells sudo to skip PAM entirely for this user. The `NOPASSWD` tag alone is insufficient.
+
 **Security properties:**
+- `!authenticate`: Skip PAM entirely (required for nologin system users)
 - `NOPASSWD`: No password required (agent runs non-interactively via cron)
 - Command whitelist: Only these commands are allowed, nothing else
 - Read-only: All commands only read system state, never modify it
@@ -413,14 +510,11 @@ monitoring-agent ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/bin/smartctl, /bi
 
 **Note:** The agent calls `sudo journalctl` (not bare `journalctl`) to ensure it can read system-level error logs. The sudoers config above allows this without a password prompt.
 
-**Troubleshooting:** If you see `pam_unix(sudo:auth): conversation failed` or "auth could not identify password for [monitoring-agent]" in the system logs (`journalctl`), the sudoers file is missing or incorrect. Verify with:
+**Verify:**
 ```bash
 sudo -l -U monitoring-agent
 ```
-If it shows "may not run sudo", re-run the sudoers setup command from Step 5.3 and verify the file exists:
-```bash
-cat /etc/sudoers.d/monitoring-agent
-```
+Should show the NOPASSWD rules. If it shows "may not run sudo", re-create the sudoers file.
 
 ### 5.4 Configure the Agent
 
@@ -673,7 +767,7 @@ systemctl reload gunicorn
 > **Migration safety rules:**
 > 1. Never use `RenameField` or `DeleteModel` in a single deploy
 > 2. Use additive-only evolution: add new field → dual-write → backfill → read from new → drop old
-> 3. Never change column types in TimescaleDB hypertables; add new columns instead
+> 3. Never change column types in production tables; add new columns instead
 
 ---
 
@@ -686,7 +780,7 @@ systemctl reload gunicorn
 | `502 Bad Gateway` from Nginx | `systemctl status gunicorn` | Check `/opt/gpu_monitor/logs/gunicorn-error.log`; usually a Python import error or DB connection failure |
 | `500 Internal Server Error` | Same as above | Verify `/opt/gpu_monitor/.env` exists and has correct DB credentials |
 | Database connection refused | `sudo -u postgres psql -c "SELECT 1"` | `systemctl restart postgresql`; check `/etc/postgresql/16/main/pg_hba.conf` |
-| `timescaledb.control` not found | `sudo -u postgres psql -c "\dx"` | Reinstall TimescaleDB: `sudo apt install --reinstall timescaledb-2-postgresql-16` then `sudo -u postgres psql -c "CREATE EXTENSION IF NOT EXISTS timescaledb;"` |
+|| DB migration fails | `python manage.py migrate` | Check migration order; ensure no missing dependencies |
 | Certbot fails (DNS) | `dig monitor.example.com +short` | Wait for DNS propagation; ensure port 80 is open (check cloud firewall too) |
 | Certbot fails (port) | `curl -I http://monitor.example.com` | Ensure port 8 open in **both** cloud firewall and UFW; certbot uses HTTP-01 challenge |
 | UFW blocks SSH | Locked yourself out | Use VPS provider's console: `ufw disable`, then reconfigure |

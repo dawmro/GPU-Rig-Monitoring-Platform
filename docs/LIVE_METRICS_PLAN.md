@@ -34,7 +34,7 @@
 | Storage metrics | `StorageMetric` | Per-device, queried separately |
 | Network metrics | `NetworkMetric` | Per-interface, queried separately |
 | Docker containers | `DockerContainerMetric` | Per-container, queried separately |
-| Errors | `ErrorEvent` | Deduplicated, queried separately |
+| Errors | `Rig.latest_errors_json` | Latest payload errors, updated in place (like motherboard_json) |
 
 ### Known issues fixed
 1. **Storage dedup**: Normalized device paths with `.rstrip('/\\')` to handle `C:\` vs `C:\\`

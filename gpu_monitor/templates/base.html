@@ -39,15 +39,14 @@
     document.body.addEventListener('htmx:afterSwap', function(evt) {
         var targetId = evt.detail && evt.detail.target && evt.detail.target.id;
         if (!targetId) return;
-        // Only update the single global refresh clock
+        var d = new Date();
+        var ts = String(d.getHours()).padStart(2,'0') + ':' +
+                 String(d.getMinutes()).padStart(2,'0') + ':' +
+                 String(d.getSeconds()).padStart(2,'0');
         var clock = document.getElementById('global-refresh-clock');
-        if (clock) {
-            var d = new Date();
-            clock.textContent = 'Refreshed @ ' +
-                String(d.getHours()).padStart(2,'0') + ':' +
-                String(d.getMinutes()).padStart(2,'0') + ':' +
-                String(d.getSeconds()).padStart(2,'0');
-        }
+        if (clock) clock.textContent = 'Refreshed @ ' + ts;
+        var fc = document.getElementById('rig-table-container-clock');
+        if (fc) fc.textContent = 'Refreshed @ ' + ts;
     });
 
     // Toggle all owner emails in fleet overview

@@ -1,11 +1,9 @@
-import hashlib
 import logging
 from rest_framework import serializers, status
 from django.db import transaction
 from django.utils import timezone
-from .models import MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, ErrorEvent, ErrorEventOccurrence, RigStatusEvent, AIProcessMetric
+from .models import MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, RigStatusEvent, AIProcessMetric
 from rigs.models import Rig
-from audit.middleware import compute_error_hash
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +20,7 @@ class IngestSerializer(serializers.Serializer):
     errors = serializers.ListField(required=False, default=list)
 
     def validate_schema_version(self, value):
-        if value not in ('1.0', '1.1', '1.2', '1.3'):
+        if value not in ('1.0', '1.1', '1.2', '1.3', '1.4'):
             raise serializers.ValidationError(f"Unsupported schema_version: {value}")
         return value
 
@@ -75,6 +73,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     'status': rig.status if rig else None,
                     'motherboard_json': motherboard_data,
                     'software_json': software_data,
+                    'error_count': len(errors_data),
                 },
             )
 
@@ -101,6 +100,8 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                         'pcie_max_gen': gpu.get('pcie_max_gen'),
                         'pcie_current_width': gpu.get('pcie_current_width'),
                         'pcie_max_width': gpu.get('pcie_max_width'),
+                        'gpu_core_clock_mhz': gpu.get('gpu_core_clock_mhz'),
+                        'gpu_mem_clock_mhz': gpu.get('gpu_mem_clock_mhz'),
                     },
                 )
 
@@ -235,30 +236,13 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                         previous_status=previous_status,
                     )
 
-            # Process errors (deduplicate + track occurrences)
-            for error in errors_data:
-                source = error.get('source', '')
-                message = error.get('message', '')
-                error_hash = compute_error_hash(source, message)
-                error_event, _ = ErrorEvent.objects.update_or_create(
-                    rig_uuid=rig_uuid,
-                    hash=error_hash,
-                    defaults={
-                        'timestamp': ts,
-                        'source': source,
-                        'message': message[:500],
-                    },
-                )
-                # Create occurrence record for time-series tracking.
-                # Truncate timestamp to the minute for deduplication — if the same
-                # error is reported in multiple payloads within the same minute,
-                # only one occurrence is recorded.
-                ts_minute = ts.replace(second=0, microsecond=0)
-                ErrorEventOccurrence.objects.get_or_create(
-                    error_event=error_event,
-                    rig_uuid=rig_uuid,
-                    timestamp=ts_minute,
-                )
+            # Update latest error text on Rig (like motherboard_json — updated in place)
+            if errors_data and rig:
+                rig.latest_errors_json = [
+                    {'source': e.get('source', ''), 'message': e.get('message', '')[:200], 'timestamp': e.get('timestamp', '')}
+                    for e in errors_data[:10]
+                ]
+                rig.save(update_fields=['latest_errors_json'])
 
             http_status = status.HTTP_200_OK if created else status.HTTP_202_ACCEPTED
             status_label = 'new' if created else 'duplicate'

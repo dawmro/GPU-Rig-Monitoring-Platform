@@ -140,7 +140,7 @@ GRANT ALL PRIVILEGES ON DATABASE gpu_monitor TO gpu_monitor;
 EOF
 ```
 
-> **Note:** For local testing we use plain PostgreSQL. TimescaleDB (used in production for time-series optimization) is not required. All metric tables work as regular PostgreSQL tables.
+> **Note:** For local testing we use plain PostgreSQL. All metric tables work as regular PostgreSQL tables.
 
 **Verify the connection:**
 
@@ -431,9 +431,17 @@ sudo chmod 600 /etc/monitoring-agent/config.yaml
 The agent needs root access for disk SMART data and journal logs. These are read-only commands that cannot modify the system:
 
 ```bash
-echo 'monitoring-agent ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/bin/smartctl, /bin/journalctl, /usr/bin/journalctl, /usr/sbin/nvme, /usr/bin/nvme' | sudo tee /etc/sudoers.d/monitoring-agent
+echo 'Defaults:monitoring-agent !authenticate
+monitoring-agent ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/bin/smartctl, /bin/journalctl, /usr/bin/journalctl, /usr/sbin/nvme, /usr/bin/nvme' | sudo tee /etc/sudoers.d/monitoring-agent
 sudo chmod 440 /etc/sudoers.d/monitoring-agent
 ```
+
+**Critical:** The `Defaults:monitoring-agent !authenticate` line is **required** for system users with `nologin` shell. Without it, PAM `pam_unix` authentication fails with:
+```
+pam_unix(sudo:auth): conversation failed
+pam_unix(sudo:auth) auth could not identify password for [monitoring-agent]
+```
+even though `NOPASSWD` is set. The `!authenticate` default tells sudo to skip PAM entirely for this user.
 
 **What each command does:**
 - `smartctl`: Read disk SMART health data (HDD/SSD health metrics)
@@ -442,7 +450,11 @@ sudo chmod 440 /etc/sudoers.d/monitoring-agent
 
 **Note:** Both common binary paths are included (`/usr/sbin/` and `/usr/bin/`) for cross-distro compatibility. The agent calls `sudo journalctl` (not bare `journalctl`) to ensure it can read system-level error logs.
 
-**Troubleshooting:** If you see `pam_unix(sudo:auth): conversation failed` or "auth could not identify password for [monitoring-agent]" in the system logs, the sudoers file is missing or incorrect. Re-run the sudoers setup command above and verify with `sudo -l -U monitoring-agent`.
+**Verify:**
+```bash
+sudo -l -U monitoring-agent
+```
+Should show the NOPASSWD rules without any password prompt.
 
 **Security:** All three commands are read-only. The agent cannot modify disks, logs, or system state. If a command is missing (e.g., no NVMe drive), the agent logs a warning and continues.
 
@@ -549,6 +561,110 @@ The rig detail page has three tabs:
 
 > **Note:** The status update cron job (Section 5.6) must be running for automatic status changes.
 
+### 5.7 Set Up Data Retention
+
+> **Important for local testing:** Without data retention, your local database will grow indefinitely. Even with a single test rig, data accumulates at ~4.7 MB/day. Enable this before running extended tests.
+
+Configure automated data compaction and cleanup:
+
+```bash
+# Add cron job for daily data cleanup (runs at 3 AM as qrv user)
+echo '0 3 * * * qrv bash /opt/gpu_monitor/deploy/data_retention.sh >> /var/log/monitoring-agent/cleanup-cron.log 2>&1' | sudo tee /etc/cron.d/monitoring-data-cleanup
+```
+
+> **Note:** The cron job runs as `qrv` (not root). Ensure `/opt/gpu_monitor/logs/` is owned by `qrv`:
+> ```bash
+> sudo chown -R qrv:qrv /opt/gpu_monitor/logs/
+> ```
+
+This runs two commands daily:
+
+1. **`compact_data`** — Single-phase aggregation of old data:
+   - Data > 1 day old → 1-hour buckets (60× reduction)
+   - Aggregation per metric: AVG (temperature, utilization, power), SUM (network bytes, error_count), LAST (model names, UUIDs)
+   - Parent table compacted first; child tables after
+   - FK-safe: parent rows referenced by children are excluded
+
+2. **`cleanup_old_data`** — Deletes data older than 31 days:
+   - Processes tables in dependency order (children first, parent last)
+   - Deletes in batches of 10,000 rows to avoid long locks
+   - Handles tables with non-standard primary keys (e.g., `metrics_latest_snapshot` uses `rig_uuid`)
+
+**Storage impact:** Without compaction, 1,000 rigs would use ~146 GB/month. With compaction: ~7 GB/month (95% savings). For a single test rig: ~150 MB/month with compaction.
+
+#### Manual Run (for testing)
+
+```bash
+cd /opt/gpu_monitor
+source venv/bin/activate
+set -a && source .env && set +a
+
+# Compact data (dry run first)
+python manage.py compact_data --dry-run --verbose
+
+# Compact data (actual)
+python manage.py compact_data --verbose
+
+# Cleanup old data (dry run first)
+python manage.py cleanup_old_data --dry-run --days=31 --verbose
+
+# Cleanup old data (actual)
+python manage.py cleanup_old_data --days=31 --verbose
+```
+
+#### Command Options
+
+**compact_data:**
+| Flag | Description |
+|---|---|
+| `--dry-run` | Preview without making changes |
+| `--verbose` | Show per-table row counts |
+
+**cleanup_old_data:**
+| Flag | Description |
+|---|---|
+| `--days N` | Delete data older than N days (default: 31) |
+| `--dry-run` | Preview without making changes |
+| `--verbose` | Show per-table row counts |
+
+#### Troubleshooting
+
+**Check cron job is running:**
+```bash
+cat /etc/cron.d/monitoring-data-cleanup
+tail -f /var/log/monitoring-agent/cleanup-cron.log
+```
+
+**Check if data is being compacted:**
+```bash
+cd /opt/gpu_monitor
+source venv/bin/activate && set -a && source .env && set +a
+python -c "
+import os; os.environ['DJANGO_SETTINGS_MODULE'] = 'gpu_monitor.settings'
+import django; django.setup()
+from django.db import connection
+for t in ['metrics_metricsnapshot', 'metrics_gpumetric', 'metrics_storagemetric',
+          'metrics_networkmetric']:
+    with connection.cursor() as c:
+        c.execute(f'SELECT COUNT(*), MIN(timestamp), MAX(timestamp) FROM {t}')
+        row = c.fetchall()[0]
+        print(f'{t}: {row[0]:,} rows, {row[1]} to {row[2]}')
+"
+```
+
+**Manual cleanup if cron failed:**
+```bash
+cd /opt/gpu_monitor
+source venv/bin/activate && set -a && source .env && set +a
+python manage.py compact_data --verbose
+python manage.py cleanup_old_data --days=31 --verbose
+```
+
+**Permission denied on logs:**
+```bash
+sudo chown -R qrv:qrv /opt/gpu_monitor/logs/
+```
+
 ---
 
 ## 6. Stopping and Restarting Services
@@ -634,7 +750,7 @@ You should see output like `Updated: 0 stale, 2 offline`. If you see `password a
 │   ├── models.py               # Rig, RigTag models
 │   └── management/commands/    # update_rig_status command
 ├── metrics_app/                # Ingestion API + metric storage
-│   ├── models.py               # MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, ErrorEvent, ErrorEventOccurrence, RigStatusEvent, AIProcessMetric
+│   ├── models.py               # MetricSnapshot (error_count), GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, RigStatusEvent, AIProcessMetric
 │   ├── serializers.py          # Payload validation + processing
 │   └── views.py                # IngestView, HealthView, ChartDataView, RigMetricsView
 ├── dashboard/                  # HTMX dashboard views
@@ -759,14 +875,14 @@ tail -f /var/log/monitoring-agent/agent.log | jq .
 |--------|-----------|------------------|
 | **TLS** | Let's Encrypt (port 443) | HTTP only (port 80) |
 | **Domain** | `monitor.example.com` | `localhost` |
-| **Database** | PostgreSQL + TimescaleDB | Plain PostgreSQL |
+| **Database** | PostgreSQL | Plain PostgreSQL |
 | **Gunicorn user** | Dedicated `monitoring` user | `root` (or current user) |
 | **Agent** | Separate rigs via HTTPS | Same machine via HTTP |
 | **Nginx** | Rate limiting, HSTS, CSP headers | Basic proxy only |
 | **Firewall** | UFW with strict rules | Not configured |
 | **Backup** | Daily `pg_dump` + rclone | Not configured |
 | **Meta-monitoring** | UptimeRobot | Not configured |
-| **TimescaleDB hypertables** | Yes (compression, continuous aggregates) | No (regular tables) |
+|| **Data retention** | compact_data + cleanup_old_data (31-day retention with tiered compaction) | Same (compact_data + cleanup_old_data) |
 
 ---
 
@@ -774,7 +890,7 @@ tail -f /var/log/monitoring-agent/agent.log | jq .
 
 When you are ready to deploy to a real server:
 
-1. **Install TimescaleDB** and run `python manage.py setup_timescale` for time-series optimization
+1. **Enable data retention** — Add cron job for `data_retention.sh` (see Section 5.7)
 2. **Configure a domain name** and point DNS A record to your server
 3. **Enable TLS** with `certbot --nginx -d yourdomain.com`
 4. **Set up UFW firewall** — allow only ports 22, 80, 443

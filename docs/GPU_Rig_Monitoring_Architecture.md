@@ -1,8 +1,8 @@
 # GPU Rig Monitoring Platform — Architecture Document
 
-**Version:** 1.2
+**Version:** 1.3
 **Status:** Implemented — Living Architecture Reference
-**Last Updated:** 2026-06-07
+**Last Updated:** 2026-06-10
 
 ---
 
@@ -32,6 +32,16 @@ The GPU Rig Monitoring Platform is a single-server telemetry dashboard for GPU r
 **Topology:** One Ubuntu VPS hosts everything (Django, Nginx, PostgreSQL, Gunicorn). Remote rigs run the agent via cron and POST telemetry to the server over HTTP.
 
 **Scale target:** ~1,000 rigs reporting at 1-minute intervals.
+
+**Measured storage per rig (100% uptime):** ~4.7 MB/day
+- At 50% uptime: ~2.35 MB/day
+- 31-day retention with tiered compaction: ~7 GB total for 1,000 rigs
+- Without compaction: ~146 GB for 1,000 rigs
+
+**Data retention:** 31 days (matches 30-day max chart range + 1 day safety margin)
+- 0-1 day: raw per-minute data
+- 1-31 days: compacted to 1-hour buckets
+- 31+ days: deleted
 
 ### 1.1 Non-Goals (v1)
 
@@ -96,7 +106,8 @@ Cron → Agent collects metrics → JSON payload → POST /api/v1/ingest/
   → DRF throttle (per-rig rate limit, scoped by rig_uuid)
   → Timestamp sanity check (reject if >5 min future or >1 hour past)
   → IngestSerializer validation (schema version 1.0, 1.1, or 1.2)
-  → process_ingest() → DB upsert (MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, AIProcessMetric, ErrorEvent, ErrorEventOccurrence, RigStatusEvent, LatestSnapshot)
+  → process_ingest() → DB upsert (MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, AIProcessMetric, RigStatusEvent, LatestSnapshot)
+  → Rig.latest_errors_json updated with latest error text
   → Rig.last_seen and Rig.status updated to ONLINE
   → Response: 200 (new) or 202 (duplicate/idempotent)
 ```
@@ -109,7 +120,7 @@ Cron → Agent collects metrics → JSON payload → POST /api/v1/ingest/
 | `agent_windows/run.py` | Windows agent (~916 lines) |
 | `metrics_app/views.py` | IngestView, HealthView, ChartDataView, RigMetricsView |
 | `metrics_app/serializers.py` | IngestSerializer, process_ingest() |
-| `metrics_app/models.py` | MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, ErrorEvent, ErrorEventOccurrence, RigStatusEvent, AIProcessMetric |
+| `metrics_app/models.py` | MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, RigStatusEvent, AIProcessMetric |
 | `dashboard/views.py` | rig_list, rig_detail, htmx_metrics, htmx_rig_status, rig_rename |
 | `dashboard/templatetags/gpu_filters.py` | gpu_model_name, gpu_model_short, gpu_compact_summary, gpu_temp_cell, gpu_util_cell, gpu_fan_cell, time_since filters |
 | `rigs/models.py` | Rig, RigTag |
@@ -129,6 +140,24 @@ Cron → Agent collects metrics → JSON payload → POST /api/v1/ingest/
 | Deps | psutil, pynvml, py-cpuinfo, requests, pyyaml |
 | User | `monitoring-agent` system user (Linux) |
 | Schedule | Every 60 seconds via cron |
+
+### 3.1b Sudoers Configuration
+
+The agent needs passwordless sudo for read-only hardware queries. Required in `/etc/sudoers.d/monitoring-agent`:
+
+```
+Defaults:monitoring-agent !authenticate
+monitoring-agent ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/bin/smartctl, /bin/journalctl, /usr/bin/journalctl, /usr/sbin/nvme, /usr/bin/nvme
+```
+
+**Critical:** `Defaults:monitoring-agent !authenticate` is required. Without it, PAM fails for system users with `nologin` shell:
+```
+pam_unix(sudo:auth): conversation failed
+pam_unix(sudo:auth) auth could not identify password for [monitoring-agent]
+```
+`NOPASSWD` alone is insufficient — `!authenticate` tells sudo to skip PAM entirely.
+
+**Commands:** `smartctl` (disk SMART), `nvme` (NVMe health), `journalctl` (system errors). All read-only.
 
 ### 3.2 Configuration (`/etc/monitoring-agent/config.yaml`)
 
@@ -267,6 +296,12 @@ debug_mode: false         # Verbose logging
 }
 ```
 
+**Changelog from schema 1.3 → 1.4:**
+- Added `gpu_core_clock_mhz` and `gpu_mem_clock_mhz` to GPU metrics (pynvml `NVML_CLOCK_GRAPHICS` and `NVML_CLOCK_MEM`)
+- Added `gpu_core_clock_mhz` and `gpu_mem_clock_mhz` fields to `GPUMetric` model
+- Added GPU Core Clock and GPU Memory Clock charts (multi-GPU)
+- Added clock display to Live Metrics GPU card
+
 **Changelog from schema 1.1 → 1.2:**
 - Added `gpu_processes[]` array with per-GPU process data from nvidia-smi
 - Each process: `gpu_index`, `pid`, `type` (C/G/C+G), `name`, `gpu_mem_mb`
@@ -283,8 +318,8 @@ debug_mode: false         # Verbose logging
 
 | Agent | File | Version | Schema | Platform | Scheduling |
 |-------|------|---------|--------|----------|------------|
-|| Linux | `agent/run.py` | 1.3.0 | 1.3 | Any Linux, VMware NAT | `cron` every 60s with `flock` |
-| Windows | `agent_windows/run.py` | 1.4.0-win | 1.3 | Windows 10/11 | Task Scheduler with `pythonw.exe` (hidden window) |
+| Linux | `agent/run.py` | 1.4.0 | 1.4 | Any Linux, VMware NAT | `cron` every 60s with `flock` |
+| Windows | `agent_windows/run.py` | 1.5.0-win | 1.4 | Windows 10/11 | Task Scheduler with `pythonw.exe` (hidden window) |
 
 **Versioning rules:**
 - `agent_version` (e.g. `1.1.0`): incremented for agent-side changes (collectors, payload format, bug fixes). Format: `MAJOR.MINOR.PATCH`.
@@ -303,7 +338,7 @@ debug_mode: false         # Verbose logging
 | `gpu_monitor` | — | Settings, URL routing, WSGI |
 | `accounts` | User, ApiKey | Login, logout, API key management |
 | `rigs` | Rig, RigTag | `update_rig_status` management command |
-|| `metrics_app` | MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, DockerContainerMetric, AIProcessMetric, LatestSnapshot, ErrorEvent, ErrorEventOccurrence, RigStatusEvent | IngestView, HealthView, ChartDataView, RigMetricsView |
+|| `metrics_app` | MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, DockerContainerMetric, AIProcessMetric, LatestSnapshot, RigStatusEvent | IngestView, HealthView, ChartDataView, RigMetricsView |
 | `dashboard` | — | rig_list, rig_detail, htmx_metrics, htmx_rig_status, rig_rename |
 | `audit` | AuditLog | Middleware-based request logging |
 | `dashboard/templatetags` | — | gpu_model_name, gpu_model_short, gpu_compact_summary, gpu_temp_cell, gpu_util_cell, gpu_fan_cell, time_since, last_seen_short filters |
@@ -323,9 +358,9 @@ POST /api/v1/ingest/
   → CsrfViewMiddleware (skipped via @csrf_exempt on IngestView)
   → APIKeyAuthentication validates X-API-Key
   → DRF throttle (per-rig rate limit, scoped by rig_uuid)
-  → IngestSerializer validation (schema version 1.0, 1.1, or 1.2)
+  → IngestSerializer validation (schema version 1.0, 1.1, 1.2, 1.3, or 1.4)
   → process_ingest() in transaction.atomic():
-      - Upsert MetricSnapshot (cpu, memory, status fields; motherboard/software as JSON)
+      - Upsert MetricSnapshot (cpu, memory, status fields; motherboard/software as JSON; error_count)
       - Upsert GPUMetric per GPU (gpu_index = 0, 1, ...)
       - Delete + recreate GPUProcessMetric per process (latest snapshot only)
       - Upsert StorageMetric per disk (with path-normalized dedup)
@@ -333,8 +368,7 @@ POST /api/v1/ingest/
       - Upsert DockerContainerMetric per container (with cpu%, memory stats)
       - Upsert AIProcessMetric per AI process (gpu_mem, cpu_pct)
       - Create RigStatusEvent on status transition (e.g. offline→online)
-      - Upsert ErrorEvent (deduplicated by hash)
-      - Create ErrorEventOccurrence per error (for time-series tracking)
+      - Update Rig.latest_errors_json with latest error text from payload
       - Update LatestSnapshot (denormalized cache for fast dashboard loading)
       - Update Rig.last_seen = now(), Rig.status = ONLINE
       - On Rig.DoesNotExist: auto-create with agent-suggested name
@@ -444,7 +478,7 @@ The rig detail page has three tabs:
 
 1. **Live Metrics** — cards with CPU%, memory bar, GPU model/index/temp/util/power/vRAM, GPU Processes (per-process: name, type badge C/G/C+G, memory), Docker container count, storage disks, recent errors
 2. **Historical Charts** — Combined chart suite: GPU (Temperature, Utilization, Memory, Power, Fan Speed — multi-GPU), CPU (Utilization, Temperature, Load Average), Memory & Swap (combined single chart, 3 datasets), Disk Usage (multi-disk), Network Traffic (combined RX/TX/Errors, dual Y-axes), Container CPU/Memory (multi-container), AI Process GPU Memory, Uptime, Error Frequency — all implemented as Chart.js charts with multi-series support. Timeframe toggle buttons (24h, 7d, 30d) in the tab header with a ↻ Refresh button.
-3. **Errors** — recent system errors from journalctl/Windows Event Log
+3. **Errors** — latest system errors from journalctl/Windows Event Log (stored on Rig model, updated in place)
 
 ### 5.5 Data Deduplication
 
@@ -464,21 +498,28 @@ Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the age
 |-------|-----|---------|
 | `accounts_user` | accounts | Custom user model (email-based) |
 | `accounts_apikey` | accounts | API keys for agent ingestion (Argon2id hashed) |
-| `rigs_rig` | rigs | Rig inventory (uuid PK, owner FK, status, last_seen, name) |
-| `rigs_rigtag` | rigs | Tags (name, color) |
-| `rigs_rig_tags` | rigs | M2M through table |
-| `metrics_metricsnapshot` | metrics_app | Per-heartbeat metrics (cpu, memory, status fields inline; motherboard/software as JSON) |
-|| `metrics_gpumetric` | metrics_app | Per-GPU metrics (temp, util, mem, power; FK to snapshot) |
-| `metrics_gpu_process` | metrics_app | Per-GPU-process metrics (gpu_index, pid, name, type, mem; latest snapshot only) |
-| `metrics_storagemetric` | metrics_app | Per-disk metrics (capacity, usage%, temp, SMART health) |
-| `metrics_networkmetric` | metrics_app | Per-interface metrics (rx/tx bytes, rx/tx deltas, speed, errors) |
-| `metrics_dockercontainermetric` | metrics_app | Per-container metrics (name, image, status, restarts, cpu%, memory) |
-| `metrics_latestsnapshot` | metrics_app | Denormalized latest snapshot per rig (fast dashboard loading) |
-| `metrics_errorevent` | metrics_app | Deduplicated errors (hash-based dedup, count, last_seen) |
-| `metrics_error_event_occurrence` | metrics_app | Per-occurrence error timestamps for time-series error tracking |
-| `metrics_rig_status_event` | metrics_app | Rig status transition log (online/stale/offline with timestamps) |
-| `metrics_ai_process` | metrics_app | Per-process GPU/CPU usage tracking for AI workloads |
-| `audit_auditlog` | audit | Immutable audit trail |
+|| `rigs_rig` | rigs | Rig inventory (uuid PK, owner FK, status, last_seen, name, latest_errors_json) |
+|| `rigs_rigtag` | rigs | Tags (name, color) |
+|| `rigs_rig_tags` | rigs | M2M through table |
+|| `metrics_metricsnapshot` | metrics_app | Per-heartbeat metrics (cpu, memory, status fields inline; motherboard/software as JSON; error_count) |
+|| `metrics_gpumetric` | metrics_app | Per-GPU metrics (temp, util, mem, power, fan, pcie, core_clock, mem_clock; FK to snapshot) |
+|| `metrics_gpu_process` | metrics_app | Per-GPU-process metrics (gpu_index, pid, name, type, mem; latest snapshot only) |
+|| `metrics_storagemetric` | metrics_app | Per-disk metrics (capacity, usage%, temp, SMART health) |
+|| `metrics_networkmetric` | metrics_app | Per-interface metrics (rx/tx bytes, rx/tx deltas, speed, errors) |
+|| `metrics_dockercontainermetric` | metrics_app | Per-container metrics (name, image, status, restarts, cpu%, memory) |
+|| `metrics_latestsnapshot` | metrics_app | Denormalized latest snapshot per rig (fast dashboard loading) |
+|| `metrics_rig_status_event` | metrics_app | Rig status transition log (online/stale/offline with timestamps) |
+|| `metrics_ai_process` | metrics_app | Per-process GPU/CPU usage tracking for AI workloads |
+|| `audit_auditlog` | audit | Immutable audit trail |
+
+### 6.1b Management Commands
+
+| Command | Purpose | Schedule |
+|---|---|---|
+| `update_rig_status` | Updates rig online/stale/offline status based on last_seen | Every 2 min (cron) |
+| `compact_data` | Aggregates old metric data into 1-hour buckets | Daily at 3 AM (cron) |
+| `cleanup_old_data` | Deletes data older than 31 days in batches of 10,000 | Daily at 3 AM (cron, after compact) |
+| `backfill_historical_data` | Creates test data by repeating recent data with shifted timestamps | Manual (testing only) |
 
 ### 6.2 Key Constraints
 
@@ -590,6 +631,55 @@ The sync script handles the full deploy cycle:
 
 Files **never** overwritten: `.env`, `venv/`, `logs/`, `staticfiles/`, `config.yaml`, cron jobs, PostgreSQL database.
 
+### 8.5 Data Retention
+
+The platform uses **tiered compaction** to manage long-term storage growth. Without retention, 1,000 rigs would accumulate ~146 GB/month. With compaction: ~7 GB/month (95% savings).
+
+#### Retention Tiers
+
+| Tier | Age | Bucket | Rows/Day/Rig | Savings |
+|---|---|---|---|---|
+| Raw | 0-1 day | 1-minute | 1,440 | — |
+| Compacted | 1-31 days | 1-hour | 24 | 60× |
+| Deleted | 31+ days | — | 0 | 100× |
+
+#### Management Commands
+
+Two Django management commands handle retention:
+
+**`compact_data`** — Aggregates old data into larger time buckets:
+- Single phase: data > 1 day → 1-hour buckets
+- Aggregation: AVG (temperature, utilization, power), SUM (network bytes, error_count), LAST (model names, UUIDs)
+- Parent table (`metrics_metricsnapshot`) compacted first; child tables after
+- FK-safe: parent rows referenced by children are excluded from compaction
+
+**`cleanup_old_data`** — Deletes data older than N days (default: 31):
+- Processes tables in dependency order (children first, parent last)
+- Batch deletion (10,000 rows) to avoid long table locks
+- Handles non-standard primary keys (`metrics_latest_snapshot` uses `rig_uuid`)
+
+#### Schedule
+
+Both commands run sequentially via `data_retention.sh` wrapper, called by cron at 3 AM:
+
+```bash
+# /etc/cron.d/monitoring-data-cleanup
+0 3 * * * qrv bash /opt/gpu_monitor/deploy/data_retention.sh >> /var/log/monitoring-agent/cleanup-cron.log 2>&1
+```
+
+#### Verification
+
+```bash
+cd /opt/gpu_monitor
+source venv/bin/activate && set -a && source .env && set +a
+python manage.py compact_data --dry-run --verbose
+python manage.py cleanup_old_data --dry-run --days=31 --verbose
+```
+
+#### Log Location
+
+Retention logs: `/var/log/monitoring-agent/cleanup-cron.log`
+
 ---
 
 ## 9. Design Decisions & Rationale
@@ -676,7 +766,7 @@ Each ingest performs multiple database operations:
 | `IngestView` upsert | Every 60s/rig | `update_or_create` + `unique_together` | < 200 ms |
 | `rig_list` fleet table | Every 30s/browser | `prefetch_related('tags')`, indexed `order_by('name')` | < 100 ms |
 | `htmx_metrics` live cards | Every 30s/browser | Single-row lookup from `LatestSnapshot` + `GPUMetric` | < 100 ms |
-| `ChartDataView` per chart | On demand (↻) | Time-range filter, `[:2000]` limit | < 500 ms |
+|| `ChartDataView` per chart | On demand (↻) | Time-range filter, SQL aggregation (TruncHour + Avg/Sum) | < 200 ms |
 | `update_rig_status` | Every 2 min | Bulk `update()`, no per-row queries | < 1 s |
 
 **Concurrency:** 10 dashboard users × 3 pages/min = ~0.5 QPS read load — statistically insignificant vs. agent write load.
@@ -732,7 +822,7 @@ Tests are organized in a pragmatic pyramid: unit tests (mocked hardware) → int
 
 ### 11.2 Integration Testing (Pipeline & Database)
 
-Integration tests verify Django ORM + DRF + PostgreSQL work together. Requires real DB (TimescaleDB not used in v1 — plain PostgreSQL tables).
+Integration tests verify Django ORM + DRF + PostgreSQL work together.
 
 **Idempotency test** (most critical):
 

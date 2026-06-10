@@ -129,7 +129,7 @@ def rig_list(request):
     if request.headers.get('HX-Request'):
         return render(request, 'dashboard/_rig_table.html', {'rig_data': rig_data})
 
-    all_tags = RigTag.objects.filter(user=user).order_by('name')
+    all_tags = RigTag.objects.filter(user=user).order_by('name') if not user.is_staff else RigTag.objects.all().order_by('name')
 
     return render(request, 'dashboard/rig_list.html', {
         'rig_data': rig_data,

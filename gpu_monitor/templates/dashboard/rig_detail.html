@@ -14,6 +14,12 @@
                             onclick="toggleRenameForm()">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
                     </button>
+                    <button id="rig-delete-btn"
+                            class="opacity-0 group-hover:opacity-50 hover:!opacity-100 transition-opacity p-1 rounded hover:bg-red-900/30 text-red-400"
+                            title="Delete rig"
+                            onclick="showDeleteModal()">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                    </button>
                 </h1>
                 <form id="rig-rename-form"
                       hx-post="{% url 'dashboard:rig-rename' rig.uuid %}"
@@ -241,10 +247,10 @@ function switchTab(tabName) {
     btn.classList.remove('border-transparent', 'text-gray-400');
     btn.classList.add('border-blue-400', 'text-blue-400');
 
-    // Lazy-load charts when tab is first opened
-    if (tabName === 'charts' && !window.chartsLoaded) {
+    // Lazy-load charts when tab is first opened (if not already loaded via DOMContentLoaded)
+    if (tabName === 'charts' && !chartsLoaded) {
+        chartsLoaded = true;
         loadCharts();
-        window.chartsLoaded = true;
     }
     // Show/hide timeframe buttons
     var tf = document.getElementById('chart-timeframe');
@@ -284,12 +290,52 @@ document.body.addEventListener('htmx:afterSettle', function(evt) {
     }
 });
 
+// Delete confirmation modal
+function showDeleteModal() {
+    document.getElementById('delete-modal').classList.remove('hidden');
+    document.getElementById('delete-modal').classList.add('flex');
+    document.addEventListener('keydown', deleteModalEscHandler);
+}
+
+function hideDeleteModal() {
+    document.getElementById('delete-modal').classList.add('hidden');
+    document.getElementById('delete-modal').classList.remove('flex');
+    document.removeEventListener('keydown', deleteModalEscHandler);
+}
+
+function deleteModalEscHandler(evt) {
+    if (evt.key === 'Escape') {
+        hideDeleteModal();
+    }
+}
+
+// Close modal when clicking outside — defer to ensure DOM is ready
+document.addEventListener('DOMContentLoaded', function() {
+    var modal = document.getElementById('delete-modal');
+    if (modal) {
+        modal.addEventListener('click', function(evt) {
+            if (evt.target === this) {
+                hideDeleteModal();
+            }
+        });
+    }
+});
+
 // Chart instances
 var chartInstances = {};
+var chartsLoaded = false;
 
 // Chart timeframe state
 var chartRange = 24;        // hours
 var chartBucketMinutes = 1;  // bucket size in minutes
+
+// Load charts on page load
+document.addEventListener('DOMContentLoaded', function() {
+    if (!chartsLoaded) {
+        loadCharts();
+        chartsLoaded = true;
+    }
+});
 
 function setChartRange(rangeHours, bucketMinutes) {
     chartRange = rangeHours;
@@ -367,7 +413,13 @@ async function loadChart(canvasId, metric, uuid, range, unit, borderColor, bgCol
 
     try {
         var resp = await fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=${metric}&range=${range}&bucket_minutes=${chartBucketMinutes}`);
+        if (!resp.ok) {
+            throw new Error('HTTP ' + resp.status);
+        }
         var data = await resp.json();
+        if (!data.datasets || !data.datasets[0] || !data.datasets[0].data) {
+            throw new Error('Invalid data format');
+        }
 
         // Server already converts byte metrics to GB; no client-side conversion needed.
         // Preserve null for gaps (offline periods).
@@ -1066,4 +1118,37 @@ async function loadChartMultiKey(canvasId, metric, uuid, range, unit, multi_para
     }
 }
 </script>
+
+<!-- Delete Confirmation Modal -->
+<div id="delete-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70">
+    <div class="bg-gray-800 rounded-lg border border-gray-700 p-6 max-w-md mx-4 shadow-2xl">
+        <div class="flex items-center gap-3 mb-4">
+            <div class="flex-shrink-0 w-10 h-10 rounded-full bg-red-900/30 flex items-center justify-center">
+                <svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
+            </div>
+            <h3 class="text-lg font-semibold text-white">Delete Rig</h3>
+        </div>
+        <p class="text-gray-300 mb-2">
+            Are you sure you want to delete <strong id="delete-modal-rig-name" class="text-white">{{ rig.name }}</strong>?
+        </p>
+        <p class="text-red-400 text-sm mb-6">
+            ⚠ This action will permanently remove the rig and all associated data from the database. This cannot be undone.
+        </p>
+        <form id="delete-form" method="post" action="{% url 'dashboard:rig-delete' rig.uuid %}">
+            {% csrf_token %}
+            <div class="flex items-center justify-end gap-3">
+                <button type="button"
+                        onclick="hideDeleteModal()"
+                        class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded text-sm">
+                    Cancel
+                </button>
+                <button type="submit"
+                        class="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded text-sm font-medium">
+                    Delete Permanently
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
 {% endblock %}

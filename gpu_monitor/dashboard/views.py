@@ -199,6 +199,40 @@ def htmx_rig_status(request, uuid):
 
 @login_required
 @require_POST
+def rig_delete(request, uuid):
+    """Delete a rig and all its associated data."""
+    rig = get_object_or_404(Rig, uuid=uuid)
+    if rig.owner_id != request.user.id and not request.user.is_staff:
+        raise Http404
+
+    rig_name = rig.name
+
+    # Delete all associated metric data (MetricSnapshot has rig_uuid as UUIDField, not FK)
+    from metrics_app.models import MetricSnapshot, LatestSnapshot, GPUMetric, GPUProcessMetric, \
+        StorageMetric, NetworkMetric, DockerContainerMetric, AIProcessMetric, RigStatusEvent
+    MetricSnapshot.objects.filter(rig_uuid=uuid).delete()
+    LatestSnapshot.objects.filter(rig_uuid=uuid).delete()
+    GPUMetric.objects.filter(rig_uuid=uuid).delete()
+    GPUProcessMetric.objects.filter(rig_uuid=uuid).delete()
+    StorageMetric.objects.filter(rig_uuid=uuid).delete()
+    NetworkMetric.objects.filter(rig_uuid=uuid).delete()
+    DockerContainerMetric.objects.filter(rig_uuid=uuid).delete()
+    AIProcessMetric.objects.filter(rig_uuid=uuid).delete()
+    RigStatusEvent.objects.filter(rig_uuid=uuid).delete()
+
+    rig.delete()
+    log_audit_event(request, 'rig.deleted', 'Rig', uuid, {'name': rig_name})
+
+    if request.headers.get('HX-Request'):
+        response = render(request, 'dashboard/_rig_deleted_notice.html', {'rig_name': rig_name})
+        response['HX-Redirect'] = '/dashboard/rigs/'
+        return response
+
+    return redirect('dashboard:rig-list')
+
+
+@login_required
+@require_POST
 def rig_rename(request, uuid):
     """Rename a rig. Accepts both form POST and HTMX POST."""
     rig = get_object_or_404(Rig, uuid=uuid)

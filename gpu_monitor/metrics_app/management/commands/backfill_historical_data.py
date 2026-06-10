@@ -328,3 +328,4 @@ class Command(BaseCommand):
                 execute_values(c, sql, batch, page_size=BATCH_SIZE)
 
         return len(all_vals)
+

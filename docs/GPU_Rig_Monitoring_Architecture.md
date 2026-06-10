@@ -492,20 +492,19 @@ Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the age
 |-------|-----|---------|
 | `accounts_user` | accounts | Custom user model (email-based) |
 | `accounts_apikey` | accounts | API keys for agent ingestion (Argon2id hashed) |
-| `rigs_rig` | rigs | Rig inventory (uuid PK, owner FK, status, last_seen, name) |
-| `rigs_rigtag` | rigs | Tags (name, color) |
-| `rigs_rig_tags` | rigs | M2M through table |
-| `metrics_metricsnapshot` | metrics_app | Per-heartbeat metrics (cpu, memory, status fields inline; motherboard/software as JSON) |
-|| `metrics_gpumetric` | metrics_app | Per-GPU metrics (temp, util, mem, power; FK to snapshot) |
-| `metrics_gpu_process` | metrics_app | Per-GPU-process metrics (gpu_index, pid, name, type, mem; latest snapshot only) |
-| `metrics_storagemetric` | metrics_app | Per-disk metrics (capacity, usage%, temp, SMART health) |
-| `metrics_networkmetric` | metrics_app | Per-interface metrics (rx/tx bytes, rx/tx deltas, speed, errors) |
-| `metrics_dockercontainermetric` | metrics_app | Per-container metrics (name, image, status, restarts, cpu%, memory) |
-| `metrics_latestsnapshot` | metrics_app | Denormalized latest snapshot per rig (fast dashboard loading) |
-| `metrics_errorevent` | metrics_app | Deduplicated errors (hash-based dedup, count, last_seen) |
-| `metrics_rig_status_event` | metrics_app | Rig status transition log (online/stale/offline with timestamps) |
-| `metrics_ai_process` | metrics_app | Per-process GPU/CPU usage tracking for AI workloads |
-| `audit_auditlog` | audit | Immutable audit trail |
+|| `rigs_rig` | rigs | Rig inventory (uuid PK, owner FK, status, last_seen, name, latest_errors_json) |
+|| `rigs_rigtag` | rigs | Tags (name, color) |
+|| `rigs_rig_tags` | rigs | M2M through table |
+|| `metrics_metricsnapshot` | metrics_app | Per-heartbeat metrics (cpu, memory, status fields inline; motherboard/software as JSON; error_count) |
+|| `metrics_gpumetric` | metrics_app | Per-GPU metrics (temp, util, mem, power, fan, pcie, core_clock, mem_clock; FK to snapshot) |
+|| `metrics_gpu_process` | metrics_app | Per-GPU-process metrics (gpu_index, pid, name, type, mem; latest snapshot only) |
+|| `metrics_storagemetric` | metrics_app | Per-disk metrics (capacity, usage%, temp, SMART health) |
+|| `metrics_networkmetric` | metrics_app | Per-interface metrics (rx/tx bytes, rx/tx deltas, speed, errors) |
+|| `metrics_dockercontainermetric` | metrics_app | Per-container metrics (name, image, status, restarts, cpu%, memory) |
+|| `metrics_latestsnapshot` | metrics_app | Denormalized latest snapshot per rig (fast dashboard loading) |
+|| `metrics_rig_status_event` | metrics_app | Rig status transition log (online/stale/offline with timestamps) |
+|| `metrics_ai_process` | metrics_app | Per-process GPU/CPU usage tracking for AI workloads |
+|| `audit_auditlog` | audit | Immutable audit trail |
 
 ### 6.1b Management Commands
 

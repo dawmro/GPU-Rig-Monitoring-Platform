@@ -81,6 +81,8 @@ class GPUMetric(models.Model):
     pcie_max_gen = models.PositiveSmallIntegerField(null=True)
     pcie_current_width = models.PositiveSmallIntegerField(null=True)
     pcie_max_width = models.PositiveSmallIntegerField(null=True)
+    gpu_core_clock_mhz = models.PositiveIntegerField(null=True)
+    gpu_mem_clock_mhz = models.PositiveIntegerField(null=True)
 
     class Meta:
         db_table = 'metrics_gpumetric'

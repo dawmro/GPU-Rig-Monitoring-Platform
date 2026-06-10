@@ -211,6 +211,12 @@
                 {% if gpu.fan_speed_pct != None %}
                 <span>Fan: {{ gpu.fan_speed_pct|floatformat:0 }}%</span>
                 {% endif %}
+                {% if gpu.gpu_core_clock_mhz != None %}
+                <span>Core: {{ gpu.gpu_core_clock_mhz }} MHz</span>
+                {% endif %}
+                {% if gpu.gpu_mem_clock_mhz != None %}
+                <span>Mem: {{ gpu.gpu_mem_clock_mhz }} MHz</span>
+                {% endif %}
             </div>
             {% if gpu.mem_used_mb != None and gpu.mem_total_mb %}
             <div class="flex items-center gap-3 mb-1">

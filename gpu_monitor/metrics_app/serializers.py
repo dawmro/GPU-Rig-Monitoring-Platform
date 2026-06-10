@@ -100,6 +100,8 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                         'pcie_max_gen': gpu.get('pcie_max_gen'),
                         'pcie_current_width': gpu.get('pcie_current_width'),
                         'pcie_max_width': gpu.get('pcie_max_width'),
+                        'gpu_core_clock_mhz': gpu.get('gpu_core_clock_mhz'),
+                        'gpu_mem_clock_mhz': gpu.get('gpu_mem_clock_mhz'),
                     },
                 )
 

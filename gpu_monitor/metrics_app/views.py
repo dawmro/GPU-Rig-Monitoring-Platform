@@ -187,6 +187,7 @@ class ChartDataView(APIView):
         'gpu_mem_used_mb': 'mem_used_mb', 'gpu_mem_total_mb': 'mem_total_mb',
         'gpu_power_w': 'power_draw_w', 'gpu_power_limit_w': 'power_limit_w',
         'gpu_fan_pct': 'fan_speed_pct',
+        'gpu_core_clock_mhz': 'gpu_core_clock_mhz', 'gpu_mem_clock_mhz': 'gpu_mem_clock_mhz',
     }
     STORAGE_METRICS = {'disk_usage_pct'}
     BYTE_TO_GB = {'mem_total_bytes', 'mem_used_bytes', 'mem_free_bytes', 'mem_cached_bytes', 'swap_used_bytes', 'swap_total_bytes'}

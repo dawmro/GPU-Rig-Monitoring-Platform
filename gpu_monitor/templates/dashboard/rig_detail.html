@@ -126,6 +126,18 @@
                 <canvas id="chartGpuFan"></canvas>
             </div>
 
+            <!-- GPU Core Clock Chart (multi-GPU) -->
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
+                <h3 class="text-sm font-medium text-gray-300 mb-3">GPU Core Clock (<span class="chart-timeframe-label">24h</span>)</h3>
+                <canvas id="chartGpuCoreClock"></canvas>
+            </div>
+
+            <!-- GPU Memory Clock Chart (multi-GPU) -->
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
+                <h3 class="text-sm font-medium text-gray-300 mb-3">GPU Memory Clock (<span class="chart-timeframe-label">24h</span>)</h3>
+                <canvas id="chartGpuMemClock"></canvas>
+            </div>
+
             <!-- CPU Utilization Chart -->
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
                 <h3 class="text-sm font-medium text-gray-300 mb-3">CPU Utilization (<span class="chart-timeframe-label">24h</span>)</h3>
@@ -330,6 +342,8 @@ async function loadCharts() {
     await loadChartMultiGpu('chartGpuMem',   'gpu_mem_used_mb', uuid, range, ' MB');
     await loadChartMultiGpu('chartGpuPower', 'gpu_power_w',  uuid, range, 'W');
     await loadChartMultiGpu('chartGpuFan',   'gpu_fan_pct',  uuid, range, '%');
+    await loadChartMultiGpu('chartGpuCoreClock', 'gpu_core_clock_mhz', uuid, range, ' MHz');
+    await loadChartMultiGpu('chartGpuMemClock',  'gpu_mem_clock_mhz',  uuid, range, ' MHz');
     // Storage multi-disk charts
     await loadChartMultiKey('chartDiskUsage', 'disk_usage_pct', uuid, range, '%', 'multi_disk');
     // Network combined chart (RX + TX + Errors on one chart with dual Y-axes)

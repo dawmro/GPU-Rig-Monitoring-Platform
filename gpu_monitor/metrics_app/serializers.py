@@ -193,7 +193,6 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                         'container_id': container_id,
                         'cpu_pct': container.get('cpu_pct'),
                         'mem_usage_bytes': container.get('mem_usage_bytes'),
-                        'mem_limit_bytes': container.get('mem_limit_bytes'),
                     },
                 )
 
@@ -212,6 +211,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     status=container.get('status', ''),
                     uptime_s=container.get('uptime_s'),
                     restart_count=container.get('restart_count', 0),
+                    mem_limit_bytes=container.get('mem_limit_bytes'),
                 )
 
             # Update latest snapshot (denormalized)

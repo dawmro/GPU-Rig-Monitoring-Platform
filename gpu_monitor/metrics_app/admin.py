@@ -30,13 +30,13 @@ class NetworkMetricAdmin(admin.ModelAdmin):
 
 @admin.register(DockerContainerMetric)
 class DockerContainerMetricAdmin(admin.ModelAdmin):
-    list_display = ('rig_uuid', 'timestamp', 'name', 'container_id', 'cpu_pct', 'mem_usage_bytes', 'mem_limit_bytes')
+    list_display = ('rig_uuid', 'timestamp', 'name', 'container_id', 'cpu_pct', 'mem_usage_bytes')
     search_fields = ('rig_uuid', 'name')
 
 
 @admin.register(LatestDockerContainer)
 class LatestDockerContainerAdmin(admin.ModelAdmin):
-    list_display = ('rig_uuid', 'name', 'container_id', 'image', 'status', 'uptime_s', 'restart_count')
+    list_display = ('rig_uuid', 'name', 'container_id', 'image', 'status', 'uptime_s', 'restart_count', 'mem_limit_bytes')
     search_fields = ('rig_uuid', 'name')
 
 

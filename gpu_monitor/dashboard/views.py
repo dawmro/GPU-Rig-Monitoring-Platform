@@ -80,7 +80,7 @@ def _fetch_rig_metrics(uuid, rig=None):
         uptime_str = _format_uptime(lc.uptime_s)
         mem_str = _format_mem(
             latest_metric.mem_usage_bytes if latest_metric else None,
-            latest_metric.mem_limit_bytes if latest_metric else None
+            lc.mem_limit_bytes
         )
 
         docker_metrics.append({
@@ -93,7 +93,7 @@ def _fetch_rig_metrics(uuid, rig=None):
             'uptime_str': uptime_str,
             'cpu_pct': latest_metric.cpu_pct if latest_metric else None,
             'mem_usage_bytes': latest_metric.mem_usage_bytes if latest_metric else None,
-            'mem_limit_bytes': latest_metric.mem_limit_bytes if latest_metric else None,
+            'mem_limit_bytes': lc.mem_limit_bytes,
             'mem_str': mem_str,
         })
 

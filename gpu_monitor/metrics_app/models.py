@@ -145,7 +145,7 @@ class DockerContainerMetric(models.Model):
     """Per-container time-series metrics — one row per container per heartbeat.
 
     Stores only the fields needed for historical charts:
-    cpu_pct, mem_usage_bytes, mem_limit_bytes.
+    cpu_pct, mem_usage_bytes.
     Grouped by (rig_uuid, name) for chart display.
     """
     id = models.BigAutoField(primary_key=True)
@@ -155,7 +155,6 @@ class DockerContainerMetric(models.Model):
     name = models.CharField(max_length=255, blank=True, default='')
     cpu_pct = models.FloatField(null=True)
     mem_usage_bytes = models.BigIntegerField(null=True)
-    mem_limit_bytes = models.BigIntegerField(null=True)
 
     class Meta:
         db_table = 'metrics_dockercontainermetric'
@@ -169,7 +168,7 @@ class LatestDockerContainer(models.Model):
     """Latest Docker container snapshot per rig — for Live Metrics display.
 
     Stores the latest payload fields not needed for charts:
-    image, status, uptime_s, restart_count.
+    image, status, uptime_s, restart_count, mem_limit_bytes.
     Delete-before-insert pattern: all rows for a rig are deleted
     before inserting the latest snapshot.
     """
@@ -181,6 +180,7 @@ class LatestDockerContainer(models.Model):
     status = models.CharField(max_length=32, blank=True, default='')
     uptime_s = models.PositiveIntegerField(null=True)
     restart_count = models.PositiveIntegerField(default=0)
+    mem_limit_bytes = models.BigIntegerField(null=True)
 
     class Meta:
         db_table = 'metrics_latest_docker_container'

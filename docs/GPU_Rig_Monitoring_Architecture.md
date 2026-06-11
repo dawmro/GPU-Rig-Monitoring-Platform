@@ -99,9 +99,9 @@ The GPU Rig Monitoring Platform is a single-server telemetry dashboard for GPU r
 
 ### 2.2 Data Flow: Agent Ingestion
 
-```
+```text
 Cron → Agent collects metrics → JSON payload → POST /api/v1/ingest/
-  → Nginx (rate limit: 10r/s per IP burst=20, 2r/min per API key burst=5, payload size check)
+  → Nginx (rate limit: 2r/min per rig_uuid burst=5, 10r/min per API key burst=10, payload size check)
   → DRF APIKeyAuthentication (X-API-Key header → Argon2id hash comparison)
   → DRF throttle (per-rig rate limit via X-Rig-UUID header, 2/min per rig)
   → Timestamp sanity check (reject if >5 min future or >1 hour past)
@@ -115,7 +115,12 @@ All other endpoints (dashboard, login, static):
   → Nginx general rate limit: 30r/s per IP (burst=20 for pages, burst=50 for static)
   → Django per-user rate limit: 60 req/min (rig_list, rig_detail), 120 req/min (htmx polling)
   → Anonymous: IP-based rate limit via Django decorator
-  → Response: 200 (new) or 202 (duplicate/idempotent)
+
+Rate limiting design:
+  - Ingest: per-rig-uuid (NOT per-IP) so server rooms with NAT work correctly
+  - Each rig gets its own rate limit bucket regardless of source IP
+  - API key zone is a safety net (10/min) for burst protection
+  - Dashboard: per-user for authenticated, per-IP for anonymous
 ```
 
 ### 2.3 Key Files
@@ -361,6 +366,7 @@ debug_mode: false         # Verbose logging
 POST /api/v1/ingest/
   → CsrfViewMiddleware (skipped via @csrf_exempt on IngestView)
   → APIKeyAuthentication validates X-API-Key
+  → Nginx rate limit: 2r/min per rig_uuid (burst=5), 10r/min per API key (burst=10)
   → DRF throttle (per-rig rate limit via X-Rig-UUID header, 2/min per rig)
   → IngestSerializer validation (schema version 1.0, 1.1, 1.2, 1.3, or 1.4)
   → process_ingest() in transaction.atomic():

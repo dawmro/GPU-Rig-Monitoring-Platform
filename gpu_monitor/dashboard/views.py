@@ -8,6 +8,28 @@ from metrics_app.models import MetricSnapshot, LatestSnapshot, GPUMetric, GPUPro
 from audit.middleware import log_audit_event
 
 
+def _format_uptime(uptime_s):
+    """Format uptime seconds as human-readable string."""
+    if uptime_s is None:
+        return '—'
+    if uptime_s >= 86400:
+        return f'{uptime_s // 86400}d'
+    if uptime_s >= 3600:
+        return f'{uptime_s // 3600}h'
+    return f'{uptime_s}s'
+
+
+def _format_mem(usage_bytes, limit_bytes):
+    """Format memory as 'usage (limit)' string."""
+    if not usage_bytes:
+        return '—'
+    from django.template.defaultfilters import filesizeformat
+    usage_str = filesizeformat(usage_bytes)
+    if limit_bytes:
+        return f'{usage_str} ({filesizeformat(limit_bytes)})'
+    return usage_str
+
+
 def _fetch_rig_metrics(uuid, rig=None):
     """Fetch the latest rig metrics for Live Metrics display.
 
@@ -47,15 +69,32 @@ def _fetch_rig_metrics(uuid, rig=None):
         rig_uuid=str(uuid)
     ).order_by('-timestamp').values_list('timestamp', flat=True).first()
 
+    docker_metrics = []
     if latest_docker_ts:
-        docker_metrics = list(
-            DockerContainerMetric.objects.filter(
-                rig_uuid=str(uuid),
-                timestamp=latest_docker_ts
-            ).order_by('-uptime_s')
-        )
-    else:
-        docker_metrics = []
+        containers = DockerContainerMetric.objects.filter(
+            rig_uuid=str(uuid),
+            timestamp=latest_docker_ts
+        ).order_by('-uptime_s')
+
+        for c in containers:
+            # Format uptime as human-readable
+            uptime_str = _format_uptime(c.uptime_s)
+            # Format memory as "usage (limit)"
+            mem_str = _format_mem(c.mem_usage_bytes, c.mem_limit_bytes)
+
+            docker_metrics.append({
+                'container_id': c.container_id,
+                'name': c.name,
+                'image': c.image,
+                'status': c.status,
+                'restart_count': c.restart_count,
+                'uptime_s': c.uptime_s,
+                'uptime_str': uptime_str,
+                'cpu_pct': c.cpu_pct,
+                'mem_usage_bytes': c.mem_usage_bytes,
+                'mem_limit_bytes': c.mem_limit_bytes,
+                'mem_str': mem_str,
+            })
 
     # Recent errors from Rig.latest_errors_json (latest payload only, like motherboard_json)
     recent_errors = rig.latest_errors_json if rig else []

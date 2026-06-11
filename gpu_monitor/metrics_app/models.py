@@ -205,39 +205,6 @@ class RigStatusEvent(models.Model):
         ]
 
 
-class AIProcessMetric(models.Model):
-    """Per-process GPU/CPU usage tracking for AI workloads.
-
-    Stores per-process resource usage when the agent collects AI process data.
-    The `ai_processes` array in the agent payload contains processes that are
-    actively using GPU resources (detected via nvidia-smi or similar).
-
-    Enables charts showing:
-    - Which processes are using GPU memory over time
-    - Per-process GPU memory usage trends
-    - CPU usage breakdown by AI process
-    """
-    id = models.BigAutoField(primary_key=True)
-    snapshot = models.ForeignKey(MetricSnapshot, on_delete=models.CASCADE, related_name='ai_processes')
-    rig_uuid = models.UUIDField(db_index=True)
-    timestamp = models.DateTimeField(db_index=True)
-
-    process_name = models.CharField(max_length=255, blank=True, default='')
-    pid = models.PositiveIntegerField(null=True)
-    gpu_uuid = models.CharField(max_length=64, blank=True, default='')
-    gpu_mem_used_mb = models.PositiveIntegerField(null=True)
-    cpu_pct = models.FloatField(null=True)
-
-    class Meta:
-        db_table = 'metrics_ai_process'
-        ordering = ['-gpu_mem_used_mb']
-        unique_together = ('rig_uuid', 'timestamp', 'process_name')
-        indexes = [
-            models.Index(fields=['rig_uuid', '-timestamp']),
-            models.Index(fields=['rig_uuid', 'process_name']),
-        ]
-
-
 class GPUProcessMetric(models.Model):
     """Per-GPU-process metrics — one row per process per GPU per snapshot.
 

@@ -27,7 +27,6 @@ CLEANUP_TABLES = [
     {'table': 'metrics_storagemetric',       'pk': 'id',         'has_ts': True},
     {'table': 'metrics_networkmetric',       'pk': 'id',         'has_ts': True},
     {'table': 'metrics_dockercontainermetric', 'pk': 'id',       'has_ts': True},
-    {'table': 'metrics_ai_process',          'pk': 'id',         'has_ts': True},
     {'table': 'metrics_rig_status_event',    'pk': 'id',         'has_ts': True},
     {'table': 'metrics_metricsnapshot',     'pk': 'id',         'has_ts': True},
     {'table': 'metrics_latest_snapshot',     'pk': 'rig_uuid',   'has_ts': False},

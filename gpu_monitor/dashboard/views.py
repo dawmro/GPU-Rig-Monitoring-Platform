@@ -259,7 +259,7 @@ def rig_delete(request, uuid):
 
     # Delete all associated metric data (MetricSnapshot has rig_uuid as UUIDField, not FK)
     from metrics_app.models import MetricSnapshot, LatestSnapshot, GPUMetric, GPUProcessMetric, \
-        StorageMetric, NetworkMetric, DockerContainerMetric, AIProcessMetric, RigStatusEvent
+        StorageMetric, NetworkMetric, DockerContainerMetric, RigStatusEvent
     MetricSnapshot.objects.filter(rig_uuid=uuid).delete()
     LatestSnapshot.objects.filter(rig_uuid=uuid).delete()
     GPUMetric.objects.filter(rig_uuid=uuid).delete()
@@ -267,7 +267,6 @@ def rig_delete(request, uuid):
     StorageMetric.objects.filter(rig_uuid=uuid).delete()
     NetworkMetric.objects.filter(rig_uuid=uuid).delete()
     DockerContainerMetric.objects.filter(rig_uuid=uuid).delete()
-    AIProcessMetric.objects.filter(rig_uuid=uuid).delete()
     RigStatusEvent.objects.filter(rig_uuid=uuid).delete()
 
     rig.delete()

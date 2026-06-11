@@ -67,12 +67,6 @@ COMPACT_TABLES = [
         'agg_fields': {'cpu_pct': 'avg', 'mem_usage_bytes': 'avg', 'mem_limit_bytes': 'last', 'restart_count': 'max'},
         'static_fields': ['image', 'status', 'snapshot_id'],
     },
-    {
-        'table': 'metrics_ai_process',
-        'group_by': ['rig_uuid', 'process_name'],
-        'agg_fields': {'gpu_mem_used_mb': 'avg', 'cpu_pct': 'avg'},
-        'static_fields': ['gpu_uuid', 'pid', 'snapshot_id'],
-    },
     # Parent table LAST — FK-safe with NOT EXISTS
     {
         'table': 'metrics_metricsnapshot',

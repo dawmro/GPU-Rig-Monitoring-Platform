@@ -58,17 +58,15 @@
 
 *Implementation: Uses loadChartMultiKey() with multi_iface=true parameter in ChartDataView to return one dataset per unique interface, labeled with interface and IPv4 address. Byte deltas converted to MB/s.*
 
-### Phase 6: Docker, AI Processes, Rig Health ✅ COMPLETE (Multi-series implemented)
+### Phase 6: Docker, Rig Health ✅ COMPLETE (Multi-series implemented)
 - Container CPU % (per container) ✅
 - Container Memory (per container) ✅
 - Container Restarts (per container) ✅
-- AI Process GPU Memory (per process) ✅
 - Uptime ✅ (from software_json.uptime_s)
 - Error Frequency ✅ (from MetricSnapshot.error_count)
 
 *Implementation: 
 - Container charts use loadChartMultiKey() with multi_container=true
-- AI Process charts use loadChartMultiKey() with multi_ai=true  
 - Uptime chart uses standard loadChart() with metric='uptime_s'
 - Error Frequency chart uses loadChart() with metric='error_frequency' (bar chart type); data source is MetricSnapshot.error_count*
 
@@ -125,6 +123,5 @@ All charts proposed in the ADDITIONAL_CHARTS_PROPOSAL.md have been implemented a
 - Storage charts: One chart per metric with multiple datasets (one per disk)
 - Network charts: combined RX+TX+Errors into one chart with dual Y-axes
 - Docker charts: One chart per metric with multiple datasets (one per container)
-- AI Process charts: One chart per metric with multiple datasets (one per process)
 
 All implementation details match the current state of the codebase as verified through documentation review.

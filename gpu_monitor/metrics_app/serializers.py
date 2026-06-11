@@ -2,7 +2,7 @@ import logging
 from rest_framework import serializers, status
 from django.db import transaction
 from django.utils import timezone
-from .models import MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, RigStatusEvent, AIProcessMetric
+from .models import MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, RigStatusEvent
 from rigs.models import Rig
 
 logger = logging.getLogger(__name__)
@@ -46,7 +46,6 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
     gpu_process_list = metrics_data.get('gpu_processes', [])
     storage_list = metrics_data.get('storage', [])
     network_list = metrics_data.get('network', [])
-    ai_processes = metrics_data.get('ai_processes', [])
     docker_containers = metrics_data.get('docker_containers', [])
 
     try:
@@ -216,21 +215,6 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     'mem_total_bytes': memory.get('total_bytes'),
                 },
             )
-
-            # Store per-process AI metrics
-            for proc in ai_processes:
-                AIProcessMetric.objects.update_or_create(
-                    rig_uuid=rig_uuid,
-                    timestamp=ts,
-                    process_name=proc.get('process_name', ''),
-                    pid=proc.get('pid'),
-                    defaults={
-                        'snapshot': snapshot,
-                        'gpu_uuid': proc.get('gpu_uuid', ''),
-                        'gpu_mem_used_mb': proc.get('gpu_mem_used_mb'),
-                        'cpu_pct': proc.get('cpu_pct'),
-                    },
-                )
 
             # Track rig status transitions
             if rig:

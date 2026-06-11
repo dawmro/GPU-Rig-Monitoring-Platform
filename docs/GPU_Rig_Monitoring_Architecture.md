@@ -179,7 +179,8 @@ rig_name: ""              # Suggested initial name. Used ONLY once during rig cr
 api_key: "..."            # Server-side API key (shown once at creation)
 server_endpoint: "http://..."  # Must include http:// or https://
 expected_gpu_count: 0     # 0 = auto-detect
-collection_timeout_s: 45  # Hard timeout via signal.alarm()
+collection_timeout_s: 30  # Hard timeout via signal.alarm()
+jitter_s: 0-25            # Random delay before collection to spread load
 retry_attempts: 3         # Exponential backoff: 1s → 2s → 4s
 debug_mode: false         # Verbose logging
 ```
@@ -321,7 +322,7 @@ debug_mode: false         # Verbose logging
 
 - **Compression:** None (Django DRF does not auto-decompress gzip request bodies)
 - **Idempotency:** Same `rig_uuid + schema_version + timestamp` → 202 Accepted (not 200)
-- **Retry:** Exponential backoff with jitter, max 3 attempts, 45s hard timeout
+- **Retry:** Exponential backoff with jitter, max 3 attempts, 30s hard timeout
 
 ### 3.5 Two Agents
 
@@ -820,7 +821,7 @@ Tests are organized in a pragmatic pyramid: unit tests (mocked hardware) → int
 | GPU driver missing | `pynvml.nvmlInit()` raises `NVMLError_DriverNotLoaded` | Agent logs warning, `metrics.gpus` is `[]`, payload still sent |
 | SMART fallback | `subprocess.run("smartctl")` raises `CalledProcessError` | `storage[*].smart_health` is null, agent does not abort |
 | Network timeout | `requests.post()` raises `ConnectionError` | Retry with exponential backoff (1s, 2s, 4s) verified via mocked `time.sleep` |
-| Hard timeout | Mock collector `time.sleep(60)` | `signal.alarm(45)` triggers `TimeoutError`, agent exits cleanly |
+| Hard timeout | Mock collector `time.sleep(60)` | `signal.alarm(30)` triggers `TimeoutError`, agent exits cleanly |
 
 **Server tests** (`pytest-django`) focus on DRF serializers, RBAC, and background logic:
 

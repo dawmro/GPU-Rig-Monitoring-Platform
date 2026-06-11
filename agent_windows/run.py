@@ -1047,7 +1047,7 @@ def main():
     logger = logging.getLogger('main')
 
     # Random jitter to spread load across the reporting interval
-    jitter_s = random.uniform(0, 15)
+    jitter_s = random.uniform(0, 25)
     time.sleep(jitter_s)
 
     # Acquire lock to prevent overlapping runs

@@ -714,15 +714,16 @@ def main():
     # Random jitter to spread load across the reporting interval
     # Without this, all rigs send at the same second (cron :00)
     # causing thundering herd problem with hundreds of rigs
-    jitter_s = random.uniform(0, 15)
+    jitter_s = random.uniform(0, 25)
     time.sleep(jitter_s)
 
     config = load_config()
     setup_logging(debug=config.get('debug_mode', False))
     logger = logging.getLogger('main')
 
-    # Hard timeout
-    timeout_s = config.get('collection_timeout_s', 45)
+    # Hard timeout — 30s allows collection + retries while leaving
+    # margin for jitter (25s max) within the 60s cron interval
+    timeout_s = config.get('collection_timeout_s', 30)
     signal.signal(signal.SIGALRM, timeout_handler)
     signal.alarm(timeout_s)
 

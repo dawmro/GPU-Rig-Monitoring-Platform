@@ -87,13 +87,15 @@
 | 42 | Docker restarts | `metrics.docker_containers[].restart_count` | `restart_count` | IntegerField | — |
 | 43 | Docker mem limit | `metrics.docker_containers[].mem_limit_bytes` | `mem_limit_bytes` | BigIntegerField | — |
 
-### ErrorEvent (deduplicated by hash)
+### Error Handling
+
+Errors are filtered on the server side — "no error" placeholders from agents
+(e.g. `{"source": "kernel", "message": "-- No entries --"}`) are excluded.
 
 | # | Value | Payload Path | DB Field | Type | Charts? |
 |---|-------|-------------|----------|------|---------|
-| 41 | Error source | `errors[].source` | `source` | CharField | ✅ (text) |
-| 42 | Error message | `errors[].message` | `message` | TextField | ✅ (text) |
-| 43 | Error count | dedup logic | `count` | PositiveIntegerField | ✅ |
+| 41 | Error count (real errors only) | `errors[]` (filtered) | `MetricSnapshot.error_count` | IntegerField | ✅ |
+| 42 | Latest error text | `errors[]` (filtered) | `Rig.latest_errors_json` | JSONField | ✅ (text) |
 
 ### RigStatusEvent (one row per status transition)
 

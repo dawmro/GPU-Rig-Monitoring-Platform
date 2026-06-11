@@ -1,6 +1,6 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
-from django.http import Http404, HttpResponseTooManyRequests
+from django.http import Http404, HttpResponse
 from django.views.decorators.http import require_POST
 from django.db.models import Count
 from django.core.cache import cache
@@ -37,8 +37,9 @@ def rate_limit(max_requests, window_s):
             timestamps = [t for t in timestamps if t > window_start]
 
             if len(timestamps) >= max_requests:
-                return HttpResponseTooManyRequests(
+                return HttpResponse(
                     'Rate limit exceeded. Please slow down.',
+                    status=429,
                     content_type='text/plain'
                 )
 

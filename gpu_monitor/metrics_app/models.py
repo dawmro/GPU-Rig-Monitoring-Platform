@@ -142,9 +142,9 @@ class NetworkMetric(models.Model):
 
 
 class DockerContainerMetric(models.Model):
-    """Per-container time-series metrics — one row per container per snapshot.
+    """Per-container metrics — one row per container per snapshot.
 
-    Stores container status and resource usage for historical tracking.
+    Stores container data from the agent payload.
     """
     id = models.BigAutoField(primary_key=True)
     snapshot = models.ForeignKey(MetricSnapshot, on_delete=models.CASCADE, related_name='docker_metrics')
@@ -154,10 +154,6 @@ class DockerContainerMetric(models.Model):
     name = models.CharField(max_length=255, blank=True, default='')
     image = models.CharField(max_length=255, blank=True, default='')
     status = models.CharField(max_length=32, blank=True, default='')
-    restart_count = models.PositiveIntegerField(default=0)
-    cpu_pct = models.FloatField(null=True)
-    mem_usage_bytes = models.BigIntegerField(null=True)
-    mem_limit_bytes = models.BigIntegerField(null=True)
     uptime_s = models.PositiveIntegerField(null=True)
 
     class Meta:

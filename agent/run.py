@@ -509,11 +509,24 @@ def collect_docker():
         client = docker.from_env()
         containers = []
         for c in client.containers.list():
+            # Calculate uptime from StartedAt
+            uptime_s = None
+            try:
+                started_at = c.attrs.get('State', {}).get('StartedAt')
+                if started_at:
+                    from datetime import datetime, timezone
+                    start_dt = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
+                    uptime_s = int((datetime.now(timezone.utc) - start_dt).total_seconds())
+            except Exception:
+                pass
+
             container_info = {
+                'container_id': c.id[:12] if c.id else '',
                 'name': c.name,
                 'image': c.image.tags[0] if c.image.tags else 'unknown',
                 'status': c.status,
                 'restart_count': c.attrs.get('RestartCount', 0),
+                'uptime_s': uptime_s,
                 'cpu_pct': None,
                 'mem_usage_bytes': None,
                 'mem_limit_bytes': None,

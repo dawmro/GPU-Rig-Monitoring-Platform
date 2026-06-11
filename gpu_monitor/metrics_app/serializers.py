@@ -40,6 +40,15 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
     software_data = validated.get('software', {})
     errors_data = validated.get('errors', [])
 
+    # Filter out "no errors" placeholder entries from agents
+    # Some agents send [{"source": "kernel", "message": "-- No entries --", "timestamp": ""}]
+    # when there are no real errors — these must not be counted or stored
+    NO_ERROR_MESSAGES = {'-- No entries --', 'No entries', '', None}
+    real_errors = [
+        e for e in errors_data
+        if e.get('message', '').strip() not in NO_ERROR_MESSAGES
+    ]
+
     cpu = metrics_data.get('cpu', {})
     memory = metrics_data.get('memory', {})
     gpu_list = metrics_data.get('gpus', [])
@@ -72,7 +81,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     'status': rig.status if rig else None,
                     'motherboard_json': motherboard_data,
                     'software_json': software_data,
-                    'error_count': len(errors_data),
+                    'error_count': len(real_errors),
                 },
             )
 
@@ -239,11 +248,15 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     )
 
             # Update latest error text on Rig (like motherboard_json — updated in place)
-            if errors_data and rig:
+            if real_errors and rig:
                 rig.latest_errors_json = [
                     {'source': e.get('source', ''), 'message': e.get('message', '')[:200], 'timestamp': e.get('timestamp', '')}
-                    for e in errors_data[:10]
+                    for e in real_errors[:10]
                 ]
+                rig.save(update_fields=['latest_errors_json'])
+            elif rig:
+                # No real errors — clear the error list
+                rig.latest_errors_json = []
                 rig.save(update_fields=['latest_errors_json'])
 
             http_status = status.HTTP_200_OK if created else status.HTTP_202_ACCEPTED

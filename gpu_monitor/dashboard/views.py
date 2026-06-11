@@ -20,13 +20,13 @@ def _format_uptime(uptime_s):
 
 
 def _format_mem(usage_bytes, limit_bytes):
-    """Format memory as 'usage (limit)' string."""
+    """Format memory as 'usage / limit' string (e.g. '50 MB / 400 MB')."""
     if not usage_bytes:
         return '—'
     from django.template.defaultfilters import filesizeformat
     usage_str = filesizeformat(usage_bytes)
     if limit_bytes:
-        return f'{usage_str} ({filesizeformat(limit_bytes)})'
+        return f'{usage_str} / {filesizeformat(limit_bytes)}'
     return usage_str
 
 

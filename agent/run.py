@@ -420,24 +420,36 @@ def collect_gpus():
         return []
 
 
-def collect_gpu_processes():
-    """Collect GPU process list from nvidia-smi.
+def collect_ai_processes():
+    """Collect AI/GPU process metrics from nvidia-smi.
 
-    Parses the full nvidia-smi output table to get all processes
-    (Compute, Graphics, and Compute+Graphics).
+    For each process using GPU, collects: pid, process_name, gpu_uuid,
+    gpu_mem_used_mb, cpu_pct.
 
-    Works on both Linux and Windows. The nvidia-smi output uses | only
-    at the left/right edges of the table; columns are space-separated
-    within. We strip | and split by whitespace.
+    CPU% is calculated from /proc/[pid]/stat on Linux or psutil on Windows.
 
     Returns list of dicts:
-        [{gpu_index, pid, type, name, gpu_mem_mb}]
+        [{pid, process_name, gpu_uuid, gpu_mem_used_mb, cpu_pct}]
     """
     processes = []
     try:
+        import pynvml
+        pynvml.nvmlInit()
+        gpu_count = pynvml.nvmlDeviceGetCount()
+
+        # Build a map of gpu_index -> gpu_uuid
+        gpu_uuids = {}
+        for i in range(gpu_count):
+            handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+            gpu_uuids[i] = pynvml.nvmlDeviceGetUUID(handle)
+
+        pynvml.nvmlShutdown()
+    except Exception:
+        return processes
+
+    try:
         out = subprocess.run(
-            ['nvidia-smi'],
-            capture_output=True, text=True, timeout=10
+            ['nvidia-smi'], capture_output=True, text=True, timeout=10
         )
         if out.returncode != 0:
             return processes
@@ -446,35 +458,129 @@ def collect_gpu_processes():
         for line in out.stdout.splitlines():
             stripped = line.strip()
 
-            # Detect the Processes section
             if stripped.startswith('| Processes:'):
                 in_processes = True
                 continue
-
             if not in_processes:
                 continue
-
-            # End of section: +----+ border or empty line after we have data
             if stripped.startswith('+') or not stripped:
                 if processes:
                     break
                 continue
-
-            # Skip header/separator lines
             if '---' in stripped or ('GPU' in stripped and 'PID' in stripped):
                 continue
-
-            # Skip sub-header line (ID ID Usage)
             if 'ID' in stripped and 'Usage' in stripped and not stripped.startswith('|'):
                 continue
 
-            # Strip | from edges and split by whitespace
             clean = stripped.replace('|', '').strip()
             if not clean:
                 continue
             parts = clean.split()
+            if len(parts) < 5:
+                continue
 
-            # Need at least: GPU, GI, CI, PID, Type, [name], [mem]
+            try:
+                gpu_idx = int(parts[0])
+                pid = int(parts[3])
+
+                # GPU memory
+                gpu_mem_str = parts[-1] if len(parts) >= 6 else 'N/A'
+                gpu_mem_mb = None
+                if gpu_mem_str not in ('N/A', ''):
+                    mem_val = gpu_mem_str.replace('MiB', '').replace('GiB', '').strip()
+                    try:
+                        gpu_mem_mb = int(float(mem_val))
+                        if 'GiB' in gpu_mem_str:
+                            gpu_mem_mb = int(gpu_mem_mb * 1024)
+                    except ValueError:
+                        pass
+
+                # Process name (everything between Type and Memory)
+                proc_name = ' '.join(parts[5:-1]) if len(parts) >= 6 else ''
+
+                # CPU% for this process
+                cpu_pct = _get_process_cpu_pct(pid)
+
+                processes.append({
+                    'pid': pid,
+                    'process_name': proc_name,
+                    'gpu_uuid': gpu_uuids.get(gpu_idx, ''),
+                    'gpu_mem_used_mb': gpu_mem_mb,
+                    'cpu_pct': cpu_pct,
+                })
+            except (ValueError, IndexError):
+                continue
+
+        return processes
+    except Exception as e:
+        logging.getLogger('ai_process').warning('AI process collection failed: %s', e)
+        return []
+
+
+def _get_process_cpu_pct(pid):
+    """Get CPU percentage for a specific process.
+
+    On Linux: reads /proc/[pid]/stat and calculates CPU usage.
+    On Windows: uses psutil.Process.cpu_percent().
+    Returns None if process not found or error.
+    """
+    try:
+        import psutil
+        proc = psutil.Process(pid)
+        # cpu_percent() returns 0.0 on first call, so we need a small interval
+        # But since we're in a tight loop, just return the cached value
+        cpu = proc.cpu_percent(interval=None)
+        if cpu == 0.0:
+            # Process might be new, try with a small sleep
+            import time
+            time.sleep(0.1)
+            cpu = proc.cpu_percent(interval=None)
+        return round(cpu, 1) if cpu > 0 else None
+    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+        return None
+    except Exception:
+        return None
+
+
+def collect_gpu_processes():
+    """Collect GPU process list from nvidia-smi.
+
+    Parses the full nvidia-smi output table to get all processes
+    (Compute, Graphics, and Compute+Graphics).
+
+    Returns list of dicts:
+        [{gpu_index, pid, type, name, gpu_mem_mb}]
+    """
+    processes = []
+    try:
+        out = subprocess.run(
+            ['nvidia-smi'], capture_output=True, text=True, timeout=10
+        )
+        if out.returncode != 0:
+            return processes
+
+        in_processes = False
+        for line in out.stdout.splitlines():
+            stripped = line.strip()
+
+            if stripped.startswith('| Processes:'):
+                in_processes = True
+                continue
+            if not in_processes:
+                continue
+            if stripped.startswith('+') or not stripped:
+                if processes:
+                    break
+                continue
+            if '---' in stripped or ('GPU' in stripped and 'PID' in stripped):
+                continue
+            if 'ID' in stripped and 'Usage' in stripped and not stripped.startswith('|'):
+                continue
+
+            clean = stripped.replace('|', '').strip()
+            if not clean:
+                continue
+            parts = clean.split()
             if len(parts) < 5:
                 continue
 
@@ -482,17 +588,9 @@ def collect_gpu_processes():
                 gpu_idx = int(parts[0])
                 pid = int(parts[3])
                 proc_type = parts[4]
-
-                # Memory is the last field (e.g. "6MiB", "2936MiB", "N/A")
                 gpu_mem_str = parts[-1] if len(parts) >= 6 else 'N/A'
+                proc_name = ' '.join(parts[5:-1]) if len(parts) >= 6 else ''
 
-                # Process name is everything between Type and Memory
-                if len(parts) >= 6:
-                    proc_name = ' '.join(parts[5:-1])
-                else:
-                    proc_name = ''
-
-                # Parse memory
                 gpu_mem_mb = None
                 if gpu_mem_str not in ('N/A', ''):
                     mem_val = gpu_mem_str.replace('MiB', '').replace('GiB', '').strip()

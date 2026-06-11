@@ -99,17 +99,28 @@ The GPU Rig Monitoring Platform is a single-server telemetry dashboard for GPU r
 
 ### 2.2 Data Flow: Agent Ingestion
 
-```
+```text
 Cron → Agent collects metrics → JSON payload → POST /api/v1/ingest/
-  → Nginx (rate limit: per-rig 5/min + per-IP 30/s, payload size check)
+  → Nginx (rate limit: 2r/min per rig_uuid burst=5, payload size check)
   → DRF APIKeyAuthentication (X-API-Key header → Argon2id hash comparison)
-  → DRF throttle (per-rig rate limit, scoped by rig_uuid)
+  → DRF throttle (per-rig rate limit via X-Rig-UUID header, 2/min per rig)
   → Timestamp sanity check (reject if >5 min future or >1 hour past)
   → IngestSerializer validation (schema version 1.0, 1.1, or 1.2)
   → process_ingest() → DB upsert (MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, RigStatusEvent, LatestSnapshot)
   → Rig.latest_errors_json updated with latest error text
   → Rig.last_seen and Rig.status updated to ONLINE
   → Response: 200 (new) or 202 (duplicate/idempotent)
+
+All other endpoints (dashboard, login, static):
+  → Nginx general rate limit: 30r/s per IP (burst=20 for pages, burst=50 for static)
+  → Django per-user rate limit: 60 req/min (rig_list, rig_detail), 120 req/min (htmx polling)
+  → Anonymous: IP-based rate limit via Django decorator
+
+Rate limiting design:
+  - Ingest: per-rig-uuid ONLY (no API key shared bucket)
+  - Each rig gets its own rate limit bucket regardless of source IP or API key
+  - No shared buckets that could block server rooms with many rigs
+  - Dashboard: per-user for authenticated, per-IP for anonymous
 ```
 
 ### 2.3 Key Files
@@ -355,7 +366,8 @@ debug_mode: false         # Verbose logging
 POST /api/v1/ingest/
   → CsrfViewMiddleware (skipped via @csrf_exempt on IngestView)
   → APIKeyAuthentication validates X-API-Key
-  → DRF throttle (per-rig rate limit, scoped by rig_uuid)
+  → Nginx rate limit: 2r/min per rig_uuid (burst=5)
+  → DRF throttle (per-rig rate limit via X-Rig-UUID header, 2/min per rig)
   → IngestSerializer validation (schema version 1.0, 1.1, 1.2, 1.3, or 1.4)
   → process_ingest() in transaction.atomic():
       - Upsert MetricSnapshot (cpu, memory, status fields; motherboard/software as JSON; error_count)
@@ -396,7 +408,7 @@ On every agent heartbeat, `IngestView` sets `Rig.status = ONLINE` and `Rig.last_
 
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
-| POST | `/api/v1/ingest/` | API Key + X-Rig-UUID header | Telemetry submission (per-rig rate limit, timestamp sanity check) |
+| POST | `/api/v1/ingest/` | API Key + X-Rig-UUID header | Telemetry submission (per-rig rate limit via X-Rig-UUID, 2/min, timestamp sanity check) |
 | GET | `/api/v1/health/` | None | Health check (DB + active rigs count) |
 | GET | `/api/v1/rigs/<uuid>/metrics/` | Session | Latest metrics (used by Chart.js direct fetch) |
 | GET | `/api/v1/rigs/<uuid>/chart-data/?metric=X&range=N` | Session | Historical chart data |

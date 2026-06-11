@@ -1,12 +1,52 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
-from django.http import Http404
+from django.http import Http404, HttpResponseTooManyRequests
 from django.views.decorators.http import require_POST
 from django.db.models import Count
+from django.core.cache import cache
+from functools import wraps
+import time
 
 from rigs.models import Rig, RigTag
 from metrics_app.models import MetricSnapshot, LatestSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestDockerContainer
 from audit.middleware import log_audit_event
+
+
+def rate_limit(max_requests, window_s):
+    """Simple per-user/IP rate limit decorator for Django views.
+
+    Args:
+        max_requests: Maximum number of requests allowed in the window.
+        window_s: Time window in seconds.
+    """
+    def decorator(view_func):
+        @wraps(view_func)
+        def wrapper(request, *args, **kwargs):
+            # Use user ID for authenticated users, IP for anonymous
+            if request.user.is_authenticated:
+                key = f'rl_user_{request.user.id}'
+            else:
+                key = f'rl_ip_{request.META.get("REMOTE_ADDR", "unknown")}'
+
+            now = time.time()
+            window_start = now - window_s
+
+            # Get request timestamps from cache
+            timestamps = cache.get(key, [])
+            # Remove timestamps outside the current window
+            timestamps = [t for t in timestamps if t > window_start]
+
+            if len(timestamps) >= max_requests:
+                return HttpResponseTooManyRequests(
+                    'Rate limit exceeded. Please slow down.',
+                    content_type='text/plain'
+                )
+
+            timestamps.append(now)
+            cache.set(key, timestamps, timeout=window_s)
+            return view_func(request, *args, **kwargs)
+        return wrapper
+    return decorator
 
 
 def _format_uptime(uptime_s):
@@ -128,6 +168,7 @@ def _fetch_rig_metrics(uuid, rig=None):
 
 
 @login_required
+@rate_limit(max_requests=60, window_s=60)
 def rig_list(request):
     """Fleet overview page.
 
@@ -239,6 +280,7 @@ def rig_toggle_tag(request, uuid, tag_id):
 
 
 @login_required
+@rate_limit(max_requests=60, window_s=60)
 def rig_detail(request, uuid):
     """Rig detail page."""
     rig = get_object_or_404(Rig, uuid=uuid)
@@ -253,6 +295,7 @@ def rig_detail(request, uuid):
 
 
 @login_required
+@rate_limit(max_requests=120, window_s=60)
 def htmx_metrics(request, uuid):
     """HTMX polling endpoint for live metrics."""
     rig = get_object_or_404(Rig, uuid=uuid)
@@ -267,6 +310,7 @@ def htmx_metrics(request, uuid):
 
 
 @login_required
+@rate_limit(max_requests=120, window_s=60)
 def htmx_rig_status(request, uuid):
     """HTMX polling endpoint — returns just the status badge + last_seen."""
     rig = get_object_or_404(Rig, uuid=uuid)

@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class IngestSerializer(serializers.Serializer):
     rig_uuid = serializers.UUIDField()
     rig_name = serializers.CharField(required=False, default='')
-    schema_version = serializers.CharField(default='1.1')
+    schema_version = serializers.CharField(default='1.4')
     agent_version = serializers.CharField(default='1.1.0')
     timestamp = serializers.DateTimeField()
     metrics = serializers.JSONField(required=False, default=dict)
@@ -182,13 +182,18 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
 
             # Store per-container metrics
             for container in docker_containers:
+                # Skip containers without required fields
+                container_id = container.get('container_id')
+                if not container_id:
+                    logger.warning('Skipping container without container_id: %s', container.get('name', 'unknown'))
+                    continue
                 DockerContainerMetric.objects.update_or_create(
                     rig_uuid=rig_uuid,
                     timestamp=ts,
                     name=container.get('name', ''),
                     defaults={
                         'snapshot': snapshot,
-                        'container_id': container.get('container_id', ''),
+                        'container_id': container_id,
                         'image': container.get('image', ''),
                         'status': container.get('status', ''),
                         'restart_count': container.get('restart_count', 0),

@@ -80,7 +80,7 @@ Single phase:
 **Table Processing Order:**
 1. `metrics_metricsnapshot` (parent) — compacted first, excluding rows still referenced by children
 2. `metrics_gpumetric`, `metrics_storagemetric`, `metrics_networkmetric` (children) — compacted after parent
-3. `metrics_dockercontainermetric`, `metrics_ai_process`, `metrics_gpu_process` — compacted if data exists
+3. `metrics_dockercontainermetric`, `metrics_gpu_process` — compacted if data exists
 
 **FK Handling:**
 - Parent table rows referenced by children are excluded from compaction (to avoid FK violations)
@@ -122,8 +122,7 @@ Compaction complete
 3. `metrics_storagemetric` (child of MetricSnapshot)
 4. `metrics_networkmetric` (child of MetricSnapshot)
 5. `metrics_dockercontainermetric` (child of MetricSnapshot)
-6. `metrics_ai_process` (child of MetricSnapshot)
-7. `metrics_rig_status_event` (independent)
+6. `metrics_rig_status_event` (independent)
 8. `metrics_metricsnapshot` (parent — deleted last so FK constraints are satisfied)
 9. `metrics_latest_snapshot` (independent, uses `rig_uuid` as PK, no timestamp column)
 
@@ -142,7 +141,6 @@ Cleaning up data older than 31 days (before 2026-05-09 02:18)
   metrics_storagemetric: nothing to delete
   metrics_networkmetric: nothing to delete
   metrics_dockercontainermetric: nothing to delete
-  metrics_ai_process: nothing to delete
   metrics_rig_status_event: nothing to delete
   metrics_metricsnapshot: nothing to delete
   metrics_latest_snapshot: 2 rows to delete

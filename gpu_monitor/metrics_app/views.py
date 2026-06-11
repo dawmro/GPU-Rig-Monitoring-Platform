@@ -13,7 +13,7 @@ from django.shortcuts import get_object_or_404
 from accounts.authentication import APIKeyAuthentication
 from accounts.models import ApiKey
 from .serializers import process_ingest
-from .models import LatestSnapshot, MetricSnapshot, DockerContainerMetric, AIProcessMetric
+from .models import LatestSnapshot, MetricSnapshot, DockerContainerMetric
 from rigs.models import Rig
 from audit.middleware import log_audit_event
 
@@ -331,15 +331,6 @@ class ChartDataView(APIView):
             if fn == 'mem_usage_bytes':
                 for ds in datasets:
                     ds['data'] = [round(v / (1024**3), 2) if v is not None else None for v in ds['data']]
-
-        elif metric.startswith('ai_'):
-            from .models import AIProcessMetric
-            fn = {'ai_gpu_mem_mb': 'gpu_mem_used_mb', 'ai_cpu_pct': 'cpu_pct'}.get(metric)
-            if not fn:
-                return Response({'status': 'error', 'message': f'Unknown AI metric: {metric}'}, status=400)
-            base_qs = AIProcessMetric.objects.filter(**base_filter)
-            datasets = [{'label': name, 'data': chart_values(base_qs.filter(process_name=name), fn)}
-                        for name in base_qs.values_list('process_name', flat=True).distinct().order_by('process_name')]
 
         elif metric == 'error_frequency':
             data = list(MetricSnapshot.objects.filter(**base_filter)

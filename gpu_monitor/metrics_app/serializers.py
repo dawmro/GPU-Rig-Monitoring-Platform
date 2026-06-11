@@ -2,7 +2,7 @@ import logging
 from rest_framework import serializers, status
 from django.db import transaction
 from django.utils import timezone
-from .models import MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, RigStatusEvent, AIProcessMetric
+from .models import MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, RigStatusEvent
 from rigs.models import Rig
 
 logger = logging.getLogger(__name__)
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class IngestSerializer(serializers.Serializer):
     rig_uuid = serializers.UUIDField()
     rig_name = serializers.CharField(required=False, default='')
-    schema_version = serializers.CharField(default='1.1')
+    schema_version = serializers.CharField(default='1.5')
     agent_version = serializers.CharField(default='1.1.0')
     timestamp = serializers.DateTimeField()
     metrics = serializers.JSONField(required=False, default=dict)
@@ -20,7 +20,7 @@ class IngestSerializer(serializers.Serializer):
     errors = serializers.ListField(required=False, default=list)
 
     def validate_schema_version(self, value):
-        if value not in ('1.0', '1.1', '1.2', '1.3', '1.4'):
+        if value not in ('1.0', '1.1', '1.2', '1.3', '1.4', '1.5'):
             raise serializers.ValidationError(f"Unsupported schema_version: {value}")
         return value
 
@@ -46,7 +46,6 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
     gpu_process_list = metrics_data.get('gpu_processes', [])
     storage_list = metrics_data.get('storage', [])
     network_list = metrics_data.get('network', [])
-    ai_processes = metrics_data.get('ai_processes', [])
     docker_containers = metrics_data.get('docker_containers', [])
 
     try:
@@ -182,18 +181,25 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
 
             # Store per-container metrics
             for container in docker_containers:
+                # Skip containers without required fields
+                container_id = container.get('container_id')
+                if not container_id:
+                    logger.warning('Skipping container without container_id: %s', container.get('name', 'unknown'))
+                    continue
                 DockerContainerMetric.objects.update_or_create(
                     rig_uuid=rig_uuid,
                     timestamp=ts,
                     name=container.get('name', ''),
                     defaults={
                         'snapshot': snapshot,
+                        'container_id': container_id,
                         'image': container.get('image', ''),
                         'status': container.get('status', ''),
                         'restart_count': container.get('restart_count', 0),
                         'cpu_pct': container.get('cpu_pct'),
                         'mem_usage_bytes': container.get('mem_usage_bytes'),
                         'mem_limit_bytes': container.get('mem_limit_bytes'),
+                        'uptime_s': container.get('uptime_s'),
                     },
                 )
 
@@ -209,21 +215,6 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     'mem_total_bytes': memory.get('total_bytes'),
                 },
             )
-
-            # Store per-process AI metrics
-            for proc in ai_processes:
-                AIProcessMetric.objects.update_or_create(
-                    rig_uuid=rig_uuid,
-                    timestamp=ts,
-                    process_name=proc.get('process_name', ''),
-                    pid=proc.get('pid'),
-                    defaults={
-                        'snapshot': snapshot,
-                        'gpu_uuid': proc.get('gpu_uuid', ''),
-                        'gpu_mem_used_mb': proc.get('gpu_mem_used_mb'),
-                        'cpu_pct': proc.get('cpu_pct'),
-                    },
-                )
 
             # Track rig status transitions
             if rig:

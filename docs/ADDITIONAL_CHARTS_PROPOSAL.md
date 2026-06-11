@@ -61,13 +61,6 @@
 | Container Memory Limit | `DockerContainerMetric.mem_limit_bytes` | GB | Shows container memory cap. | MEDIUM | ✅ (multi_container) |
 | Container Restarts | `DockerContainerMetric.restart_count` | count | Increasing = container crashing. Critical diagnostic. | **HIGH** | ✅ (multi_container) |
 
-### Category: AI Processes (per-process)
-
-|| Metric | Field | Unit | Diagnostic Value | Priority | Status |
-|--------|-------|-------|------|-----------------|----------|--------|
-| Process GPU Memory | `AIProcessMetric.gpu_mem_used_mb` | MB | Which process uses how much GPU memory. Stacked bar = total GPU memory breakdown. | **HIGH** | ✅ (multi_ai) |
-| Process CPU % | `AIProcessMetric.cpu_pct` | % | Per-process CPU usage. | MEDIUM | ✅ (multi_ai) |
-
 ### Category: Rig Health
 
 || Metric | Field | Unit | Diagnostic Value | Priority | Status |
@@ -94,26 +87,24 @@
 | 10 | **Container Memory** (per container) | DockerContainerMetric | Multi-line chart | ✅ |
 | 11 | **Container Restarts** | DockerContainerMetric | Step chart | ✅ |
 | 12 | **Uptime** | MetricSnapshot | Step chart | ✅ |
-| 13 | **Error Frequency** | MetricSnapshot.error_count (aggregated) | Bar chart | ✅ |
-| 14 | **AI Process GPU Memory** (stacked) | AIProcessMetric | Stacked bar | ✅ |
+|| 13 | **Error Frequency** | MetricSnapshot.error_count (aggregated) | Bar chart | ✅ |
 
 ### Tier 2 — Medium Value (All implemented)
 
 || # | Chart | Source | Type | Implemented? |
-|---|---|--------|------|--------------|
-| 15 | **Memory Cached** | MetricSnapshot | Area chart | ✅ |
-| 16 | **Process CPU %** | AIProcessMetric | Multi-line chart | ✅ |
-| 17 | **Container Memory Limit** | DockerContainerMetric | Line chart | ✅ |
+||---|---|--------|------|--------------|
+|| 14 | **Memory Cached** | MetricSnapshot | Area chart | ✅ |
+|| 15 | **Container Memory Limit** | DockerContainerMetric | Line chart | ✅ |
 
 ### Tier 3 — Low Value (All implemented)
 
 || # | Chart | Source | Type | Implemented? |
-|---|---|--------|------|--------------|
-| 18 | **GPU VRAM Total** | GPUMetric | Line chart | ✅ |
-| 19 | **GPU Power Limit** | GPUMetric | Line chart | ✅ |
-| 20 | **Swap Total** | MetricSnapshot | Line chart | ✅ |
-| 21 | **Disk Capacity** | StorageMetric | Line chart | ✅ |
-| 22 | **Network Link Speed** | NetworkMetric | Line chart | ✅ |
+||---|---|--------|------|--------------|
+|| 16 | **GPU VRAM Total** | GPUMetric | Line chart | ✅ |
+|| 17 | **GPU Power Limit** | GPUMetric | Line chart | ✅ |
+|| 18 | **Swap Total** | MetricSnapshot | Line chart | ✅ |
+|| 19 | **Disk Capacity** | StorageMetric | Line chart | ✅ |
+|| 20 | **Network Link Speed** | NetworkMetric | Line chart | ✅ |
 
 ## Implementation Notes
 
@@ -121,7 +112,7 @@
 
 ### Backend (ChartDataView):
 - Supports all metrics listed above via dedicated fields or special handling
-- Multi-series support: multi_gpu, multi_disk, multi_iface, multi_container, multi_ai parameters
+- Multi-series support: multi_gpu, multi_disk, multi_iface, multi_container parameters
 - Returns datasets with '_key' for identification and 'label' for display
 - Handles byte-to-GB and byte-delta-to-MB/s conversions server-side
 - Uses _fill_buckets_multi_key for grouping by unique values
@@ -129,7 +120,7 @@
 
 ### Frontend (rig_detail.html):
 - loadChartMultiGpu(): For multi-GPU charts (Temperature, Utilization, Memory, Power, Fan Speed)
-- loadChartMultiKey(): Generic multi-series function for disks, interfaces, containers, AI processes
+- loadChartMultiKey(): Generic multi-series function for disks, interfaces, containers
 - loadChartLoadAvg(): Specialized for CPU load average (3-line chart)
 - loadChart(): Standard single-series charts (Memory Free, Swap Usage, Uptime, Error Frequency, etc.)
 - All charts use Chart.js with appropriate types (line/bar/step)
@@ -143,4 +134,4 @@
 - All Tier 1 (high diagnostic value) charts are implemented
 - All Tier 2 (medium value) charts are implemented  
 - All Tier 3 (low value/nice to have) charts are implemented
-- Multi-series functionality works for GPU (per-GPU), Storage (per-disk), Network (per-interface), Docker (per-container), and AI Processes (per-process)
+- Multi-series functionality works for GPU (per-GPU), Storage (per-disk), Network (per-interface), Docker (per-container)

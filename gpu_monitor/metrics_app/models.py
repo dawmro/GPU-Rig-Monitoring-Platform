@@ -142,14 +142,15 @@ class NetworkMetric(models.Model):
 
 
 class DockerContainerMetric(models.Model):
-    """Per-container time-series metrics — one row per container per snapshot.
+    """Per-container metrics — one row per container per snapshot.
 
-    Stores container status and resource usage for historical tracking.
+    Stores container data from the agent payload.
     """
     id = models.BigAutoField(primary_key=True)
     snapshot = models.ForeignKey(MetricSnapshot, on_delete=models.CASCADE, related_name='docker_metrics')
     rig_uuid = models.UUIDField(db_index=True)
     timestamp = models.DateTimeField(db_index=True)
+    container_id = models.CharField(max_length=64, blank=True, default='')
     name = models.CharField(max_length=255, blank=True, default='')
     image = models.CharField(max_length=255, blank=True, default='')
     status = models.CharField(max_length=32, blank=True, default='')
@@ -157,6 +158,7 @@ class DockerContainerMetric(models.Model):
     cpu_pct = models.FloatField(null=True)
     mem_usage_bytes = models.BigIntegerField(null=True)
     mem_limit_bytes = models.BigIntegerField(null=True)
+    uptime_s = models.PositiveIntegerField(null=True)
 
     class Meta:
         db_table = 'metrics_dockercontainermetric'
@@ -200,39 +202,6 @@ class RigStatusEvent(models.Model):
         indexes = [
             models.Index(fields=['rig_uuid', '-timestamp']),
             models.Index(fields=['rig_uuid', 'status']),
-        ]
-
-
-class AIProcessMetric(models.Model):
-    """Per-process GPU/CPU usage tracking for AI workloads.
-
-    Stores per-process resource usage when the agent collects AI process data.
-    The `ai_processes` array in the agent payload contains processes that are
-    actively using GPU resources (detected via nvidia-smi or similar).
-
-    Enables charts showing:
-    - Which processes are using GPU memory over time
-    - Per-process GPU memory usage trends
-    - CPU usage breakdown by AI process
-    """
-    id = models.BigAutoField(primary_key=True)
-    snapshot = models.ForeignKey(MetricSnapshot, on_delete=models.CASCADE, related_name='ai_processes')
-    rig_uuid = models.UUIDField(db_index=True)
-    timestamp = models.DateTimeField(db_index=True)
-
-    process_name = models.CharField(max_length=255, blank=True, default='')
-    pid = models.PositiveIntegerField(null=True)
-    gpu_uuid = models.CharField(max_length=64, blank=True, default='')
-    gpu_mem_used_mb = models.PositiveIntegerField(null=True)
-    cpu_pct = models.FloatField(null=True)
-
-    class Meta:
-        db_table = 'metrics_ai_process'
-        ordering = ['-gpu_mem_used_mb']
-        unique_together = ('rig_uuid', 'timestamp', 'process_name')
-        indexes = [
-            models.Index(fields=['rig_uuid', '-timestamp']),
-            models.Index(fields=['rig_uuid', 'process_name']),
         ]
 
 

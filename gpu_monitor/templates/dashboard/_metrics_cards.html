@@ -402,26 +402,40 @@
 <!-- Docker Containers -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
-    <h3 class="text-gray-400 text-sm font-medium mb-2">Docker</h3>
+    <h3 class="text-gray-400 text-sm font-medium mb-2">Docker{% if docker_metrics %} ({{ docker_metrics|length }}){% endif %}</h3>
     {% if docker_metrics %}
-    <div class="text-sm text-gray-400 mb-2">{{ docker_metrics|length }} container{{ docker_metrics|length|pluralize }}</div>
-    <div class="space-y-1">
-        {% for c in docker_metrics|slice:":10" %}
-        <div class="flex items-center gap-2 text-xs">
-            <span>{% if c.status == 'running' %}🟢{% else %}🔴{% endif %}</span>
-            <span class="text-gray-300 truncate flex-1">{{ c.name }}</span>
-            <span class="text-gray-600 truncate max-w-32" title="{{ c.image }}">{{ c.image|truncatechars:30 }}</span>
-            {% if c.restart_count > 0 %}
-            <span class="text-yellow-500" title="{{ c.restart_count }} restarts">↻{{ c.restart_count }}</span>
-            {% endif %}
-        </div>
-        {% endfor %}
-        {% if docker_metrics|length > 10 %}
-        <div class="text-xs text-gray-600">+{{ docker_metrics|length|add:"-10" }} more</div>
-        {% endif %}
+    <div class="overflow-x-auto">
+        <table class="w-full text-xs">
+            <thead>
+                <tr class="text-gray-500 border-b border-gray-700">
+                    <th class="text-left py-1 pr-2">Status</th>
+                    <th class="text-left py-1 pr-2">Name</th>
+                    <th class="text-left py-1 pr-2">Image</th>
+                    <th class="text-left py-1 pr-2">Container ID</th>
+                    <th class="text-right py-1 pr-2">Uptime</th>
+                    <th class="text-right py-1 pr-2">Restarts</th>
+                    <th class="text-right py-1">CPU%</th>
+                    <th class="text-right py-1">Mem / Limit</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in docker_metrics %}
+                <tr class="border-b border-gray-700/50">
+                    <td class="py-1 pr-2">{% if c.status == 'running' %}🟢{% else %}🔴{% endif %}</td>
+                    <td class="py-1 pr-2 text-gray-300 truncate max-w-[120px]" title="{{ c.name }}">{{ c.name }}</td>
+                    <td class="py-1 pr-2 text-gray-400 truncate max-w-[180px]" title="{{ c.image }}">{{ c.image|truncatechars:24 }}</td>
+                    <td class="py-1 pr-2 text-gray-500 font-mono">{% if c.container_id %}{{ c.container_id|truncatechars:12 }}{% else %}—{% endif %}</td>
+                    <td class="py-1 pr-2 text-gray-400 text-right">{{ c.uptime_str }}</td>
+                    <td class="py-1 pr-2 text-right">{% if c.restart_count > 0 %}<span class="text-yellow-500">↻{{ c.restart_count }}</span>{% else %}—{% endif %}</td>
+                    <td class="py-1 pr-2 text-gray-400 text-right">{% if c.cpu_pct %}{{ c.cpu_pct|floatformat:1 }}%{% else %}—{% endif %}</td>
+                    <td class="py-1 text-gray-400 text-right">{{ c.mem_str }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
     {% else %}
-    <div class="text-gray-500">No containers</div>
+    <div class="text-gray-500 text-xs">No containers</div>
     {% endif %}
 </div>
 

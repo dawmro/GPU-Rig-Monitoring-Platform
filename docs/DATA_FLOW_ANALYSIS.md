@@ -77,13 +77,6 @@
 | 37 | Docker mem limit | `metrics.docker_containers[].mem_limit_bytes` | `mem_limit_bytes` | BigIntegerField | ✅ |
 | 38 | Docker restarts | `metrics.docker_containers[].restart_count` | `restart_count` | IntegerField | ✅ |
 
-### AIProcessMetric (one row per process per heartbeat)
-
-| # | Value | Payload Path | DB Field | Type | Charts? |
-|---|-------|-------------|----------|------|---------|
-| 39 | AI process GPU mem | `metrics.ai_processes[].gpu_mem_used_mb` | `gpu_mem_used_mb` | IntegerField | ✅ |
-| 40 | AI process CPU% | `metrics.ai_processes[].cpu_pct` | `cpu_pct` | FloatField | ✅ |
-
 ### ErrorEvent (deduplicated by hash)
 
 | # | Value | Payload Path | DB Field | Type | Charts? |

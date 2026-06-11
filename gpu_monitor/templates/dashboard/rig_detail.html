@@ -198,12 +198,6 @@
                 <canvas id="chartContainerMem"></canvas>
             </div>
 
-            <!-- AI Process GPU Memory Chart (multi-process) -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">AI Process GPU Memory (<span class="chart-timeframe-label">24h</span>)</h3>
-                <canvas id="chartAiGpuMem"></canvas>
-            </div>
-
             <!-- Error Frequency Chart -->
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
                 <h3 class="text-sm font-medium text-gray-300 mb-3">Error Frequency (<span class="chart-timeframe-label">24h</span>)</h3>
@@ -399,8 +393,6 @@ async function loadCharts() {
     // Container multi-series charts (no multi param needed - backend detects by prefix)
     await loadChartMultiKey('chartContainerCpu', 'container_cpu_pct', uuid, range, '%', 'multi_container');
     await loadChartMultiKey('chartContainerMem', 'container_mem_usage_bytes', uuid, range, ' GB', 'multi_container');
-    // AI process multi-series charts
-    await loadChartMultiKey('chartAiGpuMem', 'ai_gpu_mem_mb', uuid, range, ' MB', 'multi_ai');
     // Error frequency chart (bar chart)
     await loadChart('chartErrorFreq', 'error_frequency', uuid, range, ' err/min', 'rgba(239, 68, 68, 0.8)', 'rgba(239, 68, 68, 0.5)', 'bar');
 }

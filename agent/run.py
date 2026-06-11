@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-GPU Rig Monitoring Agent v1.1.0
+GPU Rig Monitoring Agent
 
 Collects hardware/software metrics and sends them to the monitoring server.
 Designed to run via cron every 60 seconds.
@@ -9,6 +9,20 @@ Usage:
     python3 run.py
 
 Config file: /etc/monitoring-agent/config.yaml
+
+Versioning:
+    - __version__ (MAJOR.MINOR.PATCH): incremented for agent-side changes
+      (collectors, payload format, bug fixes).
+    - __schema_version__ (MAJOR.MINOR): incremented when payload structure
+      changes in a way that affects server serialization/storage.
+
+    After making changes to agent code, you MUST increment __version__ and/or
+    __schema_version__ according to the depth of changes:
+    - PATCH: bug fixes, minor collector tweaks (e.g. 1.4.0 → 1.4.1)
+    - MINOR: new collectors, new payload fields (e.g. 1.4.0 → 1.5.0)
+    - MAJOR: breaking changes to payload structure (e.g. 1.4 → 2.0)
+
+    See docs/GPU_Rig_Monitoring_Architecture.md §3.1a for full versioning rules.
 """
 
 import os
@@ -27,8 +41,8 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.4.0'
-__schema_version__ = '1.4'
+__version__ = '1.5.0'
+__schema_version__ = '1.5'
 
 # ── Config ──────────────────────────────────────────────────────────────────
 
@@ -412,18 +426,13 @@ def collect_gpu_processes():
     Parses the full nvidia-smi output table to get all processes
     (Compute, Graphics, and Compute+Graphics).
 
-    Works on both Linux and Windows. The nvidia-smi output uses | only
-    at the left/right edges of the table; columns are space-separated
-    within. We strip | and split by whitespace.
-
     Returns list of dicts:
         [{gpu_index, pid, type, name, gpu_mem_mb}]
     """
     processes = []
     try:
         out = subprocess.run(
-            ['nvidia-smi'],
-            capture_output=True, text=True, timeout=10
+            ['nvidia-smi'], capture_output=True, text=True, timeout=10
         )
         if out.returncode != 0:
             return processes
@@ -432,35 +441,24 @@ def collect_gpu_processes():
         for line in out.stdout.splitlines():
             stripped = line.strip()
 
-            # Detect the Processes section
             if stripped.startswith('| Processes:'):
                 in_processes = True
                 continue
-
             if not in_processes:
                 continue
-
-            # End of section: +----+ border or empty line after we have data
             if stripped.startswith('+') or not stripped:
                 if processes:
                     break
                 continue
-
-            # Skip header/separator lines
             if '---' in stripped or ('GPU' in stripped and 'PID' in stripped):
                 continue
-
-            # Skip sub-header line (ID ID Usage)
             if 'ID' in stripped and 'Usage' in stripped and not stripped.startswith('|'):
                 continue
 
-            # Strip | from edges and split by whitespace
             clean = stripped.replace('|', '').strip()
             if not clean:
                 continue
             parts = clean.split()
-
-            # Need at least: GPU, GI, CI, PID, Type, [name], [mem]
             if len(parts) < 5:
                 continue
 
@@ -468,17 +466,9 @@ def collect_gpu_processes():
                 gpu_idx = int(parts[0])
                 pid = int(parts[3])
                 proc_type = parts[4]
-
-                # Memory is the last field (e.g. "6MiB", "2936MiB", "N/A")
                 gpu_mem_str = parts[-1] if len(parts) >= 6 else 'N/A'
+                proc_name = ' '.join(parts[5:-1]) if len(parts) >= 6 else ''
 
-                # Process name is everything between Type and Memory
-                if len(parts) >= 6:
-                    proc_name = ' '.join(parts[5:-1])
-                else:
-                    proc_name = ''
-
-                # Parse memory
                 gpu_mem_mb = None
                 if gpu_mem_str not in ('N/A', ''):
                     mem_val = gpu_mem_str.replace('MiB', '').replace('GiB', '').strip()
@@ -504,24 +494,42 @@ def collect_gpu_processes():
 
 
 def collect_docker():
+    """Collect Docker container metrics.
+
+    For each container, collects: container_id, name, image, status,
+    restart_count, uptime_s, cpu_pct, mem_usage_bytes, mem_limit_bytes.
+
+    CPU and memory stats are only collected for running containers
+    via the Docker stats API.
+    """
     try:
         import docker
         client = docker.from_env()
         containers = []
+
         for c in client.containers.list():
-            container_info = {
-                'name': c.name,
-                'image': c.image.tags[0] if c.image.tags else 'unknown',
-                'status': c.status,
-                'restart_count': c.attrs.get('RestartCount', 0),
-                'cpu_pct': None,
-                'mem_usage_bytes': None,
-                'mem_limit_bytes': None,
-            }
-            # Try to get live stats for running containers
+            # ── Step 1: Define default values ──
+            uptime_s = None
+            cpu_pct = None
+            mem_usage_bytes = None
+            mem_limit_bytes = None
+
+            # ── Step 2: Collect data ──
+
+            # Uptime from StartedAt timestamp
+            try:
+                started_at = c.attrs.get('State', {}).get('StartedAt')
+                if started_at:
+                    start_dt = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
+                    uptime_s = int((datetime.now(timezone.utc) - start_dt).total_seconds())
+            except Exception:
+                pass
+
+            # Live stats for running containers
             if c.status == 'running':
                 try:
                     stats = c.stats(stream=False)
+
                     # CPU calculation
                     cpu_delta = (
                         stats['cpu_stats']['cpu_usage']['total_usage'] -
@@ -533,16 +541,31 @@ def collect_docker():
                     )
                     if system_delta > 0 and cpu_delta > 0:
                         num_cpus = stats['cpu_stats'].get('online_cpus', 1)
-                        container_info['cpu_pct'] = round(
-                            (cpu_delta / system_delta) * num_cpus * 100, 2
-                        )
+                        cpu_pct = round((cpu_delta / system_delta) * num_cpus * 100, 2)
+
                     # Memory
                     mem_stats = stats.get('memory_stats', {})
-                    container_info['mem_usage_bytes'] = mem_stats.get('usage')
-                    container_info['mem_limit_bytes'] = mem_stats.get('limit')
+                    mem_usage_bytes = mem_stats.get('usage')
+                    mem_limit_bytes = mem_stats.get('limit')
                 except Exception:
                     pass  # Stats may fail for short-lived containers
+
+            # ── Step 3: Build container info dict ──
+            container_info = {
+                'container_id': c.id[:12] if c.id else '',
+                'name': c.name,
+                'image': c.image.tags[0] if c.image.tags else 'unknown',
+                'status': c.status,
+                'restart_count': c.attrs.get('RestartCount', 0),
+                'uptime_s': uptime_s,
+                'cpu_pct': cpu_pct,
+                'mem_usage_bytes': mem_usage_bytes,
+                'mem_limit_bytes': mem_limit_bytes,
+            }
+
+            # ── Step 4: Append ──
             containers.append(container_info)
+
         return containers
     except Exception as e:
         logging.getLogger('docker').warning('Docker collection failed: %s', e)
@@ -624,7 +647,6 @@ def build_payload(config):
         'network': collect_network(),
         'gpus': collect_gpus(),
         'gpu_processes': collect_gpu_processes(),
-        'ai_processes': [],
         'docker_containers': collect_docker(),
     }
 

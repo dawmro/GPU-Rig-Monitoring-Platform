@@ -636,7 +636,7 @@ The rig detail page has three tabs:
 | Tab | Description |
 |-----|-------------|
 || **Live Metrics** | Auto-refreshing cards showing CPU, memory, GPU (with index), GPU Processes (per-process: name, type badge, memory), Docker, storage, and errors (30s HTMX polling) |
-| **Historical Charts** | Combined charts: GPU (Temp/Util/Memory/Power/Fan — multi-GPU), CPU (Util/Temp/Load Avg), Memory & Swap (combined), Disk Usage (multi-disk), Network Traffic (RX/TX/Errors combined), Container CPU/Memory, AI Process GPU Memory, Uptime, Error Frequency. Refresh via ↻ button |
+|| **Historical Charts** | Combined charts: GPU (Temp/Util/Memory/Power/Fan — multi-GPU), CPU (Util/Temp/Load Avg), Memory & Swap (combined), Disk Usage (multi-disk), Network Traffic (RX/TX/Errors combined), Container CPU/Memory, Uptime, Error Frequency. Refresh via ↻ button |
 | **Errors** | Recent system errors from journalctl/Windows Event Log |
 
 **Fleet Overview Table:**

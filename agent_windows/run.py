@@ -36,6 +36,7 @@ import os
 import sys
 import json
 import time
+import random
 import logging
 import logging.handlers
 import platform
@@ -1044,6 +1045,10 @@ def main():
     config = load_config()
     setup_logging(debug=config.get('debug_mode', False))
     logger = logging.getLogger('main')
+
+    # Random jitter to spread load across the reporting interval
+    jitter_s = random.uniform(0, 15)
+    time.sleep(jitter_s)
 
     # Acquire lock to prevent overlapping runs
     lock = AcquisitionLock()

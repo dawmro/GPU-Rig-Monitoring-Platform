@@ -30,6 +30,7 @@ import sys
 import json
 import signal
 import time
+import random
 import logging
 import logging.handlers
 import platform
@@ -710,6 +711,12 @@ def timeout_handler(signum, frame):
 
 
 def main():
+    # Random jitter to spread load across the reporting interval
+    # Without this, all rigs send at the same second (cron :00)
+    # causing thundering herd problem with hundreds of rigs
+    jitter_s = random.uniform(0, 15)
+    time.sleep(jitter_s)
+
     config = load_config()
     setup_logging(debug=config.get('debug_mode', False))
     logger = logging.getLogger('main')

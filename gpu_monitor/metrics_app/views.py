@@ -21,15 +21,16 @@ logger = logging.getLogger(__name__)
 
 
 class IngestRateThrottle(SimpleRateThrottle):
-    """Per-rig rate throttle — each rig_uuid gets its own budget."""
+    """Per-rig rate throttle — each rig_uuid gets its own budget.
+
+    Reads rig_uuid from X-Rig-UUID header (always available, no body parsing needed).
+    Falls back to IP for unauthenticated requests.
+    """
 
     scope = 'ingest'
 
     def get_cache_key(self, request, view):
-        # Throttle per rig_uuid so N rigs each get the full rate
-        rig_uuid = ''
-        if hasattr(request, 'data') and isinstance(request.data, dict):
-            rig_uuid = str(request.data.get('rig_uuid', ''))
+        rig_uuid = request.META.get('HTTP_X_RIG_UUID', '')
         if not rig_uuid:
             # Fallback to IP for unauthenticated requests
             rig_uuid = self.get_ident(request)

@@ -110,6 +110,12 @@ Cron → Agent collects metrics → JSON payload → POST /api/v1/ingest/
   → Rig.latest_errors_json updated with latest error text
   → Rig.last_seen and Rig.status updated to ONLINE
   → Response: 200 (new) or 202 (duplicate/idempotent)
+
+All other endpoints (dashboard, login, static):
+  → Nginx general rate limit: 30r/s per IP (burst=20 for pages, burst=50 for static)
+  → Django per-user rate limit: 60 req/min (rig_list, rig_detail), 120 req/min (htmx polling)
+  → Anonymous: IP-based rate limit via Django decorator
+  → Response: 200 (new) or 202 (duplicate/idempotent)
 ```
 
 ### 2.3 Key Files

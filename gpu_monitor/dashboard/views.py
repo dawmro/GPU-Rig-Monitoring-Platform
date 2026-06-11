@@ -2,6 +2,7 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
 from django.http import Http404
 from django.views.decorators.http import require_POST
+from django.db.models import Count
 
 from rigs.models import Rig, RigTag
 from metrics_app.models import MetricSnapshot, LatestSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestDockerContainer
@@ -185,12 +186,24 @@ def rig_list(request):
 
     all_tags = RigTag.objects.filter(user=user).order_by('name') if not user.is_staff else RigTag.objects.all().order_by('name')
 
+    # Count rigs by status for the header display
+    rigs_for_counts = Rig.objects.all() if user.is_staff else Rig.objects.filter(owner=user)
+    status_counts = dict(rigs_for_counts.values_list('status').annotate(count=Count('status')).values_list('status', 'count'))
+    online_count = status_counts.get('online', 0)
+    stale_count = status_counts.get('stale', 0)
+    offline_count = status_counts.get('offline', 0)
+    total_count = online_count + stale_count + offline_count
+
     return render(request, 'dashboard/rig_list.html', {
         'rig_data': rig_data,
         'status_filter': status_filter,
         'search': search,
         'all_tags': all_tags,
         'tag_filter': tag_filter,
+        'online_count': online_count,
+        'stale_count': stale_count,
+        'offline_count': offline_count,
+        'total_count': total_count,
     })
 
 

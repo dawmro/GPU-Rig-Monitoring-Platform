@@ -45,21 +45,37 @@ def gpu_model_name(value):
 def gpu_model_short(value):
     """Extract just the GPU model number for compact display.
 
+    Strips vendor prefixes (NVIDIA, AMD, Intel) and model prefixes (RTX, GTX, RX).
     Examples:
         'NVIDIA GeForce RTX 3060' -> '3060'
         'NVIDIA GeForce RTX 4090 Ti' -> '4090'
         'AMD Radeon RX 7900 XTX' -> '7900'
+        'NVIDIA A100-SXM4-40GB' -> 'A100'
     """
     if not value:
         return value
 
-    # Try to extract model number pattern (e.g., RTX 3060, RX 7900, A100)
-    match = re.search(r'(?:RTX|GTX|RX|Arc|A\d|Titan|V100|H100)\s*(\d{3,4})', value, re.IGNORECASE)
+    # Try to extract model number pattern (e.g., RTX 3060, RX 7900, Arc A770)
+    match = re.search(r'(?:RTX|GTX|RX|Titan|V100|H100)\s*(\d{3,4})', value, re.IGNORECASE)
     if match:
-        return match.group(0).strip()
+        return match.group(1)
+    # Handle Arc models: "Arc A770" -> "770"
+    match = re.search(r'Arc\s+[A-Z]?(\d{3,4})', value, re.IGNORECASE)
+    if match:
+        return match.group(1)
+    # Handle letter-prefix models like A100, H100, B100
+    match = re.search(r'\b([A-Z])(\d{3,4})\b', value, re.IGNORECASE)
+    if match and match.group(0).lower() not in ('rtx', 'gtx', 'rx', 'arc', 'titan'):
+        return match.group(0).upper()
 
-    # Fallback: clean the full name
-    return gpu_model_name(value)
+    # Fallback: strip vendor prefixes and return cleaned name
+    cleaned = gpu_model_name(value)
+    # Try to extract any remaining number
+    num_match = re.search(r'(\d{3,4})', cleaned)
+    if num_match:
+        return num_match.group(1)
+
+    return cleaned
 
 
 @register.filter
@@ -67,32 +83,43 @@ def gpu_compact_summary(gpus):
     """Build a compact GPU model summary string for a list of GPUMetric objects.
 
     Groups by short model name and shows count.
+    For mixed cards, shows only the most popular model + '...'.
+
     Examples:
-        8x same model  -> "RTX 3060 ×8"
-        2 different    -> "RTX 4090, RTX 3060"
-        mixed counts   -> "RTX 3060 ×3, RTX 4090"
+        8x same model     -> "3060×8"
+        4x same + others  -> "3060×4 + ..."
+        all different     -> "3060 + ..."
+        2 different       -> "4090, 3060"
     """
     if not gpus:
         return "—"
 
-    # Build model -> count map using short names
+    # Build model -> count map
     from collections import OrderedDict
     model_counts = OrderedDict()
     for gpu in gpus:
         short = gpu_model_short(gpu.model) if gpu.model else "?"
         model_counts[short] = model_counts.get(short, 0) + 1
 
-    parts = []
-    for model, count in model_counts.items():
-        if count > 1:
-            parts.append(f"{model} ×{count}")
-        else:
-            parts.append(model)
+    # Sort by count descending (most popular first)
+    sorted_models = sorted(model_counts.items(), key=lambda x: x[1], reverse=True)
 
-    if len(parts) > 3:
-        # Too many different models: truncate
-        return ", ".join(parts[:3]) + "…"
-    return ", ".join(parts)
+    # If 3 or fewer unique models, show them all (no "...")
+    if len(sorted_models) <= 3:
+        parts = []
+        for model, count in sorted_models:
+            if count > 1:
+                parts.append(f"{model}×{count}")
+            else:
+                parts.append(model)
+        return ", ".join(parts)
+
+    # More than 3 unique models: show only the most popular + "..."
+    top_model, top_count = sorted_models[0]
+    if top_count > 1:
+        return f"{top_model}×{top_count} + ..."
+    else:
+        return f"{top_model} + ..."
 
 
 @register.simple_tag

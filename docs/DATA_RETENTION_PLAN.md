@@ -84,7 +84,9 @@ Single phase:
 
 **FK Handling:**
 - Parent table rows referenced by children are excluded from compaction (to avoid FK violations)
-- Child tables keep their `snapshot_id` pointing to the parent for data integrity
+- Child tables (GPU, storage, network) keep their `snapshot_id` pointing to the parent for data integrity
+- `metrics_dockercontainermetric` has no FK to parent (independent time-series)
+- `metrics_latest_docker_container` is not compacted (delete-before-insert, latest only)
 
 **Options:**
 | Flag | Description |
@@ -121,8 +123,9 @@ Compaction complete
 2. `metrics_gpumetric` (child of MetricSnapshot)
 3. `metrics_storagemetric` (child of MetricSnapshot)
 4. `metrics_networkmetric` (child of MetricSnapshot)
-5. `metrics_dockercontainermetric` (child of MetricSnapshot)
-6. `metrics_rig_status_event` (independent)
+5. `metrics_dockercontainermetric` (independent — time-series, no FK to MetricSnapshot)
+6. `metrics_latest_docker_container` (independent — latest snapshot, delete-before-insert)
+7. `metrics_rig_status_event` (independent)
 8. `metrics_metricsnapshot` (parent — deleted last so FK constraints are satisfied)
 9. `metrics_latest_snapshot` (independent, uses `rig_uuid` as PK, no timestamp column)
 

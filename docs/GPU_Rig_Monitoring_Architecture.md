@@ -748,7 +748,8 @@ Each ingest performs multiple database operations:
 | `metrics_gpumetric` | UPSERT | Per-GPU metrics (1 row per GPU) |
 | `metrics_storagemetric` | UPSERT | Per-disk metrics |
 | `metrics_networkmetric` | UPSERT | Per-interface metrics |
-| `metrics_dockercontainermetric` | UPSERT | Per-container metrics |
+|| `metrics_dockercontainermetric` | UPSERT | Per-container time-series (cpu%, mem_usage) |
+|| `metrics_latest_docker_container` | DELETE+INSERT | Latest container snapshot (image, status, uptime, restarts, mem_limit) |
 | `metrics_errorevent` | UPSERT | Deduplicated errors |
 | **Total** | **~7-12 writes** | Depending on GPU/disk/container count |
 

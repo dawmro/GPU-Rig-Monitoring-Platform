@@ -141,6 +141,7 @@ Cleaning up data older than 31 days (before 2026-05-09 02:18)
   metrics_storagemetric: nothing to delete
   metrics_networkmetric: nothing to delete
   metrics_dockercontainermetric: nothing to delete
+  metrics_latest_docker_container: nothing to delete
   metrics_rig_status_event: nothing to delete
   metrics_metricsnapshot: nothing to delete
   metrics_latest_snapshot: 2 rows to delete

@@ -142,29 +142,51 @@ class NetworkMetric(models.Model):
 
 
 class DockerContainerMetric(models.Model):
-    """Per-container metrics — one row per container per snapshot.
+    """Per-container time-series metrics — one row per container per heartbeat.
 
-    Stores container data from the agent payload.
+    Stores only the fields needed for historical charts:
+    cpu_pct, mem_usage_bytes, mem_limit_bytes.
+    Grouped by (rig_uuid, name) for chart display.
     """
     id = models.BigAutoField(primary_key=True)
-    snapshot = models.ForeignKey(MetricSnapshot, on_delete=models.CASCADE, related_name='docker_metrics')
     rig_uuid = models.UUIDField(db_index=True)
     timestamp = models.DateTimeField(db_index=True)
     container_id = models.CharField(max_length=64, blank=True, default='')
     name = models.CharField(max_length=255, blank=True, default='')
-    image = models.CharField(max_length=255, blank=True, default='')
-    status = models.CharField(max_length=32, blank=True, default='')
-    restart_count = models.PositiveIntegerField(default=0)
     cpu_pct = models.FloatField(null=True)
     mem_usage_bytes = models.BigIntegerField(null=True)
     mem_limit_bytes = models.BigIntegerField(null=True)
-    uptime_s = models.PositiveIntegerField(null=True)
 
     class Meta:
         db_table = 'metrics_dockercontainermetric'
         unique_together = ('rig_uuid', 'timestamp', 'name')
         indexes = [
             models.Index(fields=['rig_uuid', '-timestamp']),
+        ]
+
+
+class LatestDockerContainer(models.Model):
+    """Latest Docker container snapshot per rig — for Live Metrics display.
+
+    Stores the latest payload fields not needed for charts:
+    image, status, uptime_s, restart_count.
+    Delete-before-insert pattern: all rows for a rig are deleted
+    before inserting the latest snapshot.
+    """
+    id = models.BigAutoField(primary_key=True)
+    rig_uuid = models.UUIDField(db_index=True)
+    container_id = models.CharField(max_length=64, blank=True, default='')
+    name = models.CharField(max_length=255, blank=True, default='')
+    image = models.CharField(max_length=255, blank=True, default='')
+    status = models.CharField(max_length=32, blank=True, default='')
+    uptime_s = models.PositiveIntegerField(null=True)
+    restart_count = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        db_table = 'metrics_latest_docker_container'
+        unique_together = ('rig_uuid', 'name')
+        indexes = [
+            models.Index(fields=['rig_uuid']),
         ]
 
 

@@ -82,14 +82,15 @@ def gpu_model_short(value):
 def gpu_compact_summary(gpus):
     """Build a compact GPU model summary string for a list of GPUMetric objects.
 
-    Groups by short model name and shows count.
-    For mixed cards, shows only the most popular model + '...'.
+    Shows the most popular model with count. For mixed cards, appends ' + ...'.
 
     Examples:
-        8x same model     -> "3060×8"
-        4x same + others  -> "3060×4 + ..."
-        all different     -> "3060 + ..."
-        2 different       -> "4090, 3060"
+        8x same model          -> "3060×8"
+        4x same + 4x other     -> "5080×4 + ..."
+        3x + 2x + 1x           -> "5080×3 + ..."
+        all different (3+)     -> "3060 + ..."
+        2 different            -> "3060 + ..."
+        single card            -> "3060"
     """
     if not gpus:
         return "—"
@@ -104,22 +105,18 @@ def gpu_compact_summary(gpus):
     # Sort by count descending (most popular first)
     sorted_models = sorted(model_counts.items(), key=lambda x: x[1], reverse=True)
 
-    # If 3 or fewer unique models, show them all (no "...")
-    if len(sorted_models) <= 3:
-        parts = []
-        for model, count in sorted_models:
-            if count > 1:
-                parts.append(f"{model}×{count}")
-            else:
-                parts.append(model)
-        return ", ".join(parts)
+    # Single model: just show it
+    if len(sorted_models) == 1:
+        model, count = sorted_models[0]
+        if count > 1:
+            return f"{model}×{count}"
+        return model
 
-    # More than 3 unique models: show only the most popular + "..."
+    # Multiple models: show only the most popular + " + ..."
     top_model, top_count = sorted_models[0]
     if top_count > 1:
         return f"{top_model}×{top_count} + ..."
-    else:
-        return f"{top_model} + ..."
+    return f"{top_model} + ..."
 
 
 @register.simple_tag

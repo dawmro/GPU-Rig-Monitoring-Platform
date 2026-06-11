@@ -158,6 +158,17 @@ def rig_list(request):
     if tag_filter:
         rigs = rigs.filter(tags__name=tag_filter)
 
+    # Sort rigs naturally by name (e.g., rig2 before rig11)
+    # Python-side sorting after all queryset filtering is complete
+    import re
+    def _natural_sort_key(value):
+        """Split string into text/number chunks for human-friendly sorting."""
+        return [
+            int(chunk) if chunk.isdigit() else chunk.lower()
+            for chunk in re.split(r'(\d+)', value or '')
+        ]
+    rigs = sorted(rigs, key=lambda r: _natural_sort_key(r.name))
+
     # Build rig_data dicts consumed by _rig_table.html.
     # Each key maps directly to a template variable in the table cells:
     #   rig_data[]['rig']      -> Rig model (name, status, last_seen, tags, uuid)

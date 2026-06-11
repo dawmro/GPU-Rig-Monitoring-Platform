@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-GPU Rig Monitoring Agent v1.2.0 (Windows)
+GPU Rig Monitoring Agent (Windows)
 
 Collects hardware/software metrics and sends them to the monitoring server.
 Designed to run via Windows Task Scheduler.
@@ -16,6 +16,20 @@ Dependencies:
 Optional dependencies:
     pip install docker          # For Docker container monitoring
     pip install pynvml         # For NVIDIA GPU monitoring (requires NVIDIA GPU)
+
+Versioning:
+    - __version__ (MAJOR.MINOR.PATCH): incremented for agent-side changes
+      (collectors, payload format, bug fixes).
+    - __schema_version__ (MAJOR.MINOR): incremented when payload structure
+      changes in a way that affects server serialization/storage.
+
+    After making changes to agent code, you MUST increment __version__ and/or
+    __schema_version__ according to the depth of changes:
+    - PATCH: bug fixes, minor collector tweaks (e.g. 1.5.0 → 1.5.1)
+    - MINOR: new collectors, new payload fields (e.g. 1.5.0 → 1.6.0)
+    - MAJOR: breaking changes to payload structure (e.g. 1.4 → 2.0)
+
+    See docs/GPU_Rig_Monitoring_Architecture.md §3.1a for full versioning rules.
 """
 
 import os
@@ -33,8 +47,8 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.5.0-win'
-__schema_version__ = '1.4'
+__version__ = '1.6.0-win'
+__schema_version__ = '1.5'
 
 # ── Config ──────────────────────────────────────────────────────────────────
 
@@ -522,36 +536,43 @@ def collect_gpu_processes():
 
 
 def collect_docker():
+    """Collect Docker container metrics.
+
+    For each container, collects: container_id, name, image, status,
+    restart_count, uptime_s, cpu_pct, mem_usage_bytes, mem_limit_bytes.
+
+    CPU and memory stats are only collected for running containers
+    via the Docker stats API.
+    """
     try:
         import docker
         client = docker.from_env()
         containers = []
+
         for c in client.containers.list():
-            # Calculate uptime from StartedAt
+            # ── Step 1: Define default values ──
             uptime_s = None
+            cpu_pct = None
+            mem_usage_bytes = None
+            mem_limit_bytes = None
+
+            # ── Step 2: Collect data ──
+
+            # Uptime from StartedAt timestamp
             try:
                 started_at = c.attrs.get('State', {}).get('StartedAt')
                 if started_at:
-                    from datetime import datetime, timezone
                     start_dt = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
                     uptime_s = int((datetime.now(timezone.utc) - start_dt).total_seconds())
             except Exception:
                 pass
 
-            container_info = {
-                'container_id': c.id[:12] if c.id else '',
-                'name': c.name,
-                'image': c.image.tags[0] if c.image.tags else 'unknown',
-                'status': c.status,
-                'restart_count': c.attrs.get('RestartCount', 0),
-                'uptime_s': uptime_s,
-                'cpu_pct': None,
-                'mem_usage_bytes': None,
-                'mem_limit_bytes': None,
-            }
+            # Live stats for running containers
             if c.status == 'running':
                 try:
                     stats = c.stats(stream=False)
+
+                    # CPU calculation
                     cpu_delta = (
                         stats['cpu_stats']['cpu_usage']['total_usage'] -
                         stats['precpu_stats']['cpu_usage']['total_usage']
@@ -562,19 +583,35 @@ def collect_docker():
                     )
                     if system_delta > 0 and cpu_delta > 0:
                         num_cpus = stats['cpu_stats'].get('online_cpus', 1)
-                        container_info['cpu_pct'] = round(
-                            (cpu_delta / system_delta) * num_cpus * 100, 2
-                        )
+                        cpu_pct = round((cpu_delta / system_delta) * num_cpus * 100, 2)
+
+                    # Memory
                     mem_stats = stats.get('memory_stats', {})
-                    container_info['mem_usage_bytes'] = mem_stats.get('usage')
-                    container_info['mem_limit_bytes'] = mem_stats.get('limit')
+                    mem_usage_bytes = mem_stats.get('usage')
+                    mem_limit_bytes = mem_stats.get('limit')
                 except Exception:
-                    pass
+                    pass  # Stats may fail for short-lived containers
+
+            # ── Step 3: Build container info dict ──
+            container_info = {
+                'container_id': c.id[:12] if c.id else '',
+                'name': c.name,
+                'image': c.image.tags[0] if c.image.tags else 'unknown',
+                'status': c.status,
+                'restart_count': c.attrs.get('RestartCount', 0),
+                'uptime_s': uptime_s,
+                'cpu_pct': cpu_pct,
+                'mem_usage_bytes': mem_usage_bytes,
+                'mem_limit_bytes': mem_limit_bytes,
+            }
+
+            # ── Step 4: Append ──
             containers.append(container_info)
+
         return containers
     except Exception as e:
         logging.getLogger('docker').warning('Docker collection failed: %s', e)
-    return []
+        return []
 
 
 def collect_software():

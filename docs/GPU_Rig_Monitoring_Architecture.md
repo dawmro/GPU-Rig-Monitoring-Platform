@@ -296,6 +296,13 @@ debug_mode: false         # Verbose logging
 }
 ```
 
+**Changelog from schema 1.4 → 1.5:**
+- Added `container_id` and `uptime_s` to docker container metrics
+- `container_id`: first 12 chars of Docker container hash (`c.id[:12]`)
+- `uptime_s`: calculated from `State['StartedAt']` timestamp
+- Docker Live Metrics now shows table with: Status, Name, Image, Container ID, Uptime
+- Containers sorted by uptime descending (longest running first)
+
 **Changelog from schema 1.3 → 1.4:**
 - Added `gpu_core_clock_mhz` and `gpu_mem_clock_mhz` to GPU metrics (pynvml `NVML_CLOCK_GRAPHICS` and `NVML_CLOCK_MEM`)
 - Added `gpu_core_clock_mhz` and `gpu_mem_clock_mhz` fields to `GPUMetric` model
@@ -318,8 +325,8 @@ debug_mode: false         # Verbose logging
 
 | Agent | File | Version | Schema | Platform | Scheduling |
 |-------|------|---------|--------|----------|------------|
-| Linux | `agent/run.py` | 1.4.0 | 1.4 | Any Linux, VMware NAT | `cron` every 60s with `flock` |
-| Windows | `agent_windows/run.py` | 1.5.0-win | 1.4 | Windows 10/11 | Task Scheduler with `pythonw.exe` (hidden window) |
+| Linux | `agent/run.py` | 1.5.0 | 1.5 | Any Linux, VMware NAT | `cron` every 60s with `flock` |
+| Windows | `agent_windows/run.py` | 1.6.0-win | 1.5 | Windows 10/11 | Task Scheduler with `pythonw.exe` (hidden window) |
 
 **Versioning rules:**
 - `agent_version` (e.g. `1.1.0`): incremented for agent-side changes (collectors, payload format, bug fixes). Format: `MAJOR.MINOR.PATCH`.

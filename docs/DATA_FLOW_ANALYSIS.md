@@ -68,14 +68,24 @@
 | 33 | Network RX errors | `metrics.network[].rx_errors` | `rx_errors` | IntegerField | ✅ |
 | 34 | Network TX errors | `metrics.network[].tx_errors` | `tx_errors` | IntegerField | ✅ |
 
-### DockerContainerMetric (one row per container per heartbeat)
+### DockerContainerMetric (one row per container per heartbeat — for charts)
 
 | # | Value | Payload Path | DB Field | Type | Charts? |
 |---|-------|-------------|----------|------|---------|
 | 35 | Docker CPU% | `metrics.docker_containers[].cpu_pct` | `cpu_pct` | FloatField | ✅ |
 | 36 | Docker mem usage | `metrics.docker_containers[].mem_usage_bytes` | `mem_usage_bytes` | BigIntegerField | ✅ |
-| 37 | Docker mem limit | `metrics.docker_containers[].mem_limit_bytes` | `mem_limit_bytes` | BigIntegerField | ✅ |
-| 38 | Docker restarts | `metrics.docker_containers[].restart_count` | `restart_count` | IntegerField | ✅ |
+
+### LatestDockerContainer (latest snapshot per container — for Live Metrics)
+
+| # | Value | Payload Path | DB Field | Type | Charts? |
+|---|-------|-------------|----------|------|---------|
+| 37 | Docker name | `metrics.docker_containers[].name` | `name` | CharField | — |
+| 38 | Docker container ID | `metrics.docker_containers[].container_id` | `container_id` | CharField | — |
+| 39 | Docker image | `metrics.docker_containers[].image` | `image` | CharField | — |
+| 40 | Docker status | `metrics.docker_containers[].status` | `status` | CharField | — |
+| 41 | Docker uptime | `metrics.docker_containers[].uptime_s` | `uptime_s` | IntegerField | — |
+| 42 | Docker restarts | `metrics.docker_containers[].restart_count` | `restart_count` | IntegerField | — |
+| 43 | Docker mem limit | `metrics.docker_containers[].mem_limit_bytes` | `mem_limit_bytes` | BigIntegerField | — |
 
 ### ErrorEvent (deduplicated by hash)
 

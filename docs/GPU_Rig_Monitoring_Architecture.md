@@ -120,7 +120,7 @@ Cron → Agent collects metrics → JSON payload → POST /api/v1/ingest/
 | `agent_windows/run.py` | Windows agent (~916 lines) |
 | `metrics_app/views.py` | IngestView, HealthView, ChartDataView, RigMetricsView |
 | `metrics_app/serializers.py` | IngestSerializer, process_ingest() |
-|| `metrics_app/models.py` | MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, RigStatusEvent |
+|| `metrics_app/models.py` | MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestDockerContainer, LatestSnapshot, RigStatusEvent |
 | `dashboard/views.py` | rig_list, rig_detail, htmx_metrics, htmx_rig_status, rig_rename |
 | `dashboard/templatetags/gpu_filters.py` | gpu_model_name, gpu_model_short, gpu_compact_summary, gpu_temp_cell, gpu_util_cell, gpu_fan_cell, time_since filters |
 | `rigs/models.py` | Rig, RigTag |
@@ -336,7 +336,7 @@ debug_mode: false         # Verbose logging
 | `gpu_monitor` | — | Settings, URL routing, WSGI |
 | `accounts` | User, ApiKey | Login, logout, API key management |
 | `rigs` | Rig, RigTag | `update_rig_status` management command |
-|| `metrics_app` | MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, RigStatusEvent | IngestView, HealthView, ChartDataView, RigMetricsView |
+|| `metrics_app` | MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestDockerContainer, LatestSnapshot, RigStatusEvent | IngestView, HealthView, ChartDataView, RigMetricsView |
 | `dashboard` | — | rig_list, rig_detail, htmx_metrics, htmx_rig_status, rig_rename |
 | `audit` | AuditLog | Middleware-based request logging |
 | `dashboard/templatetags` | — | gpu_model_name, gpu_model_short, gpu_compact_summary, gpu_temp_cell, gpu_util_cell, gpu_fan_cell, time_since, last_seen_short filters |
@@ -363,7 +363,8 @@ POST /api/v1/ingest/
       - Delete + recreate GPUProcessMetric per process (latest snapshot only)
       - Upsert StorageMetric per disk (with path-normalized dedup)
       - Upsert NetworkMetric per interface (with rx/tx delta calculation)
-      - Upsert DockerContainerMetric per container (with cpu%, memory stats)
+      - Upsert DockerContainerMetric per container (cpu%, memory — time-series for charts)
+      - Delete + recreate LatestDockerContainer per container (image, status, uptime, restarts — latest snapshot for Live Metrics)
       - Create RigStatusEvent on status transition (e.g. offline→online)
       - Update Rig.latest_errors_json with latest error text from payload
       - Update LatestSnapshot (denormalized cache for fast dashboard loading)
@@ -503,7 +504,8 @@ Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the age
 || `metrics_gpu_process` | metrics_app | Per-GPU-process metrics (gpu_index, pid, name, type, mem; latest snapshot only) |
 || `metrics_storagemetric` | metrics_app | Per-disk metrics (capacity, usage%, temp, SMART health) |
 || `metrics_networkmetric` | metrics_app | Per-interface metrics (rx/tx bytes, rx/tx deltas, speed, errors) |
-|| `metrics_dockercontainermetric` | metrics_app | Per-container metrics (name, image, status, restarts, cpu%, memory) |
+|| `metrics_dockercontainermetric` | metrics_app | Per-container time-series (name, container_id, cpu%, mem_usage; for charts) |
+|| `metrics_latest_docker_container` | metrics_app | Latest container snapshot (name, container_id, image, status, uptime, restarts, mem_limit; for Live Metrics) |
 || `metrics_latestsnapshot` | metrics_app | Denormalized latest snapshot per rig (fast dashboard loading) |
 || `metrics_rig_status_event` | metrics_app | Rig status transition log (online/stale/offline with timestamps) |
 || `audit_auditlog` | audit | Immutable audit trail |
@@ -526,6 +528,7 @@ Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the age
 | `metrics_storagemetric` | `UNIQUE(rig_uuid, timestamp, device)` |
 | `metrics_networkmetric` | `UNIQUE(rig_uuid, timestamp, interface)` |
 || `metrics_dockercontainermetric` | `UNIQUE(rig_uuid, timestamp, name)` |
+|| `metrics_latest_docker_container` | `UNIQUE(rig_uuid, name)` |
 || `metrics_metricsnapshot` | `UNIQUE(rig_uuid, schema_version, timestamp)` |
 
 ### 6.3 Metric Field Name Mapping
@@ -745,7 +748,8 @@ Each ingest performs multiple database operations:
 | `metrics_gpumetric` | UPSERT | Per-GPU metrics (1 row per GPU) |
 | `metrics_storagemetric` | UPSERT | Per-disk metrics |
 | `metrics_networkmetric` | UPSERT | Per-interface metrics |
-| `metrics_dockercontainermetric` | UPSERT | Per-container metrics |
+|| `metrics_dockercontainermetric` | UPSERT | Per-container time-series (cpu%, mem_usage) |
+|| `metrics_latest_docker_container` | DELETE+INSERT | Latest container snapshot (image, status, uptime, restarts, mem_limit) |
 | `metrics_errorevent` | UPSERT | Deduplicated errors |
 | **Total** | **~7-12 writes** | Depending on GPU/disk/container count |
 

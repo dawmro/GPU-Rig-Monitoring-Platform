@@ -64,8 +64,8 @@ COMPACT_TABLES = [
     {
         'table': 'metrics_dockercontainermetric',
         'group_by': ['rig_uuid', 'name'],
-        'agg_fields': {'cpu_pct': 'avg', 'mem_usage_bytes': 'avg', 'mem_limit_bytes': 'last', 'restart_count': 'max'},
-        'static_fields': ['image', 'status', 'snapshot_id'],
+        'agg_fields': {'cpu_pct': 'avg', 'mem_usage_bytes': 'avg'},
+        'static_fields': ['container_id'],
     },
     # Parent table LAST — FK-safe with NOT EXISTS
     {

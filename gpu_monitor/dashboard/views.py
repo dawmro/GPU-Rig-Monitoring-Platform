@@ -4,7 +4,7 @@ from django.http import Http404
 from django.views.decorators.http import require_POST
 
 from rigs.models import Rig, RigTag
-from metrics_app.models import MetricSnapshot, LatestSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, DockerContainerMetric
+from metrics_app.models import MetricSnapshot, LatestSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestDockerContainer
 from audit.middleware import log_audit_event
 
 
@@ -63,38 +63,42 @@ def _fetch_rig_metrics(uuid, rig=None):
         .distinct('interface')
     )
 
-    # Docker containers: get all containers from the latest timestamp
-    # Use a subquery to find the max timestamp, then get all containers at that timestamp
-    latest_docker_ts = DockerContainerMetric.objects.filter(
+    # Docker containers: combine LatestDockerContainer (display fields) with
+    # latest DockerContainerMetric (cpu/memory) for each container
+    latest_containers = LatestDockerContainer.objects.filter(
         rig_uuid=str(uuid)
-    ).order_by('-timestamp').values_list('timestamp', flat=True).first()
+    )
 
     docker_metrics = []
-    if latest_docker_ts:
-        containers = DockerContainerMetric.objects.filter(
+    for lc in latest_containers:
+        # Get the latest metric row for this container's CPU/memory
+        latest_metric = DockerContainerMetric.objects.filter(
             rig_uuid=str(uuid),
-            timestamp=latest_docker_ts
-        ).order_by('-uptime_s')
+            name=lc.name
+        ).order_by('-timestamp').first()
 
-        for c in containers:
-            # Format uptime as human-readable
-            uptime_str = _format_uptime(c.uptime_s)
-            # Format memory as "usage (limit)"
-            mem_str = _format_mem(c.mem_usage_bytes, c.mem_limit_bytes)
+        uptime_str = _format_uptime(lc.uptime_s)
+        mem_str = _format_mem(
+            latest_metric.mem_usage_bytes if latest_metric else None,
+            lc.mem_limit_bytes
+        )
 
-            docker_metrics.append({
-                'container_id': c.container_id,
-                'name': c.name,
-                'image': c.image,
-                'status': c.status,
-                'restart_count': c.restart_count,
-                'uptime_s': c.uptime_s,
-                'uptime_str': uptime_str,
-                'cpu_pct': c.cpu_pct,
-                'mem_usage_bytes': c.mem_usage_bytes,
-                'mem_limit_bytes': c.mem_limit_bytes,
-                'mem_str': mem_str,
-            })
+        docker_metrics.append({
+            'container_id': lc.container_id,
+            'name': lc.name,
+            'image': lc.image,
+            'status': lc.status,
+            'restart_count': lc.restart_count,
+            'uptime_s': lc.uptime_s,
+            'uptime_str': uptime_str,
+            'cpu_pct': latest_metric.cpu_pct if latest_metric else None,
+            'mem_usage_bytes': latest_metric.mem_usage_bytes if latest_metric else None,
+            'mem_limit_bytes': lc.mem_limit_bytes,
+            'mem_str': mem_str,
+        })
+
+    # Sort by uptime descending (longest running first)
+    docker_metrics.sort(key=lambda c: c['uptime_s'] or 0, reverse=True)
 
     # Recent errors from Rig.latest_errors_json (latest payload only, like motherboard_json)
     recent_errors = rig.latest_errors_json if rig else []
@@ -259,7 +263,7 @@ def rig_delete(request, uuid):
 
     # Delete all associated metric data (MetricSnapshot has rig_uuid as UUIDField, not FK)
     from metrics_app.models import MetricSnapshot, LatestSnapshot, GPUMetric, GPUProcessMetric, \
-        StorageMetric, NetworkMetric, DockerContainerMetric, RigStatusEvent
+        StorageMetric, NetworkMetric, DockerContainerMetric, LatestDockerContainer, RigStatusEvent
     MetricSnapshot.objects.filter(rig_uuid=uuid).delete()
     LatestSnapshot.objects.filter(rig_uuid=uuid).delete()
     GPUMetric.objects.filter(rig_uuid=uuid).delete()
@@ -267,6 +271,7 @@ def rig_delete(request, uuid):
     StorageMetric.objects.filter(rig_uuid=uuid).delete()
     NetworkMetric.objects.filter(rig_uuid=uuid).delete()
     DockerContainerMetric.objects.filter(rig_uuid=uuid).delete()
+    LatestDockerContainer.objects.filter(rig_uuid=uuid).delete()
     RigStatusEvent.objects.filter(rig_uuid=uuid).delete()
 
     rig.delete()

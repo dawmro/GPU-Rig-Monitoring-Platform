@@ -2,7 +2,7 @@ import logging
 from rest_framework import serializers, status
 from django.db import transaction
 from django.utils import timezone
-from .models import MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestSnapshot, RigStatusEvent
+from .models import MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestDockerContainer, LatestSnapshot, RigStatusEvent
 from rigs.models import Rig
 
 logger = logging.getLogger(__name__)
@@ -179,9 +179,8 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     },
                 )
 
-            # Store per-container metrics
+            # Store per-container time-series metrics (for charts)
             for container in docker_containers:
-                # Skip containers without required fields
                 container_id = container.get('container_id')
                 if not container_id:
                     logger.warning('Skipping container without container_id: %s', container.get('name', 'unknown'))
@@ -191,16 +190,28 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     timestamp=ts,
                     name=container.get('name', ''),
                     defaults={
-                        'snapshot': snapshot,
                         'container_id': container_id,
-                        'image': container.get('image', ''),
-                        'status': container.get('status', ''),
-                        'restart_count': container.get('restart_count', 0),
                         'cpu_pct': container.get('cpu_pct'),
                         'mem_usage_bytes': container.get('mem_usage_bytes'),
-                        'mem_limit_bytes': container.get('mem_limit_bytes'),
-                        'uptime_s': container.get('uptime_s'),
                     },
+                )
+
+            # Store latest container snapshot (for Live Metrics display)
+            # Delete-before-insert pattern: remove all old rows for this rig first
+            LatestDockerContainer.objects.filter(rig_uuid=rig_uuid).delete()
+            for container in docker_containers:
+                container_id = container.get('container_id')
+                if not container_id:
+                    continue
+                LatestDockerContainer.objects.create(
+                    rig_uuid=rig_uuid,
+                    container_id=container_id,
+                    name=container.get('name', ''),
+                    image=container.get('image', ''),
+                    status=container.get('status', ''),
+                    uptime_s=container.get('uptime_s'),
+                    restart_count=container.get('restart_count', 0),
+                    mem_limit_bytes=container.get('mem_limit_bytes'),
                 )
 
             # Update latest snapshot (denormalized)

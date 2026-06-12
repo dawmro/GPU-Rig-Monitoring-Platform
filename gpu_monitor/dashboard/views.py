@@ -77,10 +77,19 @@ def _fetch_rig_metrics(uuid, rig=None):
 
     Uses SQL-level latest-per-device queries instead of fetching all rows.
     """
-    try:
-        snapshot = LatestSnapshot.objects.get(rig_uuid=str(uuid))
-    except LatestSnapshot.DoesNotExist:
-        snapshot = None
+    # LatestSnapshot changes only on heartbeat (~60s), but is polled every 30s.
+    # Cache with 50s TTL to reduce DB reads between heartbeats.
+    snapshot = None
+    if rig:
+        cache_key = f'lsnap_{rig.uuid}'
+        snapshot = cache.get(cache_key)
+        if snapshot is None:
+            try:
+                snapshot = LatestSnapshot.objects.get(rig_uuid=str(uuid))
+            except LatestSnapshot.DoesNotExist:
+                pass
+            else:
+                cache.set(cache_key, snapshot, 50)
 
     # GPU: latest metric per unique GPU using DISTINCT ON
     # Sort by gpu_index (0, 1, 2...) for consistent display order

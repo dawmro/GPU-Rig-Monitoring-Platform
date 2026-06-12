@@ -2,6 +2,7 @@ import logging
 from rest_framework import serializers, status
 from django.db import transaction
 from django.utils import timezone
+from django.core.cache import cache
 from .models import MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestDockerContainer, LatestSnapshot, RigStatusEvent
 from rigs.models import Rig
 
@@ -235,6 +236,8 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     'mem_total_bytes': memory.get('total_bytes'),
                 },
             )
+            # Invalidate cached snapshot so next read gets fresh data
+            cache.delete(f'lsnap_{rig_uuid}')
 
             # Track rig status transitions
             if rig:

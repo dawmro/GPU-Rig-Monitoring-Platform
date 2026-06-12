@@ -52,6 +52,10 @@
         </div>
     </div>
 
+    <div class="flex items-center gap-2 text-gray-500 text-xs mb-2">
+        <span id="rig-table-container-clock"></span>
+    </div>
+
     <div id="rig-table-container"
          hx-get="{% url 'dashboard:rig-list' %}?status={{ status_filter }}&search={{ search }}&tag={{ tag_filter }}"
          hx-trigger="every 30s"
@@ -62,7 +66,6 @@
     </div>
     <div class="flex items-center gap-2 text-gray-500 text-xs mt-2">
         <span class="htmx-indicator">⟳ Refreshing...</span>
-        <span id="rig-table-container-clock"></span>
     </div>
 </div>
 {% endblock %}

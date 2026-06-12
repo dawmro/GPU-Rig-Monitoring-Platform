@@ -299,12 +299,6 @@ debug_mode: false         # Verbose logging
 }
 ```
 
-**Changelog from schema 1.5 → 1.6:**
-- Added `local_ip` to software section (agent's local IP address)
-- `local_ip`: collected via `socket` (connect to non-routable address, fallback to hostname resolution)
-- Stored in `LatestSnapshot.local_ip` and `MetricSnapshot.software_json.local_ip`
-- Displayed in Live Metrics Software section and rig detail header
-
 **Changelog from schema 1.4 → 1.5:**
 - Added `container_id` and `uptime_s` to docker container metrics
 - `container_id`: first 12 chars of Docker container hash (`c.id[:12]`)
@@ -334,8 +328,8 @@ debug_mode: false         # Verbose logging
 
 | Agent | File | Version | Schema | Platform | Scheduling |
 |-------|------|---------|--------|----------|------------|
-| Linux | `agent/run.py` | 1.5.2 | 1.6 | Any Linux, VMware NAT | `cron` every 60s with `flock` |
-| Windows | `agent_windows/run.py` | 1.6.2-win | 1.6 | Windows 10/11 | Task Scheduler with `pythonw.exe` (hidden window) |
+| Linux | `agent/run.py` | 1.5.1 | 1.5 | Any Linux, VMware NAT | `cron` every 60s with `flock` |
+| Windows | `agent_windows/run.py` | 1.6.1-win | 1.5 | Windows 10/11 | Task Scheduler with `pythonw.exe` (hidden window) |
 
 **Versioning rules:**
 - `agent_version` (e.g. `1.1.0`): incremented for agent-side changes (collectors, payload format, bug fixes). Format: `MAJOR.MINOR.PATCH`.
@@ -581,7 +575,7 @@ Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the age
 || `metrics_networkmetric` | metrics_app | Per-interface metrics (rx/tx bytes, rx/tx deltas, speed, errors) |
 || `metrics_dockercontainermetric` | metrics_app | Per-container time-series (name, container_id, cpu%, mem_usage; for charts) |
 || `metrics_latest_docker_container` | metrics_app | Latest container snapshot (name, container_id, image, status, uptime, restarts, mem_limit; for Live Metrics) |
-|| `metrics_latestsnapshot` | metrics_app | Denormalized latest snapshot per rig (fast dashboard loading). Single row per rig, updated every heartbeat. Stores all display data as JSON arrays: 16 GPU arrays (model/temp/util/fan/clocks/mem/power/PCIe), 7 storage arrays (device/fstype/mountpoint/capacity/usage/temp/SMART), 7 network arrays (interface/IPv4/speed/rx/tx/errors). Plus: local_ip, cpu_utilization_pct, cpu_temp_c, mem_used_bytes, mem_total_bytes, schema_version, timestamp. Total: ~40 fields. |
+|| `metrics_latestsnapshot` | metrics_app | Denormalized latest snapshot per rig (fast dashboard loading). Single row per rig, updated every heartbeat. Stores all display data as JSON arrays: 16 GPU arrays (model/temp/util/fan/clocks/mem/power/PCIe), 7 storage arrays (device/fstype/mountpoint/capacity/usage/temp/SMART), 7 network arrays (interface/IPv4/speed/rx/tx/errors). Total: ~35 fields. |
 || `metrics_rig_status_event` | metrics_app | Rig status transition log (online/stale/offline with timestamps) |
 || `audit_auditlog` | audit | Immutable audit trail |
 

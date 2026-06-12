@@ -217,6 +217,14 @@ def _fetch_rig_metrics(uuid, rig=None):
         .order_by('-timestamp')[:50]
     )
 
+    # Derive primary IP from first non-loopback interface (for header display)
+    primary_ip = ''
+    for iface in network_metrics:
+        ip = iface.get('ipv4', '')
+        if ip and ip != '—':
+            primary_ip = ip
+            break
+
     return {
         'snapshot': snapshot,
         'gpu_metrics': gpu_metrics,
@@ -226,6 +234,7 @@ def _fetch_rig_metrics(uuid, rig=None):
         'docker_metrics': docker_metrics,
         'recent_errors': recent_errors,
         'metric_snapshot': latest_metric_snapshot,
+        'primary_ip': primary_ip,
     }
 
 

@@ -231,9 +231,6 @@ class LatestSnapshot(models.Model):
     gpu_pcie_width_json = models.JSONField(default=list, blank=True)     # [16, 16]
     gpu_pcie_max_width_json = models.JSONField(default=list, blank=True) # [16, 16]
 
-    # Rig network info
-    local_ip = models.CharField(max_length=45, blank=True, default='')   # IPv4 or IPv6 address
-
     # Storage data stored as JSON arrays for fast dashboard access
     # Each array has one entry per disk device, ordered by device name
     storage_count = models.PositiveSmallIntegerField(default=0)

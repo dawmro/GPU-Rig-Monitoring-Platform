@@ -42,8 +42,8 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.5.2'
-__schema_version__ = '1.6'
+__version__ = '1.5.1'
+__schema_version__ = '1.5'
 
 # ── Config ──────────────────────────────────────────────────────────────────
 
@@ -580,20 +580,6 @@ def collect_software():
         'os_distro': ' '.join(platform.dist()) if hasattr(platform, 'dist') else platform.platform(),
         'kernel': platform.release(),
     }
-    # Local IP address
-    try:
-        import socket
-        # Connect to a non-routable address to determine the local IP
-        # No actual network traffic is sent
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-            s.connect(('10.255.255.255', 1))
-            result['local_ip'] = s.getsockname()[0]
-    except Exception:
-        # Fallback: resolve hostname
-        try:
-            result['local_ip'] = socket.gethostbyname(platform.node())
-        except Exception:
-            pass
     try:
         import psutil
         result['uptime_s'] = int(time.time() - psutil.boot_time())

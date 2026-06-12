@@ -52,8 +52,8 @@
                  hx-swap="innerHTML">
                 {% include "dashboard/_rig_status_badge.html" %}
             </div>
-            {% if snapshot.local_ip %}
-            <span class="text-xs text-gray-500 font-mono">{{ snapshot.local_ip }}</span>
+            {% if primary_ip %}
+            <span class="text-xs text-gray-500 font-mono">{{ primary_ip }}</span>
             {% endif %}
         </div>
     </div>

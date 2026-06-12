@@ -217,6 +217,12 @@
                 {% if gpu.gpu_mem_clock_mhz != None %}
                 <span>Mem: {{ gpu.gpu_mem_clock_mhz }} MHz</span>
                 {% endif %}
+                {% if gpu.power_draw_w != None %}
+                <span>Power: {{ gpu.power_draw_w|floatformat:1 }}W{% if gpu.power_limit_w %} / {{ gpu.power_limit_w|floatformat:0 }}W{% endif %}</span>
+                {% endif %}
+                {% if gpu.pcie_current_gen != None and gpu.pcie_current_width != None %}
+                <span>PCIe: {% if gpu.pcie_current_gen < gpu.pcie_max_gen or gpu.pcie_current_width < gpu.pcie_max_width %}<span class="text-red-400" title="Max: Gen{{ gpu.pcie_max_gen }} x{{ gpu.pcie_max_width }}">Gen{{ gpu.pcie_current_gen }} x{{ gpu.pcie_current_width }} ⚠</span>{% else %}<span class="text-green-400">Gen{{ gpu.pcie_current_gen }} x{{ gpu.pcie_current_width }} ✓</span>{% endif %}</span>
+                {% endif %}
             </div>
             {% if gpu.mem_used_mb != None and gpu.mem_total_mb %}
             <div class="flex items-center gap-3 mb-1">
@@ -235,24 +241,6 @@
                 <div class="text-xs text-gray-500 mb-1">Free: {{ gpu.mem_free_mb }} MB</div>
                 {% endif %}
                 {% endif %}
-                {% if gpu.power_draw_w != None %}
-            <div class="text-xs text-gray-500">
-                Power: <span class="text-gray-400">{{ gpu.power_draw_w|floatformat:1 }}W</span>
-                {% if gpu.power_limit_w %} / {{ gpu.power_limit_w|floatformat:0 }}W{% endif %}
-            </div>
-            {% endif %}
-            {% if gpu.pcie_current_gen != None and gpu.pcie_current_width != None %}
-            <div class="text-xs text-gray-500">
-                PCIe:
-                {% if gpu.pcie_current_gen < gpu.pcie_max_gen or gpu.pcie_current_width < gpu.pcie_max_width %}
-                    <span class="text-red-400" title="Max: Gen{{ gpu.pcie_max_gen }} x{{ gpu.pcie_max_width }}">
-                        Gen{{ gpu.pcie_current_gen }} x{{ gpu.pcie_current_width }} ⚠
-                    </span>
-                {% else %}
-                    <span class="text-green-400">Gen{{ gpu.pcie_current_gen }} x{{ gpu.pcie_current_width }} ✓</span>
-                {% endif %}
-            </div>
-            {% endif %}
         </div>
         {% endfor %}
     {% else %}

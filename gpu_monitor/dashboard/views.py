@@ -237,7 +237,7 @@ def rig_list(request):
     # Batch-fetch all LatestSnapshot rows in ONE query (avoids N+1)
     rig_uuids = [str(r.uuid) for r in rigs]
     latest_snapshots = {
-        s.rig_uuid: s
+        str(s.rig_uuid): s  # Use str key to match rig_uuid_str lookups
         for s in LatestSnapshot.objects.filter(rig_uuid__in=rig_uuids)
     }
 

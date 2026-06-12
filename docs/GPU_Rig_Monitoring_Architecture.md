@@ -131,9 +131,9 @@ Rate limiting design:
 | `agent_windows/run.py` | Windows agent (~916 lines) |
 | `metrics_app/views.py` | IngestView, HealthView, ChartDataView, RigMetricsView |
 | `metrics_app/serializers.py` | IngestSerializer, process_ingest() |
-|| `metrics_app/models.py` | MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestDockerContainer, LatestSnapshot, RigStatusEvent |
+|| `metrics_app/models.py` | MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestDockerContainer, LatestSnapshot (with GPU JSON fields), RigStatusEvent |
 | `dashboard/views.py` | rig_list, rig_detail, htmx_metrics, htmx_rig_status, rig_rename |
-| `dashboard/templatetags/gpu_filters.py` | gpu_model_name, gpu_model_short, gpu_compact_summary, gpu_temp_cell, gpu_util_cell, gpu_fan_cell, time_since filters |
+| `dashboard/templatetags/gpu_filters.py` | gpu_model_name, gpu_model_short, gpu_compact_summary_json, gpu_temp_cell_json, gpu_util_cell_json, gpu_fan_cell_json, time_since, last_seen_short filters |
 | `rigs/models.py` | Rig, RigTag |
 | `accounts/authentication.py` | APIKeyAuthentication |
 | `rigs/management/commands/update_rig_status.py` | Rig status state machine (creates RigStatusEvent on transitions) |
@@ -351,7 +351,7 @@ debug_mode: false         # Verbose logging
 || `metrics_app` | MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestDockerContainer, LatestSnapshot, RigStatusEvent | IngestView, HealthView, ChartDataView, RigMetricsView |
 | `dashboard` | — | rig_list, rig_detail, htmx_metrics, htmx_rig_status, rig_rename |
 | `audit` | AuditLog | Middleware-based request logging |
-| `dashboard/templatetags` | — | gpu_model_name, gpu_model_short, gpu_compact_summary, gpu_temp_cell, gpu_util_cell, gpu_fan_cell, time_since, last_seen_short filters |
+| `dashboard/templatetags` | — | gpu_model_name, gpu_model_short, gpu_compact_summary_json, gpu_temp_cell_json, gpu_util_cell_json, gpu_fan_cell_json, time_since, last_seen_short filters |
 
 ### 4.2 Authentication
 
@@ -380,8 +380,8 @@ POST /api/v1/ingest/
       - Delete + recreate LatestDockerContainer per container (image, status, uptime, restarts — latest snapshot for Live Metrics)
       - Create RigStatusEvent on status transition (e.g. offline→online)
       - Update Rig.latest_errors_json with latest error text from payload
-      - Update LatestSnapshot (denormalized cache for fast dashboard loading)
-      - Update Rig.last_seen = now(), Rig.status = ONLINE
+      - Update LatestSnapshot (denormalized cache for fast dashboard loading; includes GPU data as JSON arrays: gpu_count, gpu_models_json, gpu_temps_json, gpu_utils_json, gpu_fans_json)
+      - Update Rig.last_seen = now(), Rig.status = ONLINE, cache.delete(lsnap_{uuid})
       - On Rig.DoesNotExist: auto-create with agent-suggested name
         (rig_name is used only at creation, never overwritten)
   → Response: {"status": "new"} or {"status": "duplicate"}
@@ -446,10 +446,11 @@ HTMX polls use `hx-swap="innerHTML"` (not `outerHTML`). This is critical: `inner
 
 **Data source:** `dashboard/views.py rig_list()` queries:
 - `Rig` (all fields including `status`, `last_seen`, `name`)
-- `LatestSnapshot` (cpu_utilization_pct, mem_used_bytes, cpu_temp_c, etc.)
-- `GPUMetric` (all GPUs per rig, deduplicated by gpu_uuid)
+- `LatestSnapshot` (cpu_utilization_pct, mem_used_bytes, cpu_temp_c, gpu_count, gpu_models_json, gpu_temps_json, gpu_utils_json, gpu_fans_json)
 
-**Sorting:** Alphabetically by `Rig.name` (stable ordering, rigs don't jump around).
+**GPU data denormalization:** GPU metrics (model, temp, util, fan) are stored as JSON arrays in `LatestSnapshot` during ingest. This eliminates the need to query the `GPUMetric` timeseries table (2.1M+ rows) for the fleet overview. Each array entry corresponds to one GPU, ordered by `gpu_index`.
+
+**Sorting:** Naturally by `Rig.name` (e.g., rig2 before rig11).
 
 **Columns and data sources:**
 
@@ -457,12 +458,12 @@ HTMX polls use `hx-swap="innerHTML"` (not `outerHTML`). This is critical: `inner
 |--------|--------|-------------|
 | Rig Name | Rig.name | Clickable link to detail |
 | Status | Rig.status | Online/Stale/Offline |
-|| Last Seen | Rig.last_seen | Short relative time via `last_seen_short` filter (e.g., '5d, 21h', '45m', 'just now') |
+| Last Seen | Rig.last_seen | Short relative time via `last_seen_short` filter (e.g., '5d, 21h', '45m', '20s') |
 | Tags | RigTag M2M | Colored pills |
-| GPU | GPUMetric.model (all GPUs) | Compact summary with count (e.g., "RTX 3060 ×8") |
-| GPU Temp [°C] | GPUMetric.gpu_temp_c (all GPUs) | Space-separated color-coded values |
-| GPU Util [%] | GPUMetric.gpu_util_pct (all GPUs) | Space-separated color-coded values |
-| GPU Fan [%] | GPUMetric.fan_speed_pct (all GPUs) | Space-separated color-coded values |
+| GPU | LatestSnapshot.gpu_models_json | Compact summary via `gpu_compact_summary_json` filter (e.g., "RTX 3060 ×8", "5080×4 + ...") |
+| GPU Temp [°C] | LatestSnapshot.gpu_temps_json | Space-separated color-coded values via `gpu_temp_cell_json` |
+| GPU Util [%] | LatestSnapshot.gpu_utils_json | Space-separated color-coded values via `gpu_util_cell_json` |
+| GPU Fan [%] | LatestSnapshot.gpu_fans_json | Space-separated color-coded values via `gpu_fan_cell_json` |
 | CPU [%] | LatestSnapshot.cpu_utilization_pct | Percentage |
 
 ### 5.3 Rig Detail Page (`/dashboard/rigs/<uuid>/`)
@@ -519,7 +520,7 @@ Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the age
 || `metrics_networkmetric` | metrics_app | Per-interface metrics (rx/tx bytes, rx/tx deltas, speed, errors) |
 || `metrics_dockercontainermetric` | metrics_app | Per-container time-series (name, container_id, cpu%, mem_usage; for charts) |
 || `metrics_latest_docker_container` | metrics_app | Latest container snapshot (name, container_id, image, status, uptime, restarts, mem_limit; for Live Metrics) |
-|| `metrics_latestsnapshot` | metrics_app | Denormalized latest snapshot per rig (fast dashboard loading) |
+|| `metrics_latestsnapshot` | metrics_app | Denormalized latest snapshot per rig (fast dashboard loading). Includes GPU data as JSON arrays: gpu_count, gpu_models_json, gpu_temps_json, gpu_utils_json, gpu_fans_json |
 || `metrics_rig_status_event` | metrics_app | Rig status transition log (online/stale/offline with timestamps) |
 || `audit_auditlog` | audit | Immutable audit trail |
 
@@ -776,8 +777,8 @@ Each ingest performs multiple database operations:
 | Query | Frequency | Optimization | Budget |
 |-------|-----------|-------------|--------|
 | `IngestView` upsert | Every 60s/rig | `update_or_create` + `unique_together` | < 200 ms |
-| `rig_list` fleet table | Every 30s/browser | `prefetch_related('tags')`, indexed `order_by('name')` | < 100 ms |
-| `htmx_metrics` live cards | Every 30s/browser | Single-row lookup from `LatestSnapshot` + `GPUMetric` | < 100 ms |
+|| `rig_list` fleet table | Every 30s/browser | Single-row lookup from `LatestSnapshot` (includes GPU data as JSON arrays) | < 50 ms |
+| `htmx_metrics` live cards | Every 30s/browser | Single-row lookup from `LatestSnapshot` + `GPUMetric` DISTINCT ON | < 200 ms |
 || `ChartDataView` per chart | On demand (↻) | Time-range filter, SQL aggregation (TruncHour + Avg/Sum) | < 200 ms |
 | `update_rig_status` | Every 2 min | Bulk `update()`, no per-row queries | < 1 s |
 

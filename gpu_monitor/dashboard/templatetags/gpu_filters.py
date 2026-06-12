@@ -79,47 +79,6 @@ def gpu_model_short(value):
 
 
 @register.filter
-def gpu_compact_summary(gpus):
-    """Build a compact GPU model summary string for a list of GPUMetric objects.
-
-    Shows the most popular model with count. For mixed cards, appends ' + ...'.
-
-    Examples:
-        8x same model          -> "3060×8"
-        4x same + 4x other     -> "5080×4 + ..."
-        3x + 2x + 1x           -> "5080×3 + ..."
-        all different (3+)     -> "3060 + ..."
-        2 different            -> "3060 + ..."
-        single card            -> "3060"
-    """
-    if not gpus:
-        return "—"
-
-    # Build model -> count map
-    from collections import OrderedDict
-    model_counts = OrderedDict()
-    for gpu in gpus:
-        short = gpu_model_short(gpu.model) if gpu.model else "?"
-        model_counts[short] = model_counts.get(short, 0) + 1
-
-    # Sort by count descending (most popular first)
-    sorted_models = sorted(model_counts.items(), key=lambda x: x[1], reverse=True)
-
-    # Single model: just show it
-    if len(sorted_models) == 1:
-        model, count = sorted_models[0]
-        if count > 1:
-            return f"{model}×{count}"
-        return model
-
-    # Multiple models: show only the most popular + " + ..."
-    top_model, top_count = sorted_models[0]
-    if top_count > 1:
-        return f"{top_model}×{top_count} + ..."
-    return f"{top_model} + ..."
-
-
-@register.filter
 def gpu_compact_summary_json(snapshot):
     """Build compact GPU model summary from LatestSnapshot JSON fields.
 
@@ -233,58 +192,7 @@ def gpu_fan_cell_json(snapshot):
 
 
 @register.simple_tag
-def gpu_temp_cell(temp_c):
-    """Render a color-coded GPU temperature value."""
-    if temp_c is None:
-        return mark_safe('<span class="text-gray-600">—</span>')
-    try:
-        t = float(temp_c)
-    except (ValueError, TypeError):
-        return mark_safe('<span class="text-gray-600">—</span>')
-    if t > 80:
-        return mark_safe(f'<span class="text-red-400 font-medium">{t:.0f}</span>')
-    elif t > 75:
-        return mark_safe(f'<span class="text-orange-400 font-medium">{t:.0f}</span>')
-    elif t > 70:
-        return mark_safe(f'<span class="text-yellow-400">{t:.0f}</span>')
-    elif t > 65:
-        return mark_safe(f'<span class="text-green-400">{t:.0f}</span>')
-    else:
-        return mark_safe(f'<span class="text-gray-400">{t:.0f}</span>')
 
-
-@register.simple_tag
-def gpu_util_cell(util_pct):
-    """Render a color-coded GPU utilization value."""
-    if util_pct is None:
-        return mark_safe('<span class="text-gray-600">—</span>')
-    try:
-        u = float(util_pct)
-    except (ValueError, TypeError):
-        return mark_safe('<span class="text-gray-600">—</span>')
-    if u > 90:
-        return mark_safe(f'<span class="text-green-400 font-medium">{u:.0f}</span>')
-    elif u > 50:
-        return mark_safe(f'<span class="text-gray-300">{u:.0f}</span>')
-    else:
-        return mark_safe(f'<span class="text-gray-500">{u:.0f}</span>')
-
-
-@register.simple_tag
-def gpu_fan_cell(fan_pct):
-    """Render a color-coded GPU fan speed value."""
-    if fan_pct is None:
-        return mark_safe('<span class="text-gray-600">—</span>')
-    try:
-        f = float(fan_pct)
-    except (ValueError, TypeError):
-        return mark_safe('<span class="text-gray-600">—</span>')
-    if f > 80:
-        return mark_safe(f'<span class="text-red-400 font-medium">{f:.0f}</span>')
-    elif f > 60:
-        return mark_safe(f'<span class="text-yellow-400">{f:.0f}</span>')
-    else:
-        return mark_safe(f'<span class="text-gray-400">{f:.0f}</span>')
 
 
 @register.filter

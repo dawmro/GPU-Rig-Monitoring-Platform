@@ -362,6 +362,10 @@
     <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
         <div class="text-gray-500">Hostname:</div>
         <div class="text-gray-300">{{ metric_snapshot.software_json.hostname|default:"—" }}</div>
+        {% if metric_snapshot.software_json.local_ip %}
+        <div class="text-gray-500">Local IP:</div>
+        <div class="text-gray-300">{{ metric_snapshot.software_json.local_ip }}</div>
+        {% endif %}
         <div class="text-gray-500">OS:</div>
         <div class="text-gray-300 truncate" title="{{ metric_snapshot.software_json.os_distro }}">{{ metric_snapshot.software_json.os_distro|default:"—" }}</div>
         <div class="text-gray-500">Kernel:</div>

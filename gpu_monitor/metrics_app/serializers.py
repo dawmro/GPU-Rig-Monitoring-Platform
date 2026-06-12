@@ -21,7 +21,7 @@ class IngestSerializer(serializers.Serializer):
     errors = serializers.ListField(required=False, default=list)
 
     def validate_schema_version(self, value):
-        if value not in ('1.0', '1.1', '1.2', '1.3', '1.4', '1.5'):
+        if value not in ('1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6'):
             raise serializers.ValidationError(f"Unsupported schema_version: {value}")
         return value
 
@@ -303,6 +303,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     'cpu_temp_c': cpu.get('temp_c'),
                     'mem_used_bytes': memory.get('used_bytes'),
                     'mem_total_bytes': memory.get('total_bytes'),
+                    'local_ip': software_data.get('local_ip', ''),
                     'gpu_count': len(gpu_list),
                     'gpu_models_json': gpu_models,
                     'gpu_temps_json': gpu_temps,

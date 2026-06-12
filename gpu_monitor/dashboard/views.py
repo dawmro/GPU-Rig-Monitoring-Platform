@@ -72,6 +72,13 @@ def _format_mem(usage_bytes, limit_bytes):
     return usage_str
 
 
+def _json_get(lst, idx, default=None):
+    """Safely get an element from a JSON array field."""
+    if lst and idx < len(lst):
+        return lst[idx]
+    return default
+
+
 def _fetch_rig_metrics(uuid, rig=None):
     """Fetch the latest rig metrics for Live Metrics display.
 
@@ -91,14 +98,25 @@ def _fetch_rig_metrics(uuid, rig=None):
             else:
                 cache.set(cache_key, snapshot, 50)
 
-    # GPU: latest metric per unique GPU using DISTINCT ON
-    # Sort by gpu_index (0, 1, 2...) for consistent display order
-    gpu_metrics = list(
-        GPUMetric.objects.filter(rig_uuid=str(uuid))
-        .order_by('gpu_index', '-timestamp')
-        .distinct('gpu_index')
-    )
-    gpu_metrics.sort(key=lambda g: g.gpu_index)
+    # GPU data: read from LatestSnapshot JSON arrays instead of querying
+    # the GPUMetric timeseries table. This avoids the expensive DISTINCT ON
+    # query on 2.1M+ rows. Build a list of dicts matching the template's
+    # expected format (mimicking GPUMetric objects).
+    gpu_metrics = []
+    if snapshot and snapshot.gpu_count:
+        for i in range(snapshot.gpu_count):
+            gpu_metrics.append({
+                'gpu_index': i,
+                'model': _json_get(snapshot.gpu_models_json, i, ''),
+                'gpu_temp_c': _json_get(snapshot.gpu_temps_json, i),
+                'gpu_util_pct': _json_get(snapshot.gpu_utils_json, i),
+                'fan_speed_pct': _json_get(snapshot.gpu_fans_json, i),
+                'gpu_core_clock_mhz': _json_get(snapshot.gpu_core_clocks_json, i),
+                'gpu_mem_clock_mhz': _json_get(snapshot.gpu_mem_clocks_json, i),
+                'mem_used_mb': _json_get(snapshot.gpu_mem_used_json, i),
+                'mem_total_mb': _json_get(snapshot.gpu_mem_total_json, i),
+                'gpu_uuid': '',  # Not stored in snapshot
+            })
 
     # Storage: latest metric per unique device using DISTINCT ON
     storage_metrics = list(

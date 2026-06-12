@@ -229,11 +229,19 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
             gpu_temps = []
             gpu_utils = []
             gpu_fans = []
+            gpu_core_clocks = []
+            gpu_mem_clocks = []
+            gpu_mem_used = []
+            gpu_mem_total = []
             for idx, gpu in enumerate(gpu_list):
                 gpu_models.append(gpu.get('model', ''))
                 gpu_temps.append(gpu.get('temp_c'))
                 gpu_utils.append(gpu.get('gpu_util_pct'))
                 gpu_fans.append(gpu.get('fan_speed_pct'))
+                gpu_core_clocks.append(gpu.get('gpu_core_clock_mhz'))
+                gpu_mem_clocks.append(gpu.get('gpu_mem_clock_mhz'))
+                gpu_mem_used.append(gpu.get('mem_used_mb'))
+                gpu_mem_total.append(gpu.get('mem_total_mb'))
 
             # Update latest snapshot (denormalized)
             LatestSnapshot.objects.update_or_create(
@@ -250,6 +258,10 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     'gpu_temps_json': gpu_temps,
                     'gpu_utils_json': gpu_utils,
                     'gpu_fans_json': gpu_fans,
+                    'gpu_core_clocks_json': gpu_core_clocks,
+                    'gpu_mem_clocks_json': gpu_mem_clocks,
+                    'gpu_mem_used_json': gpu_mem_used,
+                    'gpu_mem_total_json': gpu_mem_total,
                 },
             )
             # Invalidate cached snapshot so next read gets fresh data

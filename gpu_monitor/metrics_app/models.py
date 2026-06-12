@@ -218,6 +218,10 @@ class LatestSnapshot(models.Model):
     gpu_temps_json = models.JSONField(default=list, blank=True)         # [72.5, 73.1]
     gpu_utils_json = models.JSONField(default=list, blank=True)         # [98.0, 100.0]
     gpu_fans_json = models.JSONField(default=list, blank=True)          # [74, 76]
+    gpu_core_clocks_json = models.JSONField(default=list, blank=True)   # [2100, 2100]
+    gpu_mem_clocks_json = models.JSONField(default=list, blank=True)    # [8000, 8000]
+    gpu_mem_used_json = models.JSONField(default=list, blank=True)      # [8192, 8192]
+    gpu_mem_total_json = models.JSONField(default=list, blank=True)     # [12288, 12288]
 
     class Meta:
         db_table = 'metrics_latest_snapshot'

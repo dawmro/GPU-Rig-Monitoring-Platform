@@ -48,8 +48,8 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.6.1-win'
-__schema_version__ = '1.5'
+__version__ = '1.6.2-win'
+__schema_version__ = '1.6'
 
 # ── Config ──────────────────────────────────────────────────────────────────
 
@@ -358,6 +358,9 @@ def collect_network():
                     if a.family.name == 'AF_INET':
                         entry['ipv4'] = a.address
                         break
+            # Skip interfaces with loopback IPv4 or no IPv4
+            if not entry.get('ipv4') or entry['ipv4'].startswith('127.'):
+                continue
             # Link speed on Windows via WMI
             if platform.system() == 'Windows':
                 try:

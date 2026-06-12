@@ -217,6 +217,30 @@ def _fetch_rig_metrics(uuid, rig=None):
         .order_by('-timestamp')[:50]
     )
 
+    # Derive primary IP from the first non-loopback, non-virtual interface
+    # (for rig header display). Prefers physical NICs over virtual adapters.
+    primary_ip = ''
+    for iface in network_metrics:
+        ip = iface.get('ipv4', '')
+        if not ip or ip == '—':
+            continue
+        # Skip loopback
+        if ip.startswith('127.'):
+            continue
+        # Skip common virtual adapter prefixes
+        name = iface.get('interface', '').lower()
+        if any(prefix in name for prefix in ('vmware', 'virtual', 'vbox', 'hyper-v', 'docker', 'tun', 'tap', 'br-', 'veth')):
+            continue
+        primary_ip = ip
+        break
+    # Fallback: if all interfaces were filtered, use the first non-loopback IP
+    if not primary_ip:
+        for iface in network_metrics:
+            ip = iface.get('ipv4', '')
+            if ip and ip != '—' and not ip.startswith('127.'):
+                primary_ip = ip
+                break
+
     return {
         'snapshot': snapshot,
         'gpu_metrics': gpu_metrics,
@@ -226,6 +250,7 @@ def _fetch_rig_metrics(uuid, rig=None):
         'docker_metrics': docker_metrics,
         'recent_errors': recent_errors,
         'metric_snapshot': latest_metric_snapshot,
+        'primary_ip': primary_ip,
     }
 
 

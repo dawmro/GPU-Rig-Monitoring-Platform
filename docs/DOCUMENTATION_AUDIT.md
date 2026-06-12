@@ -1,7 +1,7 @@
 # Documentation Audit Report
 
 **Date:** 2026-06-12
-**Branch:** `analysis/ingest-performance`
+**Branch:** `feature/agent-local-ip`
 
 ---
 
@@ -11,9 +11,9 @@
 
 | Document | Size | Status | Notes |
 |---|---|---|---|
-| `GPU_Rig_Monitoring_Architecture.md` | 63KB | ✅ Current | Main architecture reference. Updated to v1.4 with snapshot-timeseries decoupling, ingest performance, query budgets. |
+| `GPU_Rig_Monitoring_Architecture.md` | 63KB | ✅ Current | Main architecture reference. v1.4 with snapshot-timeseries decoupling, ingest performance, query budgets. Agent versions: Linux 1.5.1, Windows 1.6.1-win, schema 1.5. |
 | `DATA_FLOW_ANALYSIS.md` | 14KB | ✅ Current | Complete payload-to-DB field mapping. Updated with LatestSnapshot as primary display data source. |
-| `DATA_RETENTION_PLAN.md` | 8KB | ✅ Current | Retention strategy, compaction, cleanup. Still valid — older measurements but correct structure. |
+| `DATA_RETENTION_PLAN.md` | 8KB | ✅ Current | Retention strategy, compaction, cleanup. Still valid. |
 | `LOCAL_DEPLOYMENT_GUIDE.md` | 37KB | ✅ Current | Updated models.py description. |
 | `DEPLOYMENT_GUIDE.md` | 37KB | ✅ Current | Deployment steps still valid. |
 
@@ -21,38 +21,17 @@
 
 | Document | Size | Status | Notes |
 |---|---|---|---|
-| `BACKFILL_ANALYSIS.md` | 7KB | ✅ Current | Backfill command exists and works. Documentation accurate. |
-| `INGEST_PERFORMANCE_ANALYSIS.md` | 6KB | ✅ Current | New — detailed ingest performance measurements. |
+| `BACKFILL_ANALYSIS.md` | 7KB | ✅ Current | Backfill command exists and works. |
+| `INGEST_PERFORMANCE_ANALYSIS.md` | 6KB | ✅ Current | Detailed ingest performance measurements. |
 | `CHART_PERFORMANCE_ANALYSIS.md` | 2KB | ✅ Current | Updated Live Metrics description. |
 
 ### ✅ KEEP — Design Context & Plans
 
 | Document | Size | Status | Notes |
 |---|---|---|---|
-| `TIMESCALEDB_VS_OUR_APPROACH.md` | 7KB | ✅ Relevant | Architectural context for why we use compaction instead of TimescaleDB. |
-| `PCIE_LINK_PLAN.md` | 6KB | ✅ Relevant | PCIe fields implemented. Doc serves as reference for data collection approach. |
-| `AGENT_AUTO_UPDATE_PLAN.md` | 6KB | ✅ Relevant | check_update.py exists but install scripts don't set up cron yet. Doc still needed as plan. |
-
-### ⚠️ KEEP BUT MARK AS HISTORICAL
-
-| Document | Size | Status | Notes |
-|---|---|---|---|
-| `CHART_PLAN_ORDERED.md` | 7KB | ⚠️ Historical | All charts implemented. Superseded by Architecture doc §5. Kept for historical reference. |
-| `LIVE_METRICS_PLAN.md` | 2KB | ⚠️ Historical | All features implemented. Updated data source mapping. Kept for historical context. |
-| `ADDITIONAL_CHARTS_PROPOSAL.md` | 8KB | ⚠️ Historical | All proposed charts implemented. Superseded by Architecture doc §5. |
-
----
-
-## Documents to Delete
-
-**None.** All 14 documents serve a purpose:
-
-- 5 are core architecture/reference docs (updated)
-- 3 are operational guides (accurate)
-- 3 are design context/plans (still relevant)
-- 3 are historical records (kept for context)
-
-The 3 "historical" documents (`CHART_PLAN_ORDERED.md`, `LIVE_METRICS_PLAN.md`, `ADDITIONAL_CHARTS_PROPOSAL.md`) are kept because they document the design decisions and implementation history that led to the current architecture. They're small (2-8KB each) and provide valuable context for future developers.
+| `TIMESCALEDB_VS_OUR_APPROACH.md` | 7KB | ✅ Relevant | Architectural context for compaction vs TimescaleDB. |
+| `PCIE_LINK_PLAN.md` | 6KB | ✅ Relevant | PCIe fields implemented. Reference for data collection. |
+| `AGENT_AUTO_UPDATE_PLAN.md` | 6KB | ✅ Relevant | check_update.py exists, install scripts don't set up cron yet. |
 
 ---
 
@@ -60,16 +39,27 @@ The 3 "historical" documents (`CHART_PLAN_ORDERED.md`, `LIVE_METRICS_PLAN.md`, `
 
 | Document | Size | Reason |
 |---|---|---|
-| `CHART_PLAN_ORDERED.md` | 7KB | All charts fully implemented. Content superseded by Architecture doc §5 (53 chart-related sections). |
-| `ADDITIONAL_CHARTS_PROPOSAL.md` | 8KB | All proposed charts implemented. Content superseded by Architecture doc §5. |
-| `LIVE_METRICS_PLAN.md` | 2KB | All features implemented. Data source mapping now in DATA_FLOW_ANALYSIS.md. |
+| `CHART_PLAN_ORDERED.md` | 7KB | All charts fully implemented. Superseded by Architecture doc §5. |
+| `ADDITIONAL_CHARTS_PROPOSAL.md` | 8KB | All proposed charts implemented. Superseded by Architecture doc §5. |
+| `LIVE_METRICS_PLAN.md` | 2KB | All features implemented. Data source mapping in DATA_FLOW_ANALYSIS.md. |
 
 ---
 
 ## Summary
 
 - **Total documents:** 11 (down from 14)
-- **Keep (current):** 8
+- **Keep:** 11
 - **Deleted:** 3
 
 All remaining documentation is accurate and up-to-date.
+
+---
+
+## Changes in This Branch
+
+1. **Primary IP in header:** Added `primary_ip` derived from first non-loopback interface's IPv4 (from existing `network_ipv4s_json` data)
+2. **Template display:** Shows primary IP below status badge in rig detail header
+3. **No agent changes:** IP was already collected per-interface in network data
+4. **No model changes:** Uses existing `network_ipv4s_json` — no new fields needed
+5. **Redundancy removed:** Original `local_ip` feature was reverted (duplicate of existing Network section data)
+6. **Documentation:** Updated audit, removed schema 1.6 changelog and version bumps

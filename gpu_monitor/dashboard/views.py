@@ -216,23 +216,38 @@ def rig_list(request):
     #   rig_data[]['rig']      -> Rig model (name, status, last_seen, tags, uuid)
     #   rig_data[]['snapshot'] -> LatestSnapshot (cpu_utilization_pct, cpu_temp_c, mem_*)
     #   rig_data[]['gpus']     -> list of latest GPUMetric per unique GPU (by gpu_uuid)
+
+    # Batch-fetch all LatestSnapshot rows in ONE query (avoids N+1)
+    rig_uuids = [str(r.uuid) for r in rigs]
+    latest_snapshots = {
+        s.rig_uuid: s
+        for s in LatestSnapshot.objects.filter(rig_uuid__in=rig_uuids)
+    }
+
+    # Batch-fetch all latest GPUMetric rows in ONE query using DISTINCT ON
+    # (rig_uuid, gpu_index) to get latest metric per GPU per rig
+    all_gpus = list(
+        GPUMetric.objects.filter(rig_uuid__in=rig_uuids)
+        .order_by('rig_uuid', 'gpu_index', '-timestamp')
+        .distinct('rig_uuid', 'gpu_index')
+    )
+    # Group GPUs by rig_uuid
+    gpus_by_rig = {}
+    for gpu in all_gpus:
+        gpus_by_rig.setdefault(gpu.rig_uuid, []).append(gpu)
+    # Sort each rig's GPUs by gpu_index for consistent display
+    for gpu_list in gpus_by_rig.values():
+        gpu_list.sort(key=lambda g: g.gpu_index)
+
+    # Build rig_data using batched data (no per-rig queries)
     rig_data = []
     for rig in rigs:
-        try:
-            snap = LatestSnapshot.objects.get(rig_uuid=str(rig.uuid))
-        except LatestSnapshot.DoesNotExist:
-            snap = None
-
-        # Fetch latest GPU metric per unique GPU using DISTINCT ON
-        # Sort by gpu_index (0, 1, 2...) for consistent display order
-        gpus = list(
-            GPUMetric.objects.filter(rig_uuid=str(rig.uuid))
-            .order_by('gpu_index', '-timestamp')
-            .distinct('gpu_index')
-            .order_by('gpu_index')
-        )
-
-        rig_data.append({'rig': rig, 'snapshot': snap, 'gpus': gpus})
+        rig_uuid_str = str(rig.uuid)
+        rig_data.append({
+            'rig': rig,
+            'snapshot': latest_snapshots.get(rig_uuid_str),
+            'gpus': gpus_by_rig.get(rig_uuid_str, []),
+        })
 
     if request.headers.get('HX-Request'):
         return render(request, 'dashboard/_rig_table.html', {'rig_data': rig_data})

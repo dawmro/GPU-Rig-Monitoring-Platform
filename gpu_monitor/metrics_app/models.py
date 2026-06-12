@@ -89,6 +89,10 @@ class GPUMetric(models.Model):
         unique_together = ('rig_uuid', 'timestamp', 'gpu_index')
         indexes = [
             models.Index(fields=['rig_uuid', '-timestamp']),
+            # Composite index for fleet overview batched GPU query
+            # Supports: DISTINCT ON (rig_uuid, gpu_index) ORDER BY rig_uuid, gpu_index, -timestamp
+            models.Index(fields=['rig_uuid', 'gpu_index', '-timestamp'],
+                         name='gpumetric_rig_gpu_ts_idx'),
         ]
 
 

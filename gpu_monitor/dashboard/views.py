@@ -346,9 +346,21 @@ def htmx_metrics(request, uuid):
 @rate_limit(max_requests=120, window_s=60)
 def htmx_rig_status(request, uuid):
     """HTMX polling endpoint — returns just the status badge + last_seen."""
-    rig = get_object_or_404(Rig, uuid=uuid)
-    if rig.owner_id != request.user.id and not request.user.is_staff:
+    # Field-selective query: only fetch status, last_seen, owner_id
+    # Reduces data transfer for this high-frequency poll (every 15s)
+    rig_data = Rig.objects.filter(
+        uuid=uuid
+    ).values('status', 'last_seen', 'owner_id').first()
+
+    if not rig_data:
         raise Http404
+    if rig_data['owner_id'] != request.user.id and not request.user.is_staff:
+        raise Http404
+
+    # Use SimpleNamespace to provide attribute access for template
+    from types import SimpleNamespace
+    rig = SimpleNamespace(**rig_data)
+
     return render(request, 'dashboard/_rig_status_badge.html', {'rig': rig})
 
 

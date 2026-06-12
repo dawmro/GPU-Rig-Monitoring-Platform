@@ -494,7 +494,19 @@ The rig detail page has three tabs:
 2. **Historical Charts** — Combined chart suite: GPU (Temperature, Utilization, Memory, Power, Fan Speed — multi-GPU), CPU (Utilization, Temperature, Load Average), Memory & Swap (combined single chart, 3 datasets), Disk Usage (multi-disk), Network Traffic (combined RX/TX/Errors, dual Y-axes), Container CPU/Memory (multi-container), Uptime, Error Frequency — all implemented as Chart.js charts with multi-series support. Timeframe toggle buttons (24h, 7d, 30d) in the tab header with a ↻ Refresh button.
 3. **Errors** — latest system errors from journalctl/Windows Event Log (stored on Rig model, updated in place)
 
-### 5.5 Data Deduplication
+### 5.5 Snapshot-Timeseries Decoupling
+
+The dashboard display (Fleet Overview + Live Metrics) is fully decoupled from timeseries data:
+
+**Snapshot data (LatestSnapshot):** Single row per rig, updated on every heartbeat. Used by:
+- Fleet Overview: GPU models/temps/utils/fans, storage devices/usage, network interfaces/traffic
+- Live Metrics: GPU models/temps/utils/fans/clocks/power/PCIe/memory, storage devices/usage/temp/SMART, network interfaces/IP/speed/RX/TX/errors
+
+**Timeseries data (GPUMetric, StorageMetric, NetworkMetric, MetricSnapshot):** Only used by:
+- Historical Charts (ChartDataView): Time-series aggregation queries with GROUP BY time bucket
+- Data retention/cleanup: Deleted after 31 days
+
+This decoupling means the Fleet Overview and Live Metrics polls execute 0 timeseries queries regardless of fleet size. Performance is constant-time O(1) per rig for display data.
 
 Storage metrics are deduplicated by device: the view queries the latest `StorageMetric` per unique `device` path, preventing duplicate entries when the agent reports the same disk multiple times within the window.
 

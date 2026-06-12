@@ -111,13 +111,21 @@ def _fetch_rig_metrics(uuid, rig=None):
         rig_uuid=str(uuid)
     )
 
+    # Batch-fetch latest metric for ALL containers in ONE query
+    # Uses DISTINCT ON (name) to get the latest DockerContainerMetric per container name
+    container_names = [lc.name for lc in latest_containers]
+    latest_container_metrics = {
+        m.name: m
+        for m in DockerContainerMetric.objects.filter(
+            rig_uuid=str(uuid),
+            name__in=container_names
+        ).order_by('name', '-timestamp').distinct('name')
+    }
+
     docker_metrics = []
     for lc in latest_containers:
-        # Get the latest metric row for this container's CPU/memory
-        latest_metric = DockerContainerMetric.objects.filter(
-            rig_uuid=str(uuid),
-            name=lc.name
-        ).order_by('-timestamp').first()
+        # Get latest metric from prefetched dict (no DB query)
+        latest_metric = latest_container_metrics.get(lc.name)
 
         uptime_str = _format_uptime(lc.uptime_s)
         mem_str = _format_mem(

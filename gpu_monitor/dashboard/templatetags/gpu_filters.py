@@ -119,6 +119,119 @@ def gpu_compact_summary(gpus):
     return f"{top_model} + ..."
 
 
+@register.filter
+def gpu_compact_summary_json(snapshot):
+    """Build compact GPU model summary from LatestSnapshot JSON fields.
+
+    Works with the denormalized GPU data stored in LatestSnapshot
+    instead of querying GPUMetric timeseries table.
+
+    Examples:
+        8x same model          -> "3060×8"
+        4x same + 4x other     -> "5080×4 + ..."
+        single card            -> "3060"
+        no GPUs                -> "—"
+    """
+    if not snapshot or not snapshot.gpu_count:
+        return "—"
+
+    from collections import OrderedDict
+    model_counts = OrderedDict()
+    for model in snapshot.gpu_models_json:
+        short = gpu_model_short(model) if model else "?"
+        model_counts[short] = model_counts.get(short, 0) + 1
+
+    sorted_models = sorted(model_counts.items(), key=lambda x: x[1], reverse=True)
+
+    if len(sorted_models) == 1:
+        model, count = sorted_models[0]
+        return f"{model}×{count}" if count > 1 else model
+
+    top_model, top_count = sorted_models[0]
+    if top_count > 1:
+        return f"{top_model}×{top_count} + ..."
+    return f"{top_model} + ..."
+
+
+@register.simple_tag
+def gpu_temp_cell_json(snapshot):
+    """Render color-coded GPU temperature values from LatestSnapshot JSON."""
+    if not snapshot or not snapshot.gpu_temps_json:
+        return mark_safe('<span class="text-gray-600">—</span>')
+
+    parts = []
+    for temp in snapshot.gpu_temps_json:
+        if temp is None:
+            parts.append('<span class="text-gray-600">—</span>')
+        else:
+            try:
+                t = float(temp)
+            except (ValueError, TypeError):
+                parts.append('<span class="text-gray-600">—</span>')
+                continue
+            if t > 80:
+                parts.append(f'<span class="text-red-400 font-medium">{t:.0f}</span>')
+            elif t > 75:
+                parts.append(f'<span class="text-orange-400 font-medium">{t:.0f}</span>')
+            elif t > 70:
+                parts.append(f'<span class="text-yellow-400">{t:.0f}</span>')
+            elif t > 65:
+                parts.append(f'<span class="text-green-400">{t:.0f}</span>')
+            else:
+                parts.append(f'<span class="text-gray-400">{t:.0f}</span>')
+    return mark_safe(' '.join(parts))
+
+
+@register.simple_tag
+def gpu_util_cell_json(snapshot):
+    """Render color-coded GPU utilization values from LatestSnapshot JSON."""
+    if not snapshot or not snapshot.gpu_utils_json:
+        return mark_safe('<span class="text-gray-600">—</span>')
+
+    parts = []
+    for util in snapshot.gpu_utils_json:
+        if util is None:
+            parts.append('<span class="text-gray-600">—</span>')
+        else:
+            try:
+                u = float(util)
+            except (ValueError, TypeError):
+                parts.append('<span class="text-gray-600">—</span>')
+                continue
+            if u > 90:
+                parts.append(f'<span class="text-green-400 font-medium">{u:.0f}</span>')
+            elif u > 50:
+                parts.append(f'<span class="text-gray-300">{u:.0f}</span>')
+            else:
+                parts.append(f'<span class="text-gray-500">{u:.0f}</span>')
+    return mark_safe(' '.join(parts))
+
+
+@register.simple_tag
+def gpu_fan_cell_json(snapshot):
+    """Render color-coded GPU fan speed values from LatestSnapshot JSON."""
+    if not snapshot or not snapshot.gpu_fans_json:
+        return mark_safe('<span class="text-gray-600">—</span>')
+
+    parts = []
+    for fan in snapshot.gpu_fans_json:
+        if fan is None:
+            parts.append('<span class="text-gray-600">—</span>')
+        else:
+            try:
+                f = float(fan)
+            except (ValueError, TypeError):
+                parts.append('<span class="text-gray-600">—</span>')
+                continue
+            if f > 80:
+                parts.append(f'<span class="text-red-400 font-medium">{f:.0f}</span>')
+            elif f > 60:
+                parts.append(f'<span class="text-yellow-400">{f:.0f}</span>')
+            else:
+                parts.append(f'<span class="text-gray-400">{f:.0f}</span>')
+    return mark_safe(' '.join(parts))
+
+
 @register.simple_tag
 def gpu_temp_cell(temp_c):
     """Render a color-coded GPU temperature value."""

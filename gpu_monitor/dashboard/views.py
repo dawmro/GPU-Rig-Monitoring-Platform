@@ -237,33 +237,22 @@ def rig_list(request):
     # Batch-fetch all LatestSnapshot rows in ONE query (avoids N+1)
     rig_uuids = [str(r.uuid) for r in rigs]
     latest_snapshots = {
-        s.rig_uuid: s
+        str(s.rig_uuid): s  # Use str key to match rig_uuid_str lookups
         for s in LatestSnapshot.objects.filter(rig_uuid__in=rig_uuids)
     }
 
-    # Batch-fetch all latest GPUMetric rows in ONE query using DISTINCT ON
-    # (rig_uuid, gpu_index) to get latest metric per GPU per rig
-    all_gpus = list(
-        GPUMetric.objects.filter(rig_uuid__in=rig_uuids)
-        .order_by('rig_uuid', 'gpu_index', '-timestamp')
-        .distinct('rig_uuid', 'gpu_index')
-    )
-    # Group GPUs by rig_uuid
-    gpus_by_rig = {}
-    for gpu in all_gpus:
-        gpus_by_rig.setdefault(gpu.rig_uuid, []).append(gpu)
-    # Sort each rig's GPUs by gpu_index for consistent display
-    for gpu_list in gpus_by_rig.values():
-        gpu_list.sort(key=lambda g: g.gpu_index)
+    # GPU data is now stored directly in LatestSnapshot as JSON arrays.
+    # No need to query the GPUMetric timeseries table for fleet overview.
+    # Each snapshot has: gpu_count, gpu_models_json, gpu_temps_json,
+    # gpu_utils_json, gpu_fans_json — one entry per GPU, ordered by gpu_index.
 
-    # Build rig_data using batched data (no per-rig queries)
+    # Build rig_data using snapshot data (no GPUMetric queries needed)
     rig_data = []
     for rig in rigs:
         rig_uuid_str = str(rig.uuid)
         rig_data.append({
             'rig': rig,
             'snapshot': latest_snapshots.get(rig_uuid_str),
-            'gpus': gpus_by_rig.get(rig_uuid_str, []),
         })
 
     if request.headers.get('HX-Request'):
@@ -388,6 +377,8 @@ def rig_delete(request, uuid):
     RigStatusEvent.objects.filter(rig_uuid=uuid).delete()
 
     rig.delete()
+    # Invalidate cached snapshot for this rig
+    cache.delete(f'lsnap_{uuid}')
     log_audit_event(request, 'rig.deleted', 'Rig', uuid, {'name': rig_name})
 
     if request.headers.get('HX-Request'):

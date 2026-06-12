@@ -224,6 +224,17 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     mem_limit_bytes=container.get('mem_limit_bytes'),
                 )
 
+            # Build GPU summary data for LatestSnapshot (fast dashboard access)
+            gpu_models = []
+            gpu_temps = []
+            gpu_utils = []
+            gpu_fans = []
+            for idx, gpu in enumerate(gpu_list):
+                gpu_models.append(gpu.get('model', ''))
+                gpu_temps.append(gpu.get('temp_c'))
+                gpu_utils.append(gpu.get('gpu_util_pct'))
+                gpu_fans.append(gpu.get('fan_speed_pct'))
+
             # Update latest snapshot (denormalized)
             LatestSnapshot.objects.update_or_create(
                 rig_uuid=rig_uuid,
@@ -234,6 +245,11 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     'cpu_temp_c': cpu.get('temp_c'),
                     'mem_used_bytes': memory.get('used_bytes'),
                     'mem_total_bytes': memory.get('total_bytes'),
+                    'gpu_count': len(gpu_list),
+                    'gpu_models_json': gpu_models,
+                    'gpu_temps_json': gpu_temps,
+                    'gpu_utils_json': gpu_utils,
+                    'gpu_fans_json': gpu_fans,
                 },
             )
             # Invalidate cached snapshot so next read gets fresh data

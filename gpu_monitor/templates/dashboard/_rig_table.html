@@ -57,39 +57,33 @@
                 </td>
                 {# GPU Model column: compact multi-GPU display with count #}
                 <td class="px-2 py-3 whitespace-nowrap">
-                    {% if item.gpus %}
-                        <span title="{% for gpu in item.gpus %}GPU{{ forloop.counter }}: {{ gpu.model|default:"Unknown" }}{% if not forloop.last %} | {% endif %}{% endfor %}">
-                            {{ item.gpus|gpu_compact_summary }}
+                    {% if item.snapshot.gpu_count %}
+                        <span title="{% for model in item.snapshot.gpu_models_json %}GPU{{ forloop.counter }}: {{ model|default:"Unknown" }}{% if not forloop.last %} | {% endif %}{% endfor %}">
+                            {{ item.snapshot|gpu_compact_summary_json }}
                         </span>
                     {% else %}—{% endif %}
                 </td>
                 {# GPU Temp column: space-separated color-coded values #}
                 <td class="px-2 py-3 whitespace-nowrap">
-                    {% if item.gpus %}
-                        <span title="{% for gpu in item.gpus %}GPU{{ forloop.counter }}: {% if gpu.gpu_temp_c != None %}{{ gpu.gpu_temp_c|floatformat:1 }}°C{% else %}N/A{% endif %}{% if not forloop.last %} | {% endif %}{% endfor %}">
-                            {% for gpu in item.gpus %}
-                                {% gpu_temp_cell gpu.gpu_temp_c %}{% if not forloop.last %} {% endif %}
-                            {% endfor %}
+                    {% if item.snapshot.gpu_count %}
+                        <span title="{% for temp in item.snapshot.gpu_temps_json %}GPU{{ forloop.counter }}: {% if temp != None %}{{ temp|floatformat:1 }}°C{% else %}N/A{% endif %}{% if not forloop.last %} | {% endif %}{% endfor %}">
+                            {% gpu_temp_cell_json item.snapshot %}
                         </span>
                     {% else %}—{% endif %}
                 </td>
                 {# GPU Util column: space-separated color-coded values #}
                 <td class="px-2 py-3 whitespace-nowrap">
-                    {% if item.gpus %}
-                        <span title="{% for gpu in item.gpus %}GPU{{ forloop.counter }}: {% if gpu.gpu_util_pct != None %}{{ gpu.gpu_util_pct|floatformat:1 }}%{% else %}N/A{% endif %}{% if not forloop.last %} | {% endif %}{% endfor %}">
-                            {% for gpu in item.gpus %}
-                                {% gpu_util_cell gpu.gpu_util_pct %}{% if not forloop.last %} {% endif %}
-                            {% endfor %}
+                    {% if item.snapshot.gpu_count %}
+                        <span title="{% for util in item.snapshot.gpu_utils_json %}GPU{{ forloop.counter }}: {% if util != None %}{{ util|floatformat:1 }}%{% else %}N/A{% endif %}{% if not forloop.last %} | {% endif %}{% endfor %}">
+                            {% gpu_util_cell_json item.snapshot %}
                         </span>
                     {% else %}—{% endif %}
                 </td>
                 {# GPU Fan Speed column: space-separated color-coded values #}
                 <td class="px-2 py-3 whitespace-nowrap">
-                    {% if item.gpus %}
-                        <span title="{% for gpu in item.gpus %}GPU{{ forloop.counter }}: {% if gpu.fan_speed_pct != None %}{{ gpu.fan_speed_pct|floatformat:0 }}%{% else %}N/A{% endif %}{% if not forloop.last %} | {% endif %}{% endfor %}">
-                            {% for gpu in item.gpus %}
-                                {% gpu_fan_cell gpu.fan_speed_pct %}{% if not forloop.last %} {% endif %}
-                            {% endfor %}
+                    {% if item.snapshot.gpu_count %}
+                        <span title="{% for fan in item.snapshot.gpu_fans_json %}GPU{{ forloop.counter }}: {% if fan != None %}{{ fan|floatformat:0 }}%{% else %}N/A{% endif %}{% if not forloop.last %} | {% endif %}{% endfor %}">
+                            {% gpu_fan_cell_json item.snapshot %}
                         </span>
                     {% else %}—{% endif %}
                 </td>

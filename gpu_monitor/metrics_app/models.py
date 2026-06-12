@@ -89,6 +89,10 @@ class GPUMetric(models.Model):
         unique_together = ('rig_uuid', 'timestamp', 'gpu_index')
         indexes = [
             models.Index(fields=['rig_uuid', '-timestamp']),
+            # Composite index for fleet overview batched GPU query
+            # Supports: DISTINCT ON (rig_uuid, gpu_index) ORDER BY rig_uuid, gpu_index, -timestamp
+            models.Index(fields=['rig_uuid', 'gpu_index', '-timestamp'],
+                         name='gpumetric_rig_gpu_ts_idx'),
         ]
 
 
@@ -191,7 +195,13 @@ class LatestDockerContainer(models.Model):
 
 
 class LatestSnapshot(models.Model):
-    """Denormalized latest snapshot per rig for fast dashboard loading."""
+    """Denormalized latest snapshot per rig for fast dashboard loading.
+
+    Stores the latest metric values from each heartbeat. GPU data is stored
+    as JSON arrays (one entry per GPU) to support variable GPU counts.
+    This enables the Fleet Overview to load from a single row per rig
+    without querying the GPUMetric timeseries table.
+    """
     rig_uuid = models.UUIDField(primary_key=True)
     schema_version = models.CharField(max_length=10, default='1.0')
     timestamp = models.DateTimeField()
@@ -200,6 +210,14 @@ class LatestSnapshot(models.Model):
     mem_used_bytes = models.BigIntegerField(null=True)
     mem_total_bytes = models.BigIntegerField(null=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    # GPU data stored as JSON arrays for fast dashboard access
+    # Each array has one entry per GPU, ordered by gpu_index
+    gpu_count = models.PositiveSmallIntegerField(default=0)
+    gpu_models_json = models.JSONField(default=list, blank=True)       # ["RTX 3060", "RTX 3060"]
+    gpu_temps_json = models.JSONField(default=list, blank=True)         # [72.5, 73.1]
+    gpu_utils_json = models.JSONField(default=list, blank=True)         # [98.0, 100.0]
+    gpu_fans_json = models.JSONField(default=list, blank=True)          # [74, 76]
 
     class Meta:
         db_table = 'metrics_latest_snapshot'

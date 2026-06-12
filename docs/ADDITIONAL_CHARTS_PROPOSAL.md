@@ -56,10 +56,8 @@
 
 || Metric | Field | Unit | Diagnostic Value | Priority | Status |
 |--------|-------|-------|------|-----------------|----------|--------|
-| Container CPU % | `DockerContainerMetric.cpu_pct` | % | Per-container resource usage. Identifies which container is hogging CPU. | **HIGH** | ✅ (multi_container) |
-| Container Memory | `DockerContainerMetric.mem_usage_bytes` | GB | Per-container memory. Identifies memory leaks in containers. | **HIGH** | ✅ (multi_container) |
-| Container Memory Limit | `DockerContainerMetric.mem_limit_bytes` | GB | Shows container memory cap. | MEDIUM | ✅ (multi_container) |
-| Container Restarts | `DockerContainerMetric.restart_count` | count | Increasing = container crashing. Critical diagnostic. | **HIGH** | ✅ (multi_container) |
+|| Container CPU % | `DockerContainerMetric.cpu_pct` | % | Per-container resource usage. Identifies which container is hogging CPU. | **HIGH** | ✅ (multi_container) |
+|| Container Memory | `DockerContainerMetric.mem_usage_bytes` | GB | Per-container memory. Identifies memory leaks in containers. | **HIGH** | ✅ (multi_container) |
 
 ### Category: Rig Health
 
@@ -91,10 +89,9 @@
 
 ### Tier 2 — Medium Value (All implemented)
 
-|| # | Chart | Source | Type | Implemented? |
-||---|---|--------|------|--------------|
-|| 14 | **Memory Cached** | MetricSnapshot | Area chart | ✅ |
-|| 15 | **Container Memory Limit** | DockerContainerMetric | Line chart | ✅ |
+| # | Chart | Source | Type | Implemented? |
+|---|---|---|---|---|
+| 14 | **Memory Cached** | MetricSnapshot | Area chart | ✅ |
 
 ### Tier 3 — Low Value (All implemented)
 

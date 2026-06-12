@@ -23,18 +23,21 @@
 - **Storage**: Section header shows device count: "Storage (5)"
 - **GPU**: Section header shows device count: "GPU (1)"
 - **Network**: Section header shows interface count: "Network (4)"
+### Data source mapping (updated)
 
-### Data source mapping (important)
 | Data | Source | Reason |
 |------|--------|--------|
 | CPU model, cores, load_avg | `MetricSnapshot` | LatestSnapshot doesn't have these fields |
 | Memory total/used/free/cached/swap | `MetricSnapshot` | LatestSnapshot only has total/used |
-| Motherboard, software | `MetricSnapshot` | LatestSnapshot doesn't have these |
-| GPU metrics | `GPUMetric` | Per-device, queried separately |
-| Storage metrics | `StorageMetric` | Per-device, queried separately |
-| Network metrics | `NetworkMetric` | Per-interface, queried separately |
-| Docker containers | `DockerContainerMetric` | Per-container, queried separately |
-| Errors | `Rig.latest_errors_json` | Latest payload errors, updated in place (like motherboard_json) |
+| Motherboard, software | `MetricSnapshot` | LatestSnapshot doesn't have these fields |
+| GPU metrics (model/temp/util/fan/clocks/mem/power/PCIe) | `LatestSnapshot` (JSON arrays) | Fast single-row lookup, no DISTINCT ON |
+| Storage metrics (device/capacity/usage/temp/SMART) | `LatestSnapshot` (JSON arrays) | Fast single-row lookup, no DISTINCT ON |
+| Network metrics (interface/IP/speed/rx/tx/errors) | `LatestSnapshot` (JSON arrays) | Fast single-row lookup, no DISTINCT ON |
+| Docker containers | `LatestDockerContainer` + `DockerContainerMetric` | Separate models for display vs charts |
+| GPU processes | `GPUProcessMetric` | Latest 50 processes, delete-before-insert |
+| Errors | `Rig.latest_errors_json` | Latest payload errors, updated in place |
+
+**Key change:** GPU, storage, and network data now comes from `LatestSnapshot` instead of querying `GPUMetric`, `StorageMetric`, `NetworkMetric` with `DISTINCT ON`. This eliminated 3 expensive timeseries queries per Live Metrics poll.
 
 ### Known issues fixed
 1. **Storage dedup**: Normalized device paths with `.rstrip('/\\')` to handle `C:\` vs `C:\\`

@@ -218,6 +218,40 @@ class LatestSnapshot(models.Model):
     gpu_temps_json = models.JSONField(default=list, blank=True)         # [72.5, 73.1]
     gpu_utils_json = models.JSONField(default=list, blank=True)         # [98.0, 100.0]
     gpu_fans_json = models.JSONField(default=list, blank=True)          # [74, 76]
+    gpu_core_clocks_json = models.JSONField(default=list, blank=True)   # [2100, 2100]
+    gpu_mem_clocks_json = models.JSONField(default=list, blank=True)    # [8000, 8000]
+    gpu_mem_used_json = models.JSONField(default=list, blank=True)      # [8192, 8192]
+    gpu_mem_total_json = models.JSONField(default=list, blank=True)     # [12288, 12288]
+    gpu_mem_util_pcts_json = models.JSONField(default=list, blank=True)  # [66.7, 66.7]
+    gpu_mem_free_json = models.JSONField(default=list, blank=True)       # [4096, 4096]
+    gpu_power_draws_json = models.JSONField(default=list, blank=True)   # [350.5, 340.2]
+    gpu_power_limits_json = models.JSONField(default=list, blank=True)  # [450, 450]
+    gpu_pcie_gen_json = models.JSONField(default=list, blank=True)       # [4, 4]
+    gpu_pcie_max_gen_json = models.JSONField(default=list, blank=True)   # [4, 4]
+    gpu_pcie_width_json = models.JSONField(default=list, blank=True)     # [16, 16]
+    gpu_pcie_max_width_json = models.JSONField(default=list, blank=True) # [16, 16]
+
+    # Storage data stored as JSON arrays for fast dashboard access
+    # Each array has one entry per disk device, ordered by device name
+    storage_count = models.PositiveSmallIntegerField(default=0)
+    storage_devices_json = models.JSONField(default=list, blank=True)       # ["/dev/sda", "/dev/sdb"]
+    storage_fstypes_json = models.JSONField(default=list, blank=True)        # ["ext4", "xfs"]
+    storage_mountpoints_json = models.JSONField(default=list, blank=True)    # ["/", "/home"]
+    storage_capacities_json = models.JSONField(default=list, blank=True)     # [500107862016, 1000204886016]
+    storage_usage_pcts_json = models.JSONField(default=list, blank=True)     # [72.5, 45.2]
+    storage_temps_json = models.JSONField(default=list, blank=True)          # [35, 40]
+    storage_smart_json = models.JSONField(default=list, blank=True)          # ["OK", "OK"]
+
+    # Network data stored as JSON arrays for fast dashboard access
+    # Each array has one entry per network interface, ordered by interface name
+    network_count = models.PositiveSmallIntegerField(default=0)
+    network_interfaces_json = models.JSONField(default=list, blank=True)     # ["eth0", "wlan0"]
+    network_ipv4s_json = models.JSONField(default=list, blank=True)          # ["192.168.1.10", "10.0.0.5"]
+    network_speeds_json = models.JSONField(default=list, blank=True)         # [1000, 300]
+    network_rx_bytes_json = models.JSONField(default=list, blank=True)       # [1234567890, 987654321]
+    network_tx_bytes_json = models.JSONField(default=list, blank=True)       # [567890123, 123456789]
+    network_rx_errors_json = models.JSONField(default=list, blank=True)      # [0, 2]
+    network_tx_errors_json = models.JSONField(default=list, blank=True)      # [0, 1]
 
     class Meta:
         db_table = 'metrics_latest_snapshot'

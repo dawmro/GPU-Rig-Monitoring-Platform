@@ -380,7 +380,12 @@ POST /api/v1/ingest/
       - Delete + recreate LatestDockerContainer per container (image, status, uptime, restarts — latest snapshot for Live Metrics)
       - Create RigStatusEvent on status transition (e.g. offline→online)
       - Update Rig.latest_errors_json with latest error text from payload
-      - Update LatestSnapshot (denormalized cache for fast dashboard loading; includes GPU data as JSON arrays: gpu_count, gpu_models_json, gpu_temps_json, gpu_utils_json, gpu_fans_json)
+      - Update LatestSnapshot (denormalized cache for fast dashboard loading):
+          * CPU: cpu_utilization_pct, cpu_temp_c, mem_used_bytes, mem_total_bytes
+          * GPU (JSON arrays): gpu_count, gpu_models_json, gpu_temps_json, gpu_utils_json, gpu_fans_json, gpu_core_clocks_json, gpu_mem_clocks_json, gpu_mem_used_json, gpu_mem_total_json, gpu_mem_util_pcts_json, gpu_mem_free_json, gpu_power_draws_json, gpu_power_limits_json, gpu_pcie_gen_json, gpu_pcie_max_gen_json, gpu_pcie_width_json, gpu_pcie_max_width_json
+          * Storage (JSON arrays): storage_count, storage_devices_json, storage_fstypes_json, storage_mountpoints_json, storage_capacities_json, storage_usage_pcts_json, storage_temps_json, storage_smart_json
+          * Network (JSON arrays): network_count, network_interfaces_json, network_ipv4s_json, network_speeds_json, network_rx_bytes_json, network_tx_bytes_json, network_rx_errors_json, network_tx_errors_json
+          * Cache invalidation: cache.delete(lsnap_{uuid})
       - Update Rig.last_seen = now(), Rig.status = ONLINE, cache.delete(lsnap_{uuid})
       - On Rig.DoesNotExist: auto-create with agent-suggested name
         (rig_name is used only at creation, never overwritten)
@@ -480,19 +485,69 @@ Plus one manual-refresh region:
 
 | Region | Trigger | Data |
 |--------|---------|------|
-|| Historical charts | User clicks ↻ button | Combined charts: GPU Temperature/Utilization/Memory/Power/Fan Speed (multi-GPU), CPU Utilization/Temperature/Load Average, Memory & Swap (combined, 3 datasets), Disk Usage (multi-disk), Network Traffic (combined RX/TX/Errors, dual Y-axes), Container CPU/Memory (multi-container), Uptime, Error Frequency. Timeframe toggle buttons (24h, 7d, 30d) with dynamic label updates. |
+| Historical charts | User clicks ↻ button | Combined charts: GPU Temperature/Utilization/Memory/Power/Fan Speed (multi-GPU), CPU Utilization/Temperature/Load Average, Memory & Swap (combined, 3 datasets), Disk Usage (multi-disk), Network Traffic (combined RX/TX/Errors, dual Y-axes), Container CPU/Memory (multi-container), Uptime, Error Frequency. Timeframe toggle buttons (24h, 7d, 30d) with dynamic label updates. |
 
 **Historical charts are NOT polled automatically** — they load once when the tab is first opened and refresh only when the user clicks the ↻ button. This avoids expensive time-series queries every 30 seconds.
+
+**Live Metrics data source:** `_fetch_rig_metrics()` reads from `LatestSnapshot` (single row per rig) for GPU, storage, and network data. This eliminates all timeseries `DISTINCT ON` queries for the Live Metrics poll. Only Docker container metrics and GPU process data still query timeseries tables (small, fast queries).
 
 ### 5.4 Tab Layout
 
 The rig detail page has three tabs:
 
-1. **Live Metrics** — cards with CPU%, memory bar, GPU model/index/temp/util/power/vRAM, GPU Processes (per-process: name, type badge C/G/C+G, memory), Docker container count, storage disks, recent errors
+1. **Live Metrics** — cards with CPU%, memory bar, GPU model/index/temp/util/fan/power/PCIe/vRAM (all from LatestSnapshot), GPU Processes (per-process: name, type badge C/G/C+G, memory), Docker container count, storage disks, recent errors
 2. **Historical Charts** — Combined chart suite: GPU (Temperature, Utilization, Memory, Power, Fan Speed — multi-GPU), CPU (Utilization, Temperature, Load Average), Memory & Swap (combined single chart, 3 datasets), Disk Usage (multi-disk), Network Traffic (combined RX/TX/Errors, dual Y-axes), Container CPU/Memory (multi-container), Uptime, Error Frequency — all implemented as Chart.js charts with multi-series support. Timeframe toggle buttons (24h, 7d, 30d) in the tab header with a ↻ Refresh button.
 3. **Errors** — latest system errors from journalctl/Windows Event Log (stored on Rig model, updated in place)
 
-### 5.5 Data Deduplication
+### 5.5 Snapshot-Timeseries Decoupling
+
+The dashboard display (Fleet Overview + Live Metrics) is fully decoupled from timeseries data. This is the single most important architectural decision for dashboard performance.
+
+**Core principle:** Display data (latest values) is stored in `LatestSnapshot` during ingest. Chart data (historical trends) is stored in timeseries tables. These two paths never mix.
+
+#### Snapshot Data Path (Display Only)
+
+`LatestSnapshot` is a single row per rig, updated on every heartbeat via `update_or_create`. It stores the latest value of every metric needed for dashboard display as JSON arrays:
+
+| Category | Fields | Arrays |
+|---|---|---|
+| GPU (×N GPUs) | model, temp, util, fan, core_clock, mem_clock, mem_used, mem_total, mem_util_pct, mem_free, power_draw, power_limit, pcie_gen, pcie_max_gen, pcie_width, pcie_max_width | 16 JSON arrays |
+| Storage (×N disks) | device, fstype, mountpoint, capacity_bytes, usage_pct, temp_c, smart_health | 7 JSON arrays |
+| Network (×N interfaces) | interface, ipv4, link_speed_mbps, rx_bytes, tx_bytes, rx_errors, tx_errors | 7 JSON arrays |
+
+**Views using snapshot data:**
+- `rig_list` (Fleet Overview): Reads `LatestSnapshot` + `Rig` + `RigTag`. **0 timeseries queries.**
+- `htmx_metrics` (Live Metrics): Reads `LatestSnapshot` + `LatestDockerContainer` + `DockerContainerMetric` + `GPUProcessMetric`. **0 timeseries queries for GPU/storage/network.**
+
+#### Timeseries Data Path (Charts Only)
+
+Timeseries tables store every heartbeat's data for historical chart aggregation:
+
+| Table | Purpose | Retention |
+|---|---|---|
+| `MetricSnapshot` | CPU, memory, uptime, error_count per heartbeat | 31 days |
+| `GPUMetric` | Per-GPU metrics per heartbeat | 31 days |
+| `StorageMetric` | Per-disk metrics per heartbeat | 31 days |
+| `NetworkMetric` | Per-interface metrics per heartbeat | 31 days |
+| `DockerContainerMetric` | Per-container CPU/memory per heartbeat | 31 days |
+
+**Views using timeseries data:**
+- `ChartDataView` (Historical Charts): Aggregates timeseries data with `GROUP BY` time bucket (1min for 24h, 1hr for 7d/30d). This is the **only** view that queries timeseries tables.
+
+#### Query Count Comparison
+
+| View | Before | After | Timeseries |
+|---|---|---|---|
+| Fleet Overview | 2002+ queries | 4 queries | 0 |
+| Live Metrics | ~1500ms (3 DISTINCT ON) | <100ms | 0 for GPU/storage/network |
+| Historical Charts | Unchanged | Unchanged | All timeseries |
+
+#### Performance Characteristics
+
+- **Fleet Overview:** O(1) per rig — single row lookup from `LatestSnapshot`
+- **Live Metrics:** O(1) per rig — single row lookup + small Docker/process queries
+- **Historical Charts:** O(time_range) — aggregates timeseries data, unaffected by fleet size per user
+- **Scalability:** Display performance is independent of timeseries table size. A rig with 1 day of data loads the same as a rig with 31 days of data.
 
 Storage metrics are deduplicated by device: the view queries the latest `StorageMetric` per unique `device` path, preventing duplicate entries when the agent reports the same disk multiple times within the window.
 
@@ -520,7 +575,7 @@ Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the age
 || `metrics_networkmetric` | metrics_app | Per-interface metrics (rx/tx bytes, rx/tx deltas, speed, errors) |
 || `metrics_dockercontainermetric` | metrics_app | Per-container time-series (name, container_id, cpu%, mem_usage; for charts) |
 || `metrics_latest_docker_container` | metrics_app | Latest container snapshot (name, container_id, image, status, uptime, restarts, mem_limit; for Live Metrics) |
-|| `metrics_latestsnapshot` | metrics_app | Denormalized latest snapshot per rig (fast dashboard loading). Includes GPU data as JSON arrays: gpu_count, gpu_models_json, gpu_temps_json, gpu_utils_json, gpu_fans_json |
+|| `metrics_latestsnapshot` | metrics_app | Denormalized latest snapshot per rig (fast dashboard loading). Single row per rig, updated every heartbeat. Stores all display data as JSON arrays: 16 GPU arrays (model/temp/util/fan/clocks/mem/power/PCIe), 7 storage arrays (device/fstype/mountpoint/capacity/usage/temp/SMART), 7 network arrays (interface/IPv4/speed/rx/tx/errors). Total: ~35 fields. |
 || `metrics_rig_status_event` | metrics_app | Rig status transition log (online/stale/offline with timestamps) |
 || `audit_auditlog` | audit | Immutable audit trail |
 
@@ -778,7 +833,7 @@ Each ingest performs multiple database operations:
 |-------|-----------|-------------|--------|
 | `IngestView` upsert | Every 60s/rig | `update_or_create` + `unique_together` | < 200 ms |
 || `rig_list` fleet table | Every 30s/browser | Single-row lookup from `LatestSnapshot` (includes GPU data as JSON arrays) | < 50 ms |
-| `htmx_metrics` live cards | Every 30s/browser | Single-row lookup from `LatestSnapshot` + `GPUMetric` DISTINCT ON | < 200 ms |
+|| `htmx_metrics` live cards | Every 30s/browser | Single-row lookup from `LatestSnapshot` (GPU, storage, network) + DockerContainerMetric + GPUProcessMetric | < 100 ms |
 || `ChartDataView` per chart | On demand (↻) | Time-range filter, SQL aggregation (TruncHour + Avg/Sum) | < 200 ms |
 | `update_rig_status` | Every 2 min | Bulk `update()`, no per-row queries | < 1 s |
 

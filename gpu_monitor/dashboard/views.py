@@ -72,6 +72,13 @@ def _format_mem(usage_bytes, limit_bytes):
     return usage_str
 
 
+def _json_get(lst, idx, default=None):
+    """Safely get an element from a JSON array field."""
+    if lst and idx < len(lst):
+        return lst[idx]
+    return default
+
+
 def _fetch_rig_metrics(uuid, rig=None):
     """Fetch the latest rig metrics for Live Metrics display.
 
@@ -91,28 +98,65 @@ def _fetch_rig_metrics(uuid, rig=None):
             else:
                 cache.set(cache_key, snapshot, 50)
 
-    # GPU: latest metric per unique GPU using DISTINCT ON
-    # Sort by gpu_index (0, 1, 2...) for consistent display order
-    gpu_metrics = list(
-        GPUMetric.objects.filter(rig_uuid=str(uuid))
-        .order_by('gpu_index', '-timestamp')
-        .distinct('gpu_index')
-    )
-    gpu_metrics.sort(key=lambda g: g.gpu_index)
+    # GPU data: read from LatestSnapshot JSON arrays instead of querying
+    # the GPUMetric timeseries table. This avoids the expensive DISTINCT ON
+    # query on 2.1M+ rows. Build a list of dicts matching the template's
+    # expected format (mimicking GPUMetric objects).
+    gpu_metrics = []
+    if snapshot and snapshot.gpu_count:
+        for i in range(snapshot.gpu_count):
+            gpu_metrics.append({
+                'gpu_index': i,
+                'model': _json_get(snapshot.gpu_models_json, i, ''),
+                'gpu_temp_c': _json_get(snapshot.gpu_temps_json, i),
+                'gpu_util_pct': _json_get(snapshot.gpu_utils_json, i),
+                'fan_speed_pct': _json_get(snapshot.gpu_fans_json, i),
+                'gpu_core_clock_mhz': _json_get(snapshot.gpu_core_clocks_json, i),
+                'gpu_mem_clock_mhz': _json_get(snapshot.gpu_mem_clocks_json, i),
+                'mem_used_mb': _json_get(snapshot.gpu_mem_used_json, i),
+                'mem_total_mb': _json_get(snapshot.gpu_mem_total_json, i),
+                'mem_util_pct': _json_get(snapshot.gpu_mem_util_pcts_json, i),
+                'mem_free_mb': _json_get(snapshot.gpu_mem_free_json, i),
+                'power_draw_w': _json_get(snapshot.gpu_power_draws_json, i),
+                'power_limit_w': _json_get(snapshot.gpu_power_limits_json, i),
+                'pcie_current_gen': _json_get(snapshot.gpu_pcie_gen_json, i),
+                'pcie_max_gen': _json_get(snapshot.gpu_pcie_max_gen_json, i),
+                'pcie_current_width': _json_get(snapshot.gpu_pcie_width_json, i),
+                'pcie_max_width': _json_get(snapshot.gpu_pcie_max_width_json, i),
+                'gpu_uuid': '',  # Not stored in snapshot
+            })
 
-    # Storage: latest metric per unique device using DISTINCT ON
-    storage_metrics = list(
-        StorageMetric.objects.filter(rig_uuid=str(uuid))
-        .order_by('device', '-timestamp')
-        .distinct('device')
-    )
+    # Storage: read from LatestSnapshot JSON arrays instead of querying
+    # the StorageMetric timeseries table. Build list of dicts matching
+    # the template's expected format (mimicking StorageMetric objects).
+    storage_metrics = []
+    if snapshot and snapshot.storage_count:
+        for i in range(snapshot.storage_count):
+            storage_metrics.append({
+                'device': _json_get(snapshot.storage_devices_json, i, ''),
+                'fstype': _json_get(snapshot.storage_fstypes_json, i, ''),
+                'mountpoint': _json_get(snapshot.storage_mountpoints_json, i, ''),
+                'capacity_bytes': _json_get(snapshot.storage_capacities_json, i),
+                'usage_pct': _json_get(snapshot.storage_usage_pcts_json, i),
+                'temp_c': _json_get(snapshot.storage_temps_json, i),
+                'smart_health': _json_get(snapshot.storage_smart_json, i, ''),
+            })
 
-    # Network: latest metric per unique interface using DISTINCT ON
-    network_metrics = list(
-        NetworkMetric.objects.filter(rig_uuid=str(uuid))
-        .order_by('interface', '-timestamp')
-        .distinct('interface')
-    )
+    # Network: read from LatestSnapshot JSON arrays instead of querying
+    # the NetworkMetric timeseries table. Build list of dicts matching
+    # the template's expected format (mimicking NetworkMetric objects).
+    network_metrics = []
+    if snapshot and snapshot.network_count:
+        for i in range(snapshot.network_count):
+            network_metrics.append({
+                'interface': _json_get(snapshot.network_interfaces_json, i, ''),
+                'ipv4': _json_get(snapshot.network_ipv4s_json, i, ''),
+                'link_speed_mbps': _json_get(snapshot.network_speeds_json, i),
+                'rx_bytes': _json_get(snapshot.network_rx_bytes_json, i),
+                'tx_bytes': _json_get(snapshot.network_tx_bytes_json, i),
+                'rx_errors': _json_get(snapshot.network_rx_errors_json, i, 0),
+                'tx_errors': _json_get(snapshot.network_tx_errors_json, i, 0),
+            })
 
     # Docker containers: combine LatestDockerContainer (display fields) with
     # latest DockerContainerMetric (cpu/memory) for each container

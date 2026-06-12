@@ -229,11 +229,69 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
             gpu_temps = []
             gpu_utils = []
             gpu_fans = []
+            gpu_core_clocks = []
+            gpu_mem_clocks = []
+            gpu_mem_used = []
+            gpu_mem_total = []
+            gpu_mem_util_pcts = []
+            gpu_mem_free = []
+            gpu_power_draws = []
+            gpu_power_limits = []
+            gpu_pcie_gen = []
+            gpu_pcie_max_gen = []
+            gpu_pcie_width = []
+            gpu_pcie_max_width = []
             for idx, gpu in enumerate(gpu_list):
                 gpu_models.append(gpu.get('model', ''))
                 gpu_temps.append(gpu.get('temp_c'))
                 gpu_utils.append(gpu.get('gpu_util_pct'))
                 gpu_fans.append(gpu.get('fan_speed_pct'))
+                gpu_core_clocks.append(gpu.get('gpu_core_clock_mhz'))
+                gpu_mem_clocks.append(gpu.get('gpu_mem_clock_mhz'))
+                gpu_mem_used.append(gpu.get('mem_used_mb'))
+                gpu_mem_total.append(gpu.get('mem_total_mb'))
+                gpu_mem_util_pcts.append(gpu.get('mem_util_pct'))
+                gpu_mem_free.append(gpu.get('mem_free_mb'))
+                gpu_power_draws.append(gpu.get('power_draw_w'))
+                gpu_power_limits.append(gpu.get('power_limit_w'))
+                gpu_pcie_gen.append(gpu.get('pcie_current_gen'))
+                gpu_pcie_max_gen.append(gpu.get('pcie_max_gen'))
+                gpu_pcie_width.append(gpu.get('pcie_current_width'))
+                gpu_pcie_max_width.append(gpu.get('pcie_max_width'))
+
+            # Build storage summary data for LatestSnapshot
+            storage_devices = []
+            storage_fstypes = []
+            storage_mountpoints = []
+            storage_capacities = []
+            storage_usage_pcts = []
+            storage_temps = []
+            storage_smart = []
+            for disk in storage_list:
+                storage_devices.append(disk.get('device', ''))
+                storage_fstypes.append(disk.get('fstype', ''))
+                storage_mountpoints.append(disk.get('mountpoint', ''))
+                storage_capacities.append(disk.get('capacity_bytes'))
+                storage_usage_pcts.append(disk.get('usage_pct'))
+                storage_temps.append(disk.get('temp_c'))
+                storage_smart.append(disk.get('smart_health', ''))
+
+            # Build network summary data for LatestSnapshot
+            network_interfaces = []
+            network_ipv4s = []
+            network_speeds = []
+            network_rx_bytes = []
+            network_tx_bytes = []
+            network_rx_errors = []
+            network_tx_errors = []
+            for iface in network_list:
+                network_interfaces.append(iface.get('interface', ''))
+                network_ipv4s.append(iface.get('ipv4', ''))
+                network_speeds.append(iface.get('link_speed_mbps'))
+                network_rx_bytes.append(iface.get('rx_bytes'))
+                network_tx_bytes.append(iface.get('tx_bytes'))
+                network_rx_errors.append(iface.get('rx_errors', 0))
+                network_tx_errors.append(iface.get('tx_errors', 0))
 
             # Update latest snapshot (denormalized)
             LatestSnapshot.objects.update_or_create(
@@ -250,6 +308,34 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     'gpu_temps_json': gpu_temps,
                     'gpu_utils_json': gpu_utils,
                     'gpu_fans_json': gpu_fans,
+                    'gpu_core_clocks_json': gpu_core_clocks,
+                    'gpu_mem_clocks_json': gpu_mem_clocks,
+                    'gpu_mem_used_json': gpu_mem_used,
+                    'gpu_mem_total_json': gpu_mem_total,
+                    'gpu_mem_util_pcts_json': gpu_mem_util_pcts,
+                    'gpu_mem_free_json': gpu_mem_free,
+                    'gpu_power_draws_json': gpu_power_draws,
+                    'gpu_power_limits_json': gpu_power_limits,
+                    'gpu_pcie_gen_json': gpu_pcie_gen,
+                    'gpu_pcie_max_gen_json': gpu_pcie_max_gen,
+                    'gpu_pcie_width_json': gpu_pcie_width,
+                    'gpu_pcie_max_width_json': gpu_pcie_max_width,
+                    'storage_count': len(storage_list),
+                    'storage_devices_json': storage_devices,
+                    'storage_fstypes_json': storage_fstypes,
+                    'storage_mountpoints_json': storage_mountpoints,
+                    'storage_capacities_json': storage_capacities,
+                    'storage_usage_pcts_json': storage_usage_pcts,
+                    'storage_temps_json': storage_temps,
+                    'storage_smart_json': storage_smart,
+                    'network_count': len(network_list),
+                    'network_interfaces_json': network_interfaces,
+                    'network_ipv4s_json': network_ipv4s,
+                    'network_speeds_json': network_speeds,
+                    'network_rx_bytes_json': network_rx_bytes,
+                    'network_tx_bytes_json': network_tx_bytes,
+                    'network_rx_errors_json': network_rx_errors,
+                    'network_tx_errors_json': network_tx_errors,
                 },
             )
             # Invalidate cached snapshot so next read gets fresh data

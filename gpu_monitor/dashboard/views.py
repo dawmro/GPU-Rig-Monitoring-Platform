@@ -241,51 +241,18 @@ def rig_list(request):
         for s in LatestSnapshot.objects.filter(rig_uuid__in=rig_uuids)
     }
 
-    # Batch-fetch all latest GPUMetric rows using GROUP BY + JOIN
-    # DISTINCT ON was too slow (10s) due to sorting 2M rows.
-    # GROUP BY with MAX(timestamp) + JOIN is faster (~1s) as it uses
-    # the composite index (rig_uuid, gpu_index, -timestamp) efficiently.
-    from django.db.models import Max
-    latest_ts = (
-        GPUMetric.objects.filter(rig_uuid__in=rig_uuids)
-        .values('rig_uuid', 'gpu_index')
-        .annotate(max_ts=Max('timestamp'))
-    )
-    # Build a list of (rig_uuid, gpu_index, max_ts) tuples for filtering
-    latest_pairs = [
-        (row['rig_uuid'], row['gpu_index'], row['max_ts'])
-        for row in latest_ts
-    ]
-    # Fetch full rows matching the latest timestamps
-    if latest_pairs:
-        # Build OR conditions for each (rig_uuid, gpu_index, timestamp) triple
-        from django.db.models import Q
-        q_objects = Q()
-        for rig_uuid_val, gpu_index_val, max_ts_val in latest_pairs:
-            q_objects |= Q(
-                rig_uuid=rig_uuid_val,
-                gpu_index=gpu_index_val,
-                timestamp=max_ts_val
-            )
-        all_gpus = list(GPUMetric.objects.filter(q_objects))
-    else:
-        all_gpus = []
-    # Group GPUs by rig_uuid
-    gpus_by_rig = {}
-    for gpu in all_gpus:
-        gpus_by_rig.setdefault(gpu.rig_uuid, []).append(gpu)
-    # Sort each rig's GPUs by gpu_index for consistent display
-    for gpu_list in gpus_by_rig.values():
-        gpu_list.sort(key=lambda g: g.gpu_index)
+    # GPU data is now stored directly in LatestSnapshot as JSON arrays.
+    # No need to query the GPUMetric timeseries table for fleet overview.
+    # Each snapshot has: gpu_count, gpu_models_json, gpu_temps_json,
+    # gpu_utils_json, gpu_fans_json — one entry per GPU, ordered by gpu_index.
 
-    # Build rig_data using batched data (no per-rig queries)
+    # Build rig_data using snapshot data (no GPUMetric queries needed)
     rig_data = []
     for rig in rigs:
         rig_uuid_str = str(rig.uuid)
         rig_data.append({
             'rig': rig,
             'snapshot': latest_snapshots.get(rig_uuid_str),
-            'gpus': gpus_by_rig.get(rig_uuid_str, []),
         })
 
     if request.headers.get('HX-Request'):

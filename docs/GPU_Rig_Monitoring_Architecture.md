@@ -1,8 +1,8 @@
 # GPU Rig Monitoring Platform — Architecture Document
 
-**Version:** 1.3
+**Version:** 1.4
 **Status:** Implemented — Living Architecture Reference
-**Last Updated:** 2026-06-10
+**Last Updated:** 2026-06-12
 
 ---
 
@@ -819,13 +819,35 @@ Each ingest performs multiple database operations:
 | `metrics_networkmetric` | UPSERT | Per-interface metrics |
 || `metrics_dockercontainermetric` | UPSERT | Per-container time-series (cpu%, mem_usage) |
 || `metrics_latest_docker_container` | DELETE+INSERT | Latest container snapshot (image, status, uptime, restarts, mem_limit) |
-| `metrics_errorevent` | UPSERT | Deduplicated errors |
-| **Total** | **~7-12 writes** | Depending on GPU/disk/container count |
+|| `metrics_latest_docker_container` | DELETE+INSERT | Latest container snapshot (image, status, uptime, restarts, mem_limit) |
+|| `metrics_latestsnapshot` | UPSERT | Denormalized display cache (GPU/storage/network JSON arrays) |
+|| `rig_status_event` | INSERT (conditional) | Only on status transitions |
+|| **Total** | **~15-50 writes** | Depending on GPU/disk/container count |
+
+**Measured ingest performance (typical rig, 1 GPU):**
+- Total time: **70ms** (38ms DB + 32ms Python overhead)
+- DB queries: 41 (7 SELECT, 7 UPDATE, 7 INSERT, 2 DELETE, 18 other)
+- Avg query time: 0.9ms
+
+**Measured ingest performance (large rig, 8 GPUs, 5 disks, 3 NICs, 10 containers, 20 processes):**
+- Total time: **266ms** (161ms DB + 105ms Python overhead)
+- DB queries: 203 (31 SELECT, 29 UPDATE, 57 INSERT, 2 DELETE, 84 other)
+- Avg query time: 0.8ms
+
+**Bottleneck breakdown (large payload):**
+- NetworkMetric delta calculation: 58ms (22%) — SELECT previous row per interface
+- LatestSnapshot JSON serialization: 39ms (15%) — 35+ field defaults with large JSON arrays
+- GPUMetric bulk insert: 15ms (6%) — 8 GPUs × 2 queries each
+- DockerContainerMetric: 8ms (3%) — 10 containers × 2 queries each
+- Python overhead: 105ms (39%) — DRF serialization, JSON array building, ORM overhead
 
 **Peak throughput:**
-- 50 RPS × 10 writes = **500 writes/sec** at burst
+- 50 RPS × 30 writes avg = **1,500 writes/sec** at burst
 - PostgreSQL on NVMe sustains 2,000-5,000+ writes/sec
-- **Utilization: ~10-25% of peak DB capacity** — well within safety margin
+- **Utilization: ~30-75% of peak DB capacity** at max burst
+- Sustained (1,000 rigs/min): ~250 writes/sec = **~5% of capacity**
+
+**Scaling headroom:** The system can handle ~2,000 rigs at 1-minute intervals before reaching 50% DB write capacity. The NetworkMetric delta calculation is the only significant per-interface bottleneck.
 
 ### 10.3 Query Performance Budgets
 

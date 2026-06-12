@@ -50,7 +50,9 @@ Could use Chart.js's `data` update API for smoother transitions.
 
 ## Live Metrics (Separate System)
 
-Live metrics use a completely different path:
-- `dashboard/views.py _fetch_rig_metrics()` — uses `DISTINCT ON` for latest-per-device
-- No time-series queries, just latest snapshot + child table lookups
-- ~570ms per rig (acceptable, runs on 30s poll)
+Live metrics use a completely different path from charts:
+- `dashboard/views.py _fetch_rig_metrics()` — reads from LatestSnapshot (single row per rig)
+- GPU, storage, and network data comes from LatestSnapshot JSON arrays (no timeseries queries)
+- Docker container metrics and GPU processes still query timeseries tables (small, fast)
+- Historical Charts (ChartDataView) are separate — they read from timeseries tables with SQL aggregation
+- Performance: < 100ms per rig (was ~1500ms before snapshot optimization)

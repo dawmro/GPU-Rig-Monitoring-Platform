@@ -1,8 +1,8 @@
 # GPU Rig Monitoring Platform — Architecture Document
 
-**Version:** 1.3
+**Version:** 1.4
 **Status:** Implemented — Living Architecture Reference
-**Last Updated:** 2026-06-10
+**Last Updated:** 2026-06-12
 
 ---
 

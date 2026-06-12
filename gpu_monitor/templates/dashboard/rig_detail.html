@@ -382,34 +382,39 @@ async function loadCharts() {
         });
     }
 
-    // Phase 1: Critical charts (CPU, GPU temp/util) — load immediately
-    await Promise.all([
-        loadChart('chartCpuUtil',    'cpu_utilization_pct',  uuid, range, '%',   'rgba(16, 185, 129, 0.8)', 'rgba(16, 185, 129, 0.15)'),
-        loadChart('chartCpuTemp',    'cpu_temp_c',           uuid, range, '°C',  'rgba(245, 158, 11, 0.8)', 'rgba(245, 158, 11, 0.15)'),
-    ]);
+    // Chart registry: defines loading order. This MUST match the HTML canvas
+    // order in the page. To reorder charts on the page, reorder both the HTML
+    // canvas elements AND this array. Each entry returns a Promise.
+    var chartLoaders = [
+        function() { return loadChartMultiGpu('chartGpuTemp',      'gpu_temp_c',        uuid, range, '°C'); },
+        function() { return loadChartMultiGpu('chartGpuUtil',      'gpu_util_pct',      uuid, range, '%'); },
+        function() { return loadChartMultiGpu('chartGpuMem',       'gpu_mem_used_mb',   uuid, range, ' MB'); },
+        function() { return loadChartMultiGpu('chartGpuPower',     'gpu_power_w',       uuid, range, 'W'); },
+        function() { return loadChartMultiGpu('chartGpuFan',       'gpu_fan_pct',       uuid, range, '%'); },
+        function() { return loadChartMultiGpu('chartGpuCoreClock', 'gpu_core_clock_mhz', uuid, range, ' MHz'); },
+        function() { return loadChartMultiGpu('chartGpuMemClock',  'gpu_mem_clock_mhz',  uuid, range, ' MHz'); },
+        function() { return loadChart('chartCpuUtil',    'cpu_utilization_pct',  uuid, range, '%',   'rgba(16, 185, 129, 0.8)', 'rgba(16, 185, 129, 0.15)'); },
+        function() { return loadChart('chartCpuTemp',    'cpu_temp_c',           uuid, range, '°C',  'rgba(245, 158, 11, 0.8)', 'rgba(245, 158, 11, 0.15)'); },
+        function() { return loadChartMemSwap('chartMemSwap', uuid, range); },
+        function() { return loadChartLoadAvg('chartCpuLoad', uuid, range); },
+        function() { return loadChartMultiKey('chartDiskUsage', 'disk_usage_pct', uuid, range, '%', 'multi_disk'); },
+        function() { return loadChartNetworkCombined('chartNetCombined', uuid, range); },
+        function() { return loadChart('chartUptime', 'uptime_s', uuid, range, ' days', 'rgba(168, 85, 247, 0.8)', 'rgba(168, 85, 247, 0.15)'); },
+        function() { return loadChartMultiKey('chartContainerCpu', 'container_cpu_pct', uuid, range, '%', 'multi_container'); },
+        function() { return loadChartMultiKey('chartContainerMem', 'container_mem_usage_bytes', uuid, range, ' GB', 'multi_container'); },
+        function() { return loadChart('chartErrorFreq', 'error_frequency', uuid, range, ' err/min', 'rgba(239, 68, 68, 0.8)', 'rgba(239, 68, 68, 0.5)', 'bar'); },
+    ];
 
-    // Phase 2: Memory, Load Average — staggered
-    await delayedLoad(function() { return loadChartMemSwap('chartMemSwap', uuid, range); }, delay_ms);
-    await delayedLoad(function() { return loadChartLoadAvg('chartCpuLoad', uuid, range); }, delay_ms);
-
-    // Phase 3: GPU charts — staggered (most important for GPU monitoring)
-    await delayedLoad(function() { return loadChartMultiGpu('chartGpuTemp',  'gpu_temp_c',   uuid, range, '°C'); }, delay_ms);
-    await delayedLoad(function() { return loadChartMultiGpu('chartGpuUtil',  'gpu_util_pct', uuid, range, '%'); }, delay_ms);
-    await delayedLoad(function() { return loadChartMultiGpu('chartGpuMem',   'gpu_mem_used_mb', uuid, range, ' MB'); }, delay_ms);
-    await delayedLoad(function() { return loadChartMultiGpu('chartGpuPower', 'gpu_power_w',  uuid, range, 'W'); }, delay_ms);
-    await delayedLoad(function() { return loadChartMultiGpu('chartGpuFan',   'gpu_fan_pct',  uuid, range, '%'); }, delay_ms);
-    await delayedLoad(function() { return loadChartMultiGpu('chartGpuCoreClock', 'gpu_core_clock_mhz', uuid, range, ' MHz'); }, delay_ms);
-    await delayedLoad(function() { return loadChartMultiGpu('chartGpuMemClock',  'gpu_mem_clock_mhz',  uuid, range, ' MHz'); }, delay_ms);
-
-    // Phase 4: Storage, Network, Uptime — staggered
-    await delayedLoad(function() { return loadChartMultiKey('chartDiskUsage', 'disk_usage_pct', uuid, range, '%', 'multi_disk'); }, delay_ms);
-    await delayedLoad(function() { return loadChartNetworkCombined('chartNetCombined', uuid, range); }, delay_ms);
-    await delayedLoad(function() { return loadChart('chartUptime', 'uptime_s', uuid, range, ' days', 'rgba(168, 85, 247, 0.8)', 'rgba(168, 85, 247, 0.15)'); }, delay_ms);
-
-    // Phase 5: Container charts, Error frequency — staggered
-    await delayedLoad(function() { return loadChartMultiKey('chartContainerCpu', 'container_cpu_pct', uuid, range, '%', 'multi_container'); }, delay_ms);
-    await delayedLoad(function() { return loadChartMultiKey('chartContainerMem', 'container_mem_usage_bytes', uuid, range, ' GB', 'multi_container'); }, delay_ms);
-    await delayedLoad(function() { return loadChart('chartErrorFreq', 'error_frequency', uuid, range, ' err/min', 'rgba(239, 68, 68, 0.8)', 'rgba(239, 68, 68, 0.5)', 'bar'); }, delay_ms);
+    // Load charts sequentially with staggering to smooth DB load.
+    // Charts appear top-to-bottom as the user scrolls.
+    for (var i = 0; i < chartLoaders.length; i++) {
+        if (i === 0) {
+            // First chart loads immediately
+            await chartLoaders[i]();
+        } else {
+            await delayedLoad(chartLoaders[i], delay_ms);
+        }
+    }
 }
 
 // Load a single chart

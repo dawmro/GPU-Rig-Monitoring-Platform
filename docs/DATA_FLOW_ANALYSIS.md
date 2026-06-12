@@ -126,12 +126,34 @@ Errors are filtered on the server side — "no error" placeholders from agents
 | Error count | `error_count` (IntegerField) | Per-snapshot count for error frequency charts |
 | Latest error text | `Rig.latest_errors_json` (JSON) | Latest payload only, like motherboard_json |
 
-### Denormalized cache (intentional)
+### Denormalized cache (LatestSnapshot)
 
-`LatestSnapshot` contains a subset of `MetricSnapshot` fields for fast dashboard loading:
-- `cpu_utilization_pct`, `cpu_temp_c`, `mem_used_bytes`, `mem_total_bytes`
-- Updated on every heartbeat via serializer
-- Read-only cache, not a separate data source
+`LatestSnapshot` is a single row per rig, updated on every heartbeat. It stores ALL data needed for dashboard display (Fleet Overview + Live Metrics), eliminating timeseries queries entirely for display views.
+
+**Design principle:** During ingest, the serializer writes to both timeseries tables (for charts) and LatestSnapshot (for display). During display reads, only LatestSnapshot is queried. Charts still read from timeseries tables.
+
+**Fields stored in LatestSnapshot:**
+
+| Category | Fields | Count |
+|---|---|---|
+| CPU | schema_version, timestamp, cpu_utilization_pct, cpu_temp_c, mem_used_bytes, mem_total_bytes | 6 |
+| GPU (×N) | gpu_count, gpu_models_json, gpu_temps_json, gpu_utils_json, gpu_fans_json, gpu_core_clocks_json, gpu_mem_clocks_json, gpu_mem_used_json, gpu_mem_total_json, gpu_mem_util_pcts_json, gpu_mem_free_json, gpu_power_draws_json, gpu_power_limits_json, gpu_pcie_gen_json, gpu_pcie_max_gen_json, gpu_pcie_width_json, gpu_pcie_max_width_json | 17 |
+| Storage (×N) | storage_count, storage_devices_json, storage_fstypes_json, storage_mountpoints_json, storage_capacities_json, storage_usage_pcts_json, storage_temps_json, storage_smart_json | 8 |
+| Network (×N) | network_count, network_interfaces_json, network_ipv4s_json, network_speeds_json, network_rx_bytes_json, network_tx_bytes_json, network_rx_errors_json, network_tx_errors_json | 8 |
+| Metadata | updated_at (auto) | 1 |
+| **Total** | | **~40 fields** |
+
+**Views using LatestSnapshot:**
+- `rig_list` (Fleet Overview): Reads LatestSnapshot + Rig + RigTag. **0 timeseries queries.**
+- `htmx_metrics` (Live Metrics): Reads LatestSnapshot + LatestDockerContainer + DockerContainerMetric + GPUProcessMetric. **0 timeseries queries for GPU/storage/network.**
+
+**Views still using timeseries:**
+- `ChartDataView` (Historical Charts): Reads GPUMetric, StorageMetric, NetworkMetric, MetricSnapshot for time-series aggregation. **Unchanged.**
+
+**Separation summary:**
+- Snapshot → Display (Fleet Overview, Live Metrics) → 0 timeseries queries
+- Timeseries → Charts (ChartDataView) → All timeseries queries
+- The two paths are completely independent after ingest.
 
 ### Error tracking evolution
 
@@ -149,7 +171,11 @@ Errors are filtered on the server side — "no error" placeholders from agents
 
 ### Issue 1: Live Metrics showing stale data
 **Problem:** Test payloads with fake timestamps polluted the database.
-**Fix:** Cleaned up test data. Live Metrics now uses `DISTINCT ON` for latest-per-device queries.
+**Fix:** Cleaned up test data. Live Metrics now reads from LatestSnapshot (single row lookup, no DISTINCT ON).
+
+### Issue 5: Fleet Overview and Live Metrics timeseries bottleneck
+**Problem:** Fleet Overview queried GPUMetric/StorageMetric/NetworkMetric with DISTINCT ON for every rig. Live Metrics queried 3 timeseries tables per poll. With 100+ rigs, this caused 2000+ queries and 20+ second load times.
+**Fix:** All display data (GPU, storage, network) moved to LatestSnapshot JSON arrays during ingest. Fleet Overview and Live Metrics now execute 0 timeseries queries. Historical Charts still use timeseries tables (unchanged).
 
 ### Issue 2: Test data pollution
 **Problem:** Multiple test payloads inserted during development.

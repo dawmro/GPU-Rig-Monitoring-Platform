@@ -105,7 +105,7 @@ Cron → Agent collects metrics → JSON payload → POST /api/v1/ingest/
   → DRF APIKeyAuthentication (X-API-Key header → Argon2id hash comparison)
   → DRF throttle (per-rig rate limit via X-Rig-UUID header, 2/min per rig)
   → Timestamp sanity check (reject if >5 min future or >1 hour past)
-  → IngestSerializer validation (schema version 1.0, 1.1, or 1.2)
+  → IngestSerializer validation (schema version 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, or 1.6)
   → process_ingest() → DB upsert (MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric, RigStatusEvent, LatestSnapshot)
   → Rig.latest_errors_json updated with latest error text
   → Rig.last_seen and Rig.status updated to ONLINE
@@ -179,7 +179,7 @@ rig_name: ""              # Suggested initial name. Used ONLY once during rig cr
 api_key: "..."            # Server-side API key (shown once at creation)
 server_endpoint: "http://..."  # Must include http:// or https://
 expected_gpu_count: 0     # 0 = auto-detect
-collection_timeout_s: 30  # Hard timeout via signal.alarm()
+collection_timeout_s: 30  # Hard timeout per collection cycle (default in code)
 jitter_s: 0-25            # Random delay before collection to spread load
 retry_attempts: 3         # Exponential backoff: 1s → 2s → 4s
 debug_mode: false         # Verbose logging
@@ -328,14 +328,15 @@ debug_mode: false         # Verbose logging
 
 | Agent | File | Version | Schema | Platform | Scheduling |
 |-------|------|---------|--------|----------|------------|
-| Linux | `agent/run.py` | 1.5.1 | 1.5 | Any Linux, VMware NAT | `cron` every 60s with `flock` |
-| Windows | `agent_windows/run.py` | 1.6.1-win | 1.5 | Windows 10/11 | Task Scheduler with `pythonw.exe` (hidden window) |
+| Linux | `agent/run.py` | 1.5.2 | 1.6 | Any Linux, VMware NAT | `cron` every 60s with `flock` |
+| Windows | `agent_windows/run.py` | 1.6.2-win | 1.6 | Windows 10/11 | Task Scheduler (1 min) with `pythonw.exe` (hidden window) |
 
 **Versioning rules:**
 - `agent_version` (e.g. `1.1.0`): incremented for agent-side changes (collectors, payload format, bug fixes). Format: `MAJOR.MINOR.PATCH`.
 - `schema_version` (e.g. `1.1`): incremented only when the payload structure changes in a way that affects the server's serialization/storage. Format: `MAJOR.MINOR`.
 - Schema 1.0 agents remain supported (backward compatible via `validate_schema_version`).
-- When schema changes, both `SERIALIZER_MAP` entries are kept (see §11.5).
+- When schema versions change, the `validate_schema_version` method in `IngestSerializer` is updated to accept the new version. The same serializer handles all supported versions.
+- See §11.5 for the contract testing strategy.
 
 ---
 
@@ -369,7 +370,7 @@ POST /api/v1/ingest/
   → APIKeyAuthentication validates X-API-Key
   → Nginx rate limit: 2r/min per rig_uuid (burst=5)
   → DRF throttle (per-rig rate limit via X-Rig-UUID header, 2/min per rig)
-  → IngestSerializer validation (schema version 1.0, 1.1, 1.2, 1.3, or 1.4)
+  → IngestSerializer validation (schema version 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, or 1.6)
   → process_ingest() in transaction.atomic():
       - Upsert MetricSnapshot (cpu, memory, status fields; motherboard/software as JSON; error_count)
       - Upsert GPUMetric per GPU (gpu_index = 0, 1, ...)
@@ -419,9 +420,23 @@ On every agent heartbeat, `IngestView` sets `Rig.status = ONLINE` and `Rig.last_
 | GET | `/api/v1/rigs/<uuid>/metrics/` | Session | Latest metrics (used by Chart.js direct fetch) |
 | GET | `/api/v1/rigs/<uuid>/chart-data/?metric=X&range=N` | Session | Historical chart data |
 | GET | `/dashboard/rigs/` | Session | Fleet Overview (HTMX) |
+| GET | `/dashboard/rigs/<uuid>/` | Session | Rig detail page |
 | GET | `/dashboard/rigs/<uuid>/htmx-metrics/` | Session | Live metrics partial (30s poll) |
 | GET | `/dashboard/rigs/<uuid>/htmx-status/` | Session | Status badge partial (15s poll) |
 | POST | `/dashboard/rigs/<uuid>/rename/` | Session | Rename rig |
+| POST | `/dashboard/rigs/<uuid>/delete/` | Session | Delete rig and all associated data |
+| POST | `/dashboard/rigs/<uuid>/tags/<tag_id>/toggle/` | Session | Toggle tag on/off for a rig |
+| GET | `/accounts/login/` | None | Login page |
+| GET | `/accounts/register/` | None | Registration page |
+| POST | `/accounts/logout/` | Session | Logout |
+| GET | `/accounts/profile/` | Session | User profile (view info, change password) |
+| GET | `/accounts/api-keys/` | Session | API key management |
+| POST | `/accounts/api-keys/create/` | Session | Create new API key |
+| POST | `/accounts/api-keys/<key_id>/revoke/` | Session | Revoke API key |
+| GET | `/accounts/tags/` | Session | Tag management |
+| POST | `/accounts/tags/create/` | Session | Create tag |
+| POST | `/accounts/tags/<tag_id>/update/` | Session | Update tag |
+| POST | `/accounts/tags/<tag_id>/delete/` | Session | Delete tag |
 
 **Agent headers:**
 - `X-API-Key`: User's API key (identifies the user/account)
@@ -963,11 +978,12 @@ After every deployment:
 ### 11.5 Contract Testing for Schema Evolution
 
 When `schema_version` changes:
-1. Add new `IngestSerializerV2` alongside V1
-2. `SERIALIZER_MAP = {"1.0": IngestSerializerV1, "2.0": IngestSerializerV2}`
-3. Old agents continue sending v1.0 → routed to V1 serializer
-4. New agents send v2.0 → routed to V2 serializer
+1. Update `IngestSerializer.validate_schema_version()` to accept the new version string
+2. Add/update model fields and serializer logic to handle the new payload structure
+3. Old agents continue sending their schema version → accepted by `validate_schema_version`
+4. New agents send the new schema version → also accepted
 5. Deprecation lifecycle: Day 0 (deploy) → Day 30 (recommend upgrade) → Day 180 (deprecated) → Day 365 (dropped)
+6. The `DATA_FLOW_ANALYSIS.md` document is updated with new field mappings
 
 ---
 
@@ -1241,13 +1257,24 @@ sudo -u postgres psql gpu_monitor
 |--------|------|------|---------|------------|
 | POST | `/api/v1/ingest/` | API Key | Telemetry submission | No |
 | GET | `/api/v1/health/` | None | Health check | No |
+| GET | `/api/v1/rigs/<uuid>/metrics/` | Session | Latest metrics JSON | No |
+| GET | `/api/v1/rigs/<uuid>/chart-data/` | Session | Historical chart JSON | No (↻ button) |
 | GET | `/dashboard/rigs/` | Session | Fleet Overview (initial load) | No |
 | GET | `/dashboard/rigs/` (HX-Request) | Session | Fleet table partial (30s poll) | `#rig-table-container-clock` |
 | GET | `/dashboard/rigs/<uuid>/` | Session | Rig detail page | No |
 | GET | `/dashboard/rigs/<uuid>/htmx-metrics/` | Session | Live metrics partial (30s poll) | `#metrics-container-clock` |
 | GET | `/dashboard/rigs/<uuid>/htmx-status/` | Session | Status badge partial (15s poll) | `#rig-status-container-clock` |
 | POST | `/dashboard/rigs/<uuid>/rename/` | Session | Rename rig | No |
-| GET | `/api/v1/rigs/<uuid>/chart-data/` | Session | Historical chart JSON | No (↻ button) |
+| POST | `/dashboard/rigs/<uuid>/delete/` | Session | Delete rig | No |
+| POST | `/dashboard/rigs/<uuid>/tags/<tag_id>/toggle/` | Session | Toggle tag | No |
+| GET | `/accounts/login/` | None | Login page | No |
+| GET | `/accounts/register/` | None | Registration page | No |
+| POST | `/accounts/logout/` | Session | Logout | No |
+| GET/POST | `/accounts/profile/` | Session | Profile + change password | No |
+| GET | `/accounts/api-keys/` | Session | API key list | No |
+| POST | `/accounts/api-keys/create/` | Session | Create API key | No |
+| POST | `/accounts/api-keys/<key_id>/revoke/` | Session | Revoke API key | No |
+| GET/POST | `/accounts/tags/` | Session | Tag CRUD | No |
 
 ### C. Sample systemd Unit (Gunicorn)
 

@@ -33,15 +33,17 @@ The GPU Rig Monitoring Platform is a single-server telemetry dashboard for GPU r
 
 **Scale target:** ~1,000 rigs reporting at 1-minute intervals.
 
-**Measured storage per rig (100% uptime):** ~4.7 MB/day
-- At 50% uptime: ~2.35 MB/day
-- 31-day retention with tiered compaction: ~7 GB total for 1,000 rigs
-- Without compaction: ~146 GB for 1,000 rigs
+**Measured storage per rig (100% uptime):** ~15.7 MB/day
+- At 50% uptime: ~7.9 MB/day
+- 31-day retention with tiered compaction: ~23.6 MB/rig (~72 GB total for 1,000 rigs)
+- Without compaction: ~487 GB for 1,000 rigs/month
 
 **Data retention:** 31 days (matches 30-day max chart range + 1 day safety margin)
 - 0-1 day: raw per-minute data
 - 1-31 days: compacted to 1-hour buckets
 - 31+ days: deleted
+
+**Note:** Earlier projections estimated ~4.7 MB/day/rig. Actual measurements from 100 rigs over 10 days show ~15.7 MB/day/rig (~3.3x higher) due to larger row sizes from JSON fields (motherboard_json, software_json, cpu_load_avg_json) and higher-than-expected Docker container metric volume.
 
 ### 1.1 Non-Goals (v1)
 
@@ -715,7 +717,7 @@ Files **never** overwritten: `.env`, `venv/`, `logs/`, `staticfiles/`, `config.y
 
 ### 8.5 Data Retention
 
-The platform uses **tiered compaction** to manage long-term storage growth. Without retention, 1,000 rigs would accumulate ~146 GB/month. With compaction: ~7 GB/month (95% savings).
+The platform uses **tiered compaction** to manage long-term storage growth. Without retention, 1,000 rigs would accumulate ~487 GB/month. With compaction: ~23 GB/month (95% savings).
 
 #### Retention Tiers
 
@@ -882,7 +884,7 @@ Each ingest performs multiple database operations:
 |----------|---------|-------------|---------------|
 | vCPU | 4 | 4-8 | Gunicorn: (2 × cores) + 1 workers |
 | RAM | 16 GB | 16-32 GB | PG shared_buffers ~4-6 GB + Gunicorn ~1.3 GB + OS ~1.5 GB |
-| Storage | 250 GB NVMe | 500 GB+ NVMe | NVMe mandatory for write IOPS. ~5 GB/day growth. |
+| Storage | 500 GB NVMe | 1 TB+ NVMe | NVMe mandatory for write IOPS. ~1.6 GB/day growth at 100 rigs, ~16 GB/day at 1,000 rigs. With compaction: ~0.7 GB/day at 1,000 rigs. |
 | Network | 100 Mbps | 1 Gbps | Peak < 3 Mbps. Egress for 10 users < 5 Mbps. |
 
 **Storage IOPS:** 500 writes/sec burst. Standard SATA SSDs bottleneck during vacuum/compression. NVMe is a strict requirement.

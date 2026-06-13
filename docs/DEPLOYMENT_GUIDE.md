@@ -271,7 +271,7 @@ Enter email, username, and password when prompted. Use the email to log into the
 
 ### 4.7 Set Up Data Retention
 
-Configure automated data compaction and cleanup. This is essential for long-term storage management — without it, the database grows indefinitely (~146 GB/month at 1,000 rigs). With compaction: ~7 GB/month (94% savings).
+Configure automated data compaction and cleanup. This is essential for long-term storage management — without it, the database grows indefinitely (~487 GB/month at 1,000 rigs). With compaction: ~23 GB/month (95% savings).
 
 #### Quick Setup
 
@@ -340,9 +340,9 @@ python manage.py cleanup_old_data --days=31 --verbose
 
 | Retention | Raw Storage (1,000 rigs) | After Compaction |
 |---|---|---|
-| 1 day | 4.7 GB | 4.7 GB |
-| 7 days | 32.9 GB | 6.9 GB |
-| 31 days | 146 GB | ~7 GB |
+|| 1 day | 15.3 GB | 15.3 GB ||
+|| 7 days | 107 GB | 22 GB ||
+|| 31 days | 460 GB | ~23 GB ||
 
 #### Troubleshooting
 

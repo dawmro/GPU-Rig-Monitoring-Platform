@@ -30,8 +30,8 @@ A single-server telemetry dashboard for GPU rigs running AI/LLM workloads. Colle
 │                   SINGLE UBUNTU VPS (Trusted)                 │          │
 │                                                               ▼          │
 │  ┌─────────────────┐    TCP/5432    ┌──────────────────────────────┐    │
-│  │ Django + DRF    │ ────────────→ │ PostgreSQL + TimescaleDB     │    │
-│  │ (Gunicorn)      │                │ (hypertables for metrics)    │    │
+│  │ Django + DRF    │ ────────────→ │ PostgreSQL 16                  │    │
+│  │ (Gunicorn)      │                │ (plain, no TimescaleDB)        │    │
 │  └────────┬────────┘                └──────────────────────────────┘    │
 │           │                                                             │
 │           │ Render/Query                                                 │
@@ -43,7 +43,7 @@ A single-server telemetry dashboard for GPU rigs running AI/LLM workloads. Colle
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Server:** Django 6.x + DRF, PostgreSQL 16 + TimescaleDB, Gunicorn, Nginx, HTMX  
+**Server:** Django 6.x + DRF, PostgreSQL 16, Gunicorn, Nginx, HTMX  
 **Agents:** Linux (cron) and Windows (Task Scheduler), Python 3.10+, psutil + pynvml
 
 ## Repository Structure
@@ -179,10 +179,12 @@ Deployed to each monitored rig. Collect hardware metrics (CPU, GPU, memory, stor
 | Layer | Technology |
 |-------|-----------|
 | Server framework | Django 6.x + Django REST Framework |
-| Database | PostgreSQL 16 + TimescaleDB (hypertables) |
+| Database | PostgreSQL 16 (plain) |
 | Task runner | Gunicorn (WSGI) |
 | Web server | Nginx (reverse proxy, TLS termination) |
 | Frontend | Django Templates + HTMX (server-rendered, no SPA) |
 | Auth | Email/password + API keys + session cookies |
 | Agents | Python 3.10+, psutil, pynvml, WMI (Windows) |
 | Scheduler | Linux: cron · Windows: Task Scheduler |
+
+> **TimescaleDB:** Not currently used. For future scale (>10,000 rigs), see [`docs/POSSIBLE_FUTURE_WORK_TIMESCALEDB.md`](docs/POSSIBLE_FUTURE_WORK_TIMESCALEDB.md) for a detailed migration plan.

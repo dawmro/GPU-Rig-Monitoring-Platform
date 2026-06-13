@@ -271,6 +271,28 @@ Ensure Task Scheduler is configured with **"Run with highest privileges"** — S
 
 The agent collects CPU metrics with a 1-second `psutil.cpu_percent(interval=1)` call. This is normal and only happens once per run.
 
+## Permissions
+
+The agent needs **administrator access** for some hardware queries (disk SMART via WMI, Windows Event Log). When using Task Scheduler, enable **"Run with highest privileges"** — this is configured automatically by `--install-task`.
+
+GPU monitoring does NOT require admin — `pynvml` reads from the NVIDIA driver interface, accessible to all users.
+
+## Auto-Update
+
+The Windows agent includes a built-in auto-update mechanism. To check for updates manually:
+
+```powershell
+python run.py --check-update
+```
+
+To force reinstall:
+
+```powershell
+python run.py --check-update --force
+```
+
+Logs: `logs/agent.log`
+
 ## Differences from Linux Agent
 
 | Feature | Linux (`agent/`) | Windows (`agent_windows/`) |
@@ -281,18 +303,23 @@ The agent collects CPU metrics with a 1-second `psutil.cpu_percent(interval=1)` 
 | **Signal timeout** | `signal.SIGALRM` | Not needed (lock-based) |
 | **Error collection** | `journalctl` | PowerShell `Get-WinEvent` |
 | **System info** | `/sys/class/dmi/` | WMI (`Win32_BaseBoard`, `Win32_BIOS`) |
-| **Disk SMART** | `sudo smartctl` | WMI `MSStorageDriver_FailurePredictStatus` |
+| **Disk SMART** | `sudo smartctl` / `nvme` | WMI `MSStorageDriver_FailurePredictStatus` |
 | **Network speed** | `/sys/class/net/*/speed` | WMI `Win32_NetworkAdapter.Speed` |
 | **Config path** | `/etc/monitoring-agent/config.yaml` | `./config.yaml` (alongside script) |
 | **Log path** | `/var/log/monitoring-agent/` | `./logs/` (alongside script) |
 | **Python deps** | `psutil py-cpuinfo requests pyyaml docker` | Same + `wmi` (+ `pynvml`, `docker` optional) |
+| **Installation** | `install.sh` (bash) | `--install-task` flag or manual Task Scheduler |
+| **Auto-update** | cron-scheduled `check_update.py` | Built into `run.py` via CLI flag |
 
 ## Command-Line Options
 
 ```
-python run.py                 # Collect and send metrics
-python run.py --detect-server # Auto-detect server IP on local network
-python run.py --install-task  # Create Windows Task Scheduler entry (Admin required)
-python run.py --remove-task   # Remove Windows Task Scheduler entry (Admin required)
-python run.py --help-task     # Print Task Scheduler setup instructions
+python run.py                    # Collect and send metrics
+python run.py --detect-server    # Auto-detect server IP on local network
+python run.py --install-task     # Create Windows Task Scheduler entry (Admin required)
+python run.py --remove-task      # Remove Windows Task Scheduler entry (Admin required)
+python run.py --help-task        # Print Task Scheduler setup instructions
+python run.py --check-update     # Check for agent updates
+python run.py --dry-run          # Print payload to stdout without sending
+python run.py --debug            # Enable verbose logging
 ```

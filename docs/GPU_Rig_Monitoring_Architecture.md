@@ -334,7 +334,7 @@ debug_mode: false         # Verbose logging
 **Versioning rules:**
 - `agent_version` (e.g. `1.1.0`): incremented for agent-side changes (collectors, payload format, bug fixes). Format: `MAJOR.MINOR.PATCH`.
 - `schema_version` (e.g. `1.1`): incremented only when the payload structure changes in a way that affects the server's serialization/storage. Format: `MAJOR.MINOR`.
-- Schema 1.0 agents remain supported (backward compatible via `validate_schema_version`).
+- Schema versions 1.0 through 1.6 are supported (backward compatible via `validate_schema_version` in `IngestSerializer`).
 - When schema versions change, the `validate_schema_version` method in `IngestSerializer` is updated to accept the new version. The same serializer handles all supported versions.
 - See §11.5 for the contract testing strategy.
 
@@ -732,8 +732,8 @@ Two Django management commands handle retention:
 **`compact_data`** — Aggregates old data into larger time buckets:
 - Single phase: data > 1 day → 1-hour buckets
 - Aggregation: AVG (temperature, utilization, power), SUM (network bytes, error_count), LAST (model names, UUIDs)
-- Parent table (`metrics_metricsnapshot`) compacted first; child tables after
-- FK-safe: parent rows referenced by children are excluded from compaction
+- Child tables (GPU, storage, network, gpu_process) compacted FIRST; parent table (`metrics_metricsnapshot`) compacted LAST
+- FK-safe: parent rows still referenced by children are excluded from compaction via NOT EXISTS subqueries
 
 **`cleanup_old_data`** — Deletes data older than N days (default: 31):
 - Processes tables in dependency order (children first, parent last)

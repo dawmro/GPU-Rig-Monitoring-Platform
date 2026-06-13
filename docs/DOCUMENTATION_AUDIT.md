@@ -11,7 +11,7 @@
 
 | Document | Size | Status | Notes |
 |---|---|---|---|
-| `GPU_Rig_Monitoring_Architecture.md` | 63KB | ✅ Current | Main architecture reference. v1.4 with snapshot-timeseries decoupling, ingest performance, query budgets. Agent versions: Linux 1.5.1, Windows 1.6.1-win, schema 1.5. |
+|| `GPU_Rig_Monitoring_Architecture.md` | 63KB | ✅ Current | Main architecture reference. v1.4 with snapshot-timeseries decoupling, ingest performance, query budgets. Agent versions: Linux 1.4.0-linux, Windows 1.2.0-win, schema 1.2. |
 | `DATA_FLOW_ANALYSIS.md` | 14KB | ✅ Current | Complete payload-to-DB field mapping. Updated with LatestSnapshot as primary display data source. |
 | `DATA_RETENTION_PLAN.md` | 8KB | ✅ Current | Retention strategy, compaction, cleanup. Still valid. |
 | `LOCAL_DEPLOYMENT_GUIDE.md` | 37KB | ✅ Current | Updated models.py description. |
@@ -30,6 +30,7 @@
 | Document | Size | Status | Notes |
 |---|---|---|---|
 | `TIMESCALEDB_VS_OUR_APPROACH.md` | 7KB | ✅ Relevant | Architectural context for compaction vs TimescaleDB. |
+| `POSSIBLE_FUTURE_WORK_TIMESCALEDB.md` | 33KB | ✅ Relevant | Detailed migration plan from current PostgreSQL to TimescaleDB. Reference for future scaling work. |
 | `PCIE_LINK_PLAN.md` | 6KB | ✅ Relevant | PCIe fields implemented. Reference for data collection. |
 | `AGENT_AUTO_UPDATE_PLAN.md` | 6KB | ✅ Relevant | check_update.py exists, install scripts don't set up cron yet. |
 
@@ -47,8 +48,8 @@
 
 ## Summary
 
-- **Total documents:** 11 (down from 14)
-- **Keep:** 11
+- **Total documents:** 12 (down from 14)
+- **Keep:** 12
 - **Deleted:** 3
 
 All remaining documentation is accurate and up-to-date.

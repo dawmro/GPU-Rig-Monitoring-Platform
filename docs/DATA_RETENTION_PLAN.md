@@ -78,13 +78,16 @@ Single phase:
 - Deletes original per-minute rows, inserts aggregated rows
 
 **Table Processing Order:**
-1. `metrics_metricsnapshot` (parent) — compacted first, excluding rows still referenced by children
-2. `metrics_gpumetric`, `metrics_storagemetric`, `metrics_networkmetric` (children) — compacted after parent
-3. `metrics_dockercontainermetric`, `metrics_gpu_process` — compacted if data exists
+1. `metrics_gpu_process` (child with FK) — compacted first
+2. `metrics_gpumetric` (child with FK) — compacted after gpu_process
+3. `metrics_storagemetric` (child with FK) — compacted after gpu
+4. `metrics_networkmetric` (child with FK) — compacted after storage
+5. `metrics_dockercontainermetric` (no FK) — compacted independently
+6. `metrics_metricsnapshot` (parent) — compacted LAST, excluding rows still referenced by children
 
 **FK Handling:**
 - Parent table rows referenced by children are excluded from compaction (to avoid FK violations)
-- Child tables (GPU, storage, network) keep their `snapshot_id` pointing to the parent for data integrity
+- Child tables (GPU, storage, network, gpu_process) keep their `snapshot_id` pointing to the parent
 - `metrics_dockercontainermetric` has no FK to parent (independent time-series)
 - `metrics_latest_docker_container` is not compacted (delete-before-insert, latest only)
 

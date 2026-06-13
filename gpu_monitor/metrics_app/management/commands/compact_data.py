@@ -166,6 +166,7 @@ class Command(BaseCommand):
                 AND NOT EXISTS (SELECT 1 FROM metrics_gpumetric g WHERE g.snapshot_id = metrics_metricsnapshot.id)
                 AND NOT EXISTS (SELECT 1 FROM metrics_storagemetric s WHERE s.snapshot_id = metrics_metricsnapshot.id)
                 AND NOT EXISTS (SELECT 1 FROM metrics_networkmetric n WHERE n.snapshot_id = metrics_metricsnapshot.id)
+                AND NOT EXISTS (SELECT 1 FROM metrics_gpu_process p WHERE p.snapshot_id = metrics_metricsnapshot.id)
             """
         else:
             fk_where = ""

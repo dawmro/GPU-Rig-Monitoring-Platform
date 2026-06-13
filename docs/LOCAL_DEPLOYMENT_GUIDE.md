@@ -563,7 +563,7 @@ The rig detail page has three tabs:
 
 ### 5.7 Set Up Data Retention
 
-> **Important for local testing:** Without data retention, your local database will grow indefinitely. Even with a single test rig, data accumulates at ~4.7 MB/day. Enable this before running extended tests.
+> **Important for local testing:** Without data retention, your local database will grow indefinitely. Even with a single test rig, data accumulates at ~15.7 MB/day (measured). Enable this before running extended tests.
 
 Configure automated data compaction and cleanup:
 
@@ -590,7 +590,7 @@ This runs two commands daily:
    - Deletes in batches of 10,000 rows to avoid long locks
    - Handles tables with non-standard primary keys (e.g., `metrics_latest_snapshot` uses `rig_uuid`)
 
-**Storage impact:** Without compaction, 1,000 rigs would use ~146 GB/month. With compaction: ~7 GB/month (95% savings). For a single test rig: ~150 MB/month with compaction.
+**Storage impact:** Without compaction, 1,000 rigs would use ~487 GB/month. With compaction: ~23 GB/month (95% savings). For a single test rig: ~24 MB/month with compaction (31-day retention).
 
 #### Manual Run (for testing)
 

@@ -213,7 +213,12 @@ Documents the current tiered compaction strategy:
 - Tier 2: 1-hour buckets (1-31 days) — 60× reduction
 - Tier 3: Delete (31+ days)
 
-Storage projections: 146 GB raw → ~7 GB compacted at 1,000 rigs (95% reduction).
+Storage projections (updated with actual measurements):
+- Per rig: ~15.7 MB/day raw → ~23.6 MB/month with compaction (31-day retention)
+- 1,000 rigs: ~487 GB/month raw → ~23 GB/month compacted (95% reduction)
+- 10,000 rigs: ~4.6 TB/month raw → ~720 GB/month compacted
+
+**Note:** Earlier projections (4.7 MB/day/rig, 146 GB/month for 1K rigs) were estimates before full deployment. Actual measurements from 100 rigs over 10 days show ~3.3x higher storage due to larger row sizes from JSON fields and higher Docker container metric volume.
 
 ---
 

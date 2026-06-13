@@ -86,9 +86,9 @@ The cron job will start automatically within 1 minute.
 | `api_key` | — | **Required.** API key from the dashboard. |
 | `server_endpoint` | — | **Required.** Server HTTPS URL, no trailing slash. |
 | `expected_gpu_count` | `0` | `0` = auto-detect. Set your GPU count to flag mismatches. |
-| `collection_timeout_s` | `45` | Hard timeout for metric collection + upload. |
-| `retry_attempts` | `3` | Retries on transient failures (exponential backoff). |
-| `debug_mode` | `false` | `true` = verbose logging, no gzip compression. |
+| `collection_timeout_s` | `30` | Hard timeout (seconds) for metric collection + upload. Config example shows 45s as recommended value. |
+| `retry_attempts` | `3` | Retries on transient failures (exponential backoff: 1s → 2s → 4s). |
+| `debug_mode` | `false` | `true` = verbose logging. |
 
 **To get an API key:** Log in to the monitoring dashboard → click **API Keys** → create a new key → copy it immediately (shown only once).
 
@@ -96,9 +96,9 @@ The cron job will start automatically within 1 minute.
 
 ```
 /opt/monitoring-agent/
-├── run.py                   # Agent script
+├── run.py                   # Agent script (754 lines)
 ├── venv/                    # Python virtual environment
-└── check_update.py          # Auto-update checker
+└── check_update.py          # Auto-update checker (separate script)
 
 /etc/monitoring-agent/
 └── config.yaml              # Agent config (mode 0600)
@@ -123,13 +123,12 @@ The cron job will start automatically within 1 minute.
 | Motherboard (manufacturer, model, BIOS) | `/sys/class/dmi/` | ✅ | ✅ |
 | Storage (partitions, capacity, usage, SMART/NVMe) | psutil + `smartctl`/`nvme` | ✅ | ✅ |
 | Network (interfaces, bytes, errors, speed) | psutil + sysfs | ✅ | ✅ |
-| GPU (model, memory, util, temp, power, fan) | `pynvml` | ✅* | ✅* |
-| Docker containers | docker SDK | ✅† | ✅† |
-| OS info (hostname, OS, kernel, uptime) | `/etc/os-release` + psutil | ✅ | ✅ |
-| NVIDIA driver version | `nvidia-smi` | ✅* | ✅* |
+| GPU (model, memory, util, temp, power, fan, PCIe link, core/mem clocks) | `pynvml` | ✅* | ✅* |
+| GPU processes (per-process: name, type C/G/C+G, memory) | `nvidia-smi` subprocess | ✅* | ✅* |
+| Docker containers (name, image, status, container_id, uptime, restarts, cpu%, memory) | docker SDK | ✅† | ✅† |
+| OS info (hostname, OS, kernel, uptime) | `platform` + psutil | ✅ | ✅ |
+| NVIDIA driver version | `nvidia-smi` subprocess | ✅* | ✅* |
 | System errors (last 5 min) | `journalctl` | ✅ | ✅ |
-| PCIe link speed/width | `nvidia-smi -q` | ✅* | ✅* |
-| Process-level GPU memory | `pynvml` | ✅* | ✅* |
 
 \* Requires NVIDIA GPU with drivers and `nvidia-ml-py3` installed.
 † Requires Docker daemon running.
@@ -138,7 +137,7 @@ The cron job will start automatically within 1 minute.
 
 The `monitoring-agent` system user runs without root but needs elevated access for specific hardware queries:
 
-| Command | Purpose |Risk |
+| Command | Purpose | Risk |
 |---------|---------|------|
 | `/usr/sbin/smartctl` | Read disk SMART health data (SATA) | Read-only |
 | `/usr/sbin/nvme` | Read NVMe drive health/temperature | Read-only |
@@ -159,20 +158,16 @@ monitoring-agent ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/bin/smartctl, /bi
 
 The installer schedules a daily auto-update check at a random time. The update mechanism:
 
-1. Checks GitHub for a newer agent version
+1. Checks GitHub for a newer agent version (same major version only)
 2. Downloads the new `run.py`
-3. Backs up the current version
+3. Backs up the current version to `run.py.bak`
 4. Validates the new version syntax
 5. Atomically replaces the running script
+6. New code is used on the next cron cycle (no restart needed)
 
 Manual check:
 ```bash
 sudo /opt/monitoring-agent/venv/bin/python /opt/monitoring-agent/check_update.py
-```
-
-Force reinstall:
-```bash
-sudo /opt/monitoring-agent/venv/bin/python /opt/monitoring-agent/check_update.py --force
 ```
 
 Logs: `/var/log/monitoring-agent/update.log`
@@ -192,7 +187,9 @@ Logs: `/var/log/monitoring-agent/update.log`
 | **Log path** | `/var/log/monitoring-agent/` | `./logs/` (alongside script) |
 | **Python deps** | `psutil py-cpuinfo requests pyyaml docker` | Same + `wmi` (+ `pynvml`, `docker` optional) |
 | **Installation** | `install.sh` (bash) | `--install-task` flag or manual Task Scheduler |
-| **Auto-update** | cron-scheduled `check_update.py` | Built into `run.py` via CLI flag |
+| **Auto-update** | Separate `check_update.py` script via cron | Separate `check_update.py` script via Task Scheduler |
+| **CLI flags** | None (run directly) | `--install-task`, `--remove-task`, `--help-task`, `--detect-server` |
+| **Hidden window** | N/A | `pythonw.exe` |
 
 ## Troubleshooting
 
@@ -262,8 +259,10 @@ sudo chmod 600 /etc/monitoring-agent/config.yaml
 
 ## Command-Line Options
 
-```
+The Linux agent has no command-line flags. Run it directly:
+
+```bash
 python3 run.py                 # Collect and send metrics
-python3 run.py --dry-run       # Print payload to stdout without sending
-python3 run.py --debug         # Enable verbose logging
 ```
+
+Configuration is read from `/etc/monitoring-agent/config.yaml`. To test with debug logging, set `debug_mode: true` in the config file.

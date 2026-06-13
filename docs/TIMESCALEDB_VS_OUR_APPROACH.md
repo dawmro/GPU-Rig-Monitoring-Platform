@@ -138,8 +138,8 @@
 | **Control** | Limited | Full | **Ours** |
 | **Reliability** | High (built-in) | Medium (cron-dependent) | **TimescaleDB** |
 | **Scale ceiling** | Billions of rows | Millions of rows | **TimescaleDB** |
-| **Cost at 1,000 rigs** | ~9 GB/month | ~9 GB/month | **Tie** |
-| **Cost at 10,000 rigs** | ~90 GB/month | ~900 GB/month | **TimescaleDB** |
+| **Cost at 1,000 rigs** | ~9 GB/month | ~23 GB/month | **TimescaleDB** |
+| **Cost at 10,000 rigs** | ~90 GB/month | ~720 GB/month | **TimescaleDB** |
 
 ---
 
@@ -152,12 +152,12 @@
 2. **Good enough performance** — runtime aggregation is fast for millions of rows
 3. **Full control** — we can tune aggregation logic per metric
 4. **Already implemented** — no migration risk
-5. **Same storage efficiency** — 94% reduction through tiered compaction
+5. **Good storage efficiency** — 95% reduction through tiered compaction (but baseline is ~3x higher than originally estimated)
 
 ### For Future Scale (> 10,000 rigs): TimescaleDB Would Be Better
 
 **Reasons:**
-1. **Storage compression** — 90-95% additional reduction
+1. **Storage compression** — 90-95% additional reduction on top of compaction
 2. **Query performance** — pre-computed aggregates for instant dashboard response
 3. **Automatic maintenance** — no cron jobs to manage
 4. **Incremental updates** — minimal impact during refresh

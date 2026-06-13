@@ -76,7 +76,6 @@ rig_uuid: "auto"
 api_key: "your-api-key-from-dashboard"
 server_endpoint: "http://192.168.253.1"
 expected_gpu_count: 0
-collection_timeout_s: 45
 retry_attempts: 3
 debug_mode: true
 ```
@@ -110,7 +109,7 @@ call venv/Scripts/activate
 python run.py --install-task
 ```
 
-This creates a Windows Task Scheduler entry that runs the agent every 1 minute.
+This creates a Windows Task Scheduler entry that runs the agent every 1 minute using `pythonw.exe` (hidden window).
 
 Verify it was created:
 
@@ -150,21 +149,23 @@ schtasks /delete /tn GPURigMonitorAgent /f
 |-------|---------|-------------|
 | `rig_uuid` | `"auto"` | Auto-generates a permanent UUID on first run. |
 | `api_key` | — | **Required.** API key from the dashboard. |
-| `server_endpoint` | — | **Required.** Server URL, no trailing slash. |
+| `server_endpoint` | — | **Required.** Server URL, must include `http://` or `https://`. |
 | `expected_gpu_count` | `0` | `0` = auto-detect. Set your GPU count to flag mismatches. |
-| `collection_timeout_s` | `45` | Hard timeout for metric collection + upload. |
-| `retry_attempts` | `3` | Retries on transient failures (exponential backoff). |
-| `debug_mode` | `false` | `true` = verbose logging, no gzip compression. |
+| `retry_attempts` | `3` | Retries on transient failures (exponential backoff: 1s → 2s → 4s). |
+| `debug_mode` | `false` | `true` = verbose logging. |
+
+**To get an API key:** Log in to the monitoring dashboard → click **API Keys** → create a new key → copy it immediately (shown only once).
 
 ## File Layout
 
 ```
 agent_windows/
-├── run.py                   # Agent script
+├── run.py                   # Agent script (1079 lines)
+├── check_update.py          # Auto-update checker (separate script)
 ├── config.yaml.example      # Config template
 ├── config.yaml              # Your config (create from example)
 └── logs/                    # Created automatically
-    ├── agent.log            # Structured JSON log (rotated at 10 MB)
+    ├── agent.log            # Structured JSON log (rotated at 10 MB × 3 backups)
     └── payload.json         # Latest full JSON payload sent to server (overwritten each run)
 ```
 
@@ -174,17 +175,71 @@ agent_windows/
 |--------|--------|---------|-------|
 | CPU model, cores, load, temp, utilization | psutil + cpuinfo + WMI | ✅ | ✅ |
 | Memory (total, used, free, cached, swap) | psutil | ✅ | ✅ |
-| Motherboard (manufacturer, model, BIOS) | WMI /sys/class/dmi | ✅ | ✅ |
-| Disk (partitions, capacity, usage, SMART) | psutil + WMI / smartctl | ✅ | ✅ |
-| Network (interfaces, bytes, errors, speed) | psutil + WMI /sysfs | ✅ | ✅ |
-| GPU (NVIDIA: model, memory, util, temp, power) | pynvml | ✅* | ✅* |
-| Docker containers | docker SDK | ✅† | ✅ |
-| OS info (hostname, OS, kernel, uptime) | platform + psutil | ✅ | ✅ |
-| NVIDIA driver version | nvidia-smi | ✅* | ✅* |
-| System errors (last 5 min) | PowerShell Get-WinEvent / journalctl | ✅ | ✅ |
+| Motherboard (manufacturer, model, BIOS) | WMI (`Win32_BaseBoard`, `Win32_BIOS`) | ✅ | ✅ |
+| Storage (partitions, capacity, usage, SMART) | psutil + WMI | ✅ | ✅ |
+| Network (interfaces, bytes, errors, speed) | psutil + WMI | ✅ | ✅ |
+| GPU (model, memory, util, temp, power, fan, PCIe link, core/mem clocks) | `pynvml` | ✅* | ✅* |
+| GPU processes (per-process: name, type C/G/C+G, memory) | `nvidia-smi` subprocess | ✅* | ✅* |
+| Docker containers (name, image, status, container_id, uptime, restarts, cpu%, memory) | docker SDK | ✅† | ✅† |
+| OS info (hostname, OS, kernel, uptime) | `platform` + psutil | ✅ | ✅ |
+| NVIDIA driver version | `nvidia-smi` subprocess | ✅* | ✅* |
+| System errors (last 5 min) | PowerShell `Get-WinEvent` | ✅ | ✅ |
 
-\* Requires NVIDIA GPU with drivers and `nvidia-ml-py3` installed.  
+\* Requires NVIDIA GPU with drivers and `nvidia-ml-py3` installed.
 † Requires Docker Desktop running.
+
+## Permissions
+
+The agent needs **administrator access** for some hardware queries (disk SMART via WMI, Windows Event Log). When using Task Scheduler, enable **"Run with highest privileges"** — this is configured automatically by `--install-task`.
+
+GPU monitoring does NOT require admin — `pynvml` reads from the NVIDIA driver interface, accessible to all users.
+
+## Auto-Update
+
+Auto-update is handled by a separate `check_update.py` script (not built into `run.py`). The update mechanism:
+
+1. Checks GitHub for a newer agent version (same major version only)
+2. Downloads the new `run.py`
+3. Backs up the current version to `run.py.bak`
+4. Validates the new version syntax
+5. Atomically replaces the running script
+6. New code is used on the next scheduler cycle (no restart needed)
+
+Manual check:
+```powershell
+python check_update.py
+```
+
+Logs: `logs/update.log`
+
+## Differences from Linux Agent
+
+| Feature | Linux (`agent/`) | Windows (`agent_windows/`) |
+|---------|-----------------|--------------------------|
+| **Scheduling** | cron (every 60s) | Windows Task Scheduler (every 1 min) |
+| **Lock file** | `flock` on `/var/lock/` | `msvcrt.locking` on `./logs/.agent.lock` |
+| **Signal timeout** | `signal.SIGALRM` (default 30s) | Not needed (lock-based) |
+| **Error collection** | `journalctl` | PowerShell `Get-WinEvent` |
+| **System info** | `/sys/class/dmi/` | WMI (`Win32_BaseBoard`, `Win32_BIOS`) |
+| **Disk SMART** | `sudo smartctl` / `nvme` | WMI `MSStorageDriver_FailurePredictStatus` |
+| **Network speed** | `/sys/class/net/*/speed` | WMI `Win32_NetworkAdapter.Speed` |
+| **Config path** | `/etc/monitoring-agent/config.yaml` | `./config.yaml` (alongside script) |
+| **Log path** | `/var/log/monitoring-agent/` | `./logs/` (alongside script) |
+| **Python deps** | `psutil py-cpuinfo requests pyyaml docker` | Same + `wmi` (+ `pynvml`, `docker` optional) |
+| **Installation** | `install.sh` (bash) | `--install-task` flag or manual Task Scheduler |
+| **Auto-update** | Separate `check_update.py` script via cron | Separate `check_update.py` script via Task Scheduler |
+| **CLI flags** | None (run directly) | `--install-task`, `--remove-task`, `--help-task`, `--detect-server` |
+| **Hidden window** | N/A | `pythonw.exe` |
+
+## Command-Line Options
+
+```
+python run.py                    # Collect and send metrics
+python run.py --detect-server    # Auto-detect server IP on local network
+python run.py --install-task     # Create Windows Task Scheduler entry (Admin required)
+python run.py --remove-task      # Remove Windows Task Scheduler entry (Admin required)
+python run.py --help-task        # Print Task Scheduler setup instructions
+```
 
 ## Troubleshooting
 
@@ -201,7 +256,7 @@ type logs\agent.log
 
 - Regenerate the key on the dashboard
 - Update `config.yaml` with the new key
-- Ensure there are no extra spaces or quotes
+- Ensure no extra spaces or quotes
 
 ### Connection errors
 
@@ -270,56 +325,3 @@ Ensure Task Scheduler is configured with **"Run with highest privileges"** — S
 ### High CPU during collection
 
 The agent collects CPU metrics with a 1-second `psutil.cpu_percent(interval=1)` call. This is normal and only happens once per run.
-
-## Permissions
-
-The agent needs **administrator access** for some hardware queries (disk SMART via WMI, Windows Event Log). When using Task Scheduler, enable **"Run with highest privileges"** — this is configured automatically by `--install-task`.
-
-GPU monitoring does NOT require admin — `pynvml` reads from the NVIDIA driver interface, accessible to all users.
-
-## Auto-Update
-
-The Windows agent includes a built-in auto-update mechanism. To check for updates manually:
-
-```powershell
-python run.py --check-update
-```
-
-To force reinstall:
-
-```powershell
-python run.py --check-update --force
-```
-
-Logs: `logs/agent.log`
-
-## Differences from Linux Agent
-
-| Feature | Linux (`agent/`) | Windows (`agent_windows/`) |
-|---------|-----------------|--------------------------|
-| **Scheduling** | cron (every 60s) | Windows Task Scheduler (every 1 min) |
-| **Interval** | 60 seconds | 60 seconds (1 minute minimum via Task Scheduler) |
-| **Lock file** | `flock` on `/var/lock/` | `msvcrt.locking` on `./logs/.agent.lock` |
-| **Signal timeout** | `signal.SIGALRM` | Not needed (lock-based) |
-| **Error collection** | `journalctl` | PowerShell `Get-WinEvent` |
-| **System info** | `/sys/class/dmi/` | WMI (`Win32_BaseBoard`, `Win32_BIOS`) |
-| **Disk SMART** | `sudo smartctl` / `nvme` | WMI `MSStorageDriver_FailurePredictStatus` |
-| **Network speed** | `/sys/class/net/*/speed` | WMI `Win32_NetworkAdapter.Speed` |
-| **Config path** | `/etc/monitoring-agent/config.yaml` | `./config.yaml` (alongside script) |
-| **Log path** | `/var/log/monitoring-agent/` | `./logs/` (alongside script) |
-| **Python deps** | `psutil py-cpuinfo requests pyyaml docker` | Same + `wmi` (+ `pynvml`, `docker` optional) |
-| **Installation** | `install.sh` (bash) | `--install-task` flag or manual Task Scheduler |
-| **Auto-update** | cron-scheduled `check_update.py` | Built into `run.py` via CLI flag |
-
-## Command-Line Options
-
-```
-python run.py                    # Collect and send metrics
-python run.py --detect-server    # Auto-detect server IP on local network
-python run.py --install-task     # Create Windows Task Scheduler entry (Admin required)
-python run.py --remove-task      # Remove Windows Task Scheduler entry (Admin required)
-python run.py --help-task        # Print Task Scheduler setup instructions
-python run.py --check-update     # Check for agent updates
-python run.py --dry-run          # Print payload to stdout without sending
-python run.py --debug            # Enable verbose logging
-```

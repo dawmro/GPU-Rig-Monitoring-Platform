@@ -1,6 +1,6 @@
 # GPU Rig Monitoring Agent — Linux
 
-**Version:** 1.4.0-linux | **Schema:** 1.2
+**Version:** 1.5.2 | **Schema:** 1.6
 
 Linux agent for the GPU Rig Monitoring Platform. Collects hardware/software metrics via `psutil`, `pynvml`, and system interfaces, then POSTs them to the monitoring server every 60 seconds via cron.
 

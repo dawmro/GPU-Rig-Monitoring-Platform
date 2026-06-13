@@ -17,11 +17,10 @@ echo "Domain: $DOMAIN"
 # ── System packages ───────────────────────────────────────────────────────
 apt update
 apt install -y python3 python3-venv python3-pip postgresql postgresql-contrib \
-    timescaledb-2-postgresql-16 postgresql-client nginx certbot python3-certbot-nginx \
+    postgresql-client nginx certbot python3-certbot-nginx \
     ufw git build-essential curl
 
-# Enable and tune TimescaleDB
-timescaledb-tune --quiet 2>/dev/null || true
+# Enable and start PostgreSQL
 systemctl restart postgresql
 systemctl enable postgresql
 
@@ -33,7 +32,6 @@ CREATE USER $DB_USER WITH PASSWORD '$DB_PASS';
 CREATE DATABASE $DB_NAME OWNER $DB_USER;
 GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;
 \c $DB_NAME
-CREATE EXTENSION IF NOT EXISTS timescaledb;
 EOF
 
 echo ""
@@ -174,9 +172,6 @@ echo "  Admin panel:  https://$DOMAIN/admin/"
 echo ""
 echo "  Create an admin user:"
 echo "    sudo -u $APP_USER bash -c 'cd $APP_DIR && source venv/bin/activate && set -a && source .env && set +a && python manage.py createsuperuser'"
-echo ""
-echo "  Set up TimescaleDB hypertables:"
-echo "    sudo -u $APP_USER bash -c 'cd $APP_DIR && source venv/bin/activate && set -a && source .env && set +a && python manage.py setup_timescale'"
 echo ""
 echo "  Useful commands:"
 echo "    systemctl status gunicorn"

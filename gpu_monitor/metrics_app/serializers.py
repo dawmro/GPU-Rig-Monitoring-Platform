@@ -202,7 +202,8 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     name=container.get('name', ''),
                     image=container.get('image', ''),
                     status=container.get('status', ''),
-                    uptime_s=container.get('uptime_s'),
+                    created=container.get('created', ''),
+                    status_text=container.get('status_text', ''),
                 )
 
             # Build GPU summary data for LatestSnapshot (fast dashboard access)

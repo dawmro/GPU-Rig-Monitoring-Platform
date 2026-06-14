@@ -158,7 +158,8 @@ class LatestDockerContainer(models.Model):
     name = models.CharField(max_length=255, blank=True, default='')
     image = models.CharField(max_length=255, blank=True, default='')
     status = models.CharField(max_length=32, blank=True, default='')
-    uptime_s = models.PositiveIntegerField(null=True)
+    created = models.CharField(max_length=64, blank=True, default='')
+    status_text = models.CharField(max_length=255, blank=True, default='')
 
     class Meta:
         db_table = 'metrics_latest_docker_container'

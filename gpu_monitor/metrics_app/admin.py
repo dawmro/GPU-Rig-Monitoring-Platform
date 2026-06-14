@@ -30,7 +30,7 @@ class NetworkMetricAdmin(admin.ModelAdmin):
 
 @admin.register(LatestDockerContainer)
 class LatestDockerContainerAdmin(admin.ModelAdmin):
-    list_display = ('rig_uuid', 'name', 'container_id', 'image', 'status', 'uptime_s')
+    list_display = ('rig_uuid', 'name', 'container_id', 'image', 'status', 'created', 'status_text')
     search_fields = ('rig_uuid', 'name')
 
 

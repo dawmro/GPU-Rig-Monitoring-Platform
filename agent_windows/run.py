@@ -52,7 +52,7 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.6.6-win'
+__version__ = '1.6.7-win'
 __schema_version__ = '1.6'
 
 # ── Config ──────────────────────────────────────────────────────────────────
@@ -558,7 +558,7 @@ def collect_docker():
 Note: Per-container CPU/memory usage is NOT collected because:
     - 'docker stats' requires elevated permissions and is unreliable
     - GPU compute metrics are covered by NVIDIA GPU collection
-    - Container metadata (status, uptime, restart count) is sufficient for monitoring
+    For each container, collects: container_id, name, image, status, created, status_text.
     """
     containers = []
 
@@ -583,9 +583,10 @@ Note: Per-container CPU/memory usage is NOT collected because:
 
     try:
         # Step 1: Get list of all containers (including stopped ones)
+        # Format: ID|Names|Image|Status|CreatedAt
         result = subprocess.run(
             docker_prefix + ['ps', '-a', '--no-trunc',
-             '--format', '{{.ID}}|{{.Names}}|{{.Image}}|{{.Status}}'],
+             '--format', '{{.ID}}|{{.Names}}|{{.Image}}|{{.Status}}|{{.CreatedAt}}'],
             capture_output=True, text=True, timeout=15,
             encoding='utf-8', errors='replace'
         )
@@ -601,10 +602,10 @@ Note: Per-container CPU/memory usage is NOT collected because:
             return []
 
         for line in lines:
-            parts = line.split('|', 3)
-            if len(parts) < 4:
+            parts = line.split('|', 4)
+            if len(parts) < 5:
                 continue
-            cid, name, image, status_str = parts
+            cid, name, image, status_str, created_str = parts
             container_id = cid[:12]
 
             # Parse status
@@ -612,43 +613,13 @@ Note: Per-container CPU/memory usage is NOT collected because:
             if 'Restarting' in status_str:
                 status = 'restarting'
 
-            # Step 2: Get detailed container info via docker inspect
-            inspect_result = subprocess.run(
-                docker_prefix + ['inspect', '--format', '{{json .}}', cid],
-                capture_output=True, text=True, timeout=15,
-                encoding='utf-8', errors='replace'
-            )
-
-            uptime_s = None
-
-            if inspect_result.returncode == 0 and inspect_result.stdout.strip():
-                try:
-                    info = json.loads(inspect_result.stdout)
-
-                    # State info for uptime calculation
-                    state = info.get('State', {})
-                    state_started_at = state.get('StartedAt', '')
-
-                    # Calculate uptime from StartedAt
-                    if state_started_at and state_started_at != '0001-01-01T00:00:00Z':
-                        try:
-                            start_dt = datetime.fromisoformat(
-                                state_started_at.replace('Z', '+00:00')
-                            )
-                            uptime_s = int(
-                                (datetime.now(timezone.utc) - start_dt).total_seconds()
-                            )
-                        except (ValueError, TypeError):
-                            pass
-                except (json.JSONDecodeError, KeyError):
-                    pass
-
             containers.append({
                 'container_id': container_id,
                 'name': name,
                 'image': image,
                 'status': status,
-                'uptime_s': uptime_s,
+                'created': created_str.strip(),
+                'status_text': status_str.strip(),
             })
 
         return containers

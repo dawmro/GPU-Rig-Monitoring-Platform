@@ -165,20 +165,18 @@ def _fetch_rig_metrics(uuid, rig=None):
 
     docker_metrics = []
     for lc in latest_containers:
-        uptime_str = _format_uptime(lc.uptime_s)
-
         docker_metrics.append({
             'container_id': lc.container_id,
             'name': lc.name,
             'image': lc.image,
             'status': lc.status,
-            'uptime_s': lc.uptime_s,
-            'uptime_str': uptime_str,
+            'created': lc.created,
+            'status_text': lc.status_text,
         })
 
-    # Sort: running/restarting first, then by uptime descending
+    # Sort: running/restarting first, then by name
     status_order = {'running': 0, 'restarting': 1, 'exited': 2}
-    docker_metrics.sort(key=lambda c: (status_order.get(c['status'], 9), -(c['uptime_s'] or 0)))
+    docker_metrics.sort(key=lambda c: (status_order.get(c['status'], 9), c['name']))
 
     # Recent errors from Rig.latest_errors_json (latest payload only, like motherboard_json)
     recent_errors = rig.latest_errors_json if rig else []

@@ -1,6 +1,6 @@
 # GPU Rig Monitoring Agent — Windows
 
-**Version:** 1.6.6-win | **Schema:** 1.6
+**Version:** 1.6.7-win | **Schema:** 1.6
 
 Windows-compatible agent for the GPU Rig Monitoring Platform. Collects hardware/software metrics and sends them to the monitoring server via HTTPS.
 

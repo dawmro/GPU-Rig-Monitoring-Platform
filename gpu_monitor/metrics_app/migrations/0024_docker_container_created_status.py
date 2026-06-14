@@ -25,18 +25,50 @@ class Migration(migrations.Migration):
                 ),
             ],
         ),
-        migrations.RemoveField(
-            model_name='latestdockercontainer',
-            name='mem_limit_bytes',
+        # Remove fields from LatestDockerContainer (may already be removed on production)
+        migrations.SeparateDatabaseAndState(
+            state_operations=[
+                migrations.RemoveField(
+                    model_name='latestdockercontainer',
+                    name='mem_limit_bytes',
+                ),
+            ],
+            database_operations=[
+                migrations.RunSQL(
+                    sql='ALTER TABLE metrics_latest_docker_container DROP COLUMN IF EXISTS mem_limit_bytes',
+                    reverse_sql=migrations.RunSQL.noop,
+                ),
+            ],
         ),
-        migrations.RemoveField(
-            model_name='latestdockercontainer',
-            name='restart_count',
+        migrations.SeparateDatabaseAndState(
+            state_operations=[
+                migrations.RemoveField(
+                    model_name='latestdockercontainer',
+                    name='restart_count',
+                ),
+            ],
+            database_operations=[
+                migrations.RunSQL(
+                    sql='ALTER TABLE metrics_latest_docker_container DROP COLUMN IF EXISTS restart_count',
+                    reverse_sql=migrations.RunSQL.noop,
+                ),
+            ],
         ),
-        migrations.RemoveField(
-            model_name='latestdockercontainer',
-            name='uptime_s',
+        migrations.SeparateDatabaseAndState(
+            state_operations=[
+                migrations.RemoveField(
+                    model_name='latestdockercontainer',
+                    name='uptime_s',
+                ),
+            ],
+            database_operations=[
+                migrations.RunSQL(
+                    sql='ALTER TABLE metrics_latest_docker_container DROP COLUMN IF EXISTS uptime_s',
+                    reverse_sql=migrations.RunSQL.noop,
+                ),
+            ],
         ),
+        # Add new fields
         migrations.AddField(
             model_name='latestdockercontainer',
             name='created',

@@ -199,7 +199,7 @@
                     {% if gpu.gpu_util_pct != None %}{{ gpu.gpu_util_pct|floatformat:1 }}%{% else %}—{% endif %}
                 </span>
             </div>
-            <div class="flex items-center gap-4 text-xs text-gray-500 mb-1">
+            <div class="flex items-center gap-8 text-xs text-gray-500 mb-1">
                 <span>
                     Temp:
                     {% if gpu.gpu_temp_c != None %}
@@ -232,7 +232,7 @@
                 </span>
                 </div>
                 {% if gpu.mem_free_mb != None or gpu.power_draw_w != None or gpu.pcie_current_gen != None %}
-                <div class="flex items-center gap-4 text-xs text-gray-500 mb-1">
+                <div class="flex items-center gap-8 text-xs text-gray-500 mb-1">
                     {% if gpu.mem_free_mb != None %}<span>Free: {{ gpu.mem_free_mb }} MB</span>{% endif %}
                     {% if gpu.power_draw_w != None %}
                     <span>Power: {{ gpu.power_draw_w|floatformat:1 }}W{% if gpu.power_limit_w %} / {{ gpu.power_limit_w|floatformat:0 }}W{% endif %}</span>

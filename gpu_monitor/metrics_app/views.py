@@ -269,15 +269,12 @@ class ChartDataView(APIView):
             datasets = load_datasets
 
         elif metric == 'uptime_s':
-            snapshots = list(MetricSnapshot.objects.filter(**base_filter).order_by('timestamp'))
+            latest = LatestSnapshot.objects.filter(rig_uuid=str(uuid)).order_by('-timestamp').first()
             values = [None] * total_buckets
-            for s in snapshots:
-                ts = s.timestamp.replace(second=0, microsecond=0)
-                idx = int((ts - start_bucket).total_seconds() // (bucket_minutes * 60))
-                if 0 <= idx < total_buckets and isinstance(s.software_json, dict):
-                    uptime_s = s.software_json.get('uptime_s')
-                    if uptime_s is not None:
-                        values[idx] = round(uptime_s / 86400, 2)
+            if latest and latest.uptime_s is not None:
+                # Fill all buckets with the latest uptime value (it changes slowly)
+                uptime_days = round(latest.uptime_s / 86400, 2)
+                values = [uptime_days] * total_buckets
             datasets = [{'label': 'Uptime (days)', 'data': values}]
 
         elif metric in self.GPU_METRICS:

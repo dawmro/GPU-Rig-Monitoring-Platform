@@ -11,37 +11,38 @@
         <span class="text-xs text-yellow-400 ml-1">(stale)</span>
         {% endif %}
     </h3>
-    {% if metric_snapshot %}
+    {% if rig_profile %}
     <div class="text-lg font-bold text-white mb-1">
-        {{ metric_snapshot.cpu_model|default:"Unknown" }}
+        {{ rig_profile.cpu_model|default:"Unknown" }}
     </div>
     <div class="text-sm text-gray-400 mb-2">
-        {{ metric_snapshot.cpu_physical_cores|default:"?" }} cores / {{ metric_snapshot.cpu_logical_cores|default:"?" }} threads
+        {{ rig_profile.cpu_physical_cores|default:"?" }} cores / {{ rig_profile.cpu_logical_cores|default:"?" }} threads
     </div>
     <div class="flex items-center gap-3 mb-2">
         <div class="flex-1">
             <div class="w-full bg-gray-700 rounded-full h-2">
                 <div class="h-2 rounded-full
-                    {% if metric_snapshot.cpu_utilization_pct != None %}
-                        {% if metric_snapshot.cpu_utilization_pct > 80 %}bg-red-500
-                        {% elif metric_snapshot.cpu_utilization_pct > 60 %}bg-yellow-500
+                    {% if snapshot.cpu_utilization_pct != None %}
+                        {% if snapshot.cpu_utilization_pct > 80 %}bg-red-500
+                        {% elif snapshot.cpu_utilization_pct > 60 %}bg-yellow-500
                         {% else %}bg-green-500{% endif %}
-                    {% else %}bg-gray-600{% endif %}
-                "
-                    style="width: {% if metric_snapshot.cpu_utilization_pct != None %}{{ metric_snapshot.cpu_utilization_pct }}{% else %}0{% endif %}%">
+                    {% else %}bg-gray-600{% endif %}"
+                    style="width: {% if snapshot.cpu_utilization_pct != None %}{{ snapshot.cpu_utilization_pct }}{% else %}0{% endif %}%">
                 </div>
             </div>
         </div>
         <span class="text-sm font-mono text-gray-300 w-14 text-right">
-            {% if metric_snapshot.cpu_utilization_pct != None %}{{ metric_snapshot.cpu_utilization_pct|floatformat:1 }}%{% else %}—{% endif %}
+            {% if snapshot.cpu_utilization_pct != None %}{{ snapshot.cpu_utilization_pct|floatformat:1 }}%{% else %}—{% endif %}
         </span>
     </div>
     <div class="flex items-center gap-4 text-xs text-gray-500">
         <span>
             Temp:
-            {% if metric_snapshot.cpu_temp_c != None %}
-                <span class="{% if metric_snapshot.cpu_temp_c > 85 %}text-red-400{% elif metric_snapshot.cpu_temp_c > 70 %}text-yellow-400{% else %}text-green-400{% endif %}">
-                    {{ metric_snapshot.cpu_temp_c|floatformat:1 }}°C
+            {% if snapshot.cpu_temp_c != None %}
+                <span class="{% if snapshot.cpu_temp_c > 80 %}text-red-400
+                {% elif snapshot.cpu_temp_c > 50 %}text-yellow-400
+                {% else %}text-green-400{% endif %}">
+                    {{ snapshot.cpu_temp_c|floatformat:1 }}°C
                 </span>
             {% else %}—{% endif %}
         </span>
@@ -73,37 +74,40 @@
         <span class="text-xs text-yellow-400 ml-1">(stale)</span>
         {% endif %}
     </h3>
-    {% if metric_snapshot %}
+    {% if snapshot or rig_profile %}
     <div class="flex items-center gap-3 mb-2">
         <div class="flex-1">
             <div class="w-full bg-gray-700 rounded-full h-2">
-                {% widthratio metric_snapshot.mem_used_bytes metric_snapshot.mem_total_bytes 100 as mem_pct %}
+                {% if snapshot.mem_used_bytes and rig_profile.mem_total_bytes %}
+                    {% widthratio snapshot.mem_used_bytes rig_profile.mem_total_bytes 100 as mem_pct %}
+                {% else %}
+                    {% widthratio 0 100 as mem_pct %}
+                {% endif %}
                 <div class="h-2 rounded-full
                     {% if mem_pct > 85 %}bg-red-500
                     {% elif mem_pct > 70 %}bg-yellow-500
-                    {% else %}bg-blue-500{% endif %}
-                "
+                    {% else %}bg-blue-500{% endif %}"
                     style="width: {{ mem_pct }}%"></div>
             </div>
         </div>
         <span class="text-sm font-mono text-gray-300 w-14 text-right">{{ mem_pct }}%</span>
     </div>
     <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-400">
-        <span>Used: <span class="text-gray-300">{{ metric_snapshot.mem_used_bytes|filesizeformat }}</span></span>
-        <span>Total: <span class="text-gray-300">{{ metric_snapshot.mem_total_bytes|filesizeformat }}</span></span>
-        {% if metric_snapshot.mem_free_bytes %}
-        <span>Free: <span class="text-gray-300">{{ metric_snapshot.mem_free_bytes|filesizeformat }}</span></span>
+        <span>Used: <span class="text-gray-300">{{ snapshot.mem_used_bytes|filesizeformat }}</span></span>
+        <span>Total: <span class="text-gray-300">{{ rig_profile.mem_total_bytes|filesizeformat }}</span></span>
+        {% if snapshot.mem_free_bytes %}
+        <span>Free: <span class="text-gray-300">{{ snapshot.mem_free_bytes|filesizeformat }}</span></span>
         {% endif %}
-        {% if metric_snapshot.mem_cached_bytes %}
-        <span>Cached: <span class="text-gray-300">{{ metric_snapshot.mem_cached_bytes|filesizeformat }}</span></span>
+        {% if snapshot.mem_cached_bytes %}
+        <span>Cached: <span class="text-gray-300">{{ snapshot.mem_cached_bytes|filesizeformat }}</span></span>
         {% endif %}
     </div>
-    {% if metric_snapshot.swap_total_bytes %}
+    {% if rig_profile.swap_total_bytes %}
     <div class="mt-1 pt-1 border-t border-gray-700/50 text-xs text-gray-500">
         Swap:
-        <span class="text-gray-400">{{ metric_snapshot.swap_used_bytes|filesizeformat }}</span> /
-        <span class="text-gray-400">{{ metric_snapshot.swap_total_bytes|filesizeformat }}</span>
-        {% widthratio metric_snapshot.swap_used_bytes metric_snapshot.swap_total_bytes 100 as swap_pct %}
+        <span class="text-gray-400">{{ snapshot.swap_used_bytes|filesizeformat }}</span> /
+        <span class="text-gray-400">{{ rig_profile.swap_total_bytes|filesizeformat }}</span>
+        {% widthratio snapshot.swap_used_bytes rig_profile.swap_total_bytes 100 as swap_pct %}
         <span class="text-gray-600">({{ swap_pct }}%)</span>
     </div>
     {% endif %}

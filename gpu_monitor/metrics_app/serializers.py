@@ -3,7 +3,7 @@ from rest_framework import serializers, status
 from django.db import transaction
 from django.utils import timezone
 from django.core.cache import cache
-from .models import MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, LatestSnapshot, RigStatusEvent
+from .models import MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, LatestSnapshot, RigStatusEvent, RigProfile
 from rigs.models import Rig
 
 logger = logging.getLogger(__name__)
@@ -60,33 +60,79 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
 
     try:
         with transaction.atomic():
-            # Upsert metric snapshot with idempotency
+            # Upsert RigProfile with static/semi-static data (one row per rig)
+            # Only updates when agent reports changed hardware configuration
+            RigProfile.objects.update_or_create(
+                rig_uuid=rig_uuid,
+                defaults={
+                    'cpu_model': cpu.get('model', ''),
+                    'cpu_physical_cores': cpu.get('physical_cores'),
+                    'cpu_logical_cores': cpu.get('logical_cores'),
+                    'mem_total_bytes': memory.get('total_bytes'),
+                    'swap_total_bytes': memory.get('swap_total_bytes'),
+                    'motherboard_json': motherboard_data,
+                    'hostname': software_data.get('hostname', ''),
+                    'os_distro': software_data.get('os_distro', ''),
+                    'kernel': software_data.get('kernel', ''),
+                    'nvidia_driver': software_data.get('nvidia_driver', ''),
+                    'docker_version': software_data.get('docker_version', ''),
+                    # GPU profiles (static per-GPU info)
+                    'gpu_count': len(gpu_list),
+                    'gpu_profiles_json': [
+                        {
+                            'uuid': g.get('uuid', ''),
+                            'model': g.get('model', ''),
+                            'mem_total_mb': g.get('mem_total_mb'),
+                            'pcie_max_gen': g.get('pcie_max_gen'),
+                            'pcie_max_width': g.get('pcie_max_width'),
+                            'power_limit_w': g.get('power_limit_w'),
+                        }
+                        for g in gpu_list
+                    ],
+                    # Storage profiles (static per-disk info)
+                    'storage_count': len(storage_list),
+                    'storage_profiles_json': [
+                        {
+                            'device': d.get('device', ''),
+                            'mountpoint': d.get('mountpoint', ''),
+                            'fstype': d.get('fstype', ''),
+                            'capacity_bytes': d.get('capacity_bytes'),
+                        }
+                        for d in storage_list
+                    ],
+                    # Network profiles (static per-interface info)
+                    'network_count': len(network_list),
+                    'network_profiles_json': [
+                        {
+                            'interface': n.get('interface', ''),
+                            'ipv4': n.get('ipv4', ''),
+                            'link_speed_mbps': n.get('link_speed_mbps'),
+                        }
+                        for n in network_list
+                    ],
+                },
+            )
+
+            # Upsert metric snapshot — dynamic metrics only
             snapshot, created = MetricSnapshot.objects.update_or_create(
                 rig_uuid=rig_uuid,
                 schema_version=schema_version,
                 timestamp=ts,
                 defaults={
                     'agent_version': validated.get('agent_version', '1.0.0'),
-                    'cpu_model': cpu.get('model', ''),
                     'cpu_utilization_pct': cpu.get('utilization_pct'),
                     'cpu_temp_c': cpu.get('temp_c'),
-                    'cpu_physical_cores': cpu.get('physical_cores'),
-                    'cpu_logical_cores': cpu.get('logical_cores'),
                     'cpu_load_avg_json': cpu.get('load_avg', []),
-                    'mem_total_bytes': memory.get('total_bytes'),
                     'mem_used_bytes': memory.get('used_bytes'),
                     'mem_free_bytes': memory.get('free_bytes'),
                     'mem_cached_bytes': memory.get('cached_bytes'),
                     'swap_used_bytes': memory.get('swap_used_bytes'),
-                    'swap_total_bytes': memory.get('swap_total_bytes'),
                     'status': rig.status if rig else None,
-                    'motherboard_json': motherboard_data,
-                    'software_json': software_data,
                     'error_count': len(real_errors),
                 },
             )
 
-            # Store per-GPU metrics (with uuid, model, mem_total — all per-row for tracking)
+            # Store per-GPU metrics — dynamic metrics only
             for idx, gpu in enumerate(gpu_list):
                 GPUMetric.objects.update_or_create(
                     rig_uuid=rig_uuid,
@@ -94,21 +140,15 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     gpu_index=idx,
                     defaults={
                         'snapshot': snapshot,
-                        'gpu_uuid': gpu.get('uuid', ''),
-                        'model': gpu.get('model', ''),
                         'gpu_util_pct': gpu.get('gpu_util_pct'),
                         'gpu_temp_c': gpu.get('temp_c'),
                         'fan_speed_pct': gpu.get('fan_speed_pct'),
-                        'mem_total_mb': gpu.get('mem_total_mb'),
                         'mem_used_mb': gpu.get('mem_used_mb'),
                         'mem_free_mb': gpu.get('mem_free_mb'),
                         'mem_util_pct': gpu.get('mem_util_pct'),
                         'power_draw_w': gpu.get('power_draw_w'),
-                        'power_limit_w': gpu.get('power_limit_w'),
                         'pcie_current_gen': gpu.get('pcie_current_gen'),
-                        'pcie_max_gen': gpu.get('pcie_max_gen'),
                         'pcie_current_width': gpu.get('pcie_current_width'),
-                        'pcie_max_width': gpu.get('pcie_max_width'),
                         'gpu_core_clock_mhz': gpu.get('gpu_core_clock_mhz'),
                         'gpu_mem_clock_mhz': gpu.get('gpu_mem_clock_mhz'),
                     },
@@ -130,7 +170,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     gpu_mem_mb=proc.get('gpu_mem_mb'),
                 )
 
-            # Store per-disk metrics (with capacity — for tracking)
+            # Store per-disk metrics — dynamic metrics only
             for disk in storage_list:
                 StorageMetric.objects.update_or_create(
                     rig_uuid=rig_uuid,
@@ -138,16 +178,13 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     device=disk.get('device', ''),
                     defaults={
                         'snapshot': snapshot,
-                        'mountpoint': disk.get('mountpoint', ''),
-                        'fstype': disk.get('fstype', ''),
-                        'capacity_bytes': disk.get('capacity_bytes'),
                         'usage_pct': disk.get('usage_pct'),
                         'temp_c': disk.get('temp_c'),
                         'smart_health': disk.get('smart_health', ''),
                     },
                 )
 
-            # Store per-interface metrics with traffic delta calculation
+            # Store per-interface metrics — dynamic metrics only
             for iface in network_list:
                 iface_name = iface.get('interface', '')
                 new_rx = iface.get('rx_bytes')
@@ -178,10 +215,6 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     interface=iface_name,
                     defaults={
                         'snapshot': snapshot,
-                        'ipv4': iface.get('ipv4', ''),
-                        'link_speed_mbps': iface.get('link_speed_mbps'),
-                        'rx_bytes': new_rx,
-                        'tx_bytes': new_tx,
                         'rx_bytes_delta': rx_delta,
                         'tx_bytes_delta': tx_delta,
                         'rx_errors': iface.get('rx_errors'),
@@ -284,6 +317,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     'cpu_temp_c': cpu.get('temp_c'),
                     'mem_used_bytes': memory.get('used_bytes'),
                     'mem_total_bytes': memory.get('total_bytes'),
+                    'uptime_s': software_data.get('uptime_s'),
                     'gpu_count': len(gpu_list),
                     'gpu_models_json': gpu_models,
                     'gpu_temps_json': gpu_temps,

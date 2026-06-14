@@ -3,7 +3,7 @@ from rest_framework import serializers, status
 from django.db import transaction
 from django.utils import timezone
 from django.core.cache import cache
-from .models import MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, LatestDockerContainer, LatestSnapshot, RigStatusEvent
+from .models import MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, LatestSnapshot, RigStatusEvent
 from rigs.models import Rig
 
 logger = logging.getLogger(__name__)
@@ -189,22 +189,21 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     },
                 )
 
-            # Store latest container snapshot (for Live Metrics display)
-            # Delete-before-insert pattern: remove all old rows for this rig first
-            LatestDockerContainer.objects.filter(rig_uuid=rig_uuid).delete()
-            for container in docker_containers:
+            # Build docker containers data for LatestSnapshot
+            docker_containers = []
+            for container in docker_containers_payload:
                 container_id = container.get('container_id')
                 if not container_id:
+                    logger.warning('Skipping container without container_id: %s', container.get('name', 'unknown'))
                     continue
-                LatestDockerContainer.objects.create(
-                    rig_uuid=rig_uuid,
-                    container_id=container_id,
-                    name=container.get('name', ''),
-                    image=container.get('image', ''),
-                    status=container.get('status', ''),
-                    created=container.get('created', ''),
-                    status_text=container.get('status_text', ''),
-                )
+                docker_containers.append({
+                    'container_id': container_id,
+                    'name': container.get('name', ''),
+                    'image': container.get('image', ''),
+                    'status': container.get('status', ''),
+                    'created': container.get('created', ''),
+                    'status_text': container.get('status_text', ''),
+                })
 
             # Build GPU summary data for LatestSnapshot (fast dashboard access)
             gpu_models = []
@@ -318,6 +317,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     'network_tx_bytes_json': network_tx_bytes,
                     'network_rx_errors_json': network_rx_errors,
                     'network_tx_errors_json': network_tx_errors,
+                    'docker_containers_json': docker_containers,
                 },
             )
             # Invalidate cached snapshot so next read gets fresh data

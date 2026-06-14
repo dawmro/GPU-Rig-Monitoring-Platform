@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, LatestDockerContainer, LatestSnapshot, RigStatusEvent
+from .models import MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, LatestSnapshot, RigStatusEvent
 
 
 @admin.register(MetricSnapshot)
@@ -26,12 +26,6 @@ class StorageMetricAdmin(admin.ModelAdmin):
 class NetworkMetricAdmin(admin.ModelAdmin):
     list_display = ('rig_uuid', 'timestamp', 'interface', 'ipv4', 'link_speed_mbps', 'rx_bytes', 'tx_bytes')
     search_fields = ('rig_uuid', 'interface', 'ipv4')
-
-
-@admin.register(LatestDockerContainer)
-class LatestDockerContainerAdmin(admin.ModelAdmin):
-    list_display = ('rig_uuid', 'name', 'container_id', 'image', 'status', 'created', 'status_text')
-    search_fields = ('rig_uuid', 'name')
 
 
 @admin.register(RigStatusEvent)

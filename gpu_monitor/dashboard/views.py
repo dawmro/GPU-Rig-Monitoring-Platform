@@ -8,7 +8,7 @@ from functools import wraps
 import time
 
 from rigs.models import Rig, RigTag
-from metrics_app.models import MetricSnapshot, LatestSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, LatestDockerContainer
+from metrics_app.models import MetricSnapshot, LatestSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric
 from audit.middleware import log_audit_event
 
 
@@ -136,21 +136,18 @@ def _fetch_rig_metrics(uuid, rig=None):
                 'tx_errors': _json_get(snapshot.network_tx_errors_json, i, 0),
             })
 
-    # Docker containers: LatestDockerContainer has all needed fields
-    latest_containers = LatestDockerContainer.objects.filter(
-        rig_uuid=str(uuid)
-    )
-
+    # Docker containers: read from LatestSnapshot JSON array
     docker_metrics = []
-    for lc in latest_containers:
-        docker_metrics.append({
-            'container_id': lc.container_id,
-            'name': lc.name,
-            'image': lc.image,
-            'status': lc.status,
-            'created': lc.created,
-            'status_text': lc.status_text,
-        })
+    if snapshot and snapshot.docker_containers_json:
+        for container in snapshot.docker_containers_json:
+            docker_metrics.append({
+                'container_id': container.get('container_id', ''),
+                'name': container.get('name', ''),
+                'image': container.get('image', ''),
+                'status': container.get('status', ''),
+                'created': container.get('created', ''),
+                'status_text': container.get('status_text', ''),
+            })
 
     # Sort: running/restarting first, then by name
     status_order = {'running': 0, 'restarting': 1, 'exited': 2}
@@ -387,14 +384,13 @@ def rig_delete(request, uuid):
 
     # Delete all associated metric data (MetricSnapshot has rig_uuid as UUIDField, not FK)
     from metrics_app.models import MetricSnapshot, LatestSnapshot, GPUMetric, GPUProcessMetric, \
-        StorageMetric, NetworkMetric, LatestDockerContainer, RigStatusEvent
+        StorageMetric, NetworkMetric, RigStatusEvent
     MetricSnapshot.objects.filter(rig_uuid=uuid).delete()
     LatestSnapshot.objects.filter(rig_uuid=uuid).delete()
     GPUMetric.objects.filter(rig_uuid=uuid).delete()
     GPUProcessMetric.objects.filter(rig_uuid=uuid).delete()
     StorageMetric.objects.filter(rig_uuid=uuid).delete()
     NetworkMetric.objects.filter(rig_uuid=uuid).delete()
-    LatestDockerContainer.objects.filter(rig_uuid=uuid).delete()
     RigStatusEvent.objects.filter(rig_uuid=uuid).delete()
 
     rig.delete()

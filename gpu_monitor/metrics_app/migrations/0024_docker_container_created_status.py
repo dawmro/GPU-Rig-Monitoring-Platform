@@ -10,9 +10,20 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        # DockerContainerMetric: unique_together and index already removed by migrations 0013-0017
-        migrations.DeleteModel(
-            name='DockerContainerMetric',
+        # DockerContainerMetric: table may or may not exist (already dropped on production).
+        # Use SeparateDatabaseAndState: raw SQL for DB, DeleteModel for Django state.
+        migrations.SeparateDatabaseAndState(
+            state_operations=[
+                migrations.DeleteModel(
+                    name='DockerContainerMetric',
+                ),
+            ],
+            database_operations=[
+                migrations.RunSQL(
+                    sql='DROP TABLE IF EXISTS metrics_dockercontainermetric CASCADE',
+                    reverse_sql=migrations.RunSQL.noop,
+                ),
+            ],
         ),
         migrations.RemoveField(
             model_name='latestdockercontainer',

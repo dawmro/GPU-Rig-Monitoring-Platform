@@ -42,7 +42,7 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.5.5'
+__version__ = '1.5.6'
 __schema_version__ = '1.6'
 
 # ── Config ──────────────────────────────────────────────────────────────────
@@ -498,34 +498,6 @@ def collect_gpu_processes():
     return processes
 
 
-def _parse_mem_value(s):
-    """Parse a memory value string like '100MiB' or '1.5GiB' into (value, unit)."""
-    s = s.strip()
-    for unit in ('GiB', 'MiB', 'KiB', 'B', 'GB', 'MB', 'KB', 'g', 'm', 'k', 'b'):
-        if s.endswith(unit):
-            try:
-                return float(s[:-len(unit)].strip()), unit
-            except ValueError:
-                return None, None
-    # Try plain number (bytes)
-    try:
-        return float(s), 'B'
-    except ValueError:
-        return None, None
-
-
-def _to_bytes(value, unit):
-    """Convert a memory value with unit to bytes."""
-    unit = unit.upper()
-    multipliers = {
-        'B': 1, 'K': 1024, 'M': 1024**2, 'G': 1024**3,
-        'KB': 1024, 'MB': 1024**2, 'GB': 1024**3,
-        'KIB': 1024, 'MIB': 1024**2, 'GIB': 1024**3,
-    }
-    multiplier = multipliers.get(unit, 1)
-    return int(value * multiplier)
-
-
 def collect_docker():
     """Collect Docker container metrics using docker CLI via subprocess.
 
@@ -534,12 +506,13 @@ def collect_docker():
     2. 'sudo docker' CLI (works if sudoers is configured)
     3. Returns empty list if both fail
 
-    Uses subprocess calls instead of the Docker Python SDK because the
-    monitoring-agent system user typically doesn't have direct access
-    to /var/run/docker.sock.
-
     For each container, collects: container_id, name, image, status,
-    restart_count, uptime_s, cpu_pct, mem_usage_bytes, mem_limit_bytes.
+    restart_count, uptime_s, mem_limit_bytes.
+
+    Note: Per-container CPU/memory usage is NOT collected because:
+    - 'docker stats' requires elevated permissions and is unreliable
+    - GPU compute metrics are covered by NVIDIA GPU collection
+    - Container metadata (status, uptime, restart count) is sufficient for monitoring
     """
     containers = []
 
@@ -606,74 +579,34 @@ def collect_docker():
             restart_count = 0
             uptime_s = None
             mem_limit_bytes = None
-            state_started_at = None
 
             if inspect_result.returncode == 0 and inspect_result.stdout.strip():
                 try:
                     info = json.loads(inspect_result.stdout)
                     restart_count = info.get('RestartCount', 0)
 
-                    # Memory limit from host config
+                    # Memory limit from host config (0 = no limit)
                     mem_limit_bytes = info.get('HostConfig', {}).get('Memory', 0)
                     if mem_limit_bytes == 0:
                         mem_limit_bytes = None
 
-                    # State info
+                    # State info for uptime calculation
                     state = info.get('State', {})
                     state_started_at = state.get('StartedAt', '')
+
+                    # Calculate uptime from StartedAt
+                    if state_started_at and state_started_at != '0001-01-01T00:00:00Z':
+                        try:
+                            start_dt = datetime.fromisoformat(
+                                state_started_at.replace('Z', '+00:00')
+                            )
+                            uptime_s = int(
+                                (datetime.now(timezone.utc) - start_dt).total_seconds()
+                            )
+                        except (ValueError, TypeError):
+                            pass
                 except (json.JSONDecodeError, KeyError):
                     pass
-
-            # Calculate uptime from StartedAt
-            if state_started_at and state_started_at != '0001-01-01T00:00:00Z':
-                try:
-                    start_dt = datetime.fromisoformat(
-                        state_started_at.replace('Z', '+00:00')
-                    )
-                    uptime_s = int(
-                        (datetime.now(timezone.utc) - start_dt).total_seconds()
-                    )
-                except (ValueError, TypeError):
-                    pass
-
-            # Step 3: Get live CPU/memory stats for running containers
-            cpu_pct = None
-            mem_usage_bytes = None
-
-            if status == 'running':
-                try:
-                    stats_result = subprocess.run(
-                        docker_prefix + ['stats', '--no-stream', '--format',
-                         '{{.CPUPct}}|{{.MemUsage}}', cid],
-                        capture_output=True, text=True, timeout=15
-                    )
-                    if stats_result.returncode == 0 and stats_result.stdout.strip():
-                        # Output may contain multiple lines; take the last non-empty line
-                        lines = [l.strip() for l in stats_result.stdout.strip().split('\n') if l.strip()]
-                        if lines:
-                            last_line = lines[-1]
-                            stats_parts = last_line.split('|', 1)
-                            if len(stats_parts) == 2:
-                                # CPU: "12.34%" or "0.00%"
-                                try:
-                                    cpu_str = stats_parts[0].strip().replace('%', '')
-                                    cpu_pct = float(cpu_str) if cpu_str else None
-                                except (ValueError, TypeError):
-                                    pass
-                                # Memory: "100MiB / 500MiB"
-                                mem_parts = stats_parts[1].split('/')
-                                if len(mem_parts) == 2:
-                                    try:
-                                        usage_str = mem_parts[0].strip()
-                                        usage_val, usage_unit = _parse_mem_value(usage_str)
-                                        if usage_val is not None:
-                                            mem_usage_bytes = _to_bytes(usage_val, usage_unit)
-                                    except (ValueError, TypeError):
-                                        pass
-                except subprocess.TimeoutExpired:
-                    logging.getLogger('docker').warning(
-                        'docker stats timed out for %s', container_id
-                    )
 
             containers.append({
                 'container_id': container_id,
@@ -682,8 +615,6 @@ def collect_docker():
                 'status': status,
                 'restart_count': restart_count,
                 'uptime_s': uptime_s,
-                'cpu_pct': cpu_pct,
-                'mem_usage_bytes': mem_usage_bytes,
                 'mem_limit_bytes': mem_limit_bytes,
             })
 

@@ -1,6 +1,6 @@
 # GPU Rig Monitoring Agent — Windows
 
-**Version:** 1.6.5-win | **Schema:** 1.6
+**Version:** 1.6.6-win | **Schema:** 1.6
 
 Windows-compatible agent for the GPU Rig Monitoring Platform. Collects hardware/software metrics and sends them to the monitoring server via HTTPS.
 
@@ -181,7 +181,7 @@ agent_windows/
 | Network (interfaces, bytes, errors, speed) | psutil + WMI | ✅ | ✅ |
 | GPU (model, memory, util, temp, power, fan, PCIe link, core/mem clocks) | `pynvml` | ✅* | ✅* |
 | GPU processes (per-process: name, type C/G/C+G, memory) | `nvidia-smi` subprocess | ✅* | ✅* |
-| Docker containers (name, image, status, container_id, uptime, restarts, cpu%, memory, mem_limit) | `docker` CLI (subprocess) | ✅† | ✅† |
+| Docker containers (name, image, status, container_id, uptime, restarts, mem_limit) | `docker` CLI (subprocess) | ✅† | ✅† |
 | OS info (hostname, OS, kernel, uptime) | `platform` + psutil | ✅ | ✅ |
 | NVIDIA driver version | `nvidia-smi` subprocess | ✅* | ✅* |
 | System errors (last 5 min) | PowerShell `Get-WinEvent` | ✅ | ✅ |

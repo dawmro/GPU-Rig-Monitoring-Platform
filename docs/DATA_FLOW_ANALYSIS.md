@@ -72,8 +72,10 @@
 
 | # | Value | Payload Path | DB Field | Type | Charts? |
 |---|-------|-------------|----------|------|---------|
-| 35 | Docker CPU% | `metrics.docker_containers[].cpu_pct` | `cpu_pct` | FloatField | ✅ |
-| 36 | Docker mem usage | `metrics.docker_containers[].mem_usage_bytes` | `mem_usage_bytes` | BigIntegerField | ✅ |
+| 35 | ~~Docker CPU%~~ | ~~`metrics.docker_containers[].cpu_pct`~~ | ~~`cpu_pct`~~ | ~~FloatField~~ | ✅ |
+| 36 | ~~Docker mem usage~~ | ~~`metrics.docker_containers[].mem_usage_bytes`~~ | ~~`mem_usage_bytes`~~ | ~~BigIntegerField~~ | ✅ |
+
+**Note:** Per-container CPU/memory usage fields (cpu_pct, mem_usage_bytes) are no longer collected by the agent. The `docker stats` command requires elevated permissions and is unreliable. GPU compute metrics are covered by NVIDIA GPU collection. These DB fields remain (nullable) for backward compatibility but will always be null.
 
 ### LatestDockerContainer (latest snapshot per container — for Live Metrics)
 

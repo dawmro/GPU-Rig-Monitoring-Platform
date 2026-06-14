@@ -52,7 +52,7 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.6.4-win'
+__version__ = '1.6.5-win'
 __schema_version__ = '1.6'
 
 # ── Config ──────────────────────────────────────────────────────────────────
@@ -679,28 +679,38 @@ def collect_docker():
             mem_usage_bytes = None
 
             if status == 'running':
-                stats_result = subprocess.run(
-                    docker_prefix + ['stats', '--no-stream', '--format',
-                     '{{.CPUPct}}|{{.MemUsage}}', cid],
-                    capture_output=True, text=True, timeout=15,
-                    encoding='utf-8', errors='replace'
-                )
-                if stats_result.returncode == 0 and stats_result.stdout.strip():
-                    stats_parts = stats_result.stdout.strip().split('|', 1)
-                    if len(stats_parts) == 2:
-                        try:
-                            cpu_pct = float(stats_parts[0].replace('%', ''))
-                        except ValueError:
-                            pass
-                        mem_parts = stats_parts[1].split('/')
-                        if len(mem_parts) == 2:
-                            try:
-                                usage_str = mem_parts[0].strip()
-                                usage_val, usage_unit = _parse_mem_value(usage_str)
-                                if usage_val is not None:
-                                    mem_usage_bytes = _to_bytes(usage_val, usage_unit)
-                            except (ValueError, TypeError):
-                                pass
+                try:
+                    stats_result = subprocess.run(
+                        docker_prefix + ['stats', '--no-stream', '--format',
+                         '{{.CPUPct}}|{{.MemUsage}}', cid],
+                        capture_output=True, text=True, timeout=15,
+                        encoding='utf-8', errors='replace'
+                    )
+                    if stats_result.returncode == 0 and stats_result.stdout.strip():
+                        # Output may contain multiple lines; take the last non-empty line
+                        lines = [l.strip() for l in stats_result.stdout.strip().split('\n') if l.strip()]
+                        if lines:
+                            last_line = lines[-1]
+                            stats_parts = last_line.split('|', 1)
+                            if len(stats_parts) == 2:
+                                try:
+                                    cpu_str = stats_parts[0].strip().replace('%', '')
+                                    cpu_pct = float(cpu_str) if cpu_str else None
+                                except (ValueError, TypeError):
+                                    pass
+                                mem_parts = stats_parts[1].split('/')
+                                if len(mem_parts) == 2:
+                                    try:
+                                        usage_str = mem_parts[0].strip()
+                                        usage_val, usage_unit = _parse_mem_value(usage_str)
+                                        if usage_val is not None:
+                                            mem_usage_bytes = _to_bytes(usage_val, usage_unit)
+                                    except (ValueError, TypeError):
+                                        pass
+                except subprocess.TimeoutExpired:
+                    logging.getLogger('docker').warning(
+                        'docker stats timed out for %s', container_id
+                    )
 
             containers.append({
                 'container_id': container_id,

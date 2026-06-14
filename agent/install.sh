@@ -28,7 +28,7 @@ if [ ! -d "$INSTALL_DIR/venv" ]; then
     python3 -m venv "$INSTALL_DIR/venv"
 fi
 "$INSTALL_DIR/venv/bin/pip" install --upgrade pip 2>/dev/null || true
-"$INSTALL_DIR/venv/bin/pip" install psutil py-cpuinfo requests pyyaml docker
+"$INSTALL_DIR/venv/bin/pip" install psutil py-cpuinfo requests pyyaml
 
 # Try to install pynvml (NVIDIA GPU monitoring)
 "$INSTALL_DIR/venv/bin/pip" install nvidia-ml-py3 2>/dev/null || \

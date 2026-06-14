@@ -1,6 +1,6 @@
 # GPU Rig Monitoring Agent — Linux
 
-**Version:** 1.5.2 | **Schema:** 1.6
+**Version:** 1.5.3 | **Schema:** 1.6
 
 Linux agent for the GPU Rig Monitoring Platform. Collects hardware/software metrics via `psutil`, `pynvml`, and system interfaces, then POSTs them to the monitoring server every 60 seconds via cron.
 
@@ -34,9 +34,9 @@ The installer performs these operations:
 |------|-------------|
 | 1 | Creates `monitoring-agent` system user (no-login shell) |
 | 2 | Creates directories: `/opt/monitoring-agent/`, `/etc/monitoring-agent/`, `/var/log/monitoring-agent/` |
-| 3 | Creates Python virtualenv and installs dependencies (`psutil`, `py-cpuinfo`, `requests`, `pyyaml`, `docker`, `nvidia-ml-py3`) |
+| 3 | Creates Python virtualenv and installs dependencies (`psutil`, `py-cpuinfo`, `requests`, `pyyaml`, `nvidia-ml-py3`). Docker container monitoring uses the `docker` CLI via sudo — no Python SDK needed. |
 | 4 | Copies `run.py` and creates config template at `/etc/monitoring-agent/config.yaml` |
-| 5 | Configures sudoers for SMART disk queries, NVMe logs, and journalctl (read-only) |
+| 5 | Configures sudoers for SMART disk queries, NVMe logs, journalctl, and docker (read-only, passwordless) |
 | 6 | Creates cron job — runs every 60 seconds with `flock` to prevent overlaps |
 | 7 | Schedules daily auto-update check (random time to avoid thundering herd) |
 
@@ -236,7 +236,16 @@ sudo -u monitoring-agent sudo docker ps -a
 If this fails, check:
 1. Docker is installed and running: `sudo systemctl status docker`
 2. Sudoers entry includes docker: `cat /etc/sudoers.d/monitoring-agent`
+   - Should contain: `/usr/bin/docker, /usr/local/bin/docker`
+   - If not, re-run the installer: `sudo bash /tmp/agent/install.sh`
 3. Agent logs: `tail -50 /var/log/monitoring-agent/agent.log | grep docker`
+
+**Note:** If the agent was installed before the Docker collection fix, the sudoers
+file won't include docker. Re-run the installer to update it:
+```bash
+cd /tmp/agent && sudo bash install.sh
+```
+This will update the sudoers entry without affecting existing config or data.
 
 ### SMART/NVMe disk data unavailable
 

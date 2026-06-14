@@ -42,7 +42,7 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.5.2'
+__version__ = '1.5.3'
 __schema_version__ = '1.6'
 
 # ── Config ──────────────────────────────────────────────────────────────────
@@ -527,25 +527,49 @@ def _to_bytes(value, unit):
 
 
 def collect_docker():
-    """Collect Docker container metrics using sudo docker CLI.
+    """Collect Docker container metrics using docker CLI via subprocess.
 
-    Uses subprocess calls to 'sudo docker ps' and 'sudo docker inspect'
-    instead of the Docker Python SDK, because the monitoring-agent system
-    user typically doesn't have direct access to /var/run/docker.sock.
+    Tries multiple approaches to access Docker:
+    1. Direct 'docker' CLI (works if user is in docker group)
+    2. 'sudo docker' CLI (works if sudoers is configured)
+    3. Returns empty list if both fail
 
-    The install script already configures sudoers for monitoring-agent,
-    so we add /usr/bin/docker (/usr/local/bin/docker) to the allowlist.
+    Uses subprocess calls instead of the Docker Python SDK because the
+    monitoring-agent system user typically doesn't have direct access
+    to /var/run/docker.sock.
 
     For each container, collects: container_id, name, image, status,
     restart_count, uptime_s, cpu_pct, mem_usage_bytes, mem_limit_bytes.
     """
     containers = []
 
+    # Try docker access methods: direct first, then sudo
+    docker_cmds_to_try = [
+        ['docker'],           # Direct access (docker group member)
+        ['sudo', 'docker'],   # Sudo access (sudoers configured)
+    ]
+
+    docker_prefix = None
+    for prefix in docker_cmds_to_try:
+        test = subprocess.run(
+            prefix + ['ps', '-a', '--format', '{{.ID}}'],
+            capture_output=True, text=True, timeout=10
+        )
+        if test.returncode == 0:
+            docker_prefix = prefix
+            break
+
+    if docker_prefix is None:
+        logging.getLogger('docker').warning(
+            'Docker collection failed: cannot access docker CLI '
+            '(tried direct and sudo). Check docker group membership or sudoers config.'
+        )
+        return []
+
     try:
         # Step 1: Get list of all containers (including stopped ones)
-        # Output format: ID|Names|Image|Status|RunningFor
         result = subprocess.run(
-            ['sudo', 'docker', 'ps', '-a', '--no-trunc',
+            docker_prefix + ['ps', '-a', '--no-trunc',
              '--format', '{{.ID}}|{{.Names}}|{{.Image}}|{{.Status}}'],
             capture_output=True, text=True, timeout=15
         )
@@ -574,7 +598,7 @@ def collect_docker():
 
             # Step 2: Get detailed container info via docker inspect
             inspect_result = subprocess.run(
-                ['sudo', 'docker', 'inspect', '--format',
+                docker_prefix + ['inspect', '--format',
                  '{{json .}}', cid],
                 capture_output=True, text=True, timeout=15
             )
@@ -618,7 +642,7 @@ def collect_docker():
 
             if status == 'running':
                 stats_result = subprocess.run(
-                    ['sudo', 'docker', 'stats', '--no-stream', '--format',
+                    docker_prefix + ['stats', '--no-stream', '--format',
                      '{{.CPUPct}}|{{.MemUsage}}', cid],
                     capture_output=True, text=True, timeout=15
                 )

@@ -14,8 +14,12 @@ Dependencies:
     pip install psutil py-cpuinfo requests pyyaml wmi
 
 Optional dependencies:
-    pip install docker          # For Docker container monitoring
     pip install pynvml         # For NVIDIA GPU monitoring (requires NVIDIA GPU)
+
+Notes:
+    - Docker container monitoring uses the `docker` CLI via subprocess.
+      No Python SDK required. Docker Desktop must be running on Windows.
+    - The `docker` CLI must be in the system PATH.
 
 Versioning:
     - __version__ (MAJOR.MINOR.PATCH): incremented for agent-side changes
@@ -48,7 +52,7 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.6.2-win'
+__version__ = '1.6.3-win'
 __schema_version__ = '1.6'
 
 # ── Config ──────────────────────────────────────────────────────────────────
@@ -570,8 +574,11 @@ def _to_bytes(value, unit):
 def collect_docker():
     """Collect Docker container metrics using docker CLI via subprocess.
 
-    Uses subprocess calls to 'docker ps' and 'docker inspect' instead of
-    the Docker Python SDK, because:
+    Tries multiple approaches to access Docker:
+    1. Direct 'docker' CLI (default on Windows with Docker Desktop)
+    2. Returns empty list if it fails
+
+    Uses subprocess calls instead of the Docker Python SDK because:
     1. The SDK requires direct access to the Docker socket/named pipe
     2. The CLI approach works reliably on both Windows and Linux
     3. No Python SDK dependency needed
@@ -581,10 +588,29 @@ def collect_docker():
     """
     containers = []
 
+    # On Windows, Docker Desktop manages permissions differently
+    # The user running the agent should have Docker access by default
+    # Try direct docker CLI access
+    docker_prefix = ['docker']
+
+    # Quick test if docker is accessible
+    test = subprocess.run(
+        docker_prefix + ['ps', '-a', '--format', '{{.ID}}'],
+        capture_output=True, text=True, timeout=10,
+        encoding='utf-8', errors='replace'
+    )
+    if test.returncode != 0:
+        logging.getLogger('docker').warning(
+            'Docker collection failed: cannot access docker CLI. '
+            'Ensure Docker Desktop is running and the user has permissions. '
+            f'Error: {test.stderr.strip()[:200]}'
+        )
+        return []
+
     try:
         # Step 1: Get list of all containers (including stopped ones)
         result = subprocess.run(
-            ['docker', 'ps', '-a', '--no-trunc',
+            docker_prefix + ['ps', '-a', '--no-trunc',
              '--format', '{{.ID}}|{{.Names}}|{{.Image}}|{{.Status}}'],
             capture_output=True, text=True, timeout=15,
             encoding='utf-8', errors='replace'
@@ -614,7 +640,7 @@ def collect_docker():
 
             # Step 2: Get detailed container info via docker inspect
             inspect_result = subprocess.run(
-                ['docker', 'inspect', '--format', '{{json .}}', cid],
+                docker_prefix + ['inspect', '--format', '{{json .}}', cid],
                 capture_output=True, text=True, timeout=15,
                 encoding='utf-8', errors='replace'
             )
@@ -654,7 +680,7 @@ def collect_docker():
 
             if status == 'running':
                 stats_result = subprocess.run(
-                    ['docker', 'stats', '--no-stream', '--format',
+                    docker_prefix + ['stats', '--no-stream', '--format',
                      '{{.CPUPct}}|{{.MemUsage}}', cid],
                     capture_output=True, text=True, timeout=15,
                     encoding='utf-8', errors='replace'

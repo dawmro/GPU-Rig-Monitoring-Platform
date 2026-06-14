@@ -1,6 +1,6 @@
 # GPU Rig Monitoring Agent — Windows
 
-**Version:** 1.6.2-win | **Schema:** 1.6
+**Version:** 1.6.3-win | **Schema:** 1.6
 
 Windows-compatible agent for the GPU Rig Monitoring Platform. Collects hardware/software metrics and sends them to the monitoring server via HTTPS.
 
@@ -42,9 +42,10 @@ pip install psutil py-cpuinfo requests pyyaml wmi
 Optional dependencies:
 
 ```powershell
-pip install docker          # For Docker container monitoring
-pip install pynvml         # For NVIDIA GPU monitoring (requires NVIDIA GPU with drivers)
+pip install pynvml         # For NVIDIA GPU monitoring (Requires NVIDIA GPU with drivers)
 ```
+
+**Note:** Docker container monitoring uses the `docker` CLI directly (via subprocess) and does NOT require the `docker` Python SDK. Docker Desktop must be installed and running.
 
 ### 1b. Freeze Dependencies (Optional)
 

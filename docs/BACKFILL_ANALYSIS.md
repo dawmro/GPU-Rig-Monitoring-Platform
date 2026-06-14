@@ -61,7 +61,7 @@ Remainder: [now-768h, now-765h] ← last 3h of source shifted back 768h
 - Single SELECT per table with `timestamp >= now - 9h`
 - Ordered by timestamp for chronological processing
 - All columns read to preserve data fidelity
-- Tables: MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, DockerContainerMetric
+- Tables: MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric
 
 ### Step 2: Insert Parent Snapshots
 - For each repetition, shift all timestamps back by `rep × 9 hours`
@@ -75,15 +75,9 @@ Remainder: [now-768h, now-765h] ← last 3h of source shifted back 768h
 - Batch insert in groups of 5000 for performance
 - Tables: GPUMetric, StorageMetric, NetworkMetric
 
-### Step 3b: Insert Docker Container Metrics (no FK to MetricSnapshot)
-- DockerContainerMetric is an independent time-series table (no snapshot_id FK)
-- Indexed by (rig_uuid, timestamp, name)
-- Shift timestamps by the same offset
-- Inserted via `ON CONFLICT (rig_uuid, timestamp, name) DO NOTHING`
-
 ### Step 4: Handle Remaining Hours
 - For the final hours, only use source data from the last N hours of the window
-- Same insertion logic as full repetitions (including docker container metrics)
+- Same insertion logic as full repetitions
 
 ## Performance
 
@@ -133,7 +127,6 @@ All INSERT statements use `INSERT ... ON CONFLICT DO NOTHING`:
 - metrics_gpumetric: (rig_uuid, timestamp, gpu_index)
 - metrics_storagemetric: (rig_uuid, timestamp, device)
 - metrics_networkmetric: (rig_uuid, timestamp, interface)
-- metrics_dockercontainermetric: (rig_uuid, timestamp, name)
 
 This means:
 - Rows that already exist are silently skipped (no error)

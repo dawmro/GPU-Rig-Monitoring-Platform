@@ -13,7 +13,7 @@ from django.shortcuts import get_object_or_404
 from accounts.authentication import APIKeyAuthentication
 from accounts.models import ApiKey
 from .serializers import process_ingest
-from .models import LatestSnapshot, MetricSnapshot, DockerContainerMetric
+from .models import LatestSnapshot, MetricSnapshot
 from rigs.models import Rig
 from audit.middleware import log_audit_event
 
@@ -319,19 +319,6 @@ class ChartDataView(APIView):
                 if byte_metric:
                     v = [round(x / (1024*1024), 2) if x is not None else None for x in v]
                 datasets = [{'label': metric, 'data': v}]
-
-        elif metric.startswith('container_'):
-            from .models import DockerContainerMetric
-            fn = {'container_cpu_pct': 'cpu_pct', 'container_mem_usage_bytes': 'mem_usage_bytes',
-                  'container_restart_count': 'restart_count'}.get(metric)
-            if not fn:
-                return Response({'status': 'error', 'message': f'Unknown container metric: {metric}'}, status=400)
-            base_qs = DockerContainerMetric.objects.filter(**base_filter)
-            datasets = [{'label': name, 'data': chart_values(base_qs.filter(name=name), fn)}
-                        for name in base_qs.values_list('name', flat=True).distinct().order_by('name')]
-            if fn == 'mem_usage_bytes':
-                for ds in datasets:
-                    ds['data'] = [round(v / (1024**3), 2) if v is not None else None for v in ds['data']]
 
         elif metric == 'error_frequency':
             data = list(MetricSnapshot.objects.filter(**base_filter)

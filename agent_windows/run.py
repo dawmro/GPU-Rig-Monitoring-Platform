@@ -619,19 +619,11 @@ Note: Per-container CPU/memory usage is NOT collected because:
                 encoding='utf-8', errors='replace'
             )
 
-            restart_count = 0
             uptime_s = None
-            mem_limit_bytes = None
 
             if inspect_result.returncode == 0 and inspect_result.stdout.strip():
                 try:
                     info = json.loads(inspect_result.stdout)
-                    restart_count = info.get('RestartCount', 0)
-
-                    # Memory limit from host config (0 = no limit)
-                    mem_limit_bytes = info.get('HostConfig', {}).get('Memory', 0)
-                    if mem_limit_bytes == 0:
-                        mem_limit_bytes = None
 
                     # State info for uptime calculation
                     state = info.get('State', {})
@@ -656,9 +648,7 @@ Note: Per-container CPU/memory usage is NOT collected because:
                 'name': name,
                 'image': image,
                 'status': status,
-                'restart_count': restart_count,
                 'uptime_s': uptime_s,
-                'mem_limit_bytes': mem_limit_bytes,
             })
 
         return containers

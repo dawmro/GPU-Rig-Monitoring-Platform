@@ -158,50 +158,27 @@ def _fetch_rig_metrics(uuid, rig=None):
                 'tx_errors': _json_get(snapshot.network_tx_errors_json, i, 0),
             })
 
-    # Docker containers: combine LatestDockerContainer (display fields) with
-    # latest DockerContainerMetric (cpu/memory) for each container
+    # Docker containers: LatestDockerContainer has all needed fields
     latest_containers = LatestDockerContainer.objects.filter(
         rig_uuid=str(uuid)
     )
 
-    # Batch-fetch latest metric for ALL containers in ONE query
-    # Uses DISTINCT ON (name) to get the latest DockerContainerMetric per container name
-    container_names = [lc.name for lc in latest_containers]
-    latest_container_metrics = {
-        m.name: m
-        for m in DockerContainerMetric.objects.filter(
-            rig_uuid=str(uuid),
-            name__in=container_names
-        ).order_by('name', '-timestamp').distinct('name')
-    }
-
     docker_metrics = []
     for lc in latest_containers:
-        # Get latest metric from prefetched dict (no DB query)
-        latest_metric = latest_container_metrics.get(lc.name)
-
         uptime_str = _format_uptime(lc.uptime_s)
-        mem_str = _format_mem(
-            latest_metric.mem_usage_bytes if latest_metric else None,
-            lc.mem_limit_bytes
-        )
 
         docker_metrics.append({
             'container_id': lc.container_id,
             'name': lc.name,
             'image': lc.image,
             'status': lc.status,
-            'restart_count': lc.restart_count,
             'uptime_s': lc.uptime_s,
             'uptime_str': uptime_str,
-            'cpu_pct': latest_metric.cpu_pct if latest_metric else None,
-            'mem_usage_bytes': latest_metric.mem_usage_bytes if latest_metric else None,
-            'mem_limit_bytes': lc.mem_limit_bytes,
-            'mem_str': mem_str,
         })
 
-    # Sort by uptime descending (longest running first)
-    docker_metrics.sort(key=lambda c: c['uptime_s'] or 0, reverse=True)
+    # Sort: running/restarting first, then by uptime descending
+    status_order = {'running': 0, 'restarting': 1, 'exited': 2}
+    docker_metrics.sort(key=lambda c: (status_order.get(c['status'], 9), -(c['uptime_s'] or 0)))
 
     # Recent errors from Rig.latest_errors_json (latest payload only, like motherboard_json)
     recent_errors = rig.latest_errors_json if rig else []

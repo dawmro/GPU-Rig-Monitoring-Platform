@@ -79,8 +79,8 @@
         <div class="flex-1">
             <div class="w-full bg-gray-700 rounded-full h-2">
                 {% if snapshot.mem_used_bytes and rig_profile and rig_profile.mem_total_bytes %}
-                    {% widthratio snapshot.mem_used_bytes rig_profile.mem_total_bytes 100 mem_pct %}
-                {% else %}{% widthratio 0 100 mem_pct %}{% endif %}
+                    {% widthratio snapshot.mem_used_bytes rig_profile.mem_total_bytes mem_pct %}
+                {% else %}{% widthratio 0 1 mem_pct %}{% endif %}
                 <div class="h-2 rounded-full
                     {% if mem_pct > 85 %}bg-red-500
                     {% elif mem_pct > 70 %}bg-yellow-500
@@ -105,7 +105,7 @@
         Swap:
         <span class="text-gray-400">{{ snapshot.swap_used_bytes|filesizeformat }}</span> /
         <span class="text-gray-400">{{ rig_profile.swap_total_bytes|filesizeformat }}</span>
-        {% widthratio snapshot.swap_used_bytes rig_profile.swap_total_bytes 100 swap_pct %}
+        {% widthratio snapshot.swap_used_bytes rig_profile.swap_total_bytes swap_pct %}
         <span class="text-gray-600">({{ swap_pct }}%)</span>
     </div>
     {% endif %}
@@ -224,7 +224,7 @@
             <div class="flex items-center gap-3 mb-1">
                 <div class="flex-1">
                     <div class="w-full bg-gray-700 rounded-full h-1.5">
-                        {% widthratio gpu.mem_used_mb gpu.mem_total_mb 100 vram_pct %}
+                        {% widthratio gpu.mem_used_mb gpu.mem_total_mb vram_pct %}
                         <div class="bg-purple-500 h-1.5 rounded-full" style="width: {{ vram_pct }}%"></div>
                     </div>
                 </div>

@@ -330,8 +330,8 @@ debug_mode: false         # Verbose logging
 
 | Agent | File | Version | Schema | Platform | Scheduling |
 |-------|------|---------|--------|----------|------------|
-| Linux | `agent/run.py` | 1.5.2 | 1.6 | Any Linux, VMware NAT | `cron` every 60s with `flock` |
-| Windows | `agent_windows/run.py` | 1.6.2-win | 1.6 | Windows 10/11 | Task Scheduler (1 min) with `pythonw.exe` (hidden window) |
+| Linux | `agent/run.py` | 1.5.7 | 1.6 | Any Linux, VMware NAT | `cron` every 60s with `flock` |
+| Windows | `agent_windows/run.py` | 1.6.7-win | 1.6 | Windows 10/11 | Task Scheduler (1 min) with `pythonw.exe` (hidden window) |
 
 **Versioning rules:**
 - `agent_version` (e.g. `1.1.0`): incremented for agent-side changes (collectors, payload format, bug fixes). Format: `MAJOR.MINOR.PATCH`.
@@ -590,8 +590,7 @@ Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the age
 || `metrics_gpu_process` | metrics_app | Per-GPU-process metrics (gpu_index, pid, name, type, mem; latest snapshot only) |
 || `metrics_storagemetric` | metrics_app | Per-disk metrics (capacity, usage%, temp, SMART health) |
 || `metrics_networkmetric` | metrics_app | Per-interface metrics (rx/tx bytes, rx/tx deltas, speed, errors) |
-|| `metrics_dockercontainermetric` | metrics_app | Per-container time-series (name, container_id, cpu%, mem_usage; for charts) |
-|| `metrics_latest_docker_container` | metrics_app | Latest container snapshot (name, container_id, image, status, uptime, restarts, mem_limit; for Live Metrics) |
+|| `metrics_latest_docker_container` | metrics_app | Latest container snapshot (name, container_id, image, status, created, status_text; for Live Metrics) |
 || `metrics_latestsnapshot` | metrics_app | Denormalized latest snapshot per rig (fast dashboard loading). Single row per rig, updated every heartbeat. Stores all display data as JSON arrays: 16 GPU arrays (model/temp/util/fan/clocks/mem/power/PCIe), 7 storage arrays (device/fstype/mountpoint/capacity/usage/temp/SMART), 7 network arrays (interface/IPv4/speed/rx/tx/errors). Total: ~35 fields. |
 || `metrics_rig_status_event` | metrics_app | Rig status transition log (online/stale/offline with timestamps) |
 || `audit_auditlog` | audit | Immutable audit trail |
@@ -613,9 +612,8 @@ Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the age
 | `metrics_gpu_process` | `UNIQUE(rig_uuid, timestamp, gpu_index, pid)` |
 | `metrics_storagemetric` | `UNIQUE(rig_uuid, timestamp, device)` |
 | `metrics_networkmetric` | `UNIQUE(rig_uuid, timestamp, interface)` |
-|| `metrics_dockercontainermetric` | `UNIQUE(rig_uuid, timestamp, name)` |
-|| `metrics_latest_docker_container` | `UNIQUE(rig_uuid, name)` |
-|| `metrics_metricsnapshot` | `UNIQUE(rig_uuid, schema_version, timestamp)` |
+| `metrics_latest_docker_container` | `UNIQUE(rig_uuid, name)` |
+| `metrics_metricsnapshot` | `UNIQUE(rig_uuid, schema_version, timestamp)` |
 
 ### 6.3 Metric Field Name Mapping
 
@@ -832,11 +830,9 @@ Each ingest performs multiple database operations:
 | `rigs_rig` | UPDATE | Bump last_seen, set status=ONLINE |
 | `metrics_metricsnapshot` | UPSERT | Per-heartbeat metrics (cpu, memory inline) |
 | `metrics_gpumetric` | UPSERT | Per-GPU metrics (1 row per GPU) |
-| `metrics_storagemetric` | UPSERT | Per-disk metrics |
-| `metrics_networkmetric` | UPSERT | Per-interface metrics |
-|| `metrics_dockercontainermetric` | UPSERT | Per-container time-series (cpu%, mem_usage) |
-|| `metrics_latest_docker_container` | DELETE+INSERT | Latest container snapshot (image, status, uptime, restarts, mem_limit) |
-|| `metrics_latest_docker_container` | DELETE+INSERT | Latest container snapshot (image, status, uptime, restarts, mem_limit) |
+|| `metrics_storagemetric` | UPSERT | Per-disk metrics |
+|| `metrics_networkmetric` | UPSERT | Per-interface metrics |
+|| `metrics_latest_docker_container` | DELETE+INSERT | Latest container snapshot (image, status, created, status_text) |
 || `metrics_latestsnapshot` | UPSERT | Denormalized display cache (GPU/storage/network JSON arrays) |
 || `rig_status_event` | INSERT (conditional) | Only on status transitions |
 || **Total** | **~15-50 writes** | Depending on GPU/disk/container count |

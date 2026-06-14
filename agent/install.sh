@@ -1,6 +1,16 @@
 #!/bin/bash
 # GPU Rig Monitoring Agent - Install Script
 # Run as root on the target rig
+#
+# Usage: bash install.sh
+# Note: Must be run with bash, not sh (uses bash-specific features like pipefail)
+
+# Ensure we're running under bash
+if [ -z "$BASH_VERSION" ]; then
+    echo "ERROR: This script must be run with bash, not sh."
+    echo "Usage: bash $0"
+    exit 1
+fi
 
 set -euo pipefail
 
@@ -28,7 +38,7 @@ if [ ! -d "$INSTALL_DIR/venv" ]; then
     python3 -m venv "$INSTALL_DIR/venv"
 fi
 "$INSTALL_DIR/venv/bin/pip" install --upgrade pip 2>/dev/null || true
-"$INSTALL_DIR/venv/bin/pip" install psutil py-cpuinfo requests pyyaml docker
+"$INSTALL_DIR/venv/bin/pip" install psutil py-cpuinfo requests pyyaml
 
 # Try to install pynvml (NVIDIA GPU monitoring)
 "$INSTALL_DIR/venv/bin/pip" install nvidia-ml-py3 2>/dev/null || \
@@ -52,7 +62,7 @@ fi
 # Without it, PAM pam_unix auth fails with "could not identify password" even with NOPASSWD.
 cat > /etc/sudoers.d/monitoring-agent << 'EOF'
 Defaults:monitoring-agent !authenticate
-monitoring-agent ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/bin/smartctl, /bin/journalctl, /usr/bin/journalctl, /usr/sbin/nvme, /usr/bin/nvme
+monitoring-agent ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/bin/smartctl, /bin/journalctl, /usr/bin/journalctl, /usr/sbin/nvme, /usr/bin/nvme, /usr/bin/docker, /usr/local/bin/docker
 EOF
 chmod 440 /etc/sudoers.d/monitoring-agent
 

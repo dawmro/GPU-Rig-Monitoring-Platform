@@ -400,23 +400,19 @@
                     <th class="text-left py-1 pr-2">Name</th>
                     <th class="text-left py-1 pr-2">Image</th>
                     <th class="text-left py-1 pr-2">Container ID</th>
-                    <th class="text-right py-1 pr-2">Uptime</th>
-                    <th class="text-right py-1 pr-2">Restarts</th>
-                    <th class="text-right py-1">CPU%</th>
-                    <th class="text-right py-1">Mem / Limit</th>
+                    <th class="text-left py-1 pr-2">Created</th>
+                    <th class="text-left py-1">Status</th>
                 </tr>
             </thead>
             <tbody>
                 {% for c in docker_metrics %}
                 <tr class="border-b border-gray-700/50">
-                    <td class="py-1 pr-2">{% if c.status == 'running' %}🟢{% else %}🔴{% endif %}</td>
+                    <td class="py-1 pr-2">{% if c.status == 'running' %}🟢{% elif c.status == 'restarting' %}🟡{% else %}🔴{% endif %}</td>
                     <td class="py-1 pr-2 text-gray-300 truncate max-w-[120px]" title="{{ c.name }}">{{ c.name }}</td>
                     <td class="py-1 pr-2 text-gray-400 truncate max-w-[180px]" title="{{ c.image }}">{{ c.image|truncatechars:24 }}</td>
                     <td class="py-1 pr-2 text-gray-500 font-mono">{% if c.container_id %}{{ c.container_id|truncatechars:12 }}{% else %}—{% endif %}</td>
-                    <td class="py-1 pr-2 text-gray-400 text-right">{{ c.uptime_str }}</td>
-                    <td class="py-1 pr-2 text-right">{% if c.restart_count > 0 %}<span class="text-yellow-500">↻{{ c.restart_count }}</span>{% else %}—{% endif %}</td>
-                    <td class="py-1 pr-2 text-gray-400 text-right">{% if c.cpu_pct %}{{ c.cpu_pct|floatformat:1 }}%{% else %}—{% endif %}</td>
-                    <td class="py-1 text-gray-400 text-right">{{ c.mem_str }}</td>
+                    <td class="py-1 pr-2 text-gray-400">{{ c.created|default:"—" }}</td>
+                    <td class="py-1 text-gray-400">{{ c.status_text|default:"—" }}</td>
                 </tr>
                 {% endfor %}
             </tbody>

@@ -3,7 +3,7 @@ from rest_framework import serializers, status
 from django.db import transaction
 from django.utils import timezone
 from django.core.cache import cache
-from .models import MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestDockerContainer, LatestSnapshot, RigStatusEvent
+from .models import MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, LatestDockerContainer, LatestSnapshot, RigStatusEvent
 from rigs.models import Rig
 
 logger = logging.getLogger(__name__)
@@ -189,23 +189,6 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     },
                 )
 
-            # Store per-container time-series metrics (for charts)
-            for container in docker_containers:
-                container_id = container.get('container_id')
-                if not container_id:
-                    logger.warning('Skipping container without container_id: %s', container.get('name', 'unknown'))
-                    continue
-                DockerContainerMetric.objects.update_or_create(
-                    rig_uuid=rig_uuid,
-                    timestamp=ts,
-                    name=container.get('name', ''),
-                    defaults={
-                        'container_id': container_id,
-                        'cpu_pct': container.get('cpu_pct'),
-                        'mem_usage_bytes': container.get('mem_usage_bytes'),
-                    },
-                )
-
             # Store latest container snapshot (for Live Metrics display)
             # Delete-before-insert pattern: remove all old rows for this rig first
             LatestDockerContainer.objects.filter(rig_uuid=rig_uuid).delete()
@@ -219,9 +202,8 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     name=container.get('name', ''),
                     image=container.get('image', ''),
                     status=container.get('status', ''),
-                    uptime_s=container.get('uptime_s'),
-                    restart_count=container.get('restart_count', 0),
-                    mem_limit_bytes=container.get('mem_limit_bytes'),
+                    created=container.get('created', ''),
+                    status_text=container.get('status_text', ''),
                 )
 
             # Build GPU summary data for LatestSnapshot (fast dashboard access)

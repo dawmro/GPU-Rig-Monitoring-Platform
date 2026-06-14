@@ -42,7 +42,7 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.5.2'
+__version__ = '1.5.7'
 __schema_version__ = '1.6'
 
 # ── Config ──────────────────────────────────────────────────────────────────
@@ -499,79 +499,88 @@ def collect_gpu_processes():
 
 
 def collect_docker():
-    """Collect Docker container metrics.
+    """Collect Docker container metrics using docker CLI via subprocess.
 
-    For each container, collects: container_id, name, image, status,
-    restart_count, uptime_s, cpu_pct, mem_usage_bytes, mem_limit_bytes.
+    Tries multiple approaches to access Docker:
+    1. Direct 'docker' CLI (works if user is in docker group)
+    2. 'sudo docker' CLI (works if sudoers is configured)
+    3. Returns empty list if both fail
 
-    CPU and memory stats are only collected for running containers
-    via the Docker stats API.
+    For each container, collects: container_id, name, image, status, created, status_text.
     """
+    containers = []
+
+    # Try docker access methods: direct first, then sudo
+    docker_cmds_to_try = [
+        ['docker'],           # Direct access (docker group member)
+        ['sudo', 'docker'],   # Sudo access (sudoers configured)
+    ]
+
+    docker_prefix = None
+    for prefix in docker_cmds_to_try:
+        test = subprocess.run(
+            prefix + ['ps', '-a', '--format', '{{.ID}}'],
+            capture_output=True, text=True, timeout=10
+        )
+        if test.returncode == 0:
+            docker_prefix = prefix
+            break
+
+    if docker_prefix is None:
+        logging.getLogger('docker').warning(
+            'Docker collection failed: cannot access docker CLI '
+            '(tried direct and sudo). Check docker group membership or sudoers config.'
+        )
+        return []
+
     try:
-        import docker
-        client = docker.from_env()
-        containers = []
+        # Step 1: Get list of all containers (including stopped ones)
+        # Format: ID|Names|Image|Status|CreatedAt
+        result = subprocess.run(
+            docker_prefix + ['ps', '-a', '--no-trunc',
+             '--format', '{{.ID}}|{{.Names}}|{{.Image}}|{{.Status}}|{{.CreatedAt}}'],
+            capture_output=True, text=True, timeout=15
+        )
+        if result.returncode != 0:
+            logging.getLogger('docker').warning(
+                'docker ps failed (exit %d): %s',
+                result.returncode, result.stderr.strip()[:200]
+            )
+            return []
 
-        for c in client.containers.list():
-            # ── Step 1: Define default values ──
-            uptime_s = None
-            cpu_pct = None
-            mem_usage_bytes = None
-            mem_limit_bytes = None
+        lines = [l for l in result.stdout.strip().split('\n') if l]
+        if not lines:
+            return []
 
-            # ── Step 2: Collect data ──
+        for line in lines:
+            parts = line.split('|', 4)
+            if len(parts) < 5:
+                continue
+            cid, name, image, status_str, created_str = parts
+            container_id = cid[:12]
 
-            # Uptime from StartedAt timestamp
-            try:
-                started_at = c.attrs.get('State', {}).get('StartedAt')
-                if started_at:
-                    start_dt = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
-                    uptime_s = int((datetime.now(timezone.utc) - start_dt).total_seconds())
-            except Exception:
-                pass
+            # Parse status: "Up 2 hours" or "Exited (0) 3 hours ago" or "Restarting (1) 5 seconds ago"
+            status = 'running' if status_str.startswith('Up') else 'exited'
+            if 'Restarting' in status_str:
+                status = 'restarting'
 
-            # Live stats for running containers
-            if c.status == 'running':
-                try:
-                    stats = c.stats(stream=False)
-
-                    # CPU calculation
-                    cpu_delta = (
-                        stats['cpu_stats']['cpu_usage']['total_usage'] -
-                        stats['precpu_stats']['cpu_usage']['total_usage']
-                    )
-                    system_delta = (
-                        stats['cpu_stats']['system_cpu_usage'] -
-                        stats['precpu_stats']['system_cpu_usage']
-                    )
-                    if system_delta > 0 and cpu_delta > 0:
-                        num_cpus = stats['cpu_stats'].get('online_cpus', 1)
-                        cpu_pct = round((cpu_delta / system_delta) * num_cpus * 100, 2)
-
-                    # Memory
-                    mem_stats = stats.get('memory_stats', {})
-                    mem_usage_bytes = mem_stats.get('usage')
-                    mem_limit_bytes = mem_stats.get('limit')
-                except Exception:
-                    pass  # Stats may fail for short-lived containers
-
-            # ── Step 3: Build container info dict ──
-            container_info = {
-                'container_id': c.id[:12] if c.id else '',
-                'name': c.name,
-                'image': c.image.tags[0] if c.image.tags else 'unknown',
-                'status': c.status,
-                'restart_count': c.attrs.get('RestartCount', 0),
-                'uptime_s': uptime_s,
-                'cpu_pct': cpu_pct,
-                'mem_usage_bytes': mem_usage_bytes,
-                'mem_limit_bytes': mem_limit_bytes,
-            }
-
-            # ── Step 4: Append ──
-            containers.append(container_info)
+            containers.append({
+                'container_id': container_id,
+                'name': name,
+                'image': image,
+                'status': status,
+                'created': created_str.strip(),
+                'status_text': status_str.strip(),
+            })
 
         return containers
+
+    except subprocess.TimeoutExpired:
+        logging.getLogger('docker').warning('Docker collection timed out')
+        return []
+    except FileNotFoundError:
+        logging.getLogger('docker').warning('docker CLI not found')
+        return []
     except Exception as e:
         logging.getLogger('docker').warning('Docker collection failed: %s', e)
         return []

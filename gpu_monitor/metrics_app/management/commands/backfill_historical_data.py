@@ -104,10 +104,7 @@ class Command(BaseCommand):
             disk_count = self._insert_child_rows(src['disk'],   'disk',   id_map, offset)
             net_count  = self._insert_child_rows(src['network'], 'network', id_map, offset)
 
-            # Docker container metrics (no snapshot_id FK — independent time-series)
-            docker_count = self._insert_docker_metrics(src['docker'], offset)
-
-            rep_total = snap_count + gpu_count + disk_count + net_count + docker_count
+            rep_total = snap_count + gpu_count + disk_count + net_count
             grand_total += rep_total
 
             elapsed = time.time() - start_time
@@ -140,14 +137,12 @@ class Command(BaseCommand):
             rem_gpu  = [r for r in src['gpu']     if r['timestamp'] >= cutoff]
             rem_disk = [r for r in src['disk']    if r['timestamp'] >= cutoff]
             rem_net  = [r for r in src['network'] if r['timestamp'] >= cutoff]
-            rem_docker = [r for r in src['docker'] if r['timestamp'] >= cutoff]
 
             id_map = self._insert_snapshots(rem_snap, offset, err_per_snap)
             grand_total += len(id_map)
             grand_total += self._insert_child_rows(rem_gpu,  'gpu',     id_map, offset)
             grand_total += self._insert_child_rows(rem_disk, 'disk',   id_map, offset)
             grand_total += self._insert_child_rows(rem_net,  'network', id_map, offset)
-            grand_total += self._insert_docker_metrics(rem_docker, offset)
 
         total_elapsed = time.time() - start_time
         overall_rate = grand_total / total_elapsed if total_elapsed > 0 else 0
@@ -167,7 +162,7 @@ class Command(BaseCommand):
             return f'{int(seconds // 3600)}h {int((seconds % 3600) // 60)}m'
 
     def _read_source(self, start, end):
-        d = {'snapshots': [], 'gpu': [], 'disk': [], 'network': [], 'docker': []}
+        d = {'snapshots': [], 'gpu': [], 'disk': [], 'network': []}
         with connection.cursor() as c:
             c.execute("SELECT id, rig_uuid, schema_version, agent_version, timestamp, "
                       "cpu_utilization_pct, cpu_temp_c, cpu_load_avg_json, "
@@ -209,14 +204,6 @@ class Command(BaseCommand):
                       "ORDER BY snapshot_id, interface", [start, end])
             cols = [col[0] for col in c.description]
             d['network'] = [dict(zip(cols, r)) for r in c.fetchall()]
-
-            c.execute("SELECT id, rig_uuid, timestamp, name, container_id, "
-                      "cpu_pct, mem_usage_bytes "
-                      "FROM metrics_dockercontainermetric "
-                      "WHERE timestamp >= %s AND timestamp < %s "
-                      "ORDER BY rig_uuid, name, timestamp", [start, end])
-            cols = [col[0] for col in c.description]
-            d['docker'] = [dict(zip(cols, r)) for r in c.fetchall()]
 
         return d
 
@@ -342,32 +329,4 @@ class Command(BaseCommand):
 
         return len(all_vals)
 
-    def _insert_docker_metrics(self, rows, offset):
-        """Insert docker container metrics with shifted timestamps.
-        DockerContainerMetric has no snapshot_id FK — independent time-series.
-        """
-        if not rows:
-            return 0
-
-        all_vals = []
-        for row in rows:
-            all_vals.append((
-                row['rig_uuid'],
-                row['timestamp'] - offset,
-                row['name'],
-                row['container_id'],
-                row['cpu_pct'],
-                row['mem_usage_bytes'],
-            ))
-
-        sql = ("INSERT INTO metrics_dockercontainermetric "
-               "(rig_uuid, timestamp, name, container_id, cpu_pct, mem_usage_bytes) "
-               "VALUES %s ON CONFLICT (rig_uuid, timestamp, name) DO NOTHING")
-
-        with connection.cursor() as c:
-            for i in range(0, len(all_vals), BATCH_SIZE):
-                batch = all_vals[i:i + BATCH_SIZE]
-                execute_values(c, sql, batch, page_size=BATCH_SIZE)
-
-        return len(all_vals)
 

@@ -1,6 +1,6 @@
 # GPU Rig Monitoring Agent — Windows
 
-**Version:** 1.6.2-win | **Schema:** 1.6
+**Version:** 1.6.7-win | **Schema:** 1.6
 
 Windows-compatible agent for the GPU Rig Monitoring Platform. Collects hardware/software metrics and sends them to the monitoring server via HTTPS.
 
@@ -42,9 +42,10 @@ pip install psutil py-cpuinfo requests pyyaml wmi
 Optional dependencies:
 
 ```powershell
-pip install docker          # For Docker container monitoring
-pip install pynvml         # For NVIDIA GPU monitoring (requires NVIDIA GPU with drivers)
+pip install pynvml         # For NVIDIA GPU monitoring (Requires NVIDIA GPU with drivers)
 ```
+
+**Note:** Docker container monitoring uses the `docker` CLI directly (via subprocess) and does NOT require the `docker` Python SDK. Docker Desktop must be installed and running.
 
 ### 1b. Freeze Dependencies (Optional)
 
@@ -180,7 +181,7 @@ agent_windows/
 | Network (interfaces, bytes, errors, speed) | psutil + WMI | ✅ | ✅ |
 | GPU (model, memory, util, temp, power, fan, PCIe link, core/mem clocks) | `pynvml` | ✅* | ✅* |
 | GPU processes (per-process: name, type C/G/C+G, memory) | `nvidia-smi` subprocess | ✅* | ✅* |
-| Docker containers (name, image, status, container_id, uptime, restarts, cpu%, memory) | docker SDK | ✅† | ✅† |
+| Docker containers (name, image, status, container_id, uptime, restarts, mem_limit) | `docker` CLI (subprocess) | ✅† | ✅† |
 | OS info (hostname, OS, kernel, uptime) | `platform` + psutil | ✅ | ✅ |
 | NVIDIA driver version | `nvidia-smi` subprocess | ✅* | ✅* |
 | System errors (last 5 min) | PowerShell `Get-WinEvent` | ✅ | ✅ |
@@ -319,8 +320,21 @@ Ensure Task Scheduler is configured with **"Run with highest privileges"** — S
 
 ### Docker metrics empty
 
-- Ensure Docker Desktop is running
-- The docker SDK auto-detects the Windows named pipe for Docker Desktop
+**Linux:** The agent uses `sudo docker` to collect container data. Ensure the `monitoring-agent` user has passwordless sudo access to `/usr/bin/docker` and `/usr/local/bin/docker`. The install script configures this automatically. Verify with:
+```bash
+sudo -u monitoring-agent sudo docker ps -a
+```
+
+**Windows:** The agent uses `docker` CLI. Ensure Docker Desktop is running and the user has permissions to run `docker ps`.
+
+If containers still don't appear, check the agent logs:
+```bash
+# Linux
+tail -50 /var/log/monitoring-agent/agent.log | grep docker
+
+# Windows
+type logs\agent.log | findstr docker
+```
 
 ### High CPU during collection
 

@@ -78,11 +78,9 @@
     <div class="flex items-center gap-3 mb-2">
         <div class="flex-1">
             <div class="w-full bg-gray-700 rounded-full h-2">
-                {% if snapshot.mem_used_bytes and rig_profile.mem_total_bytes %}
+                {% if snapshot.mem_used_bytes and rig_profile and rig_profile.mem_total_bytes %}
                     {% widthratio snapshot.mem_used_bytes rig_profile.mem_total_bytes 100 as mem_pct %}
-                {% else %}
-                    {% widthratio 0 100 as mem_pct %}
-                {% endif %}
+                {% else %}{% widthratio 0 100 as mem_pct %}{% endif %}
                 <div class="h-2 rounded-full
                     {% if mem_pct > 85 %}bg-red-500
                     {% elif mem_pct > 70 %}bg-yellow-500
@@ -93,8 +91,8 @@
         <span class="text-sm font-mono text-gray-300 w-14 text-right">{{ mem_pct }}%</span>
     </div>
     <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-400">
-        <span>Used: <span class="text-gray-300">{{ snapshot.mem_used_bytes|filesizeformat }}</span></span>
-        <span>Total: <span class="text-gray-300">{{ rig_profile.mem_total_bytes|filesizeformat }}</span></span>
+        <span>Used: <span class="text-gray-300">{% if snapshot.mem_used_bytes %}{{ snapshot.mem_used_bytes|filesizeformat }}{% else %}—{% endif %}</span></span>
+        <span>Total: <span class="text-gray-300">{% if rig_profile and rig_profile.mem_total_bytes %}{{ rig_profile.mem_total_bytes|filesizeformat }}{% else %}—{% endif %}</span></span>
         {% if snapshot.mem_free_bytes %}
         <span>Free: <span class="text-gray-300">{{ snapshot.mem_free_bytes|filesizeformat }}</span></span>
         {% endif %}
@@ -102,7 +100,7 @@
         <span>Cached: <span class="text-gray-300">{{ snapshot.mem_cached_bytes|filesizeformat }}</span></span>
         {% endif %}
     </div>
-    {% if rig_profile.swap_total_bytes %}
+    {% if rig_profile and rig_profile.swap_total_bytes %}
     <div class="mt-1 pt-1 border-t border-gray-700/50 text-xs text-gray-500">
         Swap:
         <span class="text-gray-400">{{ snapshot.swap_used_bytes|filesizeformat }}</span> /

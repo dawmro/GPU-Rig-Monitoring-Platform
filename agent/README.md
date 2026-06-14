@@ -25,8 +25,10 @@ rsync -avz /path/to/agent/ root@RIG_IP:/tmp/agent/
 ```bash
 ssh root@RIG_IP
 chmod +x /tmp/agent/install.sh
-/tmp/agent/install.sh
+bash /tmp/agent/install.sh
 ```
+
+> **Note:** Must be run with `bash`, not `sh`. The script uses bash-specific features like `set -o pipefail`.
 
 The installer performs these operations:
 

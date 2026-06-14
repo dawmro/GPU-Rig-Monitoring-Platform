@@ -1,6 +1,16 @@
 #!/bin/bash
 # GPU Rig Monitoring Agent - Install Script
 # Run as root on the target rig
+#
+# Usage: bash install.sh
+# Note: Must be run with bash, not sh (uses bash-specific features like pipefail)
+
+# Ensure we're running under bash
+if [ -z "$BASH_VERSION" ]; then
+    echo "ERROR: This script must be run with bash, not sh."
+    echo "Usage: bash $0"
+    exit 1
+fi
 
 set -euo pipefail
 

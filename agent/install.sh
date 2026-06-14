@@ -52,7 +52,7 @@ fi
 # Without it, PAM pam_unix auth fails with "could not identify password" even with NOPASSWD.
 cat > /etc/sudoers.d/monitoring-agent << 'EOF'
 Defaults:monitoring-agent !authenticate
-monitoring-agent ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/bin/smartctl, /bin/journalctl, /usr/bin/journalctl, /usr/sbin/nvme, /usr/bin/nvme
+monitoring-agent ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/bin/smartctl, /bin/journalctl, /usr/bin/journalctl, /usr/sbin/nvme, /usr/bin/nvme, /usr/bin/docker, /usr/local/bin/docker
 EOF
 chmod 440 /etc/sudoers.d/monitoring-agent
 

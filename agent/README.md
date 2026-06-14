@@ -125,7 +125,7 @@ The cron job will start automatically within 1 minute.
 | Network (interfaces, bytes, errors, speed) | psutil + sysfs | ✅ | ✅ |
 | GPU (model, memory, util, temp, power, fan, PCIe link, core/mem clocks) | `pynvml` | ✅* | ✅* |
 | GPU processes (per-process: name, type C/G/C+G, memory) | `nvidia-smi` subprocess | ✅* | ✅* |
-| Docker containers (name, image, status, container_id, uptime, restarts, cpu%, memory) | docker SDK | ✅† | ✅† |
+| Docker containers (name, image, status, container_id, uptime, restarts, cpu%, memory, mem_limit) | `sudo docker` CLI (subprocess) | ✅† | ✅† |
 | OS info (hostname, OS, kernel, uptime) | `platform` + psutil | ✅ | ✅ |
 | NVIDIA driver version | `nvidia-smi` subprocess | ✅* | ✅* |
 | System errors (last 5 min) | `journalctl` | ✅ | ✅ |
@@ -223,6 +223,20 @@ sudo /opt/monitoring-agent/venv/bin/pip install nvidia-ml-py3
 ```
 
 Requires NVIDIA GPU with up-to-date drivers. If you see `FutureWarning: The pynvml package is deprecated`, install `nvidia-ml-py` instead — both provide the `pynvml` module.
+
+### Docker metrics empty
+
+The agent uses `sudo docker` CLI to collect container data. The `monitoring-agent` user needs passwordless sudo access to `/usr/bin/docker` and `/usr/local/bin/docker`. The install script configures this automatically via `/etc/sudoers.d/monitoring-agent`.
+
+Verify Docker access:
+```bash
+sudo -u monitoring-agent sudo docker ps -a
+```
+
+If this fails, check:
+1. Docker is installed and running: `sudo systemctl status docker`
+2. Sudoers entry includes docker: `cat /etc/sudoers.d/monitoring-agent`
+3. Agent logs: `tail -50 /var/log/monitoring-agent/agent.log | grep docker`
 
 ### SMART/NVMe disk data unavailable
 

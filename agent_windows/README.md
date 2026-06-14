@@ -180,7 +180,7 @@ agent_windows/
 | Network (interfaces, bytes, errors, speed) | psutil + WMI | ✅ | ✅ |
 | GPU (model, memory, util, temp, power, fan, PCIe link, core/mem clocks) | `pynvml` | ✅* | ✅* |
 | GPU processes (per-process: name, type C/G/C+G, memory) | `nvidia-smi` subprocess | ✅* | ✅* |
-| Docker containers (name, image, status, container_id, uptime, restarts, cpu%, memory) | docker SDK | ✅† | ✅† |
+| Docker containers (name, image, status, container_id, uptime, restarts, cpu%, memory, mem_limit) | `docker` CLI (subprocess) | ✅† | ✅† |
 | OS info (hostname, OS, kernel, uptime) | `platform` + psutil | ✅ | ✅ |
 | NVIDIA driver version | `nvidia-smi` subprocess | ✅* | ✅* |
 | System errors (last 5 min) | PowerShell `Get-WinEvent` | ✅ | ✅ |
@@ -319,8 +319,21 @@ Ensure Task Scheduler is configured with **"Run with highest privileges"** — S
 
 ### Docker metrics empty
 
-- Ensure Docker Desktop is running
-- The docker SDK auto-detects the Windows named pipe for Docker Desktop
+**Linux:** The agent uses `sudo docker` to collect container data. Ensure the `monitoring-agent` user has passwordless sudo access to `/usr/bin/docker` and `/usr/local/bin/docker`. The install script configures this automatically. Verify with:
+```bash
+sudo -u monitoring-agent sudo docker ps -a
+```
+
+**Windows:** The agent uses `docker` CLI. Ensure Docker Desktop is running and the user has permissions to run `docker ps`.
+
+If containers still don't appear, check the agent logs:
+```bash
+# Linux
+tail -50 /var/log/monitoring-agent/agent.log | grep docker
+
+# Windows
+type logs\agent.log | findstr docker
+```
 
 ### High CPU during collection
 

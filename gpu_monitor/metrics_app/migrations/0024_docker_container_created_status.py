@@ -8,17 +8,21 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        # Drop DockerContainerMetric table if it exists (model already deleted from code)
+        # Step 1: Drop tables with raw SQL (safe with IF EXISTS)
         migrations.RunSQL(
-            sql='DROP TABLE IF EXISTS metrics_dockercontainermetric CASCADE',
+            sql='DROP TABLE IF EXISTS metrics_dockercontainermetric CASCADE; '
+                'DROP TABLE IF EXISTS metrics_latest_docker_container CASCADE',
             reverse_sql=migrations.RunSQL.noop,
         ),
-        # Drop LatestDockerContainer table if it exists (data moved to LatestSnapshot)
-        migrations.RunSQL(
-            sql='DROP TABLE IF EXISTS metrics_latest_docker_container CASCADE',
-            reverse_sql=migrations.RunSQL.noop,
+        # Step 2: Delete models from Django state (no DB operations)
+        migrations.SeparateDatabaseAndState(
+            state_operations=[
+                migrations.DeleteModel(name='DockerContainerMetric'),
+                migrations.DeleteModel(name='LatestDockerContainer'),
+            ],
+            database_operations=[],
         ),
-        # Add docker_containers_json to LatestSnapshot
+        # Step 3: Add docker_containers_json to LatestSnapshot
         migrations.AddField(
             model_name='latestsnapshot',
             name='docker_containers_json',

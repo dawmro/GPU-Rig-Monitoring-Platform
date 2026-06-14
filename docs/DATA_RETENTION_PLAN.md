@@ -7,7 +7,7 @@
 |-------|------|----------|-----------|-----------|
 | metrics_gpumetric | 7,584 MB | 5,495,005 | 160 | 1,447 |
 | metrics_metricsnapshot | 2,899 MB | 1,032,973 | 0 | 2,943 |
-| metrics_dockercontainermetric | 2,333 MB | 2,414,960 | 0 | 1,013 |
+|| metrics_dockercontainermetric | ~~2,333 MB~~ | ~~2,414,960~~ | ~~0~~ | ~~1,013~~ |
 | metrics_storagemetric | 1,964 MB | 2,377,947 | 0 | 866 |
 | metrics_networkmetric | 931 MB | 884,129 | 0 | 1,104 |
 | metrics_gpu_process | 1,200 kB | 748 | 748 | 821 |
@@ -24,7 +24,6 @@
 **Note:** The earlier projection of ~4.7 MB/day/rig was based on estimates before the platform was fully deployed with real agents. The actual measured storage is ~3.3x higher due to:
 - Larger snapshot rows (2,943 B vs estimated ~1,500 B) from JSON fields (motherboard_json, software_json, cpu_load_avg_json)
 - Docker container metrics being more prolific than expected (2,414,960 rows for 100 rigs over 10 days)
-- GPU metrics including PCIe link info, core/memory clocks (1,447 B/row)
 
 ### Average Rig Configuration (measured)
 - **GPUs per rig:** ~5.3 (varies by rig)
@@ -109,13 +108,11 @@ Single phase:
 2. `metrics_gpumetric` (child with FK) — compacted after gpu_process
 3. `metrics_storagemetric` (child with FK) — compacted after gpu
 4. `metrics_networkmetric` (child with FK) — compacted after storage
-5. `metrics_dockercontainermetric` (no FK) — compacted independently
-6. `metrics_metricsnapshot` (parent) — compacted LAST, excluding rows still referenced by children
+5. `metrics_metricsnapshot` (parent) — compacted LAST, excluding rows still referenced by children
 
 **FK Handling:**
 - Parent table rows referenced by children are excluded from compaction (to avoid FK violations)
 - Child tables (GPU, storage, network, gpu_process) keep their `snapshot_id` pointing to the parent
-- `metrics_dockercontainermetric` has no FK to parent (independent time-series)
 - `metrics_latest_docker_container` is not compacted (delete-before-insert, latest only)
 
 **Options:**
@@ -136,28 +133,17 @@ Compaction complete
 
 ---
 
-### `cleanup_old_data` — Delete Data Older Than N Days
+## Old Data Cleanup
 
-**Purpose:** Permanently removes data older than the retention period to free storage.
-
-**How It Works:**
-
-- Processes tables in dependency order (children first, parent last)
-- For each table, deletes rows where `timestamp < cutoff` in batches of 10,000
-- Batch deletion avoids long table locks that would block the live agent
-- Uses `id` column for batch selection (except `metrics_latest_snapshot` which uses `rig_uuid` as PK)
-- Skips tables without a `timestamp` column
-
-**Table Processing Order:**
+Deletes metric data older than configurable retention period (default: 31 days).
 1. `metrics_gpu_process` (child of MetricSnapshot)
 2. `metrics_gpumetric` (child of MetricSnapshot)
 3. `metrics_storagemetric` (child of MetricSnapshot)
 4. `metrics_networkmetric` (child of MetricSnapshot)
-5. `metrics_dockercontainermetric` (independent — time-series, no FK to MetricSnapshot)
-6. `metrics_latest_docker_container` (independent — latest snapshot, delete-before-insert)
-7. `metrics_rig_status_event` (independent)
-8. `metrics_metricsnapshot` (parent — deleted last so FK constraints are satisfied)
-9. `metrics_latest_snapshot` (independent, uses `rig_uuid` as PK, no timestamp column)
+5. `metrics_latest_docker_container` (independent — latest snapshot, delete-before-insert)
+6. `metrics_rig_status_event` (independent)
+7. `metrics_metricsnapshot` (parent — deleted last so FK constraints are satisfied)
+8. `metrics_latest_snapshot` (independent, uses `rig_uuid` as PK, no timestamp column)
 
 **Options:**
 | Flag | Description |
@@ -173,8 +159,7 @@ Cleaning up data older than 31 days (before 2026-05-09 02:18)
   metrics_gpumetric: nothing to delete
   metrics_storagemetric: nothing to delete
   metrics_networkmetric: nothing to delete
-  metrics_dockercontainermetric: nothing to delete
-  metrics_latest_docker_container: nothing to delete
+  metrics_latest_docker_container: skipped (no timestamp)
   metrics_rig_status_event: nothing to delete
   metrics_metricsnapshot: nothing to delete
   metrics_latest_snapshot: 2 rows to delete
@@ -214,7 +199,7 @@ import os; os.environ['DJANGO_SETTINGS_MODULE'] = 'gpu_monitor.settings'
 import django; django.setup()
 from django.db import connection
 for t in ['metrics_metricsnapshot', 'metrics_gpumetric', 'metrics_storagemetric',
-          'metrics_networkmetric', 'metrics_dockercontainermetric']:
+          'metrics_networkmetric']:
     with connection.cursor() as c:
         c.execute(f'SELECT COUNT(*), MIN(timestamp), MAX(timestamp) FROM {t}')
         row = c.fetchone()

@@ -56,10 +56,11 @@ metrics_metricsnapshot       ← parent table (BigAutoField PK)
   ├── metrics_gpu_process     ← child (FK to snapshot)
   ├── metrics_storagemetric   ← child (FK to snapshot)
   ├── metrics_networkmetric   ← child (FK to snapshot)
-  ├── metrics_dockercontainermetric  ← independent (no FK)
   ├── metrics_latest_docker_container ← independent (latest snapshot, delete-before-insert)
   ├── metrics_latest_snapshot  ← independent (denormalized cache, PK = rig_uuid)
   └── metrics_rig_status_event ← independent (status transitions)
+
+**Note:** `metrics_dockercontainermetric` was removed. Docker container data is now snapshot-only (no timeseries).
 ```
 
 ### Current Chart Queries
@@ -81,8 +82,9 @@ All metric tables use `unique_together` which conflict with TimescaleDB hypertab
 | `metrics_gpumetric` | `(rig_uuid, timestamp, gpu_index)` | ✅ Yes — includes `snapshot_id` FK |
 | `metrics_storagemetric` | `(rig_uuid, timestamp, device)` | ✅ Yes — includes `snapshot_id` FK |
 | `metrics_networkmetric` | `(rig_uuid, timestamp, interface)` | ✅ Yes — includes `snapshot_id` FK |
-| `metrics_dockercontainermetric` | `(rig_uuid, timestamp, name)` | ✅ Yes |
 | `metrics_gpu_process` | `(rig_uuid, timestamp, gpu_index, pid)` | ✅ Yes |
+
+**Note:** `metrics_dockercontainermetric` was removed. Docker container data is now snapshot-only (no timeseries).
 
 **TimescaleDB hypertable requirement:** The partition key (`timestamp`) must be part of any unique constraint or primary key. These constraints will need to be restructured.
 
@@ -325,17 +327,10 @@ ALTER TABLE metrics_gpu_process
     ADD CONSTRAINT metrics_gpu_process_unique
     UNIQUE (rig_uuid, timestamp, gpu_index, pid, id);
 ```
-
-#### 2c. `metrics_dockercontainermetric` (independent, no FK)
-
-```sql
-ALTER TABLE metrics_dockercontainermetric
-    DROP CONSTRAINT metrics_dockercontainermetric_rig_uuid_timestamp_name_xxxxx_uniq;
-SELECT create_hypertable('metrics_dockercontainermetric', 'timestamp', chunk_time_interval => INTERVAL '1 day');
-ALTER TABLE metrics_dockercontainermetric
-    ADD CONSTRAINT metrics_dockercontainermetric_unique
-    UNIQUE (rig_uuid, timestamp, name, id);
+† `metrics_dockercontainermetric` was removed — docker container data is now snapshot-only.
 ```
+
+#### 2c. `metrics_latest_snapshot` (independent, uses `rig_uuid` as PK — no `timestamp`)
 
 #### 2d. Tables that should NOT be converted
 
@@ -468,28 +463,17 @@ SELECT add_continuous_aggregate_policy(
 
 #### 3e. Docker Container Hourly Aggregate
 
-```sql
-CREATE MATERIALIZED VIEW IF NOT EXISTS metrics_docker_hourly
-WITH (timescaledb.continuous) AS
-SELECT
-    rig_uuid,
-    name,
-    time_bucket('1 hour', timestamp) AS bucket,
-    AVG(cpu_pct) AS avg_cpu_pct,
-    MAX(cpu_pct) AS max_cpu_pct,
-    AVG(mem_usage_bytes) AS avg_mem_usage,
-    MAX(mem_usage_bytes) AS max_mem_usage
-FROM metrics_dockercontainermetric
-GROUP BY rig_uuid, name, bucket
-WITH NO DATA;
+**Note:** `metrics_dockercontainermetric` was removed. Docker container data is now snapshot-only (no timeseries). This section is kept for historical reference only.
 
-SELECT add_continuous_aggregate_policy(
-    'metrics_docker_hourly',
-    start_offset => INTERVAL '3 hours',
-    end_offset => INTERVAL '1 hour',
-    schedule_interval => INTERVAL '1 hour',
-    if_not_exists => TRUE
-);
+```sql
+-- HISTORICAL REFERENCE ONLY - model no longer exists
+-- CREATE MATERIALIZED VIEW IF NOT EXISTS metrics_docker_hourly
+-- WITH (timescaledb.continuous) AS
+-- SELECT rig_uuid, name, time_bucket('1 hour', timestamp) AS bucket,
+--     AVG(cpu_pct) AS avg_cpu_pct, MAX(cpu_pct) AS max_cpu_pct,
+--     AVG(mem_usage_bytes) AS avg_mem_usage, MAX(mem_usage_bytes) AS max_mem_usage
+-- FROM metrics_dockercontainermetric
+-- GROUP BY rig_uuid, name, bucket WITH NO DATA;
 ```
 
 ### Phase 4: Create Retention Policies
@@ -519,12 +503,6 @@ SELECT add_retention_policy(
 
 SELECT add_retention_policy(
     'metrics_networkmetric',
-    drop_after => INTERVAL '7 days',
-    if_not_exists => TRUE
-);
-
-SELECT add_retention_policy(
-    'metrics_dockercontainermetric',
     drop_after => INTERVAL '7 days',
     if_not_exists => TRUE
 );
@@ -591,8 +569,7 @@ with connection.cursor() as cursor:
 | `GPU_METRICS` (temp, util, mem, power, fan) | `GPUMetric.objects.filter().annotate(TruncHour)` | `metrics_gpu_hourly` |
 | `STORAGE_METRICS` (usage_pct) | `StorageMetric.objects.filter().annotate(TruncHour)` | `metrics_storage_hourly` |
 | `net_*` (rx/tx delta, errors) | `NetworkMetric.objects.filter().annotate(TruncHour)` | `metrics_network_hourly` |
-| `container_*` (cpu, mem) | `DockerContainerMetric.objects.filter().annotate(TruncHour)` | `metrics_docker_hourly` |
-| `error_frequency` | `MetricSnapshot.objects.filter().annotate(Sum('error_count'))` | `metrics_snapshot_hourly.sum_error_count` |
+|| `error_frequency` | `MetricSnapshot.objects.filter().annotate(Sum('error_count'))` | `metrics_snapshot_hourly.sum_error_count` |
 | `cpu_load_avg` | Python-side processing of `cpu_load_avg_json` | New continuous aggregate needed |
 | `uptime_s` | Python-side processing of `software_json` | New continuous aggregate needed |
 
@@ -680,13 +657,7 @@ ALTER TABLE metrics_networkmetric
     ADD CONSTRAINT metrics_networkmetric_unique
     UNIQUE (rig_uuid, timestamp, interface, id);
 
-ALTER TABLE metrics_dockercontainermetric
-    DROP CONSTRAINT IF EXISTS metrics_dockercontainermetric_rig_uuid_timestamp_name_uniq;
-SELECT create_hypertable('metrics_dockercontainermetric', 'timestamp',
-    chunk_time_interval => INTERVAL '1 day', if_not_exists => TRUE);
-ALTER TABLE metrics_dockercontainermetric
-    ADD CONSTRAINT metrics_dockercontainermetric_unique
-    UNIQUE (rig_uuid, timestamp, name, id);
+-- † metrics_dockercontainermetric was removed - docker container data is now snapshot-only
 
 ALTER TABLE metrics_gpu_process
     DROP CONSTRAINT IF EXISTS metrics_gpu_process_rig_uuid_timestamp_gpu_index_pid_uniq;
@@ -763,7 +734,7 @@ DROP MATERIALIZED VIEW IF EXISTS metrics_snapshot_hourly CASCADE;
 DROP MATERIALIZED VIEW IF EXISTS metrics_gpu_hourly CASCADE;
 DROP MATERIALIZED VIEW IF EXISTS metrics_storage_hourly CASCADE;
 DROP MATERIALIZED VIEW IF EXISTS metrics_network_hourly CASCADE;
-DROP MATERIALIZED VIEW IF EXISTS metrics_docker_hourly CASCADE;
+-- † metrics_docker_hourly no longer exists (model was deleted)
 
 -- 3. Convert hypertables back to regular tables
 SELECT decompress_chunk(chunk, if_compressed => TRUE)

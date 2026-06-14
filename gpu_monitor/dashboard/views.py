@@ -50,28 +50,6 @@ def rate_limit(max_requests, window_s):
     return decorator
 
 
-def _format_uptime(uptime_s):
-    """Format uptime seconds as human-readable string."""
-    if uptime_s is None:
-        return '—'
-    if uptime_s >= 86400:
-        return f'{uptime_s // 86400}d'
-    if uptime_s >= 3600:
-        return f'{uptime_s // 3600}h'
-    return f'{uptime_s}s'
-
-
-def _format_mem(usage_bytes, limit_bytes):
-    """Format memory as 'usage / limit' string (e.g. '50 MB / 400 MB')."""
-    if not usage_bytes:
-        return '—'
-    from django.template.defaultfilters import filesizeformat
-    usage_str = filesizeformat(usage_bytes)
-    if limit_bytes:
-        return f'{usage_str} / {filesizeformat(limit_bytes)}'
-    return usage_str
-
-
 def _json_get(lst, idx, default=None):
     """Safely get an element from a JSON array field."""
     if lst and idx < len(lst):

@@ -190,13 +190,13 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                 )
 
             # Build docker containers data for LatestSnapshot
-            docker_containers = []
+            docker_containers_json = []
             for container in docker_containers:
                 container_id = container.get('container_id')
                 if not container_id:
                     logger.warning('Skipping container without container_id: %s', container.get('name', 'unknown'))
                     continue
-                docker_containers.append({
+                docker_containers_json.append({
                     'container_id': container_id,
                     'name': container.get('name', ''),
                     'image': container.get('image', ''),
@@ -317,7 +317,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     'network_tx_bytes_json': network_tx_bytes,
                     'network_rx_errors_json': network_rx_errors,
                     'network_tx_errors_json': network_tx_errors,
-                    'docker_containers_json': docker_containers,
+                    'docker_containers_json': docker_containers_json,
                 },
             )
             # Invalidate cached snapshot so next read gets fresh data

@@ -201,6 +201,7 @@ class LatestSnapshot(models.Model):
     cpu_temp_c = models.FloatField(null=True)
     mem_used_bytes = models.BigIntegerField(null=True)
     mem_total_bytes = models.BigIntegerField(null=True)
+    uptime_s = models.PositiveIntegerField(null=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     # GPU data stored as JSON arrays for fast dashboard access

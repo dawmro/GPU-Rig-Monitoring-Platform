@@ -317,6 +317,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     'cpu_temp_c': cpu.get('temp_c'),
                     'mem_used_bytes': memory.get('used_bytes'),
                     'mem_total_bytes': memory.get('total_bytes'),
+                    'uptime_s': software_data.get('uptime_s'),
                     'gpu_count': len(gpu_list),
                     'gpu_models_json': gpu_models,
                     'gpu_temps_json': gpu_temps,

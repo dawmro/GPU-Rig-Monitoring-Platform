@@ -8,7 +8,7 @@ from functools import wraps
 import time
 
 from rigs.models import Rig, RigTag
-from metrics_app.models import MetricSnapshot, LatestSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, DockerContainerMetric, LatestDockerContainer
+from metrics_app.models import MetricSnapshot, LatestSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, LatestDockerContainer
 from audit.middleware import log_audit_event
 
 
@@ -411,14 +411,13 @@ def rig_delete(request, uuid):
 
     # Delete all associated metric data (MetricSnapshot has rig_uuid as UUIDField, not FK)
     from metrics_app.models import MetricSnapshot, LatestSnapshot, GPUMetric, GPUProcessMetric, \
-        StorageMetric, NetworkMetric, DockerContainerMetric, LatestDockerContainer, RigStatusEvent
+        StorageMetric, NetworkMetric, LatestDockerContainer, RigStatusEvent
     MetricSnapshot.objects.filter(rig_uuid=uuid).delete()
     LatestSnapshot.objects.filter(rig_uuid=uuid).delete()
     GPUMetric.objects.filter(rig_uuid=uuid).delete()
     GPUProcessMetric.objects.filter(rig_uuid=uuid).delete()
     StorageMetric.objects.filter(rig_uuid=uuid).delete()
     NetworkMetric.objects.filter(rig_uuid=uuid).delete()
-    DockerContainerMetric.objects.filter(rig_uuid=uuid).delete()
     LatestDockerContainer.objects.filter(rig_uuid=uuid).delete()
     RigStatusEvent.objects.filter(rig_uuid=uuid).delete()
 

@@ -3,12 +3,69 @@ from django.conf import settings
 from django.utils import timezone
 
 
+class RigProfile(models.Model):
+    """Static and semi-static rig configuration data — one row per rig.
+
+    Stores hardware identifiers and capabilities that change rarely or never.
+    Referenced by timeseries tables to avoid duplicating static data
+    in every heartbeat.
+
+    Updated only when agent reports changed hardware configuration
+    (detected by comparing with current profile).
+    """
+    rig_uuid = models.UUIDField(primary_key=True)
+
+    # CPU static info
+    cpu_model = models.CharField(max_length=255, blank=True, default='')
+    cpu_physical_cores = models.PositiveIntegerField(null=True)
+    cpu_logical_cores = models.PositiveIntegerField(null=True)
+
+    # Memory static
+    mem_total_bytes = models.BigIntegerField(null=True)
+    swap_total_bytes = models.BigIntegerField(null=True)
+
+    # Motherboard static
+    motherboard_json = models.JSONField(default=dict, blank=True)
+
+    # Software semi-static (hostname, OS, kernel — change on reboot/upgrade)
+    hostname = models.CharField(max_length=255, blank=True, default='')
+    os_distro = models.CharField(max_length=255, blank=True, default='')
+    kernel = models.CharField(max_length=255, blank=True, default='')
+    nvidia_driver = models.CharField(max_length=64, blank=True, default='')
+    docker_version = models.CharField(max_length=64, blank=True, default='')
+
+    # GPU static profiles (JSON array, one entry per GPU)
+    gpu_count = models.PositiveSmallIntegerField(default=0)
+    gpu_profiles_json = models.JSONField(default=list, blank=True)
+    # Each entry: {"uuid": "...", "model": "RTX 3060", "mem_total_mb": 12288,
+    #              "pcie_max_gen": 4, "pcie_max_width": 16, "power_limit_w": 450}
+
+    # Storage static profiles (JSON array, one entry per disk)
+    storage_count = models.PositiveSmallIntegerField(default=0)
+    storage_profiles_json = models.JSONField(default=list, blank=True)
+    # Each entry: {"device": "/dev/sda", "mountpoint": "/", "fstype": "ext4",
+    #              "capacity_bytes": 500107862016}
+
+    # Network static profiles (JSON array, one entry per interface)
+    network_count = models.PositiveSmallIntegerField(default=0)
+    network_profiles_json = models.JSONField(default=list, blank=True)
+    # Each entry: {"interface": "eth0", "ipv4": "192.168.1.10",
+    #              "link_speed_mbps": 1000}
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'rigs_rigprofile'
+
+    def __str__(self):
+        return f"RigProfile({self.rig_uuid}, {self.cpu_model})"
+
+
 class MetricSnapshot(models.Model):
     """Time-series metric data — one row per rig per minute.
 
-    Stores all metrics from the agent payload. Fields that are technically
-    static (cpu_model, mem_total_bytes, etc.) are stored per-row for
-    simplicity and to track any changes over time (e.g., hardware upgrades).
+    Stores only DYNAMIC metrics that change over time.
+    Static data (cpu_model, mem_total_bytes, etc.) is stored in RigProfile.
     """
     id = models.BigAutoField(primary_key=True)
     rig_uuid = models.UUIDField(db_index=True)
@@ -16,34 +73,25 @@ class MetricSnapshot(models.Model):
     agent_version = models.CharField(max_length=20, default='1.0.0')
     timestamp = models.DateTimeField(db_index=True)
 
-    # CPU metrics (static + dynamic)
-    cpu_model = models.CharField(max_length=255, blank=True, default='')
+    # CPU dynamic metrics
     cpu_utilization_pct = models.FloatField(null=True)
     cpu_temp_c = models.FloatField(null=True)
-    cpu_physical_cores = models.PositiveIntegerField(null=True)
-    cpu_logical_cores = models.PositiveIntegerField(null=True)
     cpu_load_avg_json = models.JSONField(default=list, blank=True)
 
-    # Memory metrics (static + dynamic)
-    mem_total_bytes = models.BigIntegerField(null=True)
+    # Memory dynamic metrics
     mem_used_bytes = models.BigIntegerField(null=True)
     mem_free_bytes = models.BigIntegerField(null=True)
     mem_cached_bytes = models.BigIntegerField(null=True)
     swap_used_bytes = models.BigIntegerField(null=True)
-    swap_total_bytes = models.BigIntegerField(null=True)
 
     # Rig status at time of this snapshot (online/offline/stale)
     status = models.CharField(max_length=10, null=True, blank=True)
 
-    # Motherboard info (static, stored as JSON for flexibility)
-    motherboard_json = models.JSONField(default=dict, blank=True)
-
-    # Software info (static, stored as JSON)
-    # Contains: hostname, os_distro, kernel, uptime_s, nvidia_driver, docker_version
-    software_json = models.JSONField(default=dict, blank=True)
-
     # Error count for this snapshot (integer, aggregated for error frequency charts)
     error_count = models.PositiveIntegerField(default=0)
+
+    # Timestamp of last RigProfile update (for cache invalidation)
+    profile_updated_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = 'metrics_metricsnapshot'
@@ -56,31 +104,25 @@ class MetricSnapshot(models.Model):
 class GPUMetric(models.Model):
     """Per-GPU time-series metrics — one row per GPU per snapshot.
 
-    Includes both static identifiers (uuid, model, mem_total_mb) and
-    dynamic metrics (utilization, temp, power). UUID is stored per-row
-    so GPU replacements can be tracked accurately over time.
+    Stores only DYNAMIC GPU metrics. Static GPU data (uuid, model, mem_total_mb,
+    pcie_max_gen, pcie_max_width, power_limit_w) is stored in RigProfile.
     """
     id = models.BigAutoField(primary_key=True)
-    snapshot = models.ForeignKey(MetricSnapshot, on_delete=models.CASCADE, related_name='gpu_metrics')
+    snapshot = models.ForeignKey('MetricSnapshot', on_delete=models.CASCADE, related_name='gpu_metrics')
     rig_uuid = models.UUIDField(db_index=True)
     timestamp = models.DateTimeField(db_index=True)
     gpu_index = models.PositiveSmallIntegerField(default=0)
 
-    gpu_uuid = models.CharField(max_length=64, blank=True, default='')
-    model = models.CharField(max_length=255, blank=True, default='')
+    # GPU dynamic metrics
     gpu_util_pct = models.FloatField(null=True)
     gpu_temp_c = models.FloatField(null=True)
     fan_speed_pct = models.FloatField(null=True)
-    mem_total_mb = models.PositiveIntegerField(null=True)
     mem_used_mb = models.PositiveIntegerField(null=True)
     mem_free_mb = models.PositiveIntegerField(null=True)
     mem_util_pct = models.FloatField(null=True)
     power_draw_w = models.FloatField(null=True)
-    power_limit_w = models.FloatField(null=True)
     pcie_current_gen = models.PositiveSmallIntegerField(null=True)
-    pcie_max_gen = models.PositiveSmallIntegerField(null=True)
     pcie_current_width = models.PositiveSmallIntegerField(null=True)
-    pcie_max_width = models.PositiveSmallIntegerField(null=True)
     gpu_core_clock_mhz = models.PositiveIntegerField(null=True)
     gpu_mem_clock_mhz = models.PositiveIntegerField(null=True)
 
@@ -89,26 +131,23 @@ class GPUMetric(models.Model):
         unique_together = ('rig_uuid', 'timestamp', 'gpu_index')
         indexes = [
             models.Index(fields=['rig_uuid', '-timestamp']),
-            # Composite index for fleet overview batched GPU query
-            # Supports: DISTINCT ON (rig_uuid, gpu_index) ORDER BY rig_uuid, gpu_index, -timestamp
             models.Index(fields=['rig_uuid', 'gpu_index', '-timestamp'],
                          name='gpumetric_rig_gpu_ts_idx'),
         ]
 
-
 class StorageMetric(models.Model):
     """Per-disk time-series metrics — one row per disk per snapshot.
 
-    Includes capacity (static) and dynamic metrics (usage, temp, smart).
+    Stores only DYNAMIC disk metrics. Static data (device, mountpoint, fstype,
+    capacity_bytes) is stored in RigProfile.
     """
     id = models.BigAutoField(primary_key=True)
-    snapshot = models.ForeignKey(MetricSnapshot, on_delete=models.CASCADE, related_name='storage_metrics')
+    snapshot = models.ForeignKey('MetricSnapshot', on_delete=models.CASCADE, related_name='storage_metrics')
     rig_uuid = models.UUIDField(db_index=True)
     timestamp = models.DateTimeField(db_index=True)
     device = models.CharField(max_length=255, blank=True, default='')
-    mountpoint = models.CharField(max_length=512, blank=True, default='')
-    fstype = models.CharField(max_length=32, blank=True, default='')
-    capacity_bytes = models.BigIntegerField(null=True)
+
+    # Disk dynamic metrics
     usage_pct = models.FloatField(null=True)
     temp_c = models.FloatField(null=True)
     smart_health = models.CharField(max_length=16, blank=True, default='')
@@ -122,16 +161,18 @@ class StorageMetric(models.Model):
 
 
 class NetworkMetric(models.Model):
-    """Per-interface time-series metrics — one row per interface per snapshot."""
+    """Per-interface time-series metrics — one row per interface per snapshot.
+
+    Stores only DYNAMIC network metrics. Static data (interface, ipv4,
+    link_speed_mbps) is stored in RigProfile.
+    """
     id = models.BigAutoField(primary_key=True)
-    snapshot = models.ForeignKey(MetricSnapshot, on_delete=models.CASCADE, related_name='network_metrics')
+    snapshot = models.ForeignKey('MetricSnapshot', on_delete=models.CASCADE, related_name='network_metrics')
     rig_uuid = models.UUIDField(db_index=True)
     timestamp = models.DateTimeField(db_index=True)
     interface = models.CharField(max_length=64, blank=True, default='')
-    ipv4 = models.CharField(max_length=15, blank=True, default='')
-    link_speed_mbps = models.PositiveIntegerField(null=True)
-    rx_bytes = models.BigIntegerField(null=True)
-    tx_bytes = models.BigIntegerField(null=True)
+
+    # Network dynamic metrics
     rx_bytes_delta = models.BigIntegerField(null=True, help_text="Bytes received since last reading")
     tx_bytes_delta = models.BigIntegerField(null=True, help_text="Bytes sent since last reading")
     rx_errors = models.PositiveIntegerField(null=True)
@@ -248,7 +289,7 @@ class GPUProcessMetric(models.Model):
         gpu_mem_mb: GPU memory used by this process (MB)
     """
     id = models.BigAutoField(primary_key=True)
-    snapshot = models.ForeignKey(MetricSnapshot, on_delete=models.CASCADE, related_name='gpu_processes')
+    snapshot = models.ForeignKey('MetricSnapshot', on_delete=models.CASCADE, related_name='gpu_processes')
     rig_uuid = models.UUIDField(db_index=True)
     timestamp = models.DateTimeField(db_index=True)
 

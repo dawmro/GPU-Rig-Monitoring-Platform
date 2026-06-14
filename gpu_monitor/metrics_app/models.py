@@ -145,30 +145,6 @@ class NetworkMetric(models.Model):
         ]
 
 
-class LatestDockerContainer(models.Model):
-    """Latest Docker container snapshot per rig — for Live Metrics display.
-
-    Stores the latest payload fields for container status display.
-    Delete-before-insert pattern: all rows for a rig are deleted
-    before inserting the latest snapshot.
-    """
-    id = models.BigAutoField(primary_key=True)
-    rig_uuid = models.UUIDField(db_index=True)
-    container_id = models.CharField(max_length=64, blank=True, default='')
-    name = models.CharField(max_length=255, blank=True, default='')
-    image = models.CharField(max_length=255, blank=True, default='')
-    status = models.CharField(max_length=32, blank=True, default='')
-    created = models.CharField(max_length=64, blank=True, default='')
-    status_text = models.CharField(max_length=255, blank=True, default='')
-
-    class Meta:
-        db_table = 'metrics_latest_docker_container'
-        unique_together = ('rig_uuid', 'name')
-        indexes = [
-            models.Index(fields=['rig_uuid']),
-        ]
-
-
 class LatestSnapshot(models.Model):
     """Denormalized latest snapshot per rig for fast dashboard loading.
 
@@ -227,6 +203,10 @@ class LatestSnapshot(models.Model):
     network_tx_bytes_json = models.JSONField(default=list, blank=True)       # [567890123, 123456789]
     network_rx_errors_json = models.JSONField(default=list, blank=True)      # [0, 2]
     network_tx_errors_json = models.JSONField(default=list, blank=True)      # [0, 1]
+
+    # Docker container data stored as JSON array for fast dashboard access
+    # Each entry is a dict: {container_id, name, image, status, created, status_text}
+    docker_containers_json = models.JSONField(default=list, blank=True)
 
     class Meta:
         db_table = 'metrics_latest_snapshot'

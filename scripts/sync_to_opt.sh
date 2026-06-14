@@ -127,6 +127,13 @@ set -a && source .env && set +a
 
 if [[ "$1" != "--no-migrate" ]]; then
     echo "--- Checking for model changes ---"
+
+    # Apply any pending migrations FIRST so makemigrations sees the correct state.
+    # This is important when model deletions are in pending migrations — applying
+    # them first ensures makemigrations doesn't try to generate duplicate deletions.
+    echo "  Applying any pending migrations first..."
+    python manage.py migrate 2>/dev/null || true
+
     if python manage.py makemigrations --check 2>/dev/null; then
         echo "  No model changes — migrations up to date"
     else
@@ -161,12 +168,16 @@ if [[ "$1" != "--no-migrate" ]]; then
                 fi
             done
         done
+
+        # Apply the newly generated migrations
+        echo "  Applying newly generated migrations..."
+        python manage.py migrate
     fi
 else
     echo "--- Skipping makemigrations (--no-migrate)"
 fi
 
-# Apply migrations
+# Apply migrations (in case --no-migrate was used and there are pending migrations)
 echo "--- Applying migrations ---"
 if python manage.py migrate --check 2>/dev/null; then
     echo "  No new migrations to apply"

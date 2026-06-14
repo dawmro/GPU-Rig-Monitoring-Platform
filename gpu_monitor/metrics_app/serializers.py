@@ -191,7 +191,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
 
             # Build docker containers data for LatestSnapshot
             docker_containers = []
-            for container in docker_containers_payload:
+            for container in docker_containers:
                 container_id = container.get('container_id')
                 if not container_id:
                     logger.warning('Skipping container without container_id: %s', container.get('name', 'unknown'))

@@ -10,14 +10,7 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AlterUniqueTogether(
-            name='dockercontainermetric',
-            unique_together=None,
-        ),
-        migrations.RemoveIndex(
-            model_name='dockercontainermetric',
-            name='metrics_doc_rig_uui_ccd705_idx',
-        ),
+        # DockerContainerMetric: unique_together and index already removed by migrations 0013-0017
         migrations.DeleteModel(
             name='DockerContainerMetric',
         ),

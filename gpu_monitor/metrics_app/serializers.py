@@ -202,6 +202,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                 )
 
             # Build GPU summary data for LatestSnapshot (fast dashboard access)
+            gpu_uuids = []
             gpu_models = []
             gpu_temps = []
             gpu_utils = []
@@ -219,6 +220,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
             gpu_pcie_width = []
             gpu_pcie_max_width = []
             for idx, gpu in enumerate(gpu_list):
+                gpu_uuids.append(gpu.get('uuid', ''))
                 gpu_models.append(gpu.get('model', ''))
                 gpu_temps.append(gpu.get('temp_c'))
                 gpu_utils.append(gpu.get('gpu_util_pct'))
@@ -299,6 +301,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     'agent_version': validated.get('agent_version', '1.0.0'),
                     # GPU
                     'gpu_count': len(gpu_list),
+                    'gpu_uuids_json': gpu_uuids,
                     'gpu_models_json': gpu_models,
                     'gpu_temps_json': gpu_temps,
                     'gpu_utils_json': gpu_utils,

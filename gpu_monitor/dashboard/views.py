@@ -85,6 +85,7 @@ def _fetch_rig_metrics(uuid, rig=None):
         for i in range(snapshot.gpu_count):
             gpu_metrics.append({
                 'gpu_index': i,
+                'gpu_uuid': _json_get(snapshot.gpu_uuids_json, i, ''),
                 'model': _json_get(snapshot.gpu_models_json, i, ''),
                 'gpu_temp_c': _json_get(snapshot.gpu_temps_json, i),
                 'gpu_util_pct': _json_get(snapshot.gpu_utils_json, i),

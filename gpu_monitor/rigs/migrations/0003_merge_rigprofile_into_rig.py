@@ -3,32 +3,6 @@
 from django.db import migrations, models
 
 
-def copy_rigprofile_to_rig(apps, schema_editor):
-    """Copy existing RigProfile data into Rig before dropping RigProfile."""
-    Rig = apps.get_model('rigs', 'Rig')
-    RigProfile = apps.get_model('metrics_app', 'RigProfile')
-    for profile in RigProfile.objects.all():
-        Rig.objects.filter(rig_uuid=profile.rig_uuid).update(
-            cpu_model=profile.cpu_model,
-            cpu_physical_cores=profile.cpu_physical_cores,
-            cpu_logical_cores=profile.cpu_logical_cores,
-            mem_total_bytes=profile.mem_total_bytes,
-            swap_total_bytes=profile.swap_total_bytes,
-            motherboard_json=profile.motherboard_json,
-            hostname=profile.hostname,
-            os_distro=profile.os_distro,
-            kernel=profile.kernel,
-            nvidia_driver=profile.nvidia_driver,
-            docker_version=profile.docker_version,
-            gpu_count=profile.gpu_count,
-            gpu_profiles_json=profile.gpu_profiles_json,
-            storage_count=profile.storage_count,
-            storage_profiles_json=profile.storage_profiles_json,
-            network_count=profile.network_count,
-            network_profiles_json=profile.network_profiles_json,
-        )
-
-
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -121,5 +95,4 @@ class Migration(migrations.Migration):
             name='swap_total_bytes',
             field=models.BigIntegerField(null=True),
         ),
-        migrations.RunPython(copy_rigprofile_to_rig, migrations.RunPython.noop),
     ]

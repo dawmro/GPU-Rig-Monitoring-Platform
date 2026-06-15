@@ -771,7 +771,7 @@ You should see output like `Updated: 0 stale, 2 offline`. If you see `password a
 │   ├── models.py               # Rig, RigTag models
 │   └── management/commands/    # update_rig_status command
 ├── metrics_app/                # Ingestion API + metric storage
-│   ├── models.py               # MetricSnapshot (timeseries), GPUMetric (timeseries), StorageMetric (timeseries), NetworkMetric (timeseries), DockerContainerMetric (timeseries), LatestDockerContainer (latest), LatestSnapshot (denormalized display cache — GPU/Storage/Network JSON arrays), RigStatusEvent |
+│   ├── models.py               # MetricSnapshot (timeseries chart data: cpu, memory, uptime, errors), GPUMetric (timeseries), StorageMetric (timeseries), NetworkMetric (timeseries), GPUProcessMetric (latest), LatestDockerContainer (latest), LatestSnapshot (denormalized display cache — CPU/memory/system/GPU/storage/network), RigStatusEvent |
 │   ├── serializers.py          # Payload validation + processing
 │   └── views.py                # IngestView, HealthView, ChartDataView, RigMetricsView
 ├── dashboard/                  # HTMX dashboard views

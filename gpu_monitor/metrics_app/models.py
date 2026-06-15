@@ -6,9 +6,9 @@ from django.utils import timezone
 class MetricSnapshot(models.Model):
     """Time-series metric data — one row per rig per minute.
 
-    Stores all metrics from the agent payload. Fields that are technically
-    static (cpu_model, mem_total_bytes, etc.) are stored per-row for
-    simplicity and to track any changes over time (e.g., hardware upgrades).
+    Stores dynamic metrics from the agent payload for historical chart
+    aggregation. Static fields (cpu_model, mem_total, motherboard, software)
+    are stored in LatestSnapshot for fast dashboard display.
     """
     id = models.BigAutoField(primary_key=True)
     rig_uuid = models.UUIDField(db_index=True)

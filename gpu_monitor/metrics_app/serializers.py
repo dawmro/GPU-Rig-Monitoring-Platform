@@ -3,7 +3,7 @@ from rest_framework import serializers, status
 from django.db import transaction
 from django.utils import timezone
 from django.core.cache import cache
-from .models import MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, LatestSnapshot, RigStatusEvent, RigProfile
+from .models import MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, LatestSnapshot, RigStatusEvent
 from rigs.models import Rig
 
 logger = logging.getLogger(__name__)
@@ -60,58 +60,64 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
 
     try:
         with transaction.atomic():
-            # Upsert RigProfile with static/semi-static data (one row per rig)
-            # Only updates when agent reports changed hardware configuration
-            RigProfile.objects.update_or_create(
-                rig_uuid=rig_uuid,
-                defaults={
-                    'cpu_model': cpu.get('model', ''),
-                    'cpu_physical_cores': cpu.get('physical_cores'),
-                    'cpu_logical_cores': cpu.get('logical_cores'),
-                    'mem_total_bytes': memory.get('total_bytes'),
-                    'swap_total_bytes': memory.get('swap_total_bytes'),
-                    'motherboard_json': motherboard_data,
-                    'hostname': software_data.get('hostname', ''),
-                    'os_distro': software_data.get('os_distro', ''),
-                    'kernel': software_data.get('kernel', ''),
-                    'nvidia_driver': software_data.get('nvidia_driver', ''),
-                    'docker_version': software_data.get('docker_version', ''),
-                    # GPU profiles (static per-GPU info)
-                    'gpu_count': len(gpu_list),
-                    'gpu_profiles_json': [
-                        {
-                            'uuid': g.get('uuid', ''),
-                            'model': g.get('model', ''),
-                            'mem_total_mb': g.get('mem_total_mb'),
-                            'pcie_max_gen': g.get('pcie_max_gen'),
-                            'pcie_max_width': g.get('pcie_max_width'),
-                            'power_limit_w': g.get('power_limit_w'),
-                        }
-                        for g in gpu_list
-                    ],
-                    # Storage profiles (static per-disk info)
-                    'storage_count': len(storage_list),
-                    'storage_profiles_json': [
-                        {
-                            'device': d.get('device', ''),
-                            'mountpoint': d.get('mountpoint', ''),
-                            'fstype': d.get('fstype', ''),
-                            'capacity_bytes': d.get('capacity_bytes'),
-                        }
-                        for d in storage_list
-                    ],
-                    # Network profiles (static per-interface info)
-                    'network_count': len(network_list),
-                    'network_profiles_json': [
-                        {
-                            'interface': n.get('interface', ''),
-                            'ipv4': n.get('ipv4', ''),
-                            'link_speed_mbps': n.get('link_speed_mbps'),
-                        }
-                        for n in network_list
-                    ],
-                },
-            )
+            # Upsert Rig with static/semi-static data
+            if rig is not None:
+                rig_update_fields = {}
+                new_cpu_model = cpu.get('model', '')
+                if rig.cpu_model != new_cpu_model:
+                    rig_update_fields['cpu_model'] = new_cpu_model
+                if rig.cpu_physical_cores != cpu.get('physical_cores'):
+                    rig_update_fields['cpu_physical_cores'] = cpu.get('physical_cores')
+                if rig.cpu_logical_cores != cpu.get('logical_cores'):
+                    rig_update_fields['cpu_logical_cores'] = cpu.get('logical_cores')
+                if rig.mem_total_bytes != memory.get('total_bytes'):
+                    rig_update_fields['mem_total_bytes'] = memory.get('total_bytes')
+                if rig.swap_total_bytes != memory.get('swap_total_bytes'):
+                    rig_update_fields['swap_total_bytes'] = memory.get('swap_total_bytes')
+                if rig.hostname != software_data.get('hostname', ''):
+                    rig_update_fields['hostname'] = software_data.get('hostname', '')
+                if rig.os_distro != software_data.get('os_distro', ''):
+                    rig_update_fields['os_distro'] = software_data.get('os_distro', '')
+                if rig.kernel != software_data.get('kernel', ''):
+                    rig_update_fields['kernel'] = software_data.get('kernel', '')
+                if rig.nvidia_driver != software_data.get('nvidia_driver', ''):
+                    rig_update_fields['nvidia_driver'] = software_data.get('nvidia_driver', '')
+                if rig.docker_version != software_data.get('docker_version', ''):
+                    rig_update_fields['docker_version'] = software_data.get('docker_version', '')
+                if rig.motherboard_json != motherboard_data:
+                    rig_update_fields['motherboard_json'] = motherboard_data
+                if rig.gpu_count != len(gpu_list):
+                    rig_update_fields['gpu_count'] = len(gpu_list)
+                new_gpu_profiles = [
+                    {'uuid': g.get('uuid', ''), 'model': g.get('model', ''),
+                     'mem_total_mb': g.get('mem_total_mb'),
+                     'pcie_max_gen': g.get('pcie_max_gen'),
+                     'pcie_max_width': g.get('pcie_max_width'),
+                     'power_limit_w': g.get('power_limit_w')}
+                    for g in gpu_list
+                ]
+                if rig.gpu_profiles_json != new_gpu_profiles:
+                    rig_update_fields['gpu_profiles_json'] = new_gpu_profiles
+                if rig.storage_count != len(storage_list):
+                    rig_update_fields['storage_count'] = len(storage_list)
+                new_storage_profiles = [
+                    {'device': d.get('device', ''), 'mountpoint': d.get('mountpoint', ''),
+                     'fstype': d.get('fstype', ''), 'capacity_bytes': d.get('capacity_bytes')}
+                    for d in storage_list
+                ]
+                if rig.storage_profiles_json != new_storage_profiles:
+                    rig_update_fields['storage_profiles_json'] = new_storage_profiles
+                if rig.network_count != len(network_list):
+                    rig_update_fields['network_count'] = len(network_list)
+                new_network_profiles = [
+                    {'interface': n.get('interface', ''), 'ipv4': n.get('ipv4', ''),
+                     'link_speed_mbps': n.get('link_speed_mbps')}
+                    for n in network_list
+                ]
+                if rig.network_profiles_json != new_network_profiles:
+                    rig_update_fields['network_profiles_json'] = new_network_profiles
+                if rig_update_fields:
+                    Rig.objects.filter(rig_uuid=rig_uuid).update(**rig_update_fields)
 
             # Upsert metric snapshot — dynamic metrics only
             snapshot, created = MetricSnapshot.objects.update_or_create(

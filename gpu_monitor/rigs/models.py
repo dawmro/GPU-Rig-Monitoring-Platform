@@ -32,9 +32,29 @@ class Rig(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     tags = models.ManyToManyField(RigTag, blank=True, related_name='rigs')
 
-    # Latest error text from most recent payload (like motherboard_json — updated in place)
+    # Latest error text from most recent payload (updated in place)
     # Format: [{"source": "kernel", "message": "...", "timestamp": "..."}]
     latest_errors_json = models.JSONField(default=list, blank=True)
+
+    # --- Static/semi-static rig configuration (merged from RigProfile) ---
+    # These fields are updated on every heartbeat but change rarely
+    cpu_model = models.CharField(max_length=255, blank=True, default='')
+    cpu_physical_cores = models.PositiveIntegerField(null=True)
+    cpu_logical_cores = models.PositiveIntegerField(null=True)
+    mem_total_bytes = models.BigIntegerField(null=True)
+    swap_total_bytes = models.BigIntegerField(null=True)
+    motherboard_json = models.JSONField(default=dict, blank=True)
+    hostname = models.CharField(max_length=255, blank=True, default='')
+    os_distro = models.CharField(max_length=255, blank=True, default='')
+    kernel = models.CharField(max_length=255, blank=True, default='')
+    nvidia_driver = models.CharField(max_length=64, blank=True, default='')
+    docker_version = models.CharField(max_length=64, blank=True, default='')
+    gpu_count = models.PositiveSmallIntegerField(default=0)
+    gpu_profiles_json = models.JSONField(default=list, blank=True)
+    storage_count = models.PositiveSmallIntegerField(default=0)
+    storage_profiles_json = models.JSONField(default=list, blank=True)
+    network_count = models.PositiveSmallIntegerField(default=0)
+    network_profiles_json = models.JSONField(default=list, blank=True)
 
     class Meta:
         db_table = 'rigs_rig'

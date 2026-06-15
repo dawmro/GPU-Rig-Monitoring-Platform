@@ -3,69 +3,12 @@ from django.conf import settings
 from django.utils import timezone
 
 
-class RigProfile(models.Model):
-    """Static and semi-static rig configuration data — one row per rig.
-
-    Stores hardware identifiers and capabilities that change rarely or never.
-    Referenced by timeseries tables to avoid duplicating static data
-    in every heartbeat.
-
-    Updated only when agent reports changed hardware configuration
-    (detected by comparing with current profile).
-    """
-    rig_uuid = models.UUIDField(primary_key=True)
-
-    # CPU static info
-    cpu_model = models.CharField(max_length=255, blank=True, default='')
-    cpu_physical_cores = models.PositiveIntegerField(null=True)
-    cpu_logical_cores = models.PositiveIntegerField(null=True)
-
-    # Memory static
-    mem_total_bytes = models.BigIntegerField(null=True)
-    swap_total_bytes = models.BigIntegerField(null=True)
-
-    # Motherboard static
-    motherboard_json = models.JSONField(default=dict, blank=True)
-
-    # Software semi-static (hostname, OS, kernel — change on reboot/upgrade)
-    hostname = models.CharField(max_length=255, blank=True, default='')
-    os_distro = models.CharField(max_length=255, blank=True, default='')
-    kernel = models.CharField(max_length=255, blank=True, default='')
-    nvidia_driver = models.CharField(max_length=64, blank=True, default='')
-    docker_version = models.CharField(max_length=64, blank=True, default='')
-
-    # GPU static profiles (JSON array, one entry per GPU)
-    gpu_count = models.PositiveSmallIntegerField(default=0)
-    gpu_profiles_json = models.JSONField(default=list, blank=True)
-    # Each entry: {"uuid": "...", "model": "RTX 3060", "mem_total_mb": 12288,
-    #              "pcie_max_gen": 4, "pcie_max_width": 16, "power_limit_w": 450}
-
-    # Storage static profiles (JSON array, one entry per disk)
-    storage_count = models.PositiveSmallIntegerField(default=0)
-    storage_profiles_json = models.JSONField(default=list, blank=True)
-    # Each entry: {"device": "/dev/sda", "mountpoint": "/", "fstype": "ext4",
-    #              "capacity_bytes": 500107862016}
-
-    # Network static profiles (JSON array, one entry per interface)
-    network_count = models.PositiveSmallIntegerField(default=0)
-    network_profiles_json = models.JSONField(default=list, blank=True)
-    # Each entry: {"interface": "eth0", "ipv4": "192.168.1.10",
-    #              "link_speed_mbps": 1000}
-
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        db_table = 'rigs_rigprofile'
-
-    def __str__(self):
-        return f"RigProfile({self.rig_uuid}, {self.cpu_model})"
-
 
 class MetricSnapshot(models.Model):
     """Time-series metric data — one row per rig per minute.
 
     Stores only DYNAMIC metrics that change over time.
-    Static data (cpu_model, mem_total_bytes, etc.) is stored in RigProfile.
+    Static data (cpu_model, mem_total_bytes, etc.) is stored on the Rig model.
     """
     id = models.BigAutoField(primary_key=True)
     rig_uuid = models.UUIDField(db_index=True)
@@ -90,7 +33,7 @@ class MetricSnapshot(models.Model):
     # Error count for this snapshot (integer, aggregated for error frequency charts)
     error_count = models.PositiveIntegerField(default=0)
 
-    # Timestamp of last RigProfile update (for cache invalidation)
+    # Timestamp of last Rig config update (for cache invalidation)
     profile_updated_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:

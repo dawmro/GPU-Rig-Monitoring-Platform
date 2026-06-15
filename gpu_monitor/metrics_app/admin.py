@@ -1,13 +1,5 @@
 from django.contrib import admin
-from .models import MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, LatestSnapshot, RigStatusEvent, RigProfile
-
-
-@admin.register(RigProfile)
-class RigProfileAdmin(admin.ModelAdmin):
-    list_display = ('rig_uuid', 'cpu_model', 'cpu_physical_cores', 'cpu_logical_cores',
-                    'mem_total_bytes', 'hostname', 'os_distro', 'kernel', 'gpu_count',
-                    'storage_count', 'network_count')
-    search_fields = ('rig_uuid', 'cpu_model', 'hostname')
+from .models import MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, LatestSnapshot, RigStatusEvent
 
 
 @admin.register(MetricSnapshot)

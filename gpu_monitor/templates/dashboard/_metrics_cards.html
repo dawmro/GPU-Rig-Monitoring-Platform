@@ -11,12 +11,12 @@
         <span class="text-xs text-yellow-400 ml-1">(stale)</span>
         {% endif %}
     </h3>
-    {% if rig_profile %}
+    {% if rig %}
     <div class="text-lg font-bold text-white mb-1">
-        {{ rig_profile.cpu_model|default:"Unknown" }}
+        {{ rig.cpu_model|default:"Unknown" }}
     </div>
     <div class="text-sm text-gray-400 mb-2">
-        {{ rig_profile.cpu_physical_cores|default:"?" }} cores / {{ rig_profile.cpu_logical_cores|default:"?" }} threads
+        {{ rig.cpu_physical_cores|default:"?" }} cores / {{ rig.cpu_logical_cores|default:"?" }} threads
     </div>
     <div class="flex items-center gap-3 mb-2">
         <div class="flex-1">
@@ -74,11 +74,11 @@
         <span class="text-xs text-yellow-400 ml-1">(stale)</span>
         {% endif %}
     </h3>
-    {% if snapshot or rig_profile %}
+    {% if snapshot or rig %}
     <div class="flex items-center gap-3 mb-2">
         <div class="flex-1">
             <div class="w-full bg-gray-700 rounded-full h-2">
-                {% with total=rig_profile.mem_total_bytes|default:snapshot.mem_total_bytes|default:0 %}
+                {% with total=rig.mem_total_bytes|default:snapshot.mem_total_bytes|default:0 %}
                     {% if snapshot.mem_used_bytes and total > 0 %}
                         {% widthratio snapshot.mem_used_bytes total 100 as mem_pct %}
                     {% else %}{% widthratio 0 1 100 as mem_pct %}{% endif %}
@@ -94,7 +94,7 @@
     </div>
     <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-400">
         <span>Used: <span class="text-gray-300">{% if snapshot.mem_used_bytes %}{{ snapshot.mem_used_bytes|filesizeformat }}{% else %}—{% endif %}</span></span>
-        <span>Total: <span class="text-gray-300">{% if rig_profile and rig_profile.mem_total_bytes %}{{ rig_profile.mem_total_bytes|filesizeformat }}{% elif snapshot.mem_total_bytes %}{{ snapshot.mem_total_bytes|filesizeformat }}{% else %}—{% endif %}</span></span>
+        <span>Total: <span class="text-gray-300">{% if rig and rig.mem_total_bytes %}{{ rig.mem_total_bytes|filesizeformat }}{% elif snapshot.mem_total_bytes %}{{ snapshot.mem_total_bytes|filesizeformat }}{% else %}—{% endif %}</span></span>
         {% if snapshot.mem_free_bytes %}
         <span>Free: <span class="text-gray-300">{{ snapshot.mem_free_bytes|filesizeformat }}</span></span>
         {% endif %}
@@ -346,16 +346,16 @@
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <!-- Motherboard -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
-{% if rig_profile and rig_profile.motherboard_json %}
+{% if rig and rig.motherboard_json %}
 <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
     <h3 class="text-gray-400 text-sm font-medium mb-2">Motherboard</h3>
     <div class="text-sm text-gray-300">
-        {{ rig_profile.motherboard_json.manufacturer|default:"—" }}
+        {{ rig.motherboard_json.manufacturer|default:"—" }}
     </div>
     <div class="text-sm text-gray-400">
-        {{ rig_profile.motherboard_json.model|default:"—" }}
-        {% if rig_profile.motherboard_json.bios_version %}
-        <span class="text-gray-600"> · BIOS: {{ rig_profile.motherboard_json.bios_version }}</span>
+        {{ rig.motherboard_json.model|default:"—" }}
+        {% if rig.motherboard_json.bios_version %}
+        <span class="text-gray-600"> · BIOS: {{ rig.motherboard_json.bios_version }}</span>
         {% endif %}
     </div>
 </div>
@@ -364,25 +364,25 @@
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <!-- Software / OS -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
-{% if rig_profile %}
+{% if rig %}
 <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
     <h3 class="text-gray-400 text-sm font-medium mb-2">Software</h3>
     <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
         <div class="text-gray-500">Hostname:</div>
-        <div class="text-gray-300">{{ rig_profile.hostname|default:"—" }}</div>
+        <div class="text-gray-300">{{ rig.hostname|default:"—" }}</div>
         <div class="text-gray-500">OS:</div>
-        <div class="text-gray-300 truncate" title="{{ rig_profile.os_distro }}">{{ rig_profile.os_distro|default:"—" }}</div>
+        <div class="text-gray-300 truncate" title="{{ rig.os_distro }}">{{ rig.os_distro|default:"—" }}</div>
         <div class="text-gray-500">Kernel:</div>
-        <div class="text-gray-300">{{ rig_profile.kernel|default:"—" }}</div>
+        <div class="text-gray-300">{{ rig.kernel|default:"—" }}</div>
         <div class="text-gray-500">Uptime:</div>
         <div class="text-gray-300">{{ snapshot.uptime_s|time_since }}</div>
-        {% if rig_profile.nvidia_driver %}
+        {% if rig.nvidia_driver %}
         <div class="text-gray-500">NVIDIA Driver:</div>
-        <div class="text-gray-300">{{ rig_profile.nvidia_driver }}</div>
+        <div class="text-gray-300">{{ rig.nvidia_driver }}</div>
         {% endif %}
-        {% if rig_profile.docker_version %}
+        {% if rig.docker_version %}
         <div class="text-gray-500">Docker:</div>
-        <div class="text-gray-300">{{ rig_profile.docker_version }}</div>
+        <div class="text-gray-300">{{ rig.docker_version }}</div>
         {% endif %}
         {% if metric_snapshot.agent_version %}
         <div class="text-gray-500">Agent:</div>

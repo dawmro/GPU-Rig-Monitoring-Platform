@@ -8,7 +8,7 @@ from functools import wraps
 import time
 
 from rigs.models import Rig, RigTag
-from metrics_app.models import MetricSnapshot, LatestSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, RigProfile
+from metrics_app.models import MetricSnapshot, LatestSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric
 from audit.middleware import log_audit_event
 
 
@@ -191,12 +191,11 @@ def _fetch_rig_metrics(uuid, rig=None):
                 primary_ip = ip
                 break
 
-    # RigProfile for static data (cpu_model, cores, mem_total, etc.)
-    rig_profile = RigProfile.objects.filter(rig_uuid=str(uuid)).first()
+    # Rig object (contains static config merged from RigProfile)
+    # Already fetched by rig_detail view, contains cpu_model, cores, etc.
 
     return {
         'snapshot': snapshot,
-        'rig_profile': rig_profile,
         'gpu_metrics': gpu_metrics,
         'gpu_processes': gpu_processes,
         'storage_metrics': storage_metrics,
@@ -388,7 +387,7 @@ def rig_delete(request, uuid):
 
     # Delete all associated metric data (MetricSnapshot has rig_uuid as UUIDField, not FK)
     from metrics_app.models import MetricSnapshot, LatestSnapshot, GPUMetric, GPUProcessMetric, \
-        StorageMetric, NetworkMetric, RigStatusEvent, RigProfile
+        StorageMetric, NetworkMetric, RigStatusEvent
     MetricSnapshot.objects.filter(rig_uuid=uuid).delete()
     LatestSnapshot.objects.filter(rig_uuid=uuid).delete()
     GPUMetric.objects.filter(rig_uuid=uuid).delete()
@@ -396,7 +395,6 @@ def rig_delete(request, uuid):
     StorageMetric.objects.filter(rig_uuid=uuid).delete()
     NetworkMetric.objects.filter(rig_uuid=uuid).delete()
     RigStatusEvent.objects.filter(rig_uuid=uuid).delete()
-    RigProfile.objects.filter(rig_uuid=uuid).delete()
 
     rig.delete()
     # Invalidate cached snapshot for this rig

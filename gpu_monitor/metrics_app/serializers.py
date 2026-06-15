@@ -76,6 +76,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     'swap_used_bytes': memory.get('swap_used_bytes'),
                     'swap_total_bytes': memory.get('swap_total_bytes'),
                     'status': rig.status if rig else None,
+                    'uptime_s': software_data.get('uptime_s'),
                     'error_count': len(real_errors),
                 },
             )

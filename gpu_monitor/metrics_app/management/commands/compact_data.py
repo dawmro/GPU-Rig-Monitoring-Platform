@@ -70,7 +70,7 @@ COMPACT_TABLES = [
             'cpu_load_avg_json': 'last', 'mem_used_bytes': 'avg',
             'mem_free_bytes': 'avg', 'mem_cached_bytes': 'avg',
             'swap_used_bytes': 'avg', 'swap_total_bytes': 'last',
-            'status': 'last', 'error_count': 'sum',
+            'uptime_s': 'max', 'status': 'last', 'error_count': 'sum',
         },
         'static_fields': [
             'schema_version',

@@ -168,7 +168,7 @@ class Command(BaseCommand):
                       "cpu_utilization_pct, cpu_temp_c, cpu_load_avg_json, "
                       "mem_used_bytes, mem_free_bytes, mem_cached_bytes, "
                       "swap_used_bytes, swap_total_bytes, status, "
-                      "error_count "
+                      "uptime_s, error_count "
                       "FROM metrics_metricsnapshot "
                       "WHERE timestamp >= %s AND timestamp < %s ORDER BY timestamp", [start, end])
             cols = [col[0] for col in c.description]
@@ -215,7 +215,7 @@ class Command(BaseCommand):
                 'cpu_utilization_pct, cpu_temp_c, cpu_load_avg_json, '
                 'mem_used_bytes, mem_free_bytes, mem_cached_bytes, '
                 'swap_used_bytes, swap_total_bytes, status, '
-                'error_count')
+                'uptime_s, error_count')
 
         all_vals = []
         for s in snapshots:
@@ -226,7 +226,7 @@ class Command(BaseCommand):
                 s['cpu_load_avg_json'], s['mem_used_bytes'],
                 s['mem_free_bytes'], s['mem_cached_bytes'],
                 s['swap_used_bytes'], s['swap_total_bytes'],
-                s['status'],
+                s['status'], s['uptime_s'],
                 err_per_snap,
                 s['id'],
             ))

@@ -31,6 +31,9 @@ class MetricSnapshot(models.Model):
     # Rig status at time of this snapshot (online/offline/stale)
     status = models.CharField(max_length=10, null=True, blank=True)
 
+    # Uptime in seconds (dynamic — increases over time, used for uptime chart)
+    uptime_s = models.PositiveIntegerField(null=True)
+
     # Error count for this snapshot (integer, aggregated for error frequency charts)
     error_count = models.PositiveIntegerField(default=0)
 

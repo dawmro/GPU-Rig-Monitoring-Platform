@@ -174,7 +174,7 @@ class Command(BaseCommand):
             cols = [col[0] for col in c.description]
             d['snapshots'] = [dict(zip(cols, r)) for r in c.fetchall()]
 
-            c.execute("SELECT id, snapshot_id, rig_uuid, timestamp, gpu_index, gpu_uuid, model, "
+            c.execute("SELECT id, snapshot_id, rig_uuid, timestamp, gpu_index, model, "
                       "gpu_util_pct, gpu_temp_c, fan_speed_pct, "
                       "mem_total_mb, mem_used_mb, mem_free_mb, mem_util_pct, "
                       "power_draw_w, power_limit_w, "
@@ -268,7 +268,7 @@ class Command(BaseCommand):
             if table == 'gpu':
                 all_vals.append((
                     id_map[old_sid], row['rig_uuid'], new_ts,
-                    row['gpu_index'], row['gpu_uuid'], row['model'],
+                    row['gpu_index'], row['model'],
                     row['gpu_util_pct'], row['gpu_temp_c'], row['fan_speed_pct'],
                     row['mem_total_mb'], row['mem_used_mb'], row['mem_free_mb'],
                     row['mem_util_pct'], row['power_draw_w'], row['power_limit_w'],
@@ -297,7 +297,7 @@ class Command(BaseCommand):
 
         if table == 'gpu':
             sql = ("INSERT INTO metrics_gpumetric "
-                   "(snapshot_id, rig_uuid, timestamp, gpu_index, gpu_uuid, model, "
+                   "(snapshot_id, rig_uuid, timestamp, gpu_index, model, "
                    "gpu_util_pct, gpu_temp_c, fan_speed_pct, "
                    "mem_total_mb, mem_used_mb, mem_free_mb, mem_util_pct, "
                    "power_draw_w, power_limit_w, "

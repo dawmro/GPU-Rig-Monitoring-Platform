@@ -43,7 +43,7 @@ COMPACT_TABLES = [
             'pcie_current_width': 'last', 'pcie_max_width': 'last',
             'gpu_core_clock_mhz': 'avg', 'gpu_mem_clock_mhz': 'avg',
         },
-        'static_fields': ['gpu_uuid', 'model', 'snapshot_id'],
+        'static_fields': ['model', 'snapshot_id'],
     },
     {
         'table': 'metrics_storagemetric',

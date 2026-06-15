@@ -89,7 +89,6 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     gpu_index=idx,
                     defaults={
                         'snapshot': snapshot,
-                        'gpu_uuid': gpu.get('uuid', ''),
                         'model': gpu.get('model', ''),
                         'gpu_util_pct': gpu.get('gpu_util_pct'),
                         'gpu_temp_c': gpu.get('temp_c'),

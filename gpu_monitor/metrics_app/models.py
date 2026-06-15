@@ -57,7 +57,6 @@ class GPUMetric(models.Model):
     rig_uuid = models.UUIDField(db_index=True)
     timestamp = models.DateTimeField(db_index=True)
     gpu_index = models.PositiveSmallIntegerField(default=0)
-
     model = models.CharField(max_length=255, blank=True, default='')
     gpu_util_pct = models.FloatField(null=True)
     gpu_temp_c = models.FloatField(null=True)

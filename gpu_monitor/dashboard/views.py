@@ -102,7 +102,6 @@ def _fetch_rig_metrics(uuid, rig=None):
                 'pcie_max_gen': _json_get(snapshot.gpu_pcie_max_gen_json, i),
                 'pcie_current_width': _json_get(snapshot.gpu_pcie_width_json, i),
                 'pcie_max_width': _json_get(snapshot.gpu_pcie_max_width_json, i),
-                'gpu_uuid': '',  # Not stored in snapshot
             })
 
     # Storage: read from LatestSnapshot JSON arrays instead of querying

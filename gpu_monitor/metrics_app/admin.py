@@ -11,9 +11,9 @@ class MetricSnapshotAdmin(admin.ModelAdmin):
 
 @admin.register(GPUMetric)
 class GPUMetricAdmin(admin.ModelAdmin):
-    list_display = ('rig_uuid', 'timestamp', 'gpu_index', 'model', 'gpu_uuid', 'gpu_util_pct', 'gpu_temp_c', 'mem_used_mb', 'power_draw_w')
+    list_display = ('rig_uuid', 'timestamp', 'gpu_index', 'model', 'gpu_util_pct', 'gpu_temp_c', 'mem_used_mb', 'power_draw_w')
     list_filter = ('gpu_index',)
-    search_fields = ('rig_uuid', 'gpu_uuid', 'model')
+    search_fields = ('rig_uuid', 'model')
 
 
 @admin.register(StorageMetric)

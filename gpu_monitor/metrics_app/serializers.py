@@ -66,12 +66,8 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                 schema_version=schema_version,
                 timestamp=ts,
                 defaults={
-                    'agent_version': validated.get('agent_version', '1.0.0'),
-                    'cpu_model': cpu.get('model', ''),
                     'cpu_utilization_pct': cpu.get('utilization_pct'),
                     'cpu_temp_c': cpu.get('temp_c'),
-                    'cpu_physical_cores': cpu.get('physical_cores'),
-                    'cpu_logical_cores': cpu.get('logical_cores'),
                     'cpu_load_avg_json': cpu.get('load_avg', []),
                     'mem_total_bytes': memory.get('total_bytes'),
                     'mem_used_bytes': memory.get('used_bytes'),
@@ -80,8 +76,6 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     'swap_used_bytes': memory.get('swap_used_bytes'),
                     'swap_total_bytes': memory.get('swap_total_bytes'),
                     'status': rig.status if rig else None,
-                    'motherboard_json': motherboard_data,
-                    'software_json': software_data,
                     'error_count': len(real_errors),
                 },
             )

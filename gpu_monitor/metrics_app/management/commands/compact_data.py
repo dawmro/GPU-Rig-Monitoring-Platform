@@ -73,9 +73,7 @@ COMPACT_TABLES = [
             'status': 'last', 'error_count': 'sum',
         },
         'static_fields': [
-            'cpu_model', 'cpu_physical_cores', 'cpu_logical_cores',
-            'mem_total_bytes', 'schema_version', 'agent_version',
-            'software_json', 'motherboard_json',
+            'schema_version',
         ],
     },
 ]

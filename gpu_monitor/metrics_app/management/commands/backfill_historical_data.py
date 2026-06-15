@@ -164,12 +164,10 @@ class Command(BaseCommand):
     def _read_source(self, start, end):
         d = {'snapshots': [], 'gpu': [], 'disk': [], 'network': []}
         with connection.cursor() as c:
-            c.execute("SELECT id, rig_uuid, schema_version, agent_version, timestamp, "
+            c.execute("SELECT id, rig_uuid, schema_version, timestamp, "
                       "cpu_utilization_pct, cpu_temp_c, cpu_load_avg_json, "
                       "mem_used_bytes, mem_free_bytes, mem_cached_bytes, "
                       "swap_used_bytes, swap_total_bytes, status, "
-                      "cpu_model, cpu_physical_cores, cpu_logical_cores, "
-                      "mem_total_bytes, software_json, motherboard_json, "
                       "error_count "
                       "FROM metrics_metricsnapshot "
                       "WHERE timestamp >= %s AND timestamp < %s ORDER BY timestamp", [start, end])
@@ -213,26 +211,22 @@ class Command(BaseCommand):
         if not snapshots:
             return id_map
 
-        cols = ('rig_uuid, schema_version, agent_version, timestamp, '
+        cols = ('rig_uuid, schema_version, timestamp, '
                 'cpu_utilization_pct, cpu_temp_c, cpu_load_avg_json, '
                 'mem_used_bytes, mem_free_bytes, mem_cached_bytes, '
                 'swap_used_bytes, swap_total_bytes, status, '
-                'cpu_model, cpu_physical_cores, cpu_logical_cores, '
-                'mem_total_bytes, software_json, motherboard_json, '
                 'error_count')
 
         all_vals = []
         for s in snapshots:
             all_vals.append((
-                s['rig_uuid'], s['schema_version'], s['agent_version'],
+                s['rig_uuid'], s['schema_version'],
                 s['timestamp'] - offset,
                 s['cpu_utilization_pct'], s['cpu_temp_c'],
                 s['cpu_load_avg_json'], s['mem_used_bytes'],
                 s['mem_free_bytes'], s['mem_cached_bytes'],
                 s['swap_used_bytes'], s['swap_total_bytes'],
-                s['status'], s['cpu_model'], s['cpu_physical_cores'],
-                s['cpu_logical_cores'], s['mem_total_bytes'],
-                s['software_json'], s['motherboard_json'],
+                s['status'],
                 err_per_snap,
                 s['id'],
             ))

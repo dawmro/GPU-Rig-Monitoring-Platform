@@ -13,18 +13,14 @@ class MetricSnapshot(models.Model):
     id = models.BigAutoField(primary_key=True)
     rig_uuid = models.UUIDField(db_index=True)
     schema_version = models.CharField(max_length=10, default='1.0')
-    agent_version = models.CharField(max_length=20, default='1.0.0')
     timestamp = models.DateTimeField(db_index=True)
 
-    # CPU metrics (static + dynamic)
-    cpu_model = models.CharField(max_length=255, blank=True, default='')
+    # CPU metrics (dynamic — change every heartbeat, used for charts)
     cpu_utilization_pct = models.FloatField(null=True)
     cpu_temp_c = models.FloatField(null=True)
-    cpu_physical_cores = models.PositiveIntegerField(null=True)
-    cpu_logical_cores = models.PositiveIntegerField(null=True)
     cpu_load_avg_json = models.JSONField(default=list, blank=True)
 
-    # Memory metrics (static + dynamic)
+    # Memory metrics (dynamic — used for charts)
     mem_total_bytes = models.BigIntegerField(null=True)
     mem_used_bytes = models.BigIntegerField(null=True)
     mem_free_bytes = models.BigIntegerField(null=True)
@@ -34,13 +30,6 @@ class MetricSnapshot(models.Model):
 
     # Rig status at time of this snapshot (online/offline/stale)
     status = models.CharField(max_length=10, null=True, blank=True)
-
-    # Motherboard info (static, stored as JSON for flexibility)
-    motherboard_json = models.JSONField(default=dict, blank=True)
-
-    # Software info (static, stored as JSON)
-    # Contains: hostname, os_distro, kernel, uptime_s, nvidia_driver, docker_version
-    software_json = models.JSONField(default=dict, blank=True)
 
     # Error count for this snapshot (integer, aggregated for error frequency charts)
     error_count = models.PositiveIntegerField(default=0)

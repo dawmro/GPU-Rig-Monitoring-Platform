@@ -201,6 +201,10 @@ class LatestSnapshot(models.Model):
     cpu_temp_c = models.FloatField(null=True)
     mem_used_bytes = models.BigIntegerField(null=True)
     mem_total_bytes = models.BigIntegerField(null=True)
+    mem_free_bytes = models.BigIntegerField(null=True)
+    mem_cached_bytes = models.BigIntegerField(null=True)
+    swap_used_bytes = models.BigIntegerField(null=True)
+    swap_total_bytes = models.BigIntegerField(null=True)
     uptime_s = models.PositiveIntegerField(null=True)
     updated_at = models.DateTimeField(auto_now=True)
 

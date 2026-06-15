@@ -102,19 +102,17 @@
         <span>Cached: <span class="text-gray-300">{{ snapshot.mem_cached_bytes|filesizeformat }}</span></span>
         {% endif %}
     </div>
-    {% with swap_total=rig_profile.swap_total_bytes|default:snapshot.swap_total_bytes|default:0 %}
-    {% if swap_total > 0 %}
+    {% if snapshot.swap_total_bytes and snapshot.swap_total_bytes > 0 %}
     <div class="mt-1 pt-1 border-t border-gray-700/50 text-xs text-gray-500">
         Swap:
         <span class="text-gray-400">{{ snapshot.swap_used_bytes|filesizeformat }}</span> /
-        <span class="text-gray-400">{{ swap_total|filesizeformat }}</span>
-        {% if snapshot.swap_used_bytes and swap_total > 0 %}
-            {% widthratio snapshot.swap_used_bytes swap_total 100 as swap_pct %}
+        <span class="text-gray-400">{{ snapshot.swap_total_bytes|filesizeformat }}</span>
+        {% if snapshot.swap_used_bytes and snapshot.swap_total_bytes > 0 %}
+            {% widthratio snapshot.swap_used_bytes snapshot.swap_total_bytes 100 as swap_pct %}
         {% else %}{% widthratio 0 1 100 as swap_pct %}{% endif %}
         <span class="text-gray-600">({{ swap_pct }}%)</span>
     </div>
     {% endif %}
-    {% endwith %}
     {% else %}
     <div class="text-gray-500">No data</div>
     {% endif %}

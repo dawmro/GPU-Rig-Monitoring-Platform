@@ -70,12 +70,10 @@ COMPACT_TABLES = [
             'cpu_load_avg_json': 'last', 'mem_used_bytes': 'avg',
             'mem_free_bytes': 'avg', 'mem_cached_bytes': 'avg',
             'swap_used_bytes': 'avg', 'swap_total_bytes': 'last',
-            'status': 'last', 'error_count': 'sum',
+            'uptime_s': 'max', 'status': 'last', 'error_count': 'sum',
         },
         'static_fields': [
-            'cpu_model', 'cpu_physical_cores', 'cpu_logical_cores',
-            'mem_total_bytes', 'schema_version', 'agent_version',
-            'software_json', 'motherboard_json',
+            'schema_version',
         ],
     },
 ]

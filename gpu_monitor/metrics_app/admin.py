@@ -4,7 +4,7 @@ from .models import MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, Lat
 
 @admin.register(MetricSnapshot)
 class MetricSnapshotAdmin(admin.ModelAdmin):
-    list_display = ('rig_uuid', 'timestamp', 'cpu_model', 'cpu_utilization_pct', 'cpu_temp_c', 'mem_used_bytes', 'agent_version')
+    list_display = ('rig_uuid', 'timestamp', 'cpu_utilization_pct', 'cpu_temp_c', 'mem_used_bytes', 'error_count')
     list_filter = ('schema_version',)
     search_fields = ('rig_uuid',)
 

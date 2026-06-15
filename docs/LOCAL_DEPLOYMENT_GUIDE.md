@@ -18,14 +18,15 @@ By the end you will have:
 1. [Architecture Overview](#1-architecture-overview)
 2. [Prerequisites](#2-prerequisites)
 3. [Server Setup](#3-server-setup)
-   - 3.1 [Install System Packages](#31-install-system-packages)
-   - 3.2 [Configure PostgreSQL](#32-configure-postgresql)
-   - 3.3 [Set Up the Django Project](#33-set-up-the-django-project)
-   - 3.4 [Run Migrations](#34-run-migrations)
-   - 3.5 [Create an Admin User](#35-create-an-admin-user)
-   - 3.6 [Configure Nginx](#36-configure-nginx)
-   - 3.7 [Start Gunicorn](#37-start-gunicorn)
-   - 3.8 [Quick Alternative: Django Dev Server](#38-quick-alternative-django-dev-server)
+   - 3.1 [Create the Installation Directory](#31-create-the-installation-directory)
+   - 3.2 [Install System Packages](#32-install-system-packages)
+   - 3.3 [Configure PostgreSQL](#33-configure-postgresql)
+   - 3.4 [Set Up the Django Project](#34-set-up-the-django-project)
+   - 3.5 [Run Migrations](#35-run-migrations)
+   - 3.6 [Create an Admin User](#36-create-an-admin-user)
+   - 3.7 [Configure Nginx](#37-configure-nginx)
+   - 3.8 [Start Gunicorn](#38-start-gunicorn)
+   - 3.9 [Quick Alternative: Django Dev Server](#39-quick-alternative-django-dev-server)
 4. [Agent Setup](#4-agent-setup)
    - 4.1 [Create Agent User and Directories](#41-create-agent-user-and-directories)
    - 4.2 [Install Agent Dependencies](#42-install-agent-dependencies)
@@ -35,11 +36,19 @@ By the end you will have:
    - 4.6 [Set Up Cron](#46-set-up-cron)
    - 4.7 [Test the Agent](#47-test-the-agent)
 5. [First Run Verification](#5-first-run-verification)
-6. [Stopping and Restarting Services](#6-stopping-and-restarting-services)
-7. [Understanding the File Layout](#7-understanding-the-file-layout)
-8. [Troubleshooting](#8-troubleshooting)
-9. [Differences from Production](#9-differences-from-production)
-10. [Preparing for Production Deployment](#10-preparing-for-production-deployment)
+   - 5.1 [Check Server Health](#51-check-server-health)
+   - 5.2 [Log Into the Dashboard](#52-log-into-the-dashboard)
+   - 5.3 [Create an API Key](#53-create-an-api-key)
+   - 5.4 [Verify the Agent Appears on the Dashboard](#54-verify-the-agent-appears-on-the-dashboard)
+   - 5.5 [Verify HTMX Live Polling](#55-verify-htmx-live-polling)
+   - 5.6 [Dashboard Features](#56-dashboard-features)
+   - 5.7 [Set Up Data Retention](#57-set-up-data-retention)
+   - 5.8 [Set Up Rig Status Monitoring Cron](#58-set-up-rig-status-monitoring-cron)
+6. [Understanding the File Layout](#6-understanding-the-file-layout)
+7. [Troubleshooting](#7-troubleshooting)
+8. [Differences from Production](#8-differences-from-production)
+9. [Preparing for Production Deployment](#9-preparing-for-production-deployment)
+10. [Stopping, Restarting, and Upgrading](#10-stopping-restarting-and-upgrading)
 
 ---
 
@@ -117,7 +126,14 @@ If your path is different, adjust all `cp` commands accordingly.
 
 ## 3. Server Setup
 
-### 3.1 Install System Packages
+### 3.1 Create the Installation Directory
+
+```bash
+sudo mkdir -p /opt/gpu_monitor
+sudo chown "$USER:$USER" /opt/gpu_monitor
+```
+
+### 3.2 Install System Packages
 
 ```bash
 sudo apt update
@@ -125,7 +141,7 @@ sudo apt install -y python3-venv python3-pip postgresql postgresql-contrib \
     nginx curl build-essential
 ```
 
-### 3.2 Configure PostgreSQL
+### 3.3 Configure PostgreSQL
 
 ```bash
 # Start and enable PostgreSQL
@@ -150,13 +166,9 @@ PGPASSWORD=local_...word psql -h 127.0.0.1 -U gpu_monitor -d gpu_monitor -c "SEL
 
 If you see `?column? | 1`, the database is ready.
 
-### 3.3 Set Up the Django Project
+### 3.4 Set Up the Django Project
 
 ```bash
-# Create the installation directory
-sudo mkdir -p /opt/gpu_monitor
-sudo chown "$USER:$USER" /opt/gpu_monitor
-
 # Copy the Django project (adjust path if your checkout is elsewhere)
 cp -r /home/qrv/workspace/GPU-Rig-Monitoring-Platform/gpu_monitor/* /opt/gpu_monitor/
 
@@ -208,7 +220,7 @@ chmod 600 /opt/gpu_monitor/.env
 > **Note:** `DJANGO_ALLOWED_HOSTS=*` accepts requests from any IP address. This is
 > suitable for local testing but should be set to your actual domain in production.
 
-### 3.4 Run Migrations
+### 3.5 Run Migrations
 
 ```bash
 cd /opt/gpu_monitor
@@ -236,7 +248,7 @@ Running migrations:
   Applying sessions.0001_initial... OK
 ```
 
-### 3.5 Create an Admin User
+### 3.6 Create an Admin User
 
 ```bash
 cd /opt/gpu_monitor
@@ -247,7 +259,7 @@ python manage.py createsuperuser
 
 Enter email, username, and password when prompted. You will use these to log into the dashboard.
 
-### 3.6 Configure Nginx
+### 3.7 Configure Nginx
 
 Create `/etc/nginx/sites-available/gpu_monitor`:
 
@@ -282,7 +294,7 @@ sudo nginx -t && sudo systemctl restart nginx
 sudo systemctl enable nginx
 ```
 
-### 3.7 Start Gunicorn
+### 3.8 Start Gunicorn
 
 **For persistent running (recommended), create a systemd service:**
 
@@ -331,7 +343,7 @@ set -a && source .env && set +a
 gunicorn gpu_monitor.wsgi:application --bind 127.0.0.1:8000 --workers 2 --timeout 30
 ```
 
-### 3.8 Quick Alternative: Django Dev Server
+### 3.9 Quick Alternative: Django Dev Server
 
 For quick testing without Nginx and Gunicorn:
 
@@ -559,7 +571,7 @@ The rig detail page has three tabs:
 - 🟡 **Stale** — not seen for 2–10 minutes
 - 🔴 **Offline** — not seen for 10+ minutes
 
-> **Note:** The status update cron job (Section 5.6) must be running for automatic status changes.
+> **Note:** The status update cron job (Section 5.8) must be running for automatic status changes.
 
 ### 5.7 Set Up Data Retention
 
@@ -710,41 +722,7 @@ sudo chown -R qrv:qrv /opt/gpu_monitor/logs/
 
 ---
 
-## 6. Stopping and Restarting Services
-
-```bash
-# Check service status
-systemctl status gunicorn
-systemctl status nginx
-systemctl status postgresql
-
-# Restart after code changes
-sudo systemctl restart gunicorn
-
-# View logs in real-time
-tail -f /opt/gpu_monitor/logs/gunicorn-error.log    # Gunicorn errors, worker crashes
-tail -f /opt/gpu_monitor/logs/gunicorn-access.log  # HTTP access log (requests, status codes)
-tail -f /opt/gpu_monitor/logs/app.log               # Django structured JSON log
-
-# Agent logs
-tail -f /var/log/monitoring-agent/agent.log          # Structured JSON agent log
-tail -f /var/log/monitoring-agent/cron.log           # Cron output log
-
-# After pulling code changes, re-run migrations
-cd /opt/gpu_monitor
-source venv/bin/activate
-set -a && source .env && set +a
-python manage.py migrate
-python manage.py collectstatic --noinput
-
-# Fix permissions on any new template/view files
-sudo chmod -R 644 /opt/gpu_monitor/templates/
-sudo chmod -R 755 /opt/gpu_monitor/templates/dashboard/
-
-sudo systemctl restart gunicorn
-```
-
-### 5.6 Set Up Rig Status Monitoring Cron
+### 5.8 Set Up Rig Status Monitoring Cron
 
 The platform needs a periodic task to mark rigs as **Stale** (not seen in 2–10 minutes) or **Offline** (not seen in 10+ minutes). Create the wrapper script and cron job:
 
@@ -774,7 +752,7 @@ You should see output like `Updated: 0 stale, 2 offline`. If you see `password a
 
 ---
 
-## 7. Understanding the File Layout
+## 6. Understanding the File Layout
 
 ### Server (`/opt/gpu_monitor/`)
 
@@ -793,7 +771,7 @@ You should see output like `Updated: 0 stale, 2 offline`. If you see `password a
 │   ├── models.py               # Rig, RigTag models
 │   └── management/commands/    # update_rig_status command
 ├── metrics_app/                # Ingestion API + metric storage
-│   ├── models.py               # MetricSnapshot (timeseries), GPUMetric (timeseries), StorageMetric (timeseries), NetworkMetric (timeseries), DockerContainerMetric (timeseries), LatestDockerContainer (latest), LatestSnapshot (denormalized display cache — GPU/Storage/Network JSON arrays), RigStatusEvent |
+│   ├── models.py               # MetricSnapshot (timeseries chart data: cpu, memory, uptime, errors), GPUMetric (timeseries), StorageMetric (timeseries), NetworkMetric (timeseries), GPUProcessMetric (latest), LatestDockerContainer (latest), LatestSnapshot (denormalized display cache — CPU/memory/system/GPU/storage/network), RigStatusEvent |
 │   ├── serializers.py          # Payload validation + processing
 │   └── views.py                # IngestView, HealthView, ChartDataView, RigMetricsView
 ├── dashboard/                  # HTMX dashboard views
@@ -863,7 +841,7 @@ GPU-Rig-Monitoring-Platform/
 
 ---
 
-## 8. Troubleshooting
+## 7. Troubleshooting
 
 ### Server Issues
 
@@ -912,7 +890,7 @@ tail -f /var/log/monitoring-agent/agent.log | jq .
 
 ---
 
-## 9. Differences from Production
+## 8. Differences from Production
 
 | Aspect | Production | This Local Setup |
 |--------|-----------|------------------|
@@ -929,7 +907,7 @@ tail -f /var/log/monitoring-agent/agent.log | jq .
 
 ---
 
-## 10. Preparing for Production Deployment
+## 9. Preparing for Production Deployment
 
 When you are ready to deploy to a real server:
 
@@ -944,3 +922,39 @@ When you are ready to deploy to a real server:
 9. **Enable rate limiting** in Nginx (see `deploy/nginx.conf` in the repository)
 
 See `docs/DEPLOYMENT_GUIDE.md` for the full production deployment procedure.
+
+---
+
+## 10. Stopping, Restarting, and Upgrading
+
+```bash
+# Check service status
+systemctl status gunicorn
+systemctl status nginx
+systemctl status postgresql
+
+# Restart after code changes
+sudo systemctl restart gunicorn
+
+# View logs in real-time
+tail -f /opt/gpu_monitor/logs/gunicorn-error.log    # Gunicorn errors, worker crashes
+tail -f /opt/gpu_monitor/logs/gunicorn-access.log  # HTTP access log (requests, status codes)
+tail -f /opt/gpu_monitor/logs/app.log               # Django structured JSON log
+
+# Agent logs
+tail -f /var/log/monitoring-agent/agent.log          # Structured JSON agent log
+tail -f /var/log/monitoring-agent/cron.log           # Cron output log
+
+# After pulling code changes, re-run migrations
+cd /opt/gpu_monitor
+source venv/bin/activate
+set -a && source .env && set +a
+python manage.py migrate
+python manage.py collectstatic --noinput
+
+# Fix permissions on any new template/view files
+sudo chmod -R 644 /opt/gpu_monitor/templates/
+sudo chmod -R 755 /opt/gpu_monitor/templates/dashboard/
+
+sudo systemctl restart gunicorn
+```

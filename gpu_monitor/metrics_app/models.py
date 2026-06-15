@@ -6,25 +6,21 @@ from django.utils import timezone
 class MetricSnapshot(models.Model):
     """Time-series metric data — one row per rig per minute.
 
-    Stores all metrics from the agent payload. Fields that are technically
-    static (cpu_model, mem_total_bytes, etc.) are stored per-row for
-    simplicity and to track any changes over time (e.g., hardware upgrades).
+    Stores dynamic metrics from the agent payload for historical chart
+    aggregation. Static fields (cpu_model, mem_total, motherboard, software)
+    are stored in LatestSnapshot for fast dashboard display.
     """
     id = models.BigAutoField(primary_key=True)
     rig_uuid = models.UUIDField(db_index=True)
     schema_version = models.CharField(max_length=10, default='1.0')
-    agent_version = models.CharField(max_length=20, default='1.0.0')
     timestamp = models.DateTimeField(db_index=True)
 
-    # CPU metrics (static + dynamic)
-    cpu_model = models.CharField(max_length=255, blank=True, default='')
+    # CPU metrics (dynamic — change every heartbeat, used for charts)
     cpu_utilization_pct = models.FloatField(null=True)
     cpu_temp_c = models.FloatField(null=True)
-    cpu_physical_cores = models.PositiveIntegerField(null=True)
-    cpu_logical_cores = models.PositiveIntegerField(null=True)
     cpu_load_avg_json = models.JSONField(default=list, blank=True)
 
-    # Memory metrics (static + dynamic)
+    # Memory metrics (dynamic — used for charts)
     mem_total_bytes = models.BigIntegerField(null=True)
     mem_used_bytes = models.BigIntegerField(null=True)
     mem_free_bytes = models.BigIntegerField(null=True)
@@ -35,12 +31,8 @@ class MetricSnapshot(models.Model):
     # Rig status at time of this snapshot (online/offline/stale)
     status = models.CharField(max_length=10, null=True, blank=True)
 
-    # Motherboard info (static, stored as JSON for flexibility)
-    motherboard_json = models.JSONField(default=dict, blank=True)
-
-    # Software info (static, stored as JSON)
-    # Contains: hostname, os_distro, kernel, uptime_s, nvidia_driver, docker_version
-    software_json = models.JSONField(default=dict, blank=True)
+    # Uptime in seconds (dynamic — increases over time, used for uptime chart)
+    uptime_s = models.PositiveIntegerField(null=True)
 
     # Error count for this snapshot (integer, aggregated for error frequency charts)
     error_count = models.PositiveIntegerField(default=0)
@@ -180,11 +172,33 @@ class LatestSnapshot(models.Model):
     rig_uuid = models.UUIDField(primary_key=True)
     schema_version = models.CharField(max_length=10, default='1.0')
     timestamp = models.DateTimeField()
+    updated_at = models.DateTimeField(auto_now=True)
+
+    # CPU metrics (dynamic — change every heartbeat)
     cpu_utilization_pct = models.FloatField(null=True)
     cpu_temp_c = models.FloatField(null=True)
+    cpu_load_avg_json = models.JSONField(default=list, blank=True)
+    # CPU info (static — can change on CPU swap, updated in-place)
+    cpu_model = models.CharField(max_length=255, blank=True, default='')
+    cpu_physical_cores = models.PositiveIntegerField(null=True)
+    cpu_logical_cores = models.PositiveIntegerField(null=True)
+
+    # Memory metrics (dynamic)
     mem_used_bytes = models.BigIntegerField(null=True)
+    mem_free_bytes = models.BigIntegerField(null=True)
+    mem_cached_bytes = models.BigIntegerField(null=True)
+    swap_used_bytes = models.BigIntegerField(null=True)
+    # Memory info (static — can change on RAM upgrade, updated in-place)
     mem_total_bytes = models.BigIntegerField(null=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    swap_total_bytes = models.BigIntegerField(null=True)
+
+    # Motherboard info (static — can change on mobo swap, updated in-place)
+    motherboard_json = models.JSONField(default=dict, blank=True)
+
+    # Software info (static/semi-static — updated in-place on change)
+    # Contains: hostname, os_distro, kernel, uptime_s, nvidia_driver, docker_version
+    software_json = models.JSONField(default=dict, blank=True)
+    agent_version = models.CharField(max_length=20, blank=True, default='')
 
     # GPU data stored as JSON arrays for fast dashboard access
     # Each array has one entry per GPU, ordered by gpu_index

@@ -9,7 +9,9 @@
 
 ## Complete Data Model — Payload to DB Field Mapping
 
-### MetricSnapshot (one row per rig per heartbeat)
+### MetricSnapshot (one row per rig per heartbeat — chart data only)
+
+Stores dynamic metrics for historical chart aggregation. Static fields live in LatestSnapshot.
 
 | # | Value | Payload Path | DB Field | Type | Charts? |
 |---|-------|-------------|----------|------|---------|
@@ -22,7 +24,7 @@
 | 7 | Memory cached | `metrics.memory.cached_bytes` | `mem_cached_bytes` | BigIntegerField | ✅ |
 | 8 | Swap used | `metrics.memory.swap_used_bytes` | `swap_used_bytes` | BigIntegerField | ✅ |
 | 9 | Swap total | `metrics.memory.swap_total_bytes` | `swap_total_bytes` | BigIntegerField | ✅ |
-| 10 | Uptime | `software.uptime_s` | `software_json.uptime_s` | JSON | ✅ |
+| 10 | Uptime | `software.uptime_s` | `uptime_s` | PositiveIntegerField | ✅ |
 | 11 | Rig status | `rig.status` (view) | `status` | CharField | ✅ |
 | 12 | Error count | `errors[]` length | `error_count` | PositiveIntegerField | ✅ |
 
@@ -115,12 +117,13 @@ Errors are filtered on the server side — "no error" placeholders from agents
 
 | Data | Stored In | Reason |
 |------|-----------|--------|
-| CPU/memory metrics | Dedicated fields | Queried for charts, need indexing |
-| Motherboard info | `motherboard_json` (JSON) | Static data, varies across rigs |
-| Software info | `software_json` (JSON) | Static-ish data, varies across rigs |
-| CPU load avg | `cpu_load_avg_json` (JSONField[3]) | Small fixed-size array |
-| Error count | `error_count` (IntegerField) | Per-snapshot count for error frequency charts |
-| Latest error text | `Rig.latest_errors_json` (JSON) | Latest payload only, like motherboard_json |
+| CPU/memory metrics | MetricSnapshot (dedicated fields) | Queried for charts, need indexing |
+| CPU model, cores | LatestSnapshot | Static per rig, overwritten on heartbeat |
+| Motherboard info | LatestSnapshot (`motherboard_json`) | Static per rig, overwritten on heartbeat |
+| Software info | LatestSnapshot (`software_json`) | Static per rig, overwritten on heartbeat |
+| CPU load avg | MetricSnapshot (`cpu_load_avg_json`) | Small fixed-size array, charted |
+| Error count | MetricSnapshot (`error_count`) | Per-snapshot count for error frequency charts |
+| Latest error text | `Rig.latest_errors_json` (JSON) | Latest payload only |
 
 ### Denormalized cache (LatestSnapshot)
 
@@ -132,12 +135,14 @@ Errors are filtered on the server side — "no error" placeholders from agents
 
 | Category | Fields | Count |
 |---|---|---|
-| CPU | schema_version, timestamp, cpu_utilization_pct, cpu_temp_c, mem_used_bytes, mem_total_bytes | 6 |
+| CPU | schema_version, timestamp, cpu_model, cpu_physical_cores, cpu_logical_cores, cpu_utilization_pct, cpu_temp_c, cpu_load_avg_json | 8 |
+| Memory | mem_total_bytes, mem_used_bytes, mem_free_bytes, mem_cached_bytes, swap_total_bytes, swap_used_bytes | 6 |
+| System | uptime_s, motherboard_json, software_json, agent_version | 4 |
 | GPU (×N) | gpu_count, gpu_models_json, gpu_temps_json, gpu_utils_json, gpu_fans_json, gpu_core_clocks_json, gpu_mem_clocks_json, gpu_mem_used_json, gpu_mem_total_json, gpu_mem_util_pcts_json, gpu_mem_free_json, gpu_power_draws_json, gpu_power_limits_json, gpu_pcie_gen_json, gpu_pcie_max_gen_json, gpu_pcie_width_json, gpu_pcie_max_width_json | 17 |
 | Storage (×N) | storage_count, storage_devices_json, storage_fstypes_json, storage_mountpoints_json, storage_capacities_json, storage_usage_pcts_json, storage_temps_json, storage_smart_json | 8 |
 | Network (×N) | network_count, network_interfaces_json, network_ipv4s_json, network_speeds_json, network_rx_bytes_json, network_tx_bytes_json, network_rx_errors_json, network_tx_errors_json | 8 |
 | Metadata | updated_at (auto) | 1 |
-| **Total** | | **~40 fields** |
+| **Total** | | **~52 fields** |
 
 **Views using LatestSnapshot:**
 - `rig_list` (Fleet Overview): Reads LatestSnapshot + Rig + RigTag. **0 timeseries queries.**
@@ -180,6 +185,10 @@ Errors are filtered on the server side — "no error" placeholders from agents
 ### Issue 3: `uptime_s` stored in both MetricSnapshot and software_json
 **Problem:** Redundant storage.
 **Fix:** Removed dedicated `uptime_s` field. Now reads from `software_json.uptime_s`.
+
+### Issue 7: `uptime_s` removed from MetricSnapshot during static field cleanup
+**Problem:** When static fields (cpu_model, motherboard_json, software_json, etc.) were moved from MetricSnapshot to LatestSnapshot, `uptime_s` was incorrectly removed from MetricSnapshot along with `software_json`. The uptime chart queries MetricSnapshot and broke.
+**Fix:** Added dedicated `uptime_s = PositiveIntegerField(null=True)` to MetricSnapshot. Uptime is a dynamic value (increases over time) that must stay in the timeseries table for chart aggregation. Other static fields (cpu_model, motherboard_json, software_json, agent_version) remain in LatestSnapshot only.
 
 ### Issue 4: `status` field on MetricSnapshot vs Rig.status
 **Problem:** Potential conflict between per-heartbeat status and current status.

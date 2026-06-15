@@ -281,10 +281,28 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                 defaults={
                     'schema_version': schema_version,
                     'timestamp': ts,
+                    # CPU dynamic
                     'cpu_utilization_pct': cpu.get('utilization_pct'),
                     'cpu_temp_c': cpu.get('temp_c'),
+                    'cpu_load_avg_json': cpu.get('load_avg', []),
+                    # CPU static (updated in-place — can change on CPU swap)
+                    'cpu_model': cpu.get('model', ''),
+                    'cpu_physical_cores': cpu.get('physical_cores'),
+                    'cpu_logical_cores': cpu.get('logical_cores'),
+                    # Memory dynamic
                     'mem_used_bytes': memory.get('used_bytes'),
+                    'mem_free_bytes': memory.get('free_bytes'),
+                    'mem_cached_bytes': memory.get('cached_bytes'),
+                    'swap_used_bytes': memory.get('swap_used_bytes'),
+                    # Memory static (updated in-place — can change on RAM upgrade)
                     'mem_total_bytes': memory.get('total_bytes'),
+                    'swap_total_bytes': memory.get('swap_total_bytes'),
+                    # Motherboard (updated in-place — can change on mobo swap)
+                    'motherboard_json': motherboard_data,
+                    # Software (updated in-place — can change on OS/driver update)
+                    'software_json': software_data,
+                    'agent_version': validated.get('agent_version', '1.0.0'),
+                    # GPU
                     'gpu_count': len(gpu_list),
                     'gpu_models_json': gpu_models,
                     'gpu_temps_json': gpu_temps,

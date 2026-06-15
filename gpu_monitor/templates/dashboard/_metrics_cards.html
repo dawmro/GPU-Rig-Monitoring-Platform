@@ -11,44 +11,43 @@
         <span class="text-xs text-yellow-400 ml-1">(stale)</span>
         {% endif %}
     </h3>
-    {% if metric_snapshot %}
+    {% if snapshot.cpu_model %}
     <div class="text-lg font-bold text-white mb-1">
-        {{ metric_snapshot.cpu_model|default:"Unknown" }}
+        {{ snapshot.cpu_model|default:"Unknown" }}
     </div>
     <div class="text-sm text-gray-400 mb-2">
-        {{ metric_snapshot.cpu_physical_cores|default:"?" }} cores / {{ metric_snapshot.cpu_logical_cores|default:"?" }} threads
+        {{ snapshot.cpu_physical_cores|default:"?" }} cores / {{ snapshot.cpu_logical_cores|default:"?" }} threads
     </div>
     <div class="flex items-center gap-3 mb-2">
         <div class="flex-1">
             <div class="w-full bg-gray-700 rounded-full h-2">
                 <div class="h-2 rounded-full
-                    {% if metric_snapshot.cpu_utilization_pct != None %}
-                        {% if metric_snapshot.cpu_utilization_pct > 80 %}bg-red-500
-                        {% elif metric_snapshot.cpu_utilization_pct > 60 %}bg-yellow-500
+                    {% if snapshot.cpu_utilization_pct != None %}
+                        {% if snapshot.cpu_utilization_pct > 80 %}bg-red-500
+                        {% elif snapshot.cpu_utilization_pct > 60 %}bg-yellow-500
                         {% else %}bg-green-500{% endif %}
-                    {% else %}bg-gray-600{% endif %}
-                "
-                    style="width: {% if metric_snapshot.cpu_utilization_pct != None %}{{ metric_snapshot.cpu_utilization_pct }}{% else %}0{% endif %}%">
+                    {% else %}bg-gray-600{% endif %}"
+                    style="width: {% if snapshot.cpu_utilization_pct != None %}{{ snapshot.cpu_utilization_pct }}{% else %}0{% endif %}%">
                 </div>
             </div>
         </div>
         <span class="text-sm font-mono text-gray-300 w-14 text-right">
-            {% if metric_snapshot.cpu_utilization_pct != None %}{{ metric_snapshot.cpu_utilization_pct|floatformat:1 }}%{% else %}—{% endif %}
+            {% if snapshot.cpu_utilization_pct != None %}{{ snapshot.cpu_utilization_pct|floatformat:1 }}%{% else %}—{% endif %}
         </span>
     </div>
     <div class="flex items-center gap-4 text-xs text-gray-500">
         <span>
             Temp:
-            {% if metric_snapshot.cpu_temp_c != None %}
-                <span class="{% if metric_snapshot.cpu_temp_c > 85 %}text-red-400{% elif metric_snapshot.cpu_temp_c > 70 %}text-yellow-400{% else %}text-green-400{% endif %}">
-                    {{ metric_snapshot.cpu_temp_c|floatformat:1 }}°C
+            {% if snapshot.cpu_temp_c != None %}
+                <span class="{% if snapshot.cpu_temp_c > 85 %}text-red-400{% elif snapshot.cpu_temp_c > 70 %}text-yellow-400{% else %}text-green-400{% endif %}">
+                    {{ snapshot.cpu_temp_c|floatformat:1 }}°C
                 </span>
             {% else %}—{% endif %}
         </span>
-        {% if metric_snapshot.cpu_load_avg_json %}
+        {% if snapshot.cpu_load_avg_json %}
         <span>
             Load:
-            {% for val in metric_snapshot.cpu_load_avg_json %}
+            {% for val in snapshot.cpu_load_avg_json %}
                 <span class="text-gray-400">{{ val|floatformat:2 }}</span>{% if not forloop.last %} / {% endif %}
             {% endfor %}
         </span>
@@ -73,37 +72,36 @@
         <span class="text-xs text-yellow-400 ml-1">(stale)</span>
         {% endif %}
     </h3>
-    {% if metric_snapshot %}
+    {% if snapshot.mem_total_bytes %}
     <div class="flex items-center gap-3 mb-2">
         <div class="flex-1">
             <div class="w-full bg-gray-700 rounded-full h-2">
-                {% widthratio metric_snapshot.mem_used_bytes metric_snapshot.mem_total_bytes 100 as mem_pct %}
+                {% widthratio snapshot.mem_used_bytes snapshot.mem_total_bytes 100 as mem_pct %}
                 <div class="h-2 rounded-full
                     {% if mem_pct > 85 %}bg-red-500
                     {% elif mem_pct > 70 %}bg-yellow-500
-                    {% else %}bg-blue-500{% endif %}
-                "
+                    {% else %}bg-blue-500{% endif %}"
                     style="width: {{ mem_pct }}%"></div>
             </div>
         </div>
         <span class="text-sm font-mono text-gray-300 w-14 text-right">{{ mem_pct }}%</span>
     </div>
     <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-400">
-        <span>Used: <span class="text-gray-300">{{ metric_snapshot.mem_used_bytes|filesizeformat }}</span></span>
-        <span>Total: <span class="text-gray-300">{{ metric_snapshot.mem_total_bytes|filesizeformat }}</span></span>
-        {% if metric_snapshot.mem_free_bytes %}
-        <span>Free: <span class="text-gray-300">{{ metric_snapshot.mem_free_bytes|filesizeformat }}</span></span>
+        <span>Used: <span class="text-gray-300">{{ snapshot.mem_used_bytes|filesizeformat }}</span></span>
+        <span>Total: <span class="text-gray-300">{{ snapshot.mem_total_bytes|filesizeformat }}</span></span>
+        {% if snapshot.mem_free_bytes %}
+        <span>Free: <span class="text-gray-300">{{ snapshot.mem_free_bytes|filesizeformat }}</span></span>
         {% endif %}
-        {% if metric_snapshot.mem_cached_bytes %}
-        <span>Cached: <span class="text-gray-300">{{ metric_snapshot.mem_cached_bytes|filesizeformat }}</span></span>
+        {% if snapshot.mem_cached_bytes %}
+        <span>Cached: <span class="text-gray-300">{{ snapshot.mem_cached_bytes|filesizeformat }}</span></span>
         {% endif %}
     </div>
-    {% if metric_snapshot.swap_total_bytes %}
+    {% if snapshot.swap_total_bytes %}
     <div class="mt-1 pt-1 border-t border-gray-700/50 text-xs text-gray-500">
         Swap:
-        <span class="text-gray-400">{{ metric_snapshot.swap_used_bytes|filesizeformat }}</span> /
-        <span class="text-gray-400">{{ metric_snapshot.swap_total_bytes|filesizeformat }}</span>
-        {% widthratio metric_snapshot.swap_used_bytes metric_snapshot.swap_total_bytes 100 as swap_pct %}
+        <span class="text-gray-400">{{ snapshot.swap_used_bytes|filesizeformat }}</span> /
+        <span class="text-gray-400">{{ snapshot.swap_total_bytes|filesizeformat }}</span>
+        {% widthratio snapshot.swap_used_bytes snapshot.swap_total_bytes 100 as swap_pct %}
         <span class="text-gray-600">({{ swap_pct }}%)</span>
     </div>
     {% endif %}
@@ -340,16 +338,16 @@
 <!-- ════════════════════════════════════════════════════════════════ -->
 <!-- Motherboard -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
-{% if metric_snapshot.motherboard_json %}
+{% if snapshot.motherboard_json %}
 <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
     <h3 class="text-gray-400 text-sm font-medium mb-2">Motherboard</h3>
     <div class="text-sm text-gray-300">
-        {{ metric_snapshot.motherboard_json.manufacturer|default:"—" }}
+        {{ snapshot.motherboard_json.manufacturer|default:"—" }}
     </div>
     <div class="text-sm text-gray-400">
-        {{ metric_snapshot.motherboard_json.model|default:"—" }}
-        {% if metric_snapshot.motherboard_json.bios_version %}
-        <span class="text-gray-600"> · BIOS: {{ metric_snapshot.motherboard_json.bios_version }}</span>
+        {{ snapshot.motherboard_json.model|default:"—" }}
+        {% if snapshot.motherboard_json.bios_version %}
+        <span class="text-gray-600"> · BIOS: {{ snapshot.motherboard_json.bios_version }}</span>
         {% endif %}
     </div>
 </div>
@@ -358,31 +356,31 @@
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <!-- Software / OS -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
-{% if metric_snapshot.software_json %}
+{% if snapshot.software_json %}
 <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
     <h3 class="text-gray-400 text-sm font-medium mb-2">Software</h3>
     <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
         <div class="text-gray-500">Hostname:</div>
-        <div class="text-gray-300">{{ metric_snapshot.software_json.hostname|default:"—" }}</div>
+        <div class="text-gray-300">{{ snapshot.software_json.hostname|default:"—" }}</div>
         <div class="text-gray-500">OS:</div>
-        <div class="text-gray-300 truncate" title="{{ metric_snapshot.software_json.os_distro }}">{{ metric_snapshot.software_json.os_distro|default:"—" }}</div>
+        <div class="text-gray-300 truncate" title="{{ snapshot.software_json.os_distro }}">{{ snapshot.software_json.os_distro|default:"—" }}</div>
         <div class="text-gray-500">Kernel:</div>
-        <div class="text-gray-300">{{ metric_snapshot.software_json.kernel|default:"—" }}</div>
-        {% if metric_snapshot.software_json.uptime_s %}
+        <div class="text-gray-300">{{ snapshot.software_json.kernel|default:"—" }}</div>
+        {% if snapshot.software_json.uptime_s %}
         <div class="text-gray-500">Uptime:</div>
-        <div class="text-gray-300">{{ metric_snapshot.software_json.uptime_s|time_since }}</div>
+        <div class="text-gray-300">{{ snapshot.software_json.uptime_s|time_since }}</div>
         {% endif %}
-        {% if metric_snapshot.software_json.nvidia_driver %}
+        {% if snapshot.software_json.nvidia_driver %}
         <div class="text-gray-500">NVIDIA Driver:</div>
-        <div class="text-gray-300">{{ metric_snapshot.software_json.nvidia_driver }}</div>
+        <div class="text-gray-300">{{ snapshot.software_json.nvidia_driver }}</div>
         {% endif %}
-        {% if metric_snapshot.software_json.docker_version %}
+        {% if snapshot.software_json.docker_version %}
         <div class="text-gray-500">Docker:</div>
-        <div class="text-gray-300">{{ metric_snapshot.software_json.docker_version }}</div>
+        <div class="text-gray-300">{{ snapshot.software_json.docker_version }}</div>
         {% endif %}
-        {% if metric_snapshot.agent_version %}
+        {% if snapshot.agent_version %}
         <div class="text-gray-500">Agent:</div>
-        <div class="text-gray-300">{{ metric_snapshot.agent_version }}</div>
+        <div class="text-gray-300">{{ snapshot.agent_version }}</div>
         {% endif %}
     </div>
 </div>

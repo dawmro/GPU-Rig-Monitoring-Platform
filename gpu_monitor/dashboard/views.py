@@ -156,13 +156,8 @@ def _fetch_rig_metrics(uuid, rig=None):
     status_order = {'running': 0, 'restarting': 1, 'exited': 2}
     docker_metrics.sort(key=lambda c: (status_order.get(c['status'], 9), c['name']))
 
-    # Recent errors from Rig.latest_errors_json (latest payload only, like motherboard_json)
+    # Recent errors from Rig.latest_errors_json (latest payload only)
     recent_errors = rig.latest_errors_json if rig else []
-
-    # Latest MetricSnapshot for motherboard/software JSON
-    latest_metric_snapshot = MetricSnapshot.objects.filter(
-        rig_uuid=str(uuid)
-    ).order_by('-timestamp').first()
 
     # GPU processes (latest per GPU per pid)
     gpu_processes = list(
@@ -202,7 +197,6 @@ def _fetch_rig_metrics(uuid, rig=None):
         'network_metrics': network_metrics,
         'docker_metrics': docker_metrics,
         'recent_errors': recent_errors,
-        'metric_snapshot': latest_metric_snapshot,
         'primary_ip': primary_ip,
     }
 

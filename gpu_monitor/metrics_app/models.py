@@ -203,6 +203,7 @@ class LatestSnapshot(models.Model):
     # GPU data stored as JSON arrays for fast dashboard access
     # Each array has one entry per GPU, ordered by gpu_index
     gpu_count = models.PositiveSmallIntegerField(default=0)
+    gpu_uuids_json = models.JSONField(default=list, blank=True)         # ["GPU-abc-123", "GPU-def-456"]
     gpu_models_json = models.JSONField(default=list, blank=True)       # ["RTX 3060", "RTX 3060"]
     gpu_temps_json = models.JSONField(default=list, blank=True)         # [72.5, 73.1]
     gpu_utils_json = models.JSONField(default=list, blank=True)         # [98.0, 100.0]

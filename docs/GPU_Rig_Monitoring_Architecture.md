@@ -734,7 +734,7 @@ Two Django management commands handle retention:
 
 **`compact_data`** — Aggregates old data into larger time buckets:
 |- Single phase: data > 1 day → 1-hour buckets
-|- Aggregation: AVG (temperature, utilization, power), SUM (network bytes, error_count), LAST (model names, UUIDs, uptime)
+|- Aggregation: AVG (temperature, utilization, power), SUM (network bytes, error_count), LAST (GPU model names, GPU UUIDs, uptime), MAX (uptime_s)
 |- Child tables (GPU, storage, network, gpu_process) compacted FIRST; parent table (`metrics_metricsnapshot`) compacted LAST
 - FK-safe: parent rows still referenced by children are excluded from compaction via NOT EXISTS subqueries
 

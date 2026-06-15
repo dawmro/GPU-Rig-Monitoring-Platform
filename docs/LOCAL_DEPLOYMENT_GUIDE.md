@@ -561,7 +561,7 @@ The rig detail page has three tabs:
 | Tab | Description |
 |-----|-------------|
 | **Live Metrics** | Auto-refreshing cards showing CPU, memory, GPU, Docker, storage, and errors (30s HTMX polling) |
-| **Historical Charts** | 7 individual charts showing 24-hour trends: GPU temperature, GPU utilization, GPU VRAM usage, GPU power draw, CPU utilization, CPU temperature, memory usage |
+|| **Historical Charts** | 15 charts: GPU Temperature, GPU Utilization, GPU VRAM Usage, GPU Power Draw, GPU Fan Speed, GPU Core Clock, GPU Memory Clock (all multi-GPU), CPU Utilization, CPU Temperature, Memory & Swap, CPU Load Average, Disk Usage, Network Traffic, Uptime, Error Frequency (24h/7d/30d timeframes) |
 | **Errors** | Recent system errors from journalctl/Windows Event Log |
 
 **GPU Model Name Display:** The fleet overview table shows cleaned GPU model names (e.g., "RTX 3060" instead of "NVIDIA GeForce RTX 3060"). Hover over the name to see the full model string. For multiple GPUs, each GPU is listed separately.
@@ -593,7 +593,7 @@ This runs two commands daily:
 
 1. **`compact_data`** — Single-phase aggregation of old data:
    - Data > 1 day old → 1-hour buckets (60× reduction)
-   - Aggregation per metric: AVG (temperature, utilization, power), SUM (network bytes, error_count), LAST (model names, UUIDs)
+   - Aggregation per metric: AVG (temperature, utilization, power), SUM (network bytes, error_count), LAST (GPU model names, GPU UUIDs), MAX (uptime_s)
    - Parent table compacted first; child tables after
    - FK-safe: parent rows referenced by children are excluded
 

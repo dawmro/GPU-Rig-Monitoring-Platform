@@ -78,9 +78,11 @@
     <div class="flex items-center gap-3 mb-2">
         <div class="flex-1">
             <div class="w-full bg-gray-700 rounded-full h-2">
-                {% if snapshot.mem_used_bytes and rig_profile and rig_profile.mem_total_bytes %}
-                    {% widthratio snapshot.mem_used_bytes rig_profile.mem_total_bytes mem_pct %}
-                {% else %}{% widthratio 0 1 mem_pct %}{% endif %}
+                {% with total=rig_profile.mem_total_bytes|default:snapshot.mem_total_bytes %}
+                    {% if snapshot.mem_used_bytes and total and total > 0 %}
+                        {% widthratio snapshot.mem_used_bytes total mem_pct %}
+                    {% else %}{% widthratio 0 1 mem_pct %}{% endif %}
+                {% endwith %}
                 <div class="h-2 rounded-full
                     {% if mem_pct > 85 %}bg-red-500
                     {% elif mem_pct > 70 %}bg-yellow-500
@@ -92,7 +94,7 @@
     </div>
     <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-400">
         <span>Used: <span class="text-gray-300">{% if snapshot.mem_used_bytes %}{{ snapshot.mem_used_bytes|filesizeformat }}{% else %}—{% endif %}</span></span>
-        <span>Total: <span class="text-gray-300">{% if rig_profile and rig_profile.mem_total_bytes %}{{ rig_profile.mem_total_bytes|filesizeformat }}{% else %}—{% endif %}</span></span>
+        <span>Total: <span class="text-gray-300">{% if rig_profile and rig_profile.mem_total_bytes %}{{ rig_profile.mem_total_bytes|filesizeformat }}{% elif snapshot.mem_total_bytes %}{{ snapshot.mem_total_bytes|filesizeformat }}{% else %}—{% endif %}</span></span>
         {% if snapshot.mem_free_bytes %}
         <span>Free: <span class="text-gray-300">{{ snapshot.mem_free_bytes|filesizeformat }}</span></span>
         {% endif %}
@@ -100,15 +102,19 @@
         <span>Cached: <span class="text-gray-300">{{ snapshot.mem_cached_bytes|filesizeformat }}</span></span>
         {% endif %}
     </div>
-    {% if rig_profile and rig_profile.swap_total_bytes %}
+    {% with swap_total=rig_profile.swap_total_bytes|default:snapshot.swap_total_bytes %}
+    {% if swap_total %}
     <div class="mt-1 pt-1 border-t border-gray-700/50 text-xs text-gray-500">
         Swap:
         <span class="text-gray-400">{{ snapshot.swap_used_bytes|filesizeformat }}</span> /
-        <span class="text-gray-400">{{ rig_profile.swap_total_bytes|filesizeformat }}</span>
-        {% widthratio snapshot.swap_used_bytes rig_profile.swap_total_bytes swap_pct %}
+        <span class="text-gray-400">{{ swap_total|filesizeformat }}</span>
+        {% if snapshot.swap_used_bytes and swap_total > 0 %}
+            {% widthratio snapshot.swap_used_bytes swap_total swap_pct %}
+        {% else %}{% widthratio 0 1 swap_pct %}{% endif %}
         <span class="text-gray-600">({{ swap_pct }}%)</span>
     </div>
     {% endif %}
+    {% endwith %}
     {% else %}
     <div class="text-gray-500">No data</div>
     {% endif %}

@@ -18,6 +18,7 @@
     <div class="text-sm text-gray-400 mb-2">
         {{ rig.cpu_physical_cores|default:"?" }} cores / {{ rig.cpu_logical_cores|default:"?" }} threads
     </div>
+    {% if snapshot %}
     <div class="flex items-center gap-3 mb-2">
         <div class="flex-1">
             <div class="w-full bg-gray-700 rounded-full h-2">
@@ -55,10 +56,7 @@
         </span>
         {% endif %}
     </div>
-    {% elif snapshot %}
-    <div class="text-sm text-gray-400 mb-2">
-        Utilization: {% if snapshot.cpu_utilization_pct != None %}{{ snapshot.cpu_utilization_pct|floatformat:1 }}%{% else %}—{% endif %}
-    </div>
+    {% endif %}
     {% else %}
     <div class="text-gray-500">No data</div>
     {% endif %}
@@ -74,15 +72,14 @@
         <span class="text-xs text-yellow-400 ml-1">(stale)</span>
         {% endif %}
     </h3>
-    {% if snapshot or rig %}
+    {% if rig %}
+    {% with total=rig.mem_total_bytes|default:0 %}
     <div class="flex items-center gap-3 mb-2">
         <div class="flex-1">
             <div class="w-full bg-gray-700 rounded-full h-2">
-                {% with total=rig.mem_total_bytes|default:snapshot.mem_total_bytes|default:0 %}
-                    {% if snapshot.mem_used_bytes and total > 0 %}
-                        {% widthratio snapshot.mem_used_bytes total 100 as mem_pct %}
-                    {% else %}{% widthratio 0 1 100 as mem_pct %}{% endif %}
-                {% endwith %}
+                {% if snapshot and snapshot.mem_used_bytes and total > 0 %}
+                    {% widthratio snapshot.mem_used_bytes total 100 as mem_pct %}
+                {% else %}{% widthratio 0 1 100 as mem_pct %}{% endif %}
                 <div class="h-2 rounded-full
                     {% if mem_pct > 85 %}bg-red-500
                     {% elif mem_pct > 70 %}bg-yellow-500
@@ -93,16 +90,16 @@
         <span class="text-sm font-mono text-gray-300 w-14 text-right">{{ mem_pct }}%</span>
     </div>
     <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-400">
-        <span>Used: <span class="text-gray-300">{% if snapshot.mem_used_bytes %}{{ snapshot.mem_used_bytes|filesizeformat }}{% else %}—{% endif %}</span></span>
-        <span>Total: <span class="text-gray-300">{% if rig and rig.mem_total_bytes %}{{ rig.mem_total_bytes|filesizeformat }}{% elif snapshot.mem_total_bytes %}{{ snapshot.mem_total_bytes|filesizeformat }}{% else %}—{% endif %}</span></span>
-        {% if snapshot.mem_free_bytes %}
+        <span>Used: <span class="text-gray-300">{% if snapshot and snapshot.mem_used_bytes %}{{ snapshot.mem_used_bytes|filesizeformat }}{% else %}—{% endif %}</span></span>
+        <span>Total: <span class="text-gray-300">{% if total %}{{ total|filesizeformat }}{% else %}—{% endif %}</span></span>
+        {% if snapshot and snapshot.mem_free_bytes %}
         <span>Free: <span class="text-gray-300">{{ snapshot.mem_free_bytes|filesizeformat }}</span></span>
         {% endif %}
-        {% if snapshot.mem_cached_bytes %}
+        {% if snapshot and snapshot.mem_cached_bytes %}
         <span>Cached: <span class="text-gray-300">{{ snapshot.mem_cached_bytes|filesizeformat }}</span></span>
         {% endif %}
     </div>
-    {% if snapshot.swap_total_bytes and snapshot.swap_total_bytes > 0 %}
+    {% if snapshot and snapshot.swap_total_bytes and snapshot.swap_total_bytes > 0 %}
     <div class="mt-1 pt-1 border-t border-gray-700/50 text-xs text-gray-500">
         Swap:
         <span class="text-gray-400">{{ snapshot.swap_used_bytes|filesizeformat }}</span> /
@@ -113,6 +110,11 @@
         <span class="text-gray-600">({{ swap_pct }}%)</span>
     </div>
     {% endif %}
+    {% endwith %}
+    {% elif snapshot %}
+    <div class="text-sm text-gray-400 mb-2">
+        Memory: {{ snapshot.mem_used_bytes|filesizeformat }} / {{ snapshot.mem_total_bytes|default:"—"|filesizeformat }}
+    </div>
     {% else %}
     <div class="text-gray-500">No data</div>
     {% endif %}

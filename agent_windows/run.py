@@ -302,6 +302,29 @@ def _normalize_physical_drive_name(device_id):
     return device_id
 
 
+def _get_windows_disks_wmi():
+    """Fallback: get disk partitions via WMI when psutil returns empty results.
+
+    Returns a list of dicts with device, mountpoint, fstype — same format
+    as psutil.disk_partitions() entries.
+    """
+    try:
+        import wmi
+        c = wmi.WMI()
+        disks = []
+        for disk in c.Win32_LogicalDisk(DriveType=3):
+            # DriveType=3 = Local Disk (fixed HDD/SSD)
+            disks.append(type('Partition', (), {
+                'device': disk.DeviceID + '\\',
+                'mountpoint': disk.DeviceID + '\\',
+                'fstype': disk.FileSystem or '',
+                'opts': '',
+            })())
+        return disks
+    except Exception:
+        return []
+
+
 def collect_storage():
     """Collect all storage metrics per disk: capacity, usage, temp, smart,
     plus disk I/O counters (throughput, IOPS, utilization).
@@ -315,9 +338,18 @@ def collect_storage():
         disks = []
         # Get per-physical-disk I/O counters once
         disk_io = _get_windows_disk_io() if platform.system() == 'Windows' else {}
-        for part in psutil.disk_partitions():
+        partitions = psutil.disk_partitions()
+        # On Windows, if psutil returns no partitions, fall back to WMI
+        if platform.system() == 'Windows' and not partitions:
+            partitions = _get_windows_disks_wmi()
+        for part in partitions:
+            # Skip virtual/special filesystems on non-Windows
             if platform.system() != 'Windows':
                 if part.fstype in ('squashfs', 'tmpfs', 'devtmpfs'):
+                    continue
+            # On Windows, skip CD-ROM and removable drives with no media
+            if platform.system() == 'Windows':
+                if part.fstype == '' or part.fstype.lower() == 'cdfs':
                     continue
             try:
                 usage = psutil.disk_usage(part.mountpoint)
@@ -366,6 +398,10 @@ def collect_storage():
                     disk['smart_health'] = 'unsupported'
                 disks.append(disk)
             except PermissionError:
+                logging.getLogger('storage').debug('Permission denied for %s, skipping', part.device)
+                continue
+            except OSError as e:
+                logging.getLogger('storage').debug('OS error for %s: %s, skipping', part.device, e)
                 continue
         return disks
     except Exception as e:

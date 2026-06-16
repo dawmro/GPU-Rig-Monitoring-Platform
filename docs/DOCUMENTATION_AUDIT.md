@@ -11,7 +11,7 @@
 
 | Document | Size | Status | Notes |
 |---|---|---|---|
-|| `GPU_Rig_Monitoring_Architecture.md` | 65KB | ✅ Current | Main architecture reference. v1.4 with snapshot-timeseries decoupling, ingest performance, query budgets. Agent versions: Linux 1.5.6, Windows 1.6.6-win, schema 1.6. |
+|| `GPU_Rig_Monitoring_Architecture.md` | 65KB | ✅ Current | Main architecture reference. v1.4 with snapshot-timeseries decoupling, ingest performance, query budgets. Agent versions: Linux 1.5.7, Windows 1.6.7-win, schema 1.6. |
 | `DATA_FLOW_ANALYSIS.md` | 14KB | ✅ Current | Complete payload-to-DB field mapping. Updated with LatestSnapshot as primary display data source. |
 | `DATA_RETENTION_PLAN.md` | 8KB | ✅ Current | Retention strategy, compaction, cleanup. Still valid. |
 | `LOCAL_DEPLOYMENT_GUIDE.md` | 37KB | ✅ Current | Updated models.py description. |

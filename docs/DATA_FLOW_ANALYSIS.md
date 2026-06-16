@@ -82,8 +82,9 @@ Docker container data is now stored only as a latest snapshot (see LatestDockerC
 | 37 | Docker name | `metrics.docker_containers[].name` | `name` | CharField | — |
 | 38 | Docker container ID | `metrics.docker_containers[].container_id` | `container_id` | CharField | — |
 | 39 | Docker image | `metrics.docker_containers[].image` | `image` | CharField | — |
-| 40 | Docker status | `metrics.docker_containers[].status` | `status` | CharField | — |
-| 41 | Docker uptime | `metrics.docker_containers[].uptime_s` | `uptime_s` | IntegerField | — |
+|| 40 | Docker status | `metrics.docker_containers[].status` | `status` | CharField | — |
+|| 41 | Docker created | `metrics.docker_containers[].created` | `created` | CharField | — |
+|| 42 | Docker status text | `metrics.docker_containers[].status_text` | `status_text` | CharField | — |
 
 ### Error Handling
 
@@ -146,7 +147,7 @@ Errors are filtered on the server side — "no error" placeholders from agents
 
 **Views using LatestSnapshot:**
 - `rig_list` (Fleet Overview): Reads LatestSnapshot + Rig + RigTag. **0 timeseries queries.**
-- `htmx_metrics` (Live Metrics): Reads LatestSnapshot + LatestDockerContainer + DockerContainerMetric + GPUProcessMetric. **0 timeseries queries for GPU/storage/network.**
+- `htmx_metrics` (Live Metrics): Reads LatestSnapshot + LatestDockerContainer + GPUProcessMetric. **0 timeseries queries for GPU/storage/network.**
 
 **Views still using timeseries:**
 - `ChartDataView` (Historical Charts): Reads GPUMetric, StorageMetric, NetworkMetric, MetricSnapshot for time-series aggregation. **Unchanged.**

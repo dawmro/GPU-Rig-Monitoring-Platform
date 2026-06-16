@@ -35,27 +35,25 @@ Two payload sizes were tested:
 
 | Table | Queries | Time | % of Total |
 |---|---|---|---|
-| NetworkMetric | 3 | 10.0ms | 14% |
-| MetricSnapshot | 2 | 6.0ms | 9% |
-| DockerContainerMetric | 2 | 6.0ms | 9% |
-| GPUMetric | 2 | 2.0ms | 3% |
-| StorageMetric | 2 | 2.0ms | 3% |
-| LatestSnapshot | 2 | 2.0ms | 3% |
-| GPUProcess | 2 | 1.0ms | 1% |
-| LatestDockerContainer | 2 | 1.0ms | 1% |
+|| NetworkMetric | 3 | 10.0ms | 14% |
+|| MetricSnapshot | 2 | 6.0ms | 9% |
+|| LatestDockerContainer | 2 | 6ms | 9% |
+|| GPUMetric | 2 | 2.0ms | 3% |
+|| StorageMetric | 2 | 2.0ms | 3% |
+|| LatestSnapshot | 2 | 2.0ms | 3% |
+|| GPUProcess | 2 | 1.0ms | 1% |
 
 ### Large Payload (8 GPUs, 5 disks, 3 NICs, 10 containers, 20 processes)
 
 | Table | Queries | Time | % of Total |
 |---|---|---|---|
-| NetworkMetric | 9 | 58.0ms | 22% |
-| LatestSnapshot | 2 | 39.0ms | 15% |
-| GPUMetric | 16 | 15.0ms | 6% |
-| MetricSnapshot | 2 | 8.0ms | 3% |
-| DockerContainerMetric | 20 | 8.0ms | 3% |
-| GPUProcess | 21 | 3.0ms | 1% |
-| LatestDockerContainer | 11 | 2.0ms | 1% |
-| StorageMetric | 10 | 1.0ms | 0% |
+|| NetworkMetric | 9 | 58.0ms | 22% |
+|| LatestSnapshot | 2 | 39.0ms | 15% |
+|| GPUMetric | 16 | 15.0ms | 6% |
+|| MetricSnapshot | 2 | 8.0ms | 3% |
+|| LatestDockerContainer | 20 | 8.0ms | 3% |
+|| GPUProcess | 21 | 3.0ms | 1% |
+|| StorageMetric | 10 | 1.0ms | 0% |
 
 ---
 
@@ -96,12 +94,12 @@ This query scans the rig's network metric history. With 31 days of data at 1 row
 
 **Root cause:** `update_or_create` per GPU. With 8 GPUs, this is 8 INSERT/UPDATE + 8 index lookups. Each query is fast (~1ms) but adds up.
 
-### 4.4 DockerContainerMetric — LOW IMPACT
+### 4.4 LatestDockerContainer — LOW IMPACT
 
 **Typical:** 2 queries = 6.0ms
 **Large:** 20 queries = 8.0ms
 
-**Root cause:** `update_or_create` per container. With 10 containers, this is 10 INSERT/UPDATE + 10 index lookups.
+**Root cause:** Delete-before-insert pattern per container. With 10 containers, this is 1 DELETE + 10 INSERT + index lookups.
 
 ### 4.5 Python Overhead — SIGNIFICANT
 
@@ -151,9 +149,9 @@ This query scans the rig's network metric history. With 31 days of data at 1 row
 
 **Expected savings:** ~5-10ms per ingest.
 
-### 6.4 DockerContainerMetric Bulk Insert — LOW PRIORITY
+### 6.4 LatestDockerContainer Bulk Insert — LOW PRIORITY
 
-**Current:** `update_or_create` per container.
+**Current:** Delete-before-insert per container.
 **Optimization:** `bulk_create` for containers.
 
 **Expected savings:** ~1ms per container per ingest.

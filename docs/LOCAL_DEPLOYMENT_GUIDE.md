@@ -232,7 +232,7 @@ python manage.py collectstatic --noinput
 
 > **What is `set -a && source .env && set +a`?** It exports all variables from `.env` into the current shell environment so Django settings can read them via `os.environ.get()`.
 
-Expected migration output (20 migrations):
+Expected migration output (34+ migrations):
 
 ```
 Operations to perform:

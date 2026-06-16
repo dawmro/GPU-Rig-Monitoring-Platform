@@ -191,10 +191,6 @@ def gpu_fan_cell_json(snapshot):
     return mark_safe(' '.join(parts))
 
 
-@register.simple_tag
-
-
-
 @register.filter
 def time_since(seconds):
     """Convert seconds to human-readable uptime string.

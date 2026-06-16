@@ -246,18 +246,21 @@ def _get_windows_disk_io():
 
     psutil returns keys like 'PhysicalDrive0', 'PhysicalDrive1'.
     Returns dict: { 'PhysicalDrive0': {read_bytes, write_bytes, read_iops, write_iops, busy_time_ms}, ... }
+    Also includes a '_system_wide' key with aggregate counters as fallback
+    for systems where per-disk WMI mapping fails.
     Note: busy_time_ms is only available on Linux; on Windows it will be None.
     """
     try:
         import psutil
-        io = psutil.disk_io_counters(perdisk=True)
-        if not io:
+        io_perdisk = psutil.disk_io_counters(perdisk=True)
+        io_system = psutil.disk_io_counters(perdisk=False)
+        if not io_perdisk:
             return {}
     except Exception:
         return {}
 
     result = {}
-    for name, counters in io.items():
+    for name, counters in io_perdisk.items():
         if not name.startswith('PhysicalDrive'):
             continue
         result[name] = {
@@ -266,6 +269,15 @@ def _get_windows_disk_io():
             'read_iops': counters.read_count,
             'write_iops': counters.write_count,
             'busy_time_ms': getattr(counters, 'busy_time', None),
+        }
+    # Add system-wide fallback for when WMI partition-to-disk mapping fails
+    if io_system:
+        result['_system_wide'] = {
+            'read_bytes': io_system.read_bytes,
+            'write_bytes': io_system.write_bytes,
+            'read_iops': io_system.read_count,
+            'write_iops': io_system.write_count,
+            'busy_time_ms': getattr(io_system, 'busy_time', None),
         }
     return result
 
@@ -396,15 +408,16 @@ def collect_storage():
                             disk['smart_health'] = _read_smart_windows(physical)
                             phys_name = _normalize_physical_drive_name(physical)
                         else:
-                            # Fallback: map partition letter to PhysicalDrive via WMI
                             phys_name = _partition_letter_to_physical(part.device)
-                        if phys_name:
-                            io = disk_io.get(phys_name, {})
-                            disk['read_bytes'] = io.get('read_bytes')
-                            disk['write_bytes'] = io.get('write_bytes')
-                            disk['read_iops'] = io.get('read_iops')
-                            disk['write_iops'] = io.get('write_iops')
-                            disk['busy_time_ms'] = io.get('busy_time_ms')
+                        # Try per-disk I/O first, fall back to system-wide totals
+                        io = disk_io.get(phys_name, {}) if phys_name else {}
+                        if not io:
+                            io = disk_io.get('_system_wide', {})
+                        disk['read_bytes'] = io.get('read_bytes')
+                        disk['write_bytes'] = io.get('write_bytes')
+                        disk['read_iops'] = io.get('read_iops')
+                        disk['write_iops'] = io.get('write_iops')
+                        disk['busy_time_ms'] = io.get('busy_time_ms')
                     except Exception:
                         pass
                 elif platform.system() == 'Linux':

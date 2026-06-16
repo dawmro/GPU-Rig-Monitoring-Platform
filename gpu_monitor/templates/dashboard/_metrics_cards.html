@@ -157,8 +157,8 @@
             <div class="flex items-center gap-3 text-xs mt-1 pt-1 border-t border-gray-700/30">
                 {% if disk.read_bytes_delta != None or disk.write_bytes_delta != None %}
                 <span class="text-gray-400">
-                    Read: <span class="text-gray-300">{{ disk.read_bytes_delta|format_throughput_mb }} MB/s</span>
-                    · Write: <span class="text-gray-300">{{ disk.write_bytes_delta|format_throughput_mb }} MB/s</span>
+                    Since last update — Read: <span class="text-gray-300">{{ disk.read_bytes_delta|format_throughput_mb }} MB</span>
+                    · Write: <span class="text-gray-300">{{ disk.write_bytes_delta|format_throughput_mb }} MB</span>
                 </span>
                 {% endif %}
                 {% if disk.read_iops_delta != None or disk.write_iops_delta != None %}

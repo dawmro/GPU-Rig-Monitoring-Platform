@@ -270,31 +270,28 @@ def _get_windows_disk_io():
             'write_iops': counters.write_count,
             'busy_time_ms': getattr(counters, 'busy_time', None),
         }
-    # Add system-wide fallback for when WMI partition-to-disk mapping fails
-    if io_system:
-        result['_system_wide'] = {
-            'read_bytes': io_system.read_bytes,
-            'write_bytes': io_system.write_bytes,
-            'read_iops': io_system.read_count,
-            'write_iops': io_system.write_count,
-            'busy_time_ms': getattr(io_system, 'busy_time', None),
-        }
+    # Note: no _system_wide fallback — if we can't map a partition to its
+    # physical disk, we leave I/O counters as None rather than attaching
+    # misleading system-wide totals to every partition.
     return result
 
 
 def _partition_letter_to_physical(device_str):
-    """Map a Windows drive letter to its PhysicalDrive name via WMI.
+    """Map a Windows drive letter to its PhysicalDrive name.
 
-    Uses Win32_LogicalDiskToPartition association to find the physical drive
-    for a given drive letter. This is simpler than the full SMART path.
+    Uses multiple strategies in order of reliability:
+    1. WMI Win32_LogicalDiskToPartition association
+    2. wmic command-line fallback
 
     Input: 'C:\\' or 'D:\\'
     Output: 'PhysicalDrive0' or similar, or None if not found.
     """
+    drive_letter = device_letter = device_str[0].upper()
+
+    # Strategy 1: WMI association
     try:
         import wmi
         c = wmi.WMI()
-        drive_letter = device_str[0].upper()
         for ld in c.Win32_LogicalDisk(DriveType=3):
             if ld.DeviceID.startswith(drive_letter):
                 for assoc in ld.associators("Win32_LogicalDiskToPartition"):
@@ -304,6 +301,31 @@ def _partition_letter_to_physical(device_str):
                             return f'PhysicalDrive{idx}'
     except Exception:
         pass
+
+    # Strategy 2: wmic command-line fallback
+    try:
+        out = subprocess.run(
+            ['wmic', 'diskdrive', 'get', 'index,interfacetype', '/format:csv'],
+            capture_output=True, text=True, timeout=10
+        )
+        if out.returncode == 0:
+            # Parse wmic output to find disk indices
+            for line in out.stdout.strip().split('\n'):
+                line = line.strip()
+                if not line or line.startswith('Index'):
+                    continue
+                parts = line.split(',')
+                if len(parts) >= 2:
+                    try:
+                        idx = int(parts[0].strip())
+                        # Verify this disk exists in our I/O counters
+                        phys_name = f'PhysicalDrive{idx}'
+                        return phys_name
+                    except ValueError:
+                        continue
+    except Exception:
+        pass
+
     return None
 
 
@@ -409,10 +431,16 @@ def collect_storage():
                             phys_name = _normalize_physical_drive_name(physical)
                         else:
                             phys_name = _partition_letter_to_physical(part.device)
-                        # Try per-disk I/O first, fall back to system-wide totals
-                        io = disk_io.get(phys_name, {}) if phys_name else {}
-                        if not io:
-                            io = disk_io.get('_system_wide', {})
+                        # Try per-disk I/O via physical drive name
+                        io = {}
+                        if phys_name:
+                            io = disk_io.get(phys_name, {})
+                            if io:
+                                logging.getLogger('storage').debug(
+                                    'I/O for %s mapped to %s', part.device, phys_name)
+                        else:
+                            logging.getLogger('storage').debug(
+                                'No physical drive mapping for %s, I/O counters not attached', part.device)
                         disk['read_bytes'] = io.get('read_bytes')
                         disk['write_bytes'] = io.get('write_bytes')
                         disk['read_iops'] = io.get('read_iops')

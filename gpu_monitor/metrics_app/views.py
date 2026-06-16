@@ -322,8 +322,8 @@ class ChartDataView(APIView):
                 if byte_metric:
                     v = [round(x / (1024*1024), 2) if x is not None else None for x in v]
                 label_map = {
-                    'disk_read_bytes_delta': 'Read MB/s',
-                    'disk_write_bytes_delta': 'Write MB/s',
+                    'disk_read_bytes_delta': 'Read MB',
+                    'disk_write_bytes_delta': 'Write MB',
                     'disk_read_iops_delta': 'Read IOPS',
                     'disk_write_iops_delta': 'Write IOPS',
                     'disk_utilization_pct': 'Utilization %',

@@ -246,6 +246,7 @@ def _get_windows_disk_io():
 
     psutil returns keys like 'PhysicalDrive0', 'PhysicalDrive1'.
     Returns dict: { 'PhysicalDrive0': {read_bytes, write_bytes, read_iops, write_iops, busy_time_ms}, ... }
+    Note: busy_time_ms is only available on Linux; on Windows it will be None.
     """
     try:
         import psutil
@@ -264,7 +265,7 @@ def _get_windows_disk_io():
             'write_bytes': counters.write_bytes,
             'read_iops': counters.read_count,
             'write_iops': counters.write_count,
-            'busy_time_ms': counters.busy_time,
+            'busy_time_ms': getattr(counters, 'busy_time', None),
         }
     return result
 

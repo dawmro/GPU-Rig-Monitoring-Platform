@@ -270,7 +270,7 @@ def _get_disk_io_counters():
             'write_bytes': counters.write_bytes,
             'read_iops': counters.read_count,
             'write_iops': counters.write_count,
-            'busy_time_ms': counters.busy_time,
+            'busy_time_ms': getattr(counters, 'busy_time', None),
         }
     return whole_disks
 

@@ -191,6 +191,14 @@ class ChartDataView(APIView):
         'gpu_core_clock_mhz': 'gpu_core_clock_mhz', 'gpu_mem_clock_mhz': 'gpu_mem_clock_mhz',
     }
     STORAGE_METRICS = {'disk_usage_pct'}
+    DISK_IO_METRICS = {
+        'disk_read_bytes_delta': 'read_bytes_delta',
+        'disk_write_bytes_delta': 'write_bytes_delta',
+        'disk_read_iops_delta': 'read_iops_delta',
+        'disk_write_iops_delta': 'write_iops_delta',
+        'disk_utilization_pct': 'utilization_pct',
+    }
+    DISK_BYTE_METRICS = {'disk_read_bytes_delta', 'disk_write_bytes_delta'}
     BYTE_TO_GB = {'mem_total_bytes', 'mem_used_bytes', 'mem_free_bytes', 'mem_cached_bytes', 'swap_used_bytes', 'swap_total_bytes'}
     BYTE_TO_MB = {'rx_bytes_delta', 'tx_bytes_delta'}
 
@@ -296,6 +304,31 @@ class ChartDataView(APIView):
                             for dev in base_qs.values_list('device', flat=True).distinct().order_by('device')]
             else:
                 datasets = [{'label': 'Disk Usage %', 'data': chart_values(base_qs, 'usage_pct')}]
+
+        elif metric in self.DISK_IO_METRICS:
+            from .models import StorageMetric
+            fn = self.DISK_IO_METRICS[metric]
+            base_qs = StorageMetric.objects.filter(**base_filter)
+            byte_metric = metric in self.DISK_BYTE_METRICS
+            if multi_disk:
+                datasets = []
+                for dev in base_qs.values_list('device', flat=True).distinct().order_by('device'):
+                    v = chart_values(base_qs.filter(device=dev), fn)
+                    if byte_metric:
+                        v = [round(x / (1024*1024), 2) if x is not None else None for x in v]
+                    datasets.append({'label': dev, 'data': v})
+            else:
+                v = chart_values(base_qs, fn)
+                if byte_metric:
+                    v = [round(x / (1024*1024), 2) if x is not None else None for x in v]
+                label_map = {
+                    'disk_read_bytes_delta': 'Read MB/s',
+                    'disk_write_bytes_delta': 'Write MB/s',
+                    'disk_read_iops_delta': 'Read IOPS',
+                    'disk_write_iops_delta': 'Write IOPS',
+                    'disk_utilization_pct': 'Utilization %',
+                }
+                datasets = [{'label': label_map.get(metric, metric), 'data': v}]
 
         elif metric.startswith('net_'):
             from .models import NetworkMetric

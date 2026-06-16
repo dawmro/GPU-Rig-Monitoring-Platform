@@ -39,6 +39,7 @@ Versioning:
 import os
 import sys
 import json
+import re
 import time
 import random
 import logging
@@ -52,8 +53,8 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.6.7-win'
-__schema_version__ = '1.6'
+__version__ = '1.6.8-win'
+__schema_version__ = '1.7'
 
 # ── Config ──────────────────────────────────────────────────────────────────
 
@@ -240,11 +241,80 @@ def collect_motherboard():
     return result
 
 
+def _get_windows_disk_io():
+    """Get per-physical-disk I/O counters on Windows.
+
+    psutil returns keys like 'PhysicalDrive0', 'PhysicalDrive1'.
+    Returns dict: { 'PhysicalDrive0': {read_bytes, write_bytes, read_iops, write_iops, busy_time_ms}, ... }
+    """
+    try:
+        import psutil
+        io = psutil.disk_io_counters(perdisk=True)
+        if not io:
+            return {}
+    except Exception:
+        return {}
+
+    result = {}
+    for name, counters in io.items():
+        if not name.startswith('PhysicalDrive'):
+            continue
+        result[name] = {
+            'read_bytes': counters.read_bytes,
+            'write_bytes': counters.write_bytes,
+            'read_iops': counters.read_count,
+            'write_iops': counters.write_count,
+            'busy_time_ms': counters.busy_time,
+        }
+    return result
+
+
+def _windows_partition_to_physical(device_str):
+    """Map a Windows partition device string to its PhysicalDrive name.
+
+    Input: 'C:\\' or 'D:\\' (from psutil.disk_partitions().device)
+    Output: 'PhysicalDrive0' or similar, or None if not found.
+    """
+    try:
+        import wmi
+        c = wmi.WMI()
+        drive_letter = device_str[0].upper()
+        for ld in c.Win32_LogicalDisk(DriveType=3):
+            if ld.DeviceID.startswith(drive_letter):
+                for assoc in ld.associators("Win32_LogicalDiskToPartition"):
+                    for pdisk in assoc.associators("Win32_DiskPartitionToDiskDrive"):
+                        return pdisk.DeviceID  # e.g. \\.\PHYSICALDRIVE0
+    except Exception:
+        pass
+    return None
+
+
+def _normalize_physical_drive_name(device_id):
+    """Normalize a Windows physical drive ID to a consistent name.
+
+    Input: '\\\\.\\PHYSIVE0' or '\\\\.\\PhysicalDrive0'
+    Output: 'PhysicalDrive0'
+    """
+    import re
+    m = re.search(r'(PhysicalDrive\d+)', device_id)
+    if m:
+        return m.group(1)
+    return device_id
+
+
 def collect_storage():
-    """Collect all storage metrics per disk: capacity, usage, temp, smart."""
+    """Collect all storage metrics per disk: capacity, usage, temp, smart,
+    plus disk I/O counters (throughput, IOPS, utilization).
+
+    I/O counters are per-physical-disk. All partitions on the same physical
+    disk share the same I/O counters. Counters are cumulative; deltas are
+    computed server-side during ingest.
+    """
     try:
         import psutil
         disks = []
+        # Get per-physical-disk I/O counters once
+        disk_io = _get_windows_disk_io() if platform.system() == 'Windows' else {}
         for part in psutil.disk_partitions():
             if platform.system() != 'Windows':
                 if part.fstype in ('squashfs', 'tmpfs', 'devtmpfs'):
@@ -266,6 +336,14 @@ def collect_storage():
                         physical = _get_physical_drive_for_partition(part.device)
                         if physical:
                             disk['smart_health'] = _read_smart_windows(physical)
+                            # Attach I/O counters for this physical disk
+                            phys_name = _normalize_physical_drive_name(physical)
+                            io = disk_io.get(phys_name, {})
+                            disk['read_bytes'] = io.get('read_bytes')
+                            disk['write_bytes'] = io.get('write_bytes')
+                            disk['read_iops'] = io.get('read_iops')
+                            disk['write_iops'] = io.get('write_iops')
+                            disk['busy_time_ms'] = io.get('busy_time_ms')
                     except Exception:
                         pass
                 elif platform.system() == 'Linux':

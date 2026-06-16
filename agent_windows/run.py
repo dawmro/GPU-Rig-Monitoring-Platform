@@ -270,6 +270,31 @@ def _get_windows_disk_io():
     return result
 
 
+def _partition_letter_to_physical(device_str):
+    """Map a Windows drive letter to its PhysicalDrive name via WMI.
+
+    Uses Win32_LogicalDiskToPartition association to find the physical drive
+    for a given drive letter. This is simpler than the full SMART path.
+
+    Input: 'C:\\' or 'D:\\'
+    Output: 'PhysicalDrive0' or similar, or None if not found.
+    """
+    try:
+        import wmi
+        c = wmi.WMI()
+        drive_letter = device_str[0].upper()
+        for ld in c.Win32_LogicalDisk(DriveType=3):
+            if ld.DeviceID.startswith(drive_letter):
+                for assoc in ld.associators("Win32_LogicalDiskToPartition"):
+                    for pdisk in assoc.associators("Win32_DiskPartitionToDiskDrive"):
+                        idx = getattr(pdisk, 'Index', None)
+                        if idx is not None:
+                            return f'PhysicalDrive{idx}'
+    except Exception:
+        pass
+    return None
+
+
 def _windows_partition_to_physical(device_str):
     """Map a Windows partition device string to its PhysicalDrive name.
 
@@ -363,14 +388,17 @@ def collect_storage():
                     'temp_c': None,
                     'smart_health': '',
                 }
-                # Try SMART on Windows
-                if platform.system() == 'Windows':
+                # Attach I/O counters for this physical disk (Windows)
+                if platform.system() == 'Windows' and disk_io:
                     try:
                         physical = _get_physical_drive_for_partition(part.device)
                         if physical:
                             disk['smart_health'] = _read_smart_windows(physical)
-                            # Attach I/O counters for this physical disk
                             phys_name = _normalize_physical_drive_name(physical)
+                        else:
+                            # Fallback: map partition letter to PhysicalDrive via WMI
+                            phys_name = _partition_letter_to_physical(part.device)
+                        if phys_name:
                             io = disk_io.get(phys_name, {})
                             disk['read_bytes'] = io.get('read_bytes')
                             disk['write_bytes'] = io.get('write_bytes')

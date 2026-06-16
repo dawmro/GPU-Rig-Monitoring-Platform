@@ -48,7 +48,18 @@ COMPACT_TABLES = [
     {
         'table': 'metrics_storagemetric',
         'group_by': ['rig_uuid', 'device'],
-        'agg_fields': {'usage_pct': 'avg', 'temp_c': 'avg', 'capacity_bytes': 'last'},
+        'agg_fields': {
+            'usage_pct': 'avg', 'temp_c': 'avg', 'capacity_bytes': 'last',
+            # Disk I/O deltas — SUM for counters over the bucket
+            'read_bytes_delta': 'sum', 'write_bytes_delta': 'sum',
+            'read_iops_delta': 'sum', 'write_iops_delta': 'sum',
+            # Utilization — AVG for percentage
+            'utilization_pct': 'avg',
+            # Raw cumulative counters — LAST (latest value)
+            'read_bytes': 'last', 'write_bytes': 'last',
+            'read_iops': 'last', 'write_iops': 'last',
+            'busy_time_ms': 'last',
+        },
         'static_fields': ['mountpoint', 'fstype', 'smart_health', 'snapshot_id'],
     },
     {

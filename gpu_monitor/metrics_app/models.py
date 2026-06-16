@@ -90,6 +90,10 @@ class StorageMetric(models.Model):
     """Per-disk time-series metrics — one row per disk per snapshot.
 
     Includes capacity (static) and dynamic metrics (usage, temp, smart).
+    Disk I/O metrics: throughput (bytes), IOPS (operations), and utilization (%).
+    Throughput and IOPS are stored as cumulative counters; deltas are computed
+    during ingest by comparing with the previous reading for the same device.
+    Utilization is derived from busy_time delta / sample interval.
     """
     id = models.BigAutoField(primary_key=True)
     snapshot = models.ForeignKey(MetricSnapshot, on_delete=models.CASCADE, related_name='storage_metrics')
@@ -102,6 +106,23 @@ class StorageMetric(models.Model):
     usage_pct = models.FloatField(null=True)
     temp_c = models.FloatField(null=True)
     smart_health = models.CharField(max_length=16, blank=True, default='')
+
+    # Disk I/O metrics — cumulative counters (like network rx/tx_bytes)
+    read_bytes = models.BigIntegerField(null=True, help_text="Cumulative bytes read (counter)")
+    write_bytes = models.BigIntegerField(null=True, help_text="Cumulative bytes written (counter)")
+    # Deltas computed during ingest (bytes/sec equivalent over sample interval)
+    read_bytes_delta = models.BigIntegerField(null=True, help_text="Bytes read since last sample")
+    write_bytes_delta = models.BigIntegerField(null=True, help_text="Bytes written since last sample")
+    # IOPS — cumulative operation counters
+    read_iops = models.PositiveIntegerField(null=True, help_text="Cumulative read operations (counter)")
+    write_iops = models.PositiveIntegerField(null=True, help_text="Cumulative write operations (counter)")
+    # IOPS deltas computed during ingest
+    read_iops_delta = models.PositiveIntegerField(null=True, help_text="Read operations since last sample")
+    write_iops_delta = models.PositiveIntegerField(null=True, help_text="Write operations since last sample")
+    # Busy time — cumulative ms the disk spent doing I/O
+    busy_time_ms = models.PositiveIntegerField(null=True, help_text="Cumulative busy time in ms (counter)")
+    # Utilization — derived: busy_time_delta / (sample_interval_s * 1000) * 100
+    utilization_pct = models.FloatField(null=True, help_text="Disk utilization % (0-100)")
 
     class Meta:
         db_table = 'metrics_storagemetric'
@@ -229,6 +250,12 @@ class LatestSnapshot(models.Model):
     storage_usage_pcts_json = models.JSONField(default=list, blank=True)     # [72.5, 45.2]
     storage_temps_json = models.JSONField(default=list, blank=True)          # [35, 40]
     storage_smart_json = models.JSONField(default=list, blank=True)          # ["OK", "OK"]
+    # Disk I/O metrics — latest deltas for Live Metrics display
+    storage_read_bytes_delta_json = models.JSONField(default=list, blank=True)   # [12345678, 9876543] bytes/s
+    storage_write_bytes_delta_json = models.JSONField(default=list, blank=True)  # [5678901, 1234567] bytes/s
+    storage_read_iops_delta_json = models.JSONField(default=list, blank=True)    # [150, 80] IOPS
+    storage_write_iops_delta_json = models.JSONField(default=list, blank=True)   # [200, 45] IOPS
+    storage_utilization_pcts_json = models.JSONField(default=list, blank=True)   # [45.2, 12.1] %
 
     # Network data stored as JSON arrays for fast dashboard access
     # Each array has one entry per network interface, ordered by interface name

@@ -152,6 +152,30 @@
                 <span>SMART: <span class="{% if disk.smart_health == 'OK' %}text-green-400{% elif disk.smart_health == 'FAILING' %}text-red-400{% else %}text-gray-400{% endif %}">{{ disk.smart_health }}</span></span>
                 {% endif %}
             </div>
+            {# Disk I/O metrics row: throughput, IOPS, utilization #}
+            {% if disk.read_bytes_delta != None or disk.write_bytes_delta != None or disk.utilization_pct != None %}
+            <div class="flex items-center gap-3 text-xs mt-1 pt-1 border-t border-gray-700/30">
+                {% if disk.read_bytes_delta != None or disk.write_bytes_delta != None %}
+                <span class="text-gray-400">
+                    Since last update — Read: <span class="text-gray-300">{{ disk.read_bytes_delta|format_throughput_mb }} MB</span>
+                    · Write: <span class="text-gray-300">{{ disk.write_bytes_delta|format_throughput_mb }} MB</span>
+                </span>
+                {% endif %}
+                {% if disk.read_iops_delta != None or disk.write_iops_delta != None %}
+                <span class="text-gray-400">
+                    IOPS: <span class="text-gray-300">{{ disk.read_iops_delta|format_iops }} / {{ disk.write_iops_delta|format_iops }}</span>
+                </span>
+                {% endif %}
+                {% if disk.utilization_pct != None %}
+                <span class="text-gray-400">
+                    Util:
+                    <span class="{% if disk.utilization_pct >= 80 %}text-red-400{% elif disk.utilization_pct >= 60 %}text-orange-400{% elif disk.utilization_pct >= 40 %}text-yellow-400{% elif disk.utilization_pct >= 20 %}text-green-400{% else %}text-gray-500{% endif %}">
+                        {{ disk.utilization_pct|floatformat:1 }}%
+                    </span>
+                </span>
+                {% endif %}
+            </div>
+            {% endif %}
         </div>
         {% endfor %}
     {% else %}

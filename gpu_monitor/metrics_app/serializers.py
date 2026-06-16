@@ -21,7 +21,7 @@ class IngestSerializer(serializers.Serializer):
     errors = serializers.ListField(required=False, default=list)
 
     def validate_schema_version(self, value):
-        if value not in ('1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6'):
+        if value not in ('1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7'):
             raise serializers.ValidationError(f"Unsupported schema_version: {value}")
         return value
 
@@ -124,12 +124,74 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     gpu_mem_mb=proc.get('gpu_mem_mb'),
                 )
 
-            # Store per-disk metrics (with capacity — for tracking)
+            # Store per-disk metrics with I/O delta calculation
+            # First pass: compute deltas and upsert; store delta values for LatestSnapshot
+            disk_deltas = {}  # device_name -> {read_bytes_delta, write_bytes_delta, ...}
             for disk in storage_list:
+                device_name = disk.get('device', '')
+                new_read_bytes = disk.get('read_bytes')
+                new_write_bytes = disk.get('write_bytes')
+                new_read_iops = disk.get('read_iops')
+                new_write_iops = disk.get('write_iops')
+                new_busy_time_ms = disk.get('busy_time_ms')
+
+                # Calculate deltas by comparing with previous reading for this device
+                read_bytes_delta = None
+                write_bytes_delta = None
+                read_iops_delta = None
+                write_iops_delta = None
+                utilization_pct = None
+                try:
+                    prev = StorageMetric.objects.filter(
+                        rig_uuid=rig_uuid,
+                        device=device_name,
+                    ).order_by('-timestamp').first()
+                    if prev:
+                        # Byte deltas
+                        if new_read_bytes is not None and prev.read_bytes is not None:
+                            read_bytes_delta = new_read_bytes - prev.read_bytes
+                            if read_bytes_delta < 0:
+                                read_bytes_delta = new_read_bytes  # counter wraparound
+                        if new_write_bytes is not None and prev.write_bytes is not None:
+                            write_bytes_delta = new_write_bytes - prev.write_bytes
+                            if write_bytes_delta < 0:
+                                write_bytes_delta = new_write_bytes
+                        # IOPS deltas
+                        if new_read_iops is not None and prev.read_iops is not None:
+                            read_iops_delta = new_read_iops - prev.read_iops
+                            if read_iops_delta < 0:
+                                read_iops_delta = new_read_iops
+                        if new_write_iops is not None and prev.write_iops is not None:
+                            write_iops_delta = new_write_iops - prev.write_iops
+                            if write_iops_delta < 0:
+                                write_iops_delta = new_write_iops
+                        # Busy time delta → utilization %
+                        if new_busy_time_ms is not None and prev.busy_time_ms is not None:
+                            busy_time_delta_ms = new_busy_time_ms - prev.busy_time_ms
+                            if busy_time_delta_ms < 0:
+                                busy_time_delta_ms = new_busy_time_ms
+                            time_elapsed_s = (ts - prev.timestamp).total_seconds()
+                            if time_elapsed_s > 0:
+                                utilization_pct = round(
+                                    busy_time_delta_ms / (time_elapsed_s * 1000) * 100, 2
+                                )
+                                utilization_pct = max(0.0, min(100.0, utilization_pct))
+                except Exception:
+                    pass
+
+                # Store delta values for LatestSnapshot JSON arrays
+                disk_deltas[device_name] = {
+                    'read_bytes_delta': read_bytes_delta,
+                    'write_bytes_delta': write_bytes_delta,
+                    'read_iops_delta': read_iops_delta,
+                    'write_iops_delta': write_iops_delta,
+                    'utilization_pct': utilization_pct,
+                }
+
                 StorageMetric.objects.update_or_create(
                     rig_uuid=rig_uuid,
                     timestamp=ts,
-                    device=disk.get('device', ''),
+                    device=device_name,
                     defaults={
                         'snapshot': snapshot,
                         'mountpoint': disk.get('mountpoint', ''),
@@ -138,6 +200,16 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                         'usage_pct': disk.get('usage_pct'),
                         'temp_c': disk.get('temp_c'),
                         'smart_health': disk.get('smart_health', ''),
+                        'read_bytes': new_read_bytes,
+                        'write_bytes': new_write_bytes,
+                        'read_iops': new_read_iops,
+                        'write_iops': new_write_iops,
+                        'busy_time_ms': new_busy_time_ms,
+                        'read_bytes_delta': read_bytes_delta,
+                        'write_bytes_delta': write_bytes_delta,
+                        'read_iops_delta': read_iops_delta,
+                        'write_iops_delta': write_iops_delta,
+                        'utilization_pct': utilization_pct,
                     },
                 )
 
@@ -245,14 +317,27 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
             storage_usage_pcts = []
             storage_temps = []
             storage_smart = []
+            storage_read_bytes_delta = []
+            storage_write_bytes_delta = []
+            storage_read_iops_delta = []
+            storage_write_iops_delta = []
+            storage_utilization_pcts = []
             for disk in storage_list:
-                storage_devices.append(disk.get('device', ''))
+                device_name = disk.get('device', '')
+                storage_devices.append(device_name)
                 storage_fstypes.append(disk.get('fstype', ''))
                 storage_mountpoints.append(disk.get('mountpoint', ''))
                 storage_capacities.append(disk.get('capacity_bytes'))
                 storage_usage_pcts.append(disk.get('usage_pct'))
                 storage_temps.append(disk.get('temp_c'))
                 storage_smart.append(disk.get('smart_health', ''))
+                # Use computed deltas from the ingest loop
+                deltas = disk_deltas.get(device_name, {})
+                storage_read_bytes_delta.append(deltas.get('read_bytes_delta'))
+                storage_write_bytes_delta.append(deltas.get('write_bytes_delta'))
+                storage_read_iops_delta.append(deltas.get('read_iops_delta'))
+                storage_write_iops_delta.append(deltas.get('write_iops_delta'))
+                storage_utilization_pcts.append(deltas.get('utilization_pct'))
 
             # Build network summary data for LatestSnapshot
             network_interfaces = []
@@ -325,6 +410,11 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     'storage_usage_pcts_json': storage_usage_pcts,
                     'storage_temps_json': storage_temps,
                     'storage_smart_json': storage_smart,
+                    'storage_read_bytes_delta_json': storage_read_bytes_delta,
+                    'storage_write_bytes_delta_json': storage_write_bytes_delta,
+                    'storage_read_iops_delta_json': storage_read_iops_delta,
+                    'storage_write_iops_delta_json': storage_write_iops_delta,
+                    'storage_utilization_pcts_json': storage_utilization_pcts,
                     'network_count': len(network_list),
                     'network_interfaces_json': network_interfaces,
                     'network_ipv4s_json': network_ipv4s,

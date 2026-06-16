@@ -118,6 +118,12 @@ def _fetch_rig_metrics(uuid, rig=None):
                 'usage_pct': _json_get(snapshot.storage_usage_pcts_json, i),
                 'temp_c': _json_get(snapshot.storage_temps_json, i),
                 'smart_health': _json_get(snapshot.storage_smart_json, i, ''),
+                # Disk I/O metrics (latest deltas from LatestSnapshot)
+                'read_bytes_delta': _json_get(snapshot.storage_read_bytes_delta_json, i),
+                'write_bytes_delta': _json_get(snapshot.storage_write_bytes_delta_json, i),
+                'read_iops_delta': _json_get(snapshot.storage_read_iops_delta_json, i),
+                'write_iops_delta': _json_get(snapshot.storage_write_iops_delta_json, i),
+                'utilization_pct': _json_get(snapshot.storage_utilization_pcts_json, i),
             })
 
     # Network: read from LatestSnapshot JSON arrays instead of querying

@@ -12,6 +12,7 @@
                 <th class="text-left px-4 py-3 font-medium">GPU Util [%]</th>
                 <th class="text-left px-4 py-3 font-medium">GPU Fan [%]</th>
                 <th class="text-left px-4 py-3 font-medium">CPU [%]</th>
+                <th class="text-left px-4 py-3 font-medium">Disk Util [%]</th>
             </tr>
         </thead>
         <tbody>
@@ -93,10 +94,20 @@
                         {{ item.snapshot.cpu_utilization_pct|floatformat:1 }}
                     {% else %}—{% endif %}
                 </td>
+                {# Disk Util column: max utilization across all disks #}
+                <td class="px-2 py-3 whitespace-nowrap">
+                    {% if item.snapshot.storage_utilization_pcts_json %}
+                        {% with max_util=item.snapshot.storage_utilization_pcts_json|max_disk_util %}
+                        <span class="{% if max_util >= 80 %}text-red-400{% elif max_util >= 60 %}text-orange-400{% elif max_util >= 40 %}text-yellow-400{% elif max_util >= 20 %}text-green-400{% else %}text-gray-500{% endif %}">
+                            {{ max_util|floatformat:1 }}%
+                        </span>
+                        {% endwith %}
+                    {% else %}—{% endif %}
+                </td>
             </tr>
             {% empty %}
             <tr>
-                <td colspan="9" class="px-4 py-8 text-center text-gray-500">
+                <td colspan="10" class="px-4 py-8 text-center text-gray-500">
                     No rigs found. Deploy the monitoring agent to enroll your first rig.
                 </td>
             </tr>

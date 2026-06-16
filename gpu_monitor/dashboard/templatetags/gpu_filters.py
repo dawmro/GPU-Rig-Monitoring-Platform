@@ -291,3 +291,47 @@ def last_seen_short(value):
     import re
     ts = re.sub(r'(\d)\s+([dhm])', r'\1\2', ts)
     return ts
+
+
+@register.filter
+def format_iops(value):
+    """Format IOPS value with k/M suffix for readability."""
+    if value is None:
+        return '—'
+    try:
+        value = int(value)
+    except (ValueError, TypeError):
+        return '—'
+    if value >= 1_000_000:
+        return f'{value / 1_000_000:.1f}M'
+    elif value >= 1_000:
+        return f'{value / 1_000:.1f}k'
+    return str(value)
+
+
+@register.filter
+def format_throughput_mb(value):
+    """Format bytes/s value as MB/s with 1 decimal."""
+    if value is None:
+        return '—'
+    try:
+        return f'{float(value) / (1024 * 1024):.1f}'
+    except (ValueError, TypeError):
+        return '—'
+
+
+@register.filter
+def max_disk_util(values):
+    """Return the maximum utilization value from a list of disk utilization percentages.
+
+    Used in fleet overview to show the highest disk utilization across all disks.
+    Returns 0 if the list is empty or contains only None values.
+    Example: [45.2, None, 12.1] -> 45.2
+    """
+    if not values:
+        return 0
+    try:
+        valid = [float(v) for v in values if v is not None]
+        return max(valid) if valid else 0
+    except (ValueError, TypeError):
+        return 0

@@ -39,6 +39,7 @@ Versioning:
 import os
 import sys
 import json
+import re
 import time
 import random
 import logging
@@ -52,8 +53,8 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.6.7-win'
-__schema_version__ = '1.6'
+__version__ = '1.6.8-win'
+__schema_version__ = '1.7'
 
 # ── Config ──────────────────────────────────────────────────────────────────
 
@@ -240,14 +241,175 @@ def collect_motherboard():
     return result
 
 
+def _get_windows_disk_io():
+    """Get per-physical-disk I/O counters on Windows.
+
+    psutil returns keys like 'PhysicalDrive0', 'PhysicalDrive1'.
+    Returns dict: { 'PhysicalDrive0': {read_bytes, write_bytes, read_iops, write_iops, busy_time_ms}, ... }
+    Also includes a '_system_wide' key with aggregate counters as fallback
+    for systems where per-disk WMI mapping fails.
+    Note: busy_time_ms is only available on Linux; on Windows it will be None.
+    """
+    try:
+        import psutil
+        io_perdisk = psutil.disk_io_counters(perdisk=True)
+        io_system = psutil.disk_io_counters(perdisk=False)
+        if not io_perdisk:
+            return {}
+    except Exception:
+        return {}
+
+    result = {}
+    for name, counters in io_perdisk.items():
+        if not name.startswith('PhysicalDrive'):
+            continue
+        result[name] = {
+            'read_bytes': counters.read_bytes,
+            'write_bytes': counters.write_bytes,
+            'read_iops': counters.read_count,
+            'write_iops': counters.write_count,
+            'busy_time_ms': getattr(counters, 'busy_time', None),
+        }
+    # Note: no _system_wide fallback — if we can't map a partition to its
+    # physical disk, we leave I/O counters as None rather than attaching
+    # misleading system-wide totals to every partition.
+    return result
+
+
+def _partition_letter_to_physical(device_str):
+    """Map a Windows drive letter to its PhysicalDrive name.
+
+    Uses multiple strategies in order of reliability:
+    1. WMI Win32_LogicalDiskToPartition association
+    2. wmic command-line fallback
+
+    Input: 'C:\\' or 'D:\\'
+    Output: 'PhysicalDrive0' or similar, or None if not found.
+    """
+    drive_letter = device_letter = device_str[0].upper()
+
+    # Strategy 1: WMI association
+    try:
+        import wmi
+        c = wmi.WMI()
+        for ld in c.Win32_LogicalDisk(DriveType=3):
+            if ld.DeviceID.startswith(drive_letter):
+                for assoc in ld.associators("Win32_LogicalDiskToPartition"):
+                    for pdisk in assoc.associators("Win32_DiskPartitionToDiskDrive"):
+                        idx = getattr(pdisk, 'Index', None)
+                        if idx is not None:
+                            return f'PhysicalDrive{idx}'
+    except Exception:
+        pass
+
+    # Strategy 2: wmic command-line fallback
+    try:
+        out = subprocess.run(
+            ['wmic', 'diskdrive', 'get', 'index,interfacetype', '/format:csv'],
+            capture_output=True, text=True, timeout=10
+        )
+        if out.returncode == 0:
+            # Parse wmic output to find disk indices
+            for line in out.stdout.strip().split('\n'):
+                line = line.strip()
+                if not line or line.startswith('Index'):
+                    continue
+                parts = line.split(',')
+                if len(parts) >= 2:
+                    try:
+                        idx = int(parts[0].strip())
+                        # Verify this disk exists in our I/O counters
+                        phys_name = f'PhysicalDrive{idx}'
+                        return phys_name
+                    except ValueError:
+                        continue
+    except Exception:
+        pass
+
+    return None
+
+
+def _windows_partition_to_physical(device_str):
+    """Map a Windows partition device string to its PhysicalDrive name.
+
+    Input: 'C:\\' or 'D:\\' (from psutil.disk_partitions().device)
+    Output: 'PhysicalDrive0' or similar, or None if not found.
+    """
+    try:
+        import wmi
+        c = wmi.WMI()
+        drive_letter = device_str[0].upper()
+        for ld in c.Win32_LogicalDisk(DriveType=3):
+            if ld.DeviceID.startswith(drive_letter):
+                for assoc in ld.associators("Win32_LogicalDiskToPartition"):
+                    for pdisk in assoc.associators("Win32_DiskPartitionToDiskDrive"):
+                        return pdisk.DeviceID  # e.g. \\.\PHYSICALDRIVE0
+    except Exception:
+        pass
+    return None
+
+
+def _normalize_physical_drive_name(device_id):
+    """Normalize a Windows physical drive ID to a consistent name.
+
+    Input: '\\\\.\\PHYSIVE0' or '\\\\.\\PhysicalDrive0'
+    Output: 'PhysicalDrive0'
+    """
+    import re
+    m = re.search(r'(PhysicalDrive\d+)', device_id)
+    if m:
+        return m.group(1)
+    return device_id
+
+
+def _get_windows_disks_wmi():
+    """Fallback: get disk partitions via WMI when psutil returns empty results.
+
+    Returns a list of dicts with device, mountpoint, fstype — same format
+    as psutil.disk_partitions() entries.
+    """
+    try:
+        import wmi
+        c = wmi.WMI()
+        disks = []
+        for disk in c.Win32_LogicalDisk(DriveType=3):
+            # DriveType=3 = Local Disk (fixed HDD/SSD)
+            disks.append(type('Partition', (), {
+                'device': disk.DeviceID + '\\',
+                'mountpoint': disk.DeviceID + '\\',
+                'fstype': disk.FileSystem or '',
+                'opts': '',
+            })())
+        return disks
+    except Exception:
+        return []
+
+
 def collect_storage():
-    """Collect all storage metrics per disk: capacity, usage, temp, smart."""
+    """Collect all storage metrics per disk: capacity, usage, temp, smart,
+    plus disk I/O counters (throughput, IOPS, utilization).
+
+    I/O counters are per-physical-disk. All partitions on the same physical
+    disk share the same I/O counters. Counters are cumulative; deltas are
+    computed server-side during ingest.
+    """
     try:
         import psutil
         disks = []
-        for part in psutil.disk_partitions():
+        # Get per-physical-disk I/O counters once
+        disk_io = _get_windows_disk_io() if platform.system() == 'Windows' else {}
+        partitions = psutil.disk_partitions()
+        # On Windows, if psutil returns no partitions, fall back to WMI
+        if platform.system() == 'Windows' and not partitions:
+            partitions = _get_windows_disks_wmi()
+        for part in partitions:
+            # Skip virtual/special filesystems on non-Windows
             if platform.system() != 'Windows':
                 if part.fstype in ('squashfs', 'tmpfs', 'devtmpfs'):
+                    continue
+            # On Windows, skip CD-ROM and removable drives with no media
+            if platform.system() == 'Windows':
+                if part.fstype == '' or part.fstype.lower() == 'cdfs':
                     continue
             try:
                 usage = psutil.disk_usage(part.mountpoint)
@@ -260,12 +422,30 @@ def collect_storage():
                     'temp_c': None,
                     'smart_health': '',
                 }
-                # Try SMART on Windows
-                if platform.system() == 'Windows':
+                # Attach I/O counters for this physical disk (Windows)
+                if platform.system() == 'Windows' and disk_io:
                     try:
                         physical = _get_physical_drive_for_partition(part.device)
                         if physical:
                             disk['smart_health'] = _read_smart_windows(physical)
+                            phys_name = _normalize_physical_drive_name(physical)
+                        else:
+                            phys_name = _partition_letter_to_physical(part.device)
+                        # Try per-disk I/O via physical drive name
+                        io = {}
+                        if phys_name:
+                            io = disk_io.get(phys_name, {})
+                            if io:
+                                logging.getLogger('storage').debug(
+                                    'I/O for %s mapped to %s', part.device, phys_name)
+                        else:
+                            logging.getLogger('storage').debug(
+                                'No physical drive mapping for %s, I/O counters not attached', part.device)
+                        disk['read_bytes'] = io.get('read_bytes')
+                        disk['write_bytes'] = io.get('write_bytes')
+                        disk['read_iops'] = io.get('read_iops')
+                        disk['write_iops'] = io.get('write_iops')
+                        disk['busy_time_ms'] = io.get('busy_time_ms')
                     except Exception:
                         pass
                 elif platform.system() == 'Linux':
@@ -288,6 +468,10 @@ def collect_storage():
                     disk['smart_health'] = 'unsupported'
                 disks.append(disk)
             except PermissionError:
+                logging.getLogger('storage').debug('Permission denied for %s, skipping', part.device)
+                continue
+            except OSError as e:
+                logging.getLogger('storage').debug('OS error for %s: %s, skipping', part.device, e)
                 continue
         return disks
     except Exception as e:

@@ -28,6 +28,7 @@ Versioning:
 import os
 import sys
 import json
+import re
 import signal
 import time
 import random
@@ -42,8 +43,8 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.5.7'
-__schema_version__ = '1.6'
+__version__ = '1.5.8'
+__schema_version__ = '1.7'
 
 # ── Config ──────────────────────────────────────────────────────────────────
 
@@ -230,16 +231,93 @@ def collect_motherboard():
     return result
 
 
+def _get_disk_io_counters():
+    """Get per-physical-disk I/O counters from psutil.
+
+    Returns a dict keyed by disk name (e.g. 'sda', 'nvme0n1') with:
+      read_bytes, write_bytes, read_iops, write_iops, busy_time_ms
+    Filters out partitions (e.g. sda1, sda2) and virtual devices (loop, sr, dm).
+    """
+    try:
+        import psutil
+        io = psutil.disk_io_counters(perdisk=True)
+        if not io:
+            return {}
+    except Exception:
+        return {}
+
+    # Identify whole-disk devices (not partitions)
+    # Whole disks: sda, nvme0n1, vda, hda (no trailing digits, or nvme pattern)
+    # Partitions: sda1, sda2, nvme0n1p1 (have trailing digits after base name)
+    import re
+    whole_disks = {}
+    for name, counters in io.items():
+        # Skip loop devices, sr (CD-ROM), dm (device mapper virtual)
+        if name.startswith('loop') or name.startswith('sr') or name.startswith('dm-'):
+            continue
+        # Skip partitions: names ending in digits that aren't pure NVMe
+        # NVMe whole disk: nvme0n1 (ends in digit but has 'p' before it for partitions)
+        # SATA whole disk: sda, vda, hda (no digits at all)
+        # Partition: sda1, nvme0n1p1
+        if re.match(r'^[a-z]+\d+$', name) and not name.startswith('nvme'):
+            # Ends in digits, not NVMe → partition (sda1, vda2, etc.)
+            continue
+        if re.match(r'^nvme\dn\d+p\d+$', name):
+            # NVMe partition: nvme0n1p1
+            continue
+        whole_disks[name] = {
+            'read_bytes': counters.read_bytes,
+            'write_bytes': counters.write_bytes,
+            'read_iops': counters.read_count,
+            'write_iops': counters.write_count,
+            'busy_time_ms': getattr(counters, 'busy_time', None),
+        }
+    return whole_disks
+
+
+def _disk_to_whole_disk(device_name):
+    """Map a partition device to its parent whole-disk device.
+
+    Examples:
+        /dev/sda1 -> sda
+        /dev/sda  -> sda
+        /dev/nvme0n1p1 -> nvme0n1
+        /dev/nvme0n1 -> nvme0n1
+    """
+    import re
+    # Strip /dev/ prefix
+    name = device_name.split('/')[-1]
+    # NVMe: nvme0n1p1 -> nvme0n1, nvme0n1 -> nvme0n1
+    nvme_match = re.match(r'^(nvme\dn\d+)', name)
+    if nvme_match:
+        return nvme_match.group(1)
+    # SATA/SCSI: sda1 -> sda, vda2 -> vda, sda -> sda
+    sat_match = re.match(r'^([a-z]+)', name)
+    if sat_match:
+        return sat_match.group(1)
+    return name
+
+
 def collect_storage():
-    """Collect all storage metrics per disk: capacity, usage, temp, smart."""
+    """Collect all storage metrics per disk: capacity, usage, temp, smart,
+    plus disk I/O counters (throughput, IOPS, utilization).
+
+    I/O counters are per-physical-disk (whole disk, not partition).
+    All partitions on the same physical disk share the same I/O counters.
+    Counters are cumulative; deltas are computed server-side during ingest.
+    """
     try:
         import psutil
         disks = []
+        # Get per-physical-disk I/O counters once, reuse for all partitions
+        disk_io = _get_disk_io_counters()
         for part in psutil.disk_partitions():
             if part.fstype in ('squashfs', 'tmpfs', 'devtmpfs'):
                 continue
             try:
                 usage = psutil.disk_usage(part.mountpoint)
+                whole_disk = _disk_to_whole_disk(part.device)
+                io = disk_io.get(whole_disk, {})
                 disk = {
                     'device': part.device,
                     'mountpoint': part.mountpoint,
@@ -248,6 +326,12 @@ def collect_storage():
                     'usage_pct': round(usage.percent, 1),
                     'temp_c': None,
                     'smart_health': '',
+                    # Disk I/O counters (cumulative, per-physical-disk)
+                    'read_bytes': io.get('read_bytes'),
+                    'write_bytes': io.get('write_bytes'),
+                    'read_iops': io.get('read_iops'),
+                    'write_iops': io.get('write_iops'),
+                    'busy_time_ms': io.get('busy_time_ms'),
                 }
                 # Try SMART for temperature
                 try:

@@ -187,7 +187,10 @@ class Command(BaseCommand):
             d['gpu'] = [dict(zip(cols, r)) for r in c.fetchall()]
 
             c.execute("SELECT id, snapshot_id, rig_uuid, timestamp, device, mountpoint, fstype, "
-                      "capacity_bytes, usage_pct, temp_c, smart_health "
+                      "capacity_bytes, usage_pct, temp_c, smart_health, "
+                      "read_bytes, write_bytes, read_bytes_delta, write_bytes_delta, "
+                      "read_iops, write_iops, read_iops_delta, write_iops_delta, "
+                      "busy_time_ms, utilization_pct "
                       "FROM metrics_storagemetric "
                       "WHERE timestamp >= %s AND timestamp < %s "
                       "ORDER BY snapshot_id, device", [start, end])
@@ -282,6 +285,11 @@ class Command(BaseCommand):
                     row['device'], row['mountpoint'], row['fstype'],
                     row['capacity_bytes'], row['usage_pct'], row['temp_c'],
                     row['smart_health'],
+                    row.get('read_bytes'), row.get('write_bytes'),
+                    row.get('read_bytes_delta'), row.get('write_bytes_delta'),
+                    row.get('read_iops'), row.get('write_iops'),
+                    row.get('read_iops_delta'), row.get('write_iops_delta'),
+                    row.get('busy_time_ms'), row.get('utilization_pct'),
                 ))
             elif table == 'network':
                 all_vals.append((
@@ -307,7 +315,10 @@ class Command(BaseCommand):
         elif table == 'disk':
             sql = ("INSERT INTO metrics_storagemetric "
                    "(snapshot_id, rig_uuid, timestamp, device, mountpoint, fstype, "
-                   "capacity_bytes, usage_pct, temp_c, smart_health) "
+                   "capacity_bytes, usage_pct, temp_c, smart_health, "
+                   "read_bytes, write_bytes, read_bytes_delta, write_bytes_delta, "
+                   "read_iops, write_iops, read_iops_delta, write_iops_delta, "
+                   "busy_time_ms, utilization_pct) "
                    "VALUES %s ON CONFLICT (rig_uuid, timestamp, device) DO NOTHING")
         elif table == 'network':
             sql = ("INSERT INTO metrics_networkmetric "

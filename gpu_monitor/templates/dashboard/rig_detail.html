@@ -177,6 +177,24 @@
                 <canvas id="chartDiskUsage"></canvas>
             </div>
 
+            <!-- Disk Read/Write Throughput Chart (multi-disk) -->
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
+                <h3 class="text-sm font-medium text-gray-300 mb-3">Disk Read/Write (<span class="chart-timeframe-label">24h</span>)</h3>
+                <canvas id="chartDiskReadWriteThroughput"></canvas>
+            </div>
+
+            <!-- Disk Read/Write IOPS Chart (multi-disk) -->
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
+                <h3 class="text-sm font-medium text-gray-300 mb-3">Disk Read/Write IOPS (<span class="chart-timeframe-label">24h</span>)</h3>
+                <canvas id="chartDiskReadWriteIops"></canvas>
+            </div>
+
+            <!-- Disk Utilization Chart (multi-disk) -->
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
+                <h3 class="text-sm font-medium text-gray-300 mb-3">Disk Utilization (<span class="chart-timeframe-label">24h</span>)</h3>
+                <canvas id="chartDiskUtilization"></canvas>
+            </div>
+
             <!-- Network Traffic Chart (multi-interface, combined RX/TX/Errors) -->
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[300px]">
                 <h3 class="text-sm font-medium text-gray-300 mb-3">Network Traffic (<span class="chart-timeframe-label">24h</span>)</h3>
@@ -386,6 +404,9 @@ async function loadCharts() {
         function() { return loadChartMemSwap('chartMemSwap', uuid, range); },
         function() { return loadChartLoadAvg('chartCpuLoad', uuid, range); },
         function() { return loadChartMultiKey('chartDiskUsage', 'disk_usage_pct', uuid, range, '%', 'multi_disk'); },
+        function() { return loadChartMultiKeyDual('chartDiskReadWriteThroughput', 'disk_read_bytes_delta', 'disk_write_bytes_delta', uuid, range, ' MB/s', 'multi_disk', 'rgba(59, 130, 246, 0.8)', 'rgba(16, 185, 129, 0.8)'); },
+        function() { return loadChartMultiKeyDual('chartDiskReadWriteIops', 'disk_read_iops_delta', 'disk_write_iops_delta', uuid, range, ' IOPS', 'multi_disk', 'rgba(59, 130, 246, 0.8)', 'rgba(16, 185, 129, 0.8)'); },
+        function() { return loadChartMultiKey('chartDiskUtilization', 'disk_utilization_pct', uuid, range, '%', 'multi_disk'); },
         function() { return loadChartNetworkCombined('chartNetCombined', uuid, range); },
         function() { return loadChart('chartUptime', 'uptime_s', uuid, range, ' days', 'rgba(168, 85, 247, 0.8)', 'rgba(168, 85, 247, 0.15)'); },
         function() { return loadChart('chartErrorFreq', 'error_frequency', uuid, range, ' err/min', 'rgba(239, 68, 68, 0.8)', 'rgba(239, 68, 68, 0.5)', 'bar'); },
@@ -870,6 +891,111 @@ async function loadChartNetworkCombined(canvasId, uuid, range) {
         });
     } catch (e) {
         console.error('Failed to load network chart:', e);
+        ctx.parentElement.innerHTML = '<div class="flex items-center justify-center h-48 text-gray-500 text-sm">No data available</div>';
+    }
+}
+
+// Load dual-metric chart (read + write) with multi-device support
+// Fetches two metrics and renders them as two datasets in a single chart
+async function loadChartMultiKeyDual(canvasId, metricRead, metricWrite, uuid, range, unit, multi_param, colorRead, colorWrite) {
+    var ctx = document.getElementById(canvasId);
+    if (!ctx) return;
+
+    try {
+        var [respRead, respWrite] = await Promise.all([
+            fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=${metricRead}&range=${range}&bucket_minutes=${chartBucketMinutes}&${multi_param}=true`),
+            fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=${metricWrite}&range=${range}&bucket_minutes=${chartBucketMinutes}&${multi_param}=true`),
+        ]);
+
+        if (!respRead.ok || !respWrite.ok) {
+            throw new Error('HTTP ' + (respRead.status || respWrite.status));
+        }
+
+        var [dataRead, dataWrite] = await Promise.all([respRead.json(), respWrite.json()]);
+
+        if (!dataRead.datasets || !dataWrite.datasets || dataRead.datasets.length === 0) {
+            ctx.parentElement.innerHTML = '<div class="flex items-center justify-center h-48 text-gray-500 text-sm">No data available</div>';
+            return;
+        }
+
+        if (chartInstances[canvasId]) {
+            chartInstances[canvasId].destroy();
+        }
+
+        var datasets = [];
+        var labels = dataRead.labels;
+
+        dataRead.datasets.forEach(function(ds) {
+            datasets.push({
+                label: ds.label + ' Read',
+                data: ds.data,
+                borderColor: colorRead,
+                backgroundColor: colorRead.replace('0.8', '0.15'),
+                borderWidth: 2,
+                borderDash: [4, 2],
+                fill: false,
+                tension: 0.0,
+                pointRadius: 0,
+                pointHitRadius: 10,
+                spanGaps: false,
+            });
+        });
+
+        dataWrite.datasets.forEach(function(ds) {
+            datasets.push({
+                label: ds.label + ' Write',
+                data: ds.data,
+                borderColor: colorWrite,
+                backgroundColor: colorWrite.replace('0.8', '0.15'),
+                borderWidth: 2,
+                fill: false,
+                tension: 0.0,
+                pointRadius: 0,
+                pointHitRadius: 10,
+                spanGaps: false,
+            });
+        });
+
+        chartInstances[canvasId] = new Chart(ctx, {
+            type: 'line',
+            data: { labels: labels, datasets: datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: true,
+                        labels: {
+                            color: '#9ca3af', boxWidth: 12, padding: 8, font: { size: 10 },
+                        },
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        callbacks: {
+                            label: function(ctx) {
+                                return ctx.dataset.label + ': ' + (ctx.parsed.y !== null ? ctx.parsed.y.toFixed(1) + unit : '—');
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { color: 'rgba(255,255,255,0.05)' },
+                        ticks: { color: '#9ca3af', maxTicksLimit: 12, maxRotation: 0, autoSkip: true,
+                            callback: function(val, index) {
+                                var skip = Math.max(1, Math.floor(this.getLabels().length / 12));
+                                return index % skip === 0 ? this.getLabelForValue(val) : '';
+                            }
+                        }
+                    },
+                    y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#9ca3af' }, beginAtZero: true }
+                },
+                interaction: { mode: 'nearest', axis: 'x', intersect: false }
+            }
+        });
+    } catch (e) {
+        console.error('Failed to load dual chart ' + metricRead + '/' + metricWrite + ':', e);
         ctx.parentElement.innerHTML = '<div class="flex items-center justify-center h-48 text-gray-500 text-sm">No data available</div>';
     }
 }

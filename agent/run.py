@@ -675,60 +675,56 @@ def collect_docker():
 
 
 def collect_top_processes(limit=20):
-    """Collect top processes by CPU and memory usage using top -bn1.
+    """Collect top processes by CPU and memory usage via top -bn1.
 
     Uses the system's 'top' command for accurate CPU% in a single shot.
-    This avoids the psutil limitation where cpu_percent returns 0.0 on first call.
+    Falls back to psutil if top is not available.
 
     Returns dict with:
       - by_cpu: top N processes sorted by CPU% (descending)
       - by_mem: top N processes sorted by memory% (descending)
       - total_count: total number of running processes
-
-    Each process entry: {pid, name, cpu_pct, mem_pct, username, cmdline, status}
     """
-    try:
-        import subprocess
-        import re
+    import subprocess
+    import re
+    import shutil
 
+    top_path = shutil.which('top') or '/usr/bin/top'
+    try:
         out = subprocess.run(
-            ['top', '-bn1'],
-            capture_output=True, text=True, timeout=15
+            [top_path, '-bn1'],
+            capture_output=True, text=True, timeout=15,
+            env={'LANG': 'C', 'PATH': '/usr/bin:/bin:/usr/sbin:/sbin'}
         )
         if out.returncode != 0:
-            return None
+            raise RuntimeError(f'top returned {out.returncode}')
 
         procs = []
         in_tasks = False
         for line in out.stdout.splitlines():
-            # Look for the header line that precedes process list
+            # Match header: PID USER ... %CPU %MEM ...
             if re.match(r'^\s*PID\s+USER\s+PR\s+NI\s+VIRT\s+RES\s+SHR\s+S\s+%CPU\s+', line):
                 in_tasks = True
                 continue
             if not in_tasks:
                 continue
-            # Stop at blank line after process list
             if not line.strip():
                 break
 
-            # Parse: PID USER PR NI VIRT RES SHR S %CPU %MEM TIME+ COMMAND
-            parts = line.split(None, 11)  # max 12 fields
+            parts = line.split(None, 11)
             if len(parts) < 12:
                 continue
             try:
                 pid = int(parts[0])
                 username = parts[1]
-                status = parts[8]  # S column: R, S, D, Z, T
+                status = parts[8]
                 cpu_pct = float(parts[9])
                 mem_pct = float(parts[10])
-                cmdline = parts[11] if len(parts) > 11 else ''
+                cmdline = parts[11]
 
-                # Extract process name (first word of cmdline)
                 name = cmdline.split()[0] if cmdline else ''
-                # Shorten name if it's a path
                 if '/' in name:
                     name = name.rsplit('/', 1)[-1]
-                # Truncate name for display
                 name = name[:30]
 
                 procs.append({
@@ -743,17 +739,26 @@ def collect_top_processes(limit=20):
             except (ValueError, IndexError):
                 continue
 
-        if not procs:
-            return None
+        if procs:
+            by_cpu = sorted(procs, key=lambda x: x['cpu_pct'], reverse=True)[:limit]
+            by_mem = sorted(procs, key=lambda x: x['mem_pct'], reverse=True)[:limit]
+            return {'by_cpu': by_cpu, 'by_mem': by_mem, 'total_count': len(procs)}
+    except Exception as e:
+        logging.getLogger('processes').debug('top collection failed: %s, falling back to psutil', e)
 
-        by_cpu = sorted(procs, key=lambda x: x['cpu_pct'], reverse=True)[:limit]
-        by_mem = sorted(procs, key=lambda x: x['mem_pct'], reverse=True)[:limit]
-
-        return {
-            'by_cpu': by_cpu,
-            'by_mem': by_mem,
-            'total_count': len(procs),
-        }
+    # Fallback: use psutil (CPU% will be 0.0 on first run, but better than nothing)
+    try:
+        import psutil
+        attrs = ['pid', 'name', 'cpu_percent', 'memory_percent', 'username', 'cmdline']
+        procs = []
+        for p in psutil.process_iter(attrs):
+            info = p.info
+            cmdline = info.get('cmdline')
+            info['cmdline'] = ' '.join(cmdline)[:200] if cmdline else ''
+            procs.append(info)
+        by_cpu = sorted(procs, key=lambda x: x.get('cpu_percent', 0), reverse=True)[:limit]
+        by_mem = sorted(procs, key=lambda x: x.get('memory_percent', 0), reverse=True)[:limit]
+        return {'by_cpu': by_cpu, 'by_mem': by_mem, 'total_count': len(procs)}
     except Exception as e:
         logging.getLogger('processes').warning('Process collection failed: %s', e)
         return None

@@ -904,79 +904,45 @@ Note: Per-container CPU/memory usage is NOT collected because:
 def collect_top_processes(limit=20):
     """Collect top processes by CPU and memory usage.
 
-    On Windows: uses wmic for accurate CPU% in a single shot.
-    On Linux: uses top -bn1 (not reachable from this file).
+    Windows: uses psutil with cpu_percent sampling.
+    Linux: handled by agent/run.py version.
 
     Returns dict with:
       - by_cpu: top N processes sorted by CPU% (descending)
       - by_mem: top N processes sorted by memory% (descending)
       - total_count: total number of running processes
-
-    Each process entry: {pid, name, cpu_pct, mem_pct, username, cmdline, status}
     """
     try:
-        import subprocess
-        import re
 
         if platform.system() == 'Windows':
-            # Windows: use tasklist for process info (name, PID, memory)
-            # Note: tasklist doesn't provide CPU%, so we use psutil for CPU
-            out = subprocess.run(
-                ['tasklist', '/fo', 'csv', '/nh'],
-                capture_output=True, text=True, timeout=15
-            )
-            if out.returncode != 0:
-                return None
-
+            # Windows: use psutil for process collection
+            import psutil
+            attrs = ['pid', 'name', 'memory_percent', 'username', 'cmdline']
             procs = []
-            for line in out.stdout.strip().splitlines():
-                # Format: "name","pid","session","session#","mem"
-                parts = line.split('","')
-                if len(parts) < 5:
-                    continue
-                try:
-                    name = parts[0].strip('"')
-                    pid = int(parts[1].strip('"'))
-                    mem_str = parts[4].strip().strip('"').replace(' K', '').replace(',', '')
-                    mem_kb = int(mem_str)
+            for p in psutil.process_iter(attrs):
+                info = p.info
+                cmdline = info.get('cmdline')
+                info['cmdline'] = ' '.join(cmdline)[:200] if cmdline else ''
+                info['cpu_pct'] = 0.0  # Will be populated below
+                info['mem_pct'] = info.get('memory_percent', 0.0)
+                info['status'] = ''
+                procs.append(info)
 
-                    procs.append({
-                        'pid': pid,
-                        'name': name[:30],
-                        'cpu_pct': 0.0,
-                        'mem_pct': 0.0,
-                        'username': '',
-                        'cmdline': name[:200],
-                        'status': '',
-                    })
-                except (ValueError, IndexError):
-                    continue
-
-            # Get total memory for percentage calculation
-            total_mem = 0
+            # Get CPU% using psutil with a single system-wide call first
+            # Then per-process with short interval for top consumers
             try:
-                import psutil as _psutil
-                total_mem = _psutil.virtual_memory().total / 1024  # KB
-            except Exception:
-                pass
-            if total_mem > 0:
-                for p in procs:
-                    p['mem_pct'] = round((mem_kb / total_mem) * 100, 2)
-
-            # Get CPU% using psutil (requires interval for accuracy)
-            try:
-                import psutil as _psutil
-                for p in procs:
+                # First pass: quick cpu_percent (returns 0.0 first time)
+                for p in procs[:50]:  # Only top 50 to avoid timeout
                     try:
-                        proc = _psutil.Process(p['pid'])
-                        p['cpu_pct'] = proc.cpu_percent(interval=0.1)
+                        proc = psutil.Process(p['pid'])
+                        p['cpu_pct'] = proc.cpu_percent(interval=0.05)
                     except Exception:
                         pass
             except Exception:
                 pass
 
-            by_mem = sorted(procs, key=lambda x: x['mem_pct'], reverse=True)[:limit]
-            by_cpu = sorted(procs, key=lambda x: x['cpu_pct'], reverse=True)[:limit]
+            by_mem = sorted(procs, key=lambda x: x.get('mem_pct', 0), reverse=True)[:limit]
+            by_cpu = sorted(procs, key=lambda x: x.get('cpu_pct', 0), reverse=True)[:limit]
 
             return {
                 'by_cpu': by_cpu,

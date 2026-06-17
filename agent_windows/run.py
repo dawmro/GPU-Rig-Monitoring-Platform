@@ -53,7 +53,7 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.6.9-win'
+__version__ = '1.6.10-win'
 __schema_version__ = '1.7'
 
 # ── Config ──────────────────────────────────────────────────────────────────
@@ -246,21 +246,18 @@ def _get_windows_disk_io():
 
     psutil returns keys like 'PhysicalDrive0', 'PhysicalDrive1'.
     Returns dict: { 'PhysicalDrive0': {read_bytes, write_bytes, read_iops, write_iops, busy_time_ms}, ... }
-    Also includes a '_system_wide' key with aggregate counters as fallback
-    for systems where per-disk WMI mapping fails.
     Note: busy_time_ms is only available on Linux; on Windows it will be None.
     """
     try:
         import psutil
-        io_perdisk = psutil.disk_io_counters(perdisk=True)
-        io_system = psutil.disk_io_counters(perdisk=False)
-        if not io_perdisk:
+        io = psutil.disk_io_counters(perdisk=True)
+        if not io:
             return {}
     except Exception:
         return {}
 
     result = {}
-    for name, counters in io_perdisk.items():
+    for name, counters in io.items():
         if not name.startswith('PhysicalDrive'):
             continue
         result[name] = {
@@ -270,25 +267,136 @@ def _get_windows_disk_io():
             'write_iops': counters.write_count,
             'busy_time_ms': getattr(counters, 'busy_time', None),
         }
-    # Note: no _system_wide fallback — if we can't map a partition to its
-    # physical disk, we leave I/O counters as None rather than attaching
-    # misleading system-wide totals to every partition.
     return result
+
+
+def _get_drive_to_physical_map():
+    """Build a mapping from Windows drive letter to PhysicalDrive name.
+
+    Uses wmic CLI commands to get the association chain:
+    1. Win32_LogicalDiskToPartition: logical disk → partition
+    2. Win32_DiskDriveToDiskPartition: disk drive → partition
+
+    Combines both to build: drive letter → PhysicalDriveN
+
+    Returns dict: {'C': 'PhysicalDrive0', 'D': 'PhysicalDrive1', ...}
+    """
+    drive_map = {}
+
+    try:
+        # Step 1: Get logical disk → partition mapping
+        # Output format: Node,Antecedent,Dependent
+        # Antecedent: Win32_DiskPartition.DeviceID="Disk #0, Partition #0"
+        # Dependent: Win32_LogicalDisk.DeviceID="C:"
+        logical_to_partition = {}
+        out = subprocess.run(
+            ['wmic', 'path', 'Win32_LogicalDiskToPartition', 'get',
+             'Antecedent,Dependent', '/format:csv'],
+            capture_output=True, text=True, timeout=15
+        )
+        if out.returncode != 0:
+            logging.getLogger('storage').debug('wmic LogicalDiskToPartition failed')
+            return _get_drive_to_physical_map_wmi()
+
+        import re
+        for line in out.stdout.strip().split('\n'):
+            line = line.strip()
+            if not line or line.startswith('Node') or line.startswith('Antecedent'):
+                continue
+            # Extract partition info from Antecedent: Disk #N, Partition #M
+            part_match = re.search(r'Disk #(\d+), Partition #(\d+)', line)
+            # Extract drive letter from Dependent: DeviceID="X:"
+            drive_match = re.search(r'DeviceID="([A-Z]):"', line)
+            if part_match and drive_match:
+                disk_idx = int(part_match.group(1))
+                part_idx = int(part_match.group(2))
+                letter = drive_match.group(1)
+                logical_to_partition[(disk_idx, part_idx)] = letter
+
+        if not logical_to_partition:
+            logging.getLogger('storage').debug('wmic LogicalDiskToPartition returned no data')
+            return _get_drive_to_physical_map_wmi()
+
+        # Step 2: Get disk drive → partition mapping
+        # Antecedent: Win32_DiskDrive.DeviceID="\\.\PHYSICALDRIVE0"
+        # Dependent: Win32_DiskPartition.DeviceID="Disk #0, Partition #0"
+        disk_to_partition = {}
+        out = subprocess.run(
+            ['wmic', 'path', 'Win32_DiskDriveToDiskPartition', 'get',
+             'Antecedent,Dependent', '/format:csv'],
+            capture_output=True, text=True, timeout=15
+        )
+        if out.returncode != 0:
+            logging.getLogger('storage').debug('wmic DiskDriveToDiskPartition failed')
+            return _get_drive_to_physical_map_wmi()
+
+        for line in out.stdout.strip().split('\n'):
+            line = line.strip()
+            if not line or line.startswith('Node') or line.startswith('Antecedent'):
+                continue
+            # Extract PhysicalDrive index from Antecedent
+            phys_match = re.search(r'PHYSICALDRIVE(\d+)', line)
+            # Extract partition info from Dependent: Disk #N, Partition #M
+            part_match = re.search(r'Disk #(\d+), Partition #(\d+)', line)
+            if phys_match and part_match:
+                disk_idx = int(phys_match.group(1))
+                part_idx = int(part_match.group(2))
+                disk_to_partition[(disk_idx, part_idx)] = disk_idx
+
+        # Step 3: Combine both mappings
+        # logical_to_partition: (disk_idx, part_idx) → letter
+        # disk_to_partition: (disk_idx, part_idx) → disk_idx
+        # Result: letter → PhysicalDriveN
+        for (disk_idx, part_idx), letter in logical_to_partition.items():
+            if (disk_idx, part_idx) in disk_to_partition:
+                drive_map[letter] = f'PhysicalDrive{disk_idx}'
+
+        if drive_map:
+            logging.getLogger('storage').debug('Drive map from wmic: %s', drive_map)
+            return drive_map
+
+    except Exception as e:
+        logging.getLogger('storage').debug('wmic drive mapping failed: %s', e)
+
+    return _get_drive_to_physical_map_wmi()
+
+
+def _get_drive_to_physical_map_wmi():
+    """Fallback: build drive-to-physical map using Python WMI module.
+
+    Iterates through all disk drives, their partitions, and logical disks
+    to build the complete mapping.
+    """
+    drive_map = {}
+    try:
+        import wmi
+        c = wmi.WMI()
+        for dd in c.Win32_DiskDrive():
+            disk_idx = getattr(dd, 'Index', None)
+            if disk_idx is None:
+                continue
+            for partition in dd.associators("Win32_DiskDriveToDiskPartition"):
+                for logical_disk in partition.associators("Win32_LogicalDiskToPartition"):
+                    drive_letter = logical_disk.DeviceID[0]  # e.g. 'C'
+                    drive_map[drive_letter] = f'PhysicalDrive{disk_idx}'
+        logging.getLogger('storage').debug('Drive map from WMI: %s', drive_map)
+    except Exception as e:
+        logging.getLogger('storage').debug('WMI drive mapping failed: %s', e)
+    return drive_map
 
 
 def _partition_letter_to_physical(device_str):
     """Map a Windows drive letter to its PhysicalDrive name.
 
-    Uses multiple strategies in order of reliability:
-    1. WMI Win32_LogicalDiskToPartition association
-    2. wmic command-line fallback
+    This is a compatibility wrapper that uses the pre-built drive map.
+    The actual mapping is done once in collect_storage() via _get_drive_to_physical_map().
 
     Input: 'C:\\' or 'D:\\'
     Output: 'PhysicalDrive0' or similar, or None if not found.
     """
-    drive_letter = device_letter = device_str[0].upper()
-
-    # Strategy 1: WMI association
+    # This function is kept for compatibility but the actual mapping
+    # is now done via _get_drive_to_physical_map() in collect_storage()
+    drive_letter = device_str[0].upper()
     try:
         import wmi
         c = wmi.WMI()
@@ -301,31 +409,6 @@ def _partition_letter_to_physical(device_str):
                             return f'PhysicalDrive{idx}'
     except Exception:
         pass
-
-    # Strategy 2: wmic command-line fallback
-    try:
-        out = subprocess.run(
-            ['wmic', 'diskdrive', 'get', 'index,interfacetype', '/format:csv'],
-            capture_output=True, text=True, timeout=10
-        )
-        if out.returncode == 0:
-            # Parse wmic output to find disk indices
-            for line in out.stdout.strip().split('\n'):
-                line = line.strip()
-                if not line or line.startswith('Index'):
-                    continue
-                parts = line.split(',')
-                if len(parts) >= 2:
-                    try:
-                        idx = int(parts[0].strip())
-                        # Verify this disk exists in our I/O counters
-                        phys_name = f'PhysicalDrive{idx}'
-                        return phys_name
-                    except ValueError:
-                        continue
-    except Exception:
-        pass
-
     return None
 
 
@@ -398,6 +481,8 @@ def collect_storage():
         disks = []
         # Get per-physical-disk I/O counters once
         disk_io = _get_windows_disk_io() if platform.system() == 'Windows' else {}
+        # Build drive-to-physical map once for all partitions
+        drive_map = _get_drive_to_physical_map() if platform.system() == 'Windows' and disk_io else {}
         partitions = psutil.disk_partitions()
         # On Windows, if psutil returns no partitions, fall back to WMI
         if platform.system() == 'Windows' and not partitions:
@@ -422,32 +507,22 @@ def collect_storage():
                     'temp_c': None,
                     'smart_health': '',
                 }
-                # Attach I/O counters for this physical disk (Windows)
-                if platform.system() == 'Windows' and disk_io:
-                    try:
-                        physical = _get_physical_drive_for_partition(part.device)
-                        if physical:
-                            disk['smart_health'] = _read_smart_windows(physical)
-                            phys_name = _normalize_physical_drive_name(physical)
-                        else:
-                            phys_name = _partition_letter_to_physical(part.device)
-                        # Try per-disk I/O via physical drive name
-                        io = {}
-                        if phys_name:
-                            io = disk_io.get(phys_name, {})
-                            if io:
-                                logging.getLogger('storage').debug(
-                                    'I/O for %s mapped to %s', part.device, phys_name)
-                        else:
-                            logging.getLogger('storage').debug(
-                                'No physical drive mapping for %s, I/O counters not attached', part.device)
+                # Attach I/O counters using pre-built drive map (Windows)
+                if platform.system() == 'Windows' and drive_map:
+                    drive_letter = part.device[0].upper()
+                    phys_name = drive_map.get(drive_letter)
+                    if phys_name:
+                        io = disk_io.get(phys_name, {})
                         disk['read_bytes'] = io.get('read_bytes')
                         disk['write_bytes'] = io.get('write_bytes')
                         disk['read_iops'] = io.get('read_iops')
                         disk['write_iops'] = io.get('write_iops')
                         disk['busy_time_ms'] = io.get('busy_time_ms')
-                    except Exception:
-                        pass
+                        logging.getLogger('storage').debug(
+                            'I/O for %s mapped to %s', part.device, phys_name)
+                    else:
+                        logging.getLogger('storage').debug(
+                            'No physical drive mapping for %s, I/O not attached', part.device)
                 elif platform.system() == 'Linux':
                     try:
                         out = subprocess.run(

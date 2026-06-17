@@ -208,6 +208,9 @@ def _fetch_rig_metrics(uuid, rig=None):
         'docker_metrics': docker_metrics,
         'recent_errors': recent_errors,
         'primary_ip': primary_ip,
+        'top_cpu_processes': snapshot.top_cpu_processes_json if snapshot else [],
+        'top_mem_processes': snapshot.top_mem_processes_json if snapshot else [],
+        'process_count': snapshot.process_count if snapshot else 0,
     }
 
 

@@ -11,11 +11,11 @@
 
 | Document | Size | Status | Notes |
 |---|---|---|---|
-|| `GPU_Rig_Monitoring_Architecture.md` | 68KB | ✅ Current | Main architecture reference. v1.5 with disk I/O monitoring, cumulative totals, password recovery, Gmail SMTP email config. Agent versions: Linux 1.5.9, Windows 1.6.10-win, schema 1.7. |
-|| `DATA_FLOW_ANALYSIS.md` | 16KB | ✅ Current | Complete payload-to-DB field mapping including disk I/O fields and GPU clock fields. Auth views documented. |
-| `DATA_RETENTION_PLAN.md` | 8KB | ✅ Current | Retention strategy, compaction, cleanup. Still valid. |
-| `LOCAL_DEPLOYMENT_GUIDE.md` | 37KB | ✅ Current | Updated models.py description. |
-| `DEPLOYMENT_GUIDE.md` | 37KB | ✅ Current | Deployment steps still valid. |
+|| `GPU_Rig_Monitoring_Architecture.md` | 68KB | ✅ Current | Main architecture reference. v1.6 with disk I/O monitoring, cumulative totals, password recovery, Gmail SMTP, running processes. Agent versions: Linux 1.5.10, Windows 1.6.11-win, schema 1.8. |
+|| `DATA_FLOW_ANALYSIS.md` | 16KB | ✅ Current | Complete payload-to-DB field mapping including disk I/O, GPU clock fields, running processes. |
+|| `DATA_RETENTION_PLAN.md` | 8KB | ✅ Current | Retention strategy, compaction, cleanup. Still valid. |
+|| `LOCAL_DEPLOYMENT_GUIDE.md` | 38KB | ✅ Current | Updated with email config and password recovery. |
+|| `DEPLOYMENT_GUIDE.md` | 37KB | ✅ Current | Updated with email config. |
 
 ### ✅ KEEP — Operational Guides
 
@@ -58,8 +58,11 @@ All remaining documentation is accurate and up-to-date.
 
 ## Changes in This Branch
 
-1. **Password recovery:** Added Django built-in password reset flow (4 URL patterns, 5 templates)
-2. **Email configuration:** Added EMAIL_* settings (console default, Gmail SMTP via env vars)
-3. **Login improvements:** Uses base template, added "Forgot password?" link
-4. **Registration improvements:** Uses base template, added password strength indicator
-5. **Documentation:** Updated architecture doc, data flow analysis, deployment guides, audit
+1. **Running processes monitoring:** Added `collect_top_processes()` to both Linux and Windows agents
+2. **Agent payload:** Added `top_processes` section with `by_cpu`, `by_mem`, `total_count`
+3. **Server model:** Added `top_cpu_processes_json`, `top_mem_processes_json`, `process_count` to LatestSnapshot
+4. **Server serializer:** Updated `process_ingest()` to store process data in LatestSnapshot
+5. **Dashboard:** Updated `_fetch_rig_metrics()` and `_metrics_cards.html` to display process tables
+6. **Schema version:** 1.7 → 1.8
+7. **Agent versions:** Linux 1.5.9 → 1.5.10, Windows 1.6.10-win → 1.6.11-win
+8. **Documentation:** Updated architecture doc, data flow analysis, deployment guides, audit

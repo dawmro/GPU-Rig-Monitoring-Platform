@@ -320,6 +320,79 @@
 </div>
 {% endif %}
 <!-- ════════════════════════════════════════════════════════════════ -->
+<!-- Top Processes (by CPU and Memory) -->
+<!-- ════════════════════════════════════════════════════════════════ -->
+{% if top_cpu_processes or top_mem_processes %}
+<div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
+    <h3 class="text-gray-400 text-sm font-medium mb-2">
+        Top Processes{% if process_count %} ({{ process_count }} total){% endif %}
+        {% if is_data_stale %}
+        <span class="text-xs text-yellow-400 ml-1">(stale)</span>
+        {% endif %}
+    </h3>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {% if top_cpu_processes %}
+        <div>
+            <h4 class="text-xs text-gray-500 font-medium mb-1">By CPU</h4>
+            <div class="overflow-x-auto">
+                <table class="w-full text-xs">
+                    <thead class="text-gray-500 border-b border-gray-700">
+                        <tr>
+                            <th class="text-left pb-1 font-medium">PID</th>
+                            <th class="text-left pb-1 font-medium">Process</th>
+                            <th class="text-right pb-1 font-medium">CPU%</th>
+                            <th class="text-right pb-1 font-medium">Mem%</th>
+                            <th class="text-left pb-1 font-medium">User</th>
+                        </tr>
+                    </thead>
+                    <tbody class="text-gray-400">
+                        {% for proc in top_cpu_processes|slice:":10" %}
+                        <tr class="border-b border-gray-700/30 last:border-0">
+                            <td class="py-0.5 font-mono text-gray-500">{{ proc.pid|default:"—" }}</td>
+                            <td class="py-0.5 truncate max-w-[120px]" title="{{ proc.cmdline|default:proc.name }}">{{ proc.name|default:"—"|truncatechars:20 }}</td>
+                            <td class="py-0.5 text-right {% if proc.cpu_percent > 50 %}text-red-400{% elif proc.cpu_percent > 20 %}text-yellow-400{% endif %}">{{ proc.cpu_percent|floatformat:1 }}</td>
+                            <td class="py-0.5 text-right">{{ proc.memory_percent|floatformat:1 }}</td>
+                            <td class="py-0.5 text-gray-500 truncate max-w-[80px]">{{ proc.username|default:"—"|truncatechars:12 }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+        {% if top_mem_processes %}
+        <div>
+            <h4 class="text-xs text-gray-500 font-medium mb-1">By Memory</h4>
+            <div class="overflow-x-auto">
+                <table class="w-full text-xs">
+                    <thead class="text-gray-500 border-b border-gray-700">
+                        <tr>
+                            <th class="text-left pb-1 font-medium">PID</th>
+                            <th class="text-left pb-1 font-medium">Process</th>
+                            <th class="text-right pb-1 font-medium">CPU%</th>
+                            <th class="text-right pb-1 font-medium">Mem%</th>
+                            <th class="text-left pb-1 font-medium">User</th>
+                        </tr>
+                    </thead>
+                    <tbody class="text-gray-400">
+                        {% for proc in top_mem_processes|slice:":10" %}
+                        <tr class="border-b border-gray-700/30 last:border-0">
+                            <td class="py-0.5 font-mono text-gray-500">{{ proc.pid|default:"—" }}</td>
+                            <td class="py-0.5 truncate max-w-[120px]" title="{{ proc.cmdline|default:proc.name }}">{{ proc.name|default:"—"|truncatechars:20 }}</td>
+                            <td class="py-0.5 text-right">{{ proc.cpu_percent|floatformat:1 }}</td>
+                            <td class="py-0.5 text-right {% if proc.memory_percent > 10 %}text-red-400{% elif proc.memory_percent > 5 %}text-yellow-400{% endif %}">{{ proc.memory_percent|floatformat:1 }}</td>
+                            <td class="py-0.5 text-gray-500 truncate max-w-[80px]">{{ proc.username|default:"—"|truncatechars:12 }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+<!-- ════════════════════════════════════════════════════════════════ -->
 <!-- Network (per interface) -->
 <!-- ════════════════════════════════════════════════════════════════ -->
 <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">

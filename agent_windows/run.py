@@ -53,8 +53,8 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.6.10-win'
-__schema_version__ = '1.7'
+__version__ = '1.6.11-win'
+__schema_version__ = '1.8'
 
 # ── Config ──────────────────────────────────────────────────────────────────
 
@@ -901,6 +901,43 @@ Note: Per-container CPU/memory usage is NOT collected because:
         return []
 
 
+def collect_top_processes(limit=20):
+    """Collect top processes by CPU and memory usage.
+
+    Returns dict with:
+      - by_cpu: top N processes sorted by CPU% (descending)
+      - by_mem: top N processes sorted by memory% (descending)
+      - total_count: total number of running processes
+
+    Each process entry: {pid, name, cpu_pct, mem_pct, username, num_threads, cmdline}
+    """
+    try:
+        import psutil
+        attrs = ['pid', 'name', 'cpu_percent', 'memory_percent',
+                 'username', 'num_threads', 'cmdline']
+        procs = []
+        for p in psutil.process_iter(attrs):
+            info = p.info
+            cmdline = info.get('cmdline')
+            if cmdline:
+                info['cmdline'] = ' '.join(cmdline)[:200]
+            else:
+                info['cmdline'] = ''
+            procs.append(info)
+
+        by_cpu = sorted(procs, key=lambda x: x.get('cpu_percent', 0), reverse=True)[:limit]
+        by_mem = sorted(procs, key=lambda x: x.get('memory_percent', 0), reverse=True)[:limit]
+
+        return {
+            'by_cpu': by_cpu,
+            'by_mem': by_mem,
+            'total_count': len(procs),
+        }
+    except Exception as e:
+        logging.getLogger('processes').warning('Process collection failed: %s', e)
+        return None
+
+
 def collect_software():
     """Collect software/OS info."""
     result = {
@@ -1012,6 +1049,7 @@ def build_payload(config):
         'gpus': collect_gpus(),
         'gpu_processes': collect_gpu_processes(),
         'docker_containers': collect_docker(),
+        'top_processes': collect_top_processes(),
     }
 
     payload = {

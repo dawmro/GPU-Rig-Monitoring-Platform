@@ -273,6 +273,12 @@ class LatestSnapshot(models.Model):
     network_rx_errors_json = models.JSONField(default=list, blank=True)      # [0, 2]
     network_tx_errors_json = models.JSONField(default=list, blank=True)      # [0, 1]
 
+    # Top processes (latest snapshot only — for Live Metrics display)
+    # Each entry: [{pid, name, cpu_pct, mem_pct, username, num_threads, cmdline}, ...]
+    top_cpu_processes_json = models.JSONField(default=list, blank=True)     # Top 20 by CPU%
+    top_mem_processes_json = models.JSONField(default=list, blank=True)     # Top 20 by memory%
+    process_count = models.PositiveIntegerField(default=0)                   # Total running processes
+
     class Meta:
         db_table = 'metrics_latest_snapshot'
 

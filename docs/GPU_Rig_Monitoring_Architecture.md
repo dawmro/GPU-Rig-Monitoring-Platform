@@ -635,10 +635,12 @@ Similar mappings exist for other models (StorageMetric, NetworkMetric, etc.) and
 | `gpu_util_pct`           | `gpu_util_pct`       |
 | `gpu_mem_used_mb`        | `mem_used_mb`        |
 | `gpu_mem_total_mb`       | `mem_total_mb`       |
-| `gpu_mem_util_pct`       | `mem_util_pct`       |
-| `gpu_power_w`            | `power_draw_w`       |
-| `gpu_power_limit_w`      | `power_limit_w`      |
-| `gpu_fan_pct`            | `fan_speed_pct`      |
+|| `gpu_mem_util_pct`       | `mem_util_pct`       |
+|| `gpu_power_w`            | `power_draw_w`       |
+|| `gpu_power_limit_w`      | `power_limit_w`      |
+|| `gpu_fan_pct`            | `fan_speed_pct`      |
+|| `gpu_core_clock_mhz`     | `gpu_core_clock_mhz` |
+|| `gpu_mem_clock_mhz`      | `gpu_mem_clock_mhz`  |
 
 ---
 
@@ -652,6 +654,22 @@ Similar mappings exist for other models (StorageMetric, NetworkMetric, etc.) and
 | Z4: Data | PostgreSQL | localhost-only, least-privilege DB user |
 
 **CSRF exemption:** `IngestView` uses `@csrf_exempt` because it authenticates via API key (not session cookie). The agent has no CSRF token.
+
+**Auth settings:**
+```
+AUTH_USER_MODEL = 'accounts.User'          # Custom user model (email as username)
+LOGIN_URL = '/accounts/login/'             # Redirect unauthenticated users here
+LOGIN_REDIRECT_URL = '/dashboard/rigs/'    # After login, go to Fleet Overview
+LOGOUT_REDIRECT_URL = '/accounts/login/'   # After logout, go to login page
+```
+
+**Password reset flow (4 endpoints):**
+1. `GET/POST /accounts/password-reset/` — User enters email, system sends reset link
+2. `GET /accounts/password-reset/done/` — Confirmation that email was sent
+3. `GET/POST /accounts/reset/<uidb64>/<token>/` — User sets new password (token valid 3 days)
+4. `GET /accounts/reset/done/` — Success page with link to login
+
+**Email backend:** Console by development (prints to terminal), Gmail SMTP in production (configured via `EMAIL_HOST` env var).
 
 **Cookie settings for local testing:**
 ```
@@ -1317,7 +1335,11 @@ sudo -u postgres psql gpu_monitor
 | GET | `/accounts/api-keys/` | Session | API key list | No |
 | POST | `/accounts/api-keys/create/` | Session | Create API key | No |
 | POST | `/accounts/api-keys/<key_id>/revoke/` | Session | Revoke API key | No |
-| GET/POST | `/accounts/tags/` | Session | Tag CRUD | No |
+|| GET/POST | `/accounts/tags/` | Session | Tag CRUD | No |
+|| GET/POST | `/accounts/password-reset/` | None | Request password reset | No |
+|| GET | `/accounts/password-reset/done/` | None | Reset email sent | No |
+|| GET/POST | `/accounts/reset/<uidb64>/<token>/` | None | Set new password | No |
+|| GET | `/accounts/reset/done/` | None | Reset complete | No |
 
 ### C. Sample systemd Unit (Gunicorn)
 

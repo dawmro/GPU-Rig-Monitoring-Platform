@@ -11,8 +11,8 @@
 
 | Document | Size | Status | Notes |
 |---|---|---|---|
-|| `GPU_Rig_Monitoring_Architecture.md` | 65KB | ✅ Current | Main architecture reference. v1.5 with disk I/O monitoring (read/write/IOPS/utility), cumulative totals in LatestSnapshot, wmic drive mapping for Windows. Agent versions: Linux 1.5.9, Windows 1.6.10-win, schema 1.7. |
-| `DATA_FLOW_ANALYSIS.md` | 14KB | ✅ Current | Complete payload-to-DB field mapping. Updated with LatestSnapshot as primary display data source. |
+|| `GPU_Rig_Monitoring_Architecture.md` | 68KB | ✅ Current | Main architecture reference. v1.5 with disk I/O monitoring, cumulative totals, password recovery, Gmail SMTP email config. Agent versions: Linux 1.5.9, Windows 1.6.10-win, schema 1.7. |
+|| `DATA_FLOW_ANALYSIS.md` | 16KB | ✅ Current | Complete payload-to-DB field mapping including disk I/O fields and GPU clock fields. Auth views documented. |
 | `DATA_RETENTION_PLAN.md` | 8KB | ✅ Current | Retention strategy, compaction, cleanup. Still valid. |
 | `LOCAL_DEPLOYMENT_GUIDE.md` | 37KB | ✅ Current | Updated models.py description. |
 | `DEPLOYMENT_GUIDE.md` | 37KB | ✅ Current | Deployment steps still valid. |
@@ -58,10 +58,8 @@ All remaining documentation is accurate and up-to-date.
 
 ## Changes in This Branch
 
-1. **Disk I/O monitoring:** Added read_bytes, write_bytes, read_iops, write_iops, busy_time_ms to storage payload (schema 1.7)
-2. **Cumulative totals in LatestSnapshot:** 4 new JSON arrays for Total Read/Write/IOPS display
-3. **format_bytes_total filter:** New template filter for human-readable sizes
-4. **Windows wmic drive mapping:** Reliable partition-to-physical-disk mapping using wmic CLI
-5. **Fleet Overview:** Added Disk Util [%] column
-6. **Live Metrics storage card:** Shows Total Read/Write (cumulative), Since last update (delta), IOPS, Utilization%
-7. **Documentation:** Updated all docs to reflect schema 1.7 changes
+1. **Password recovery:** Added Django built-in password reset flow (4 URL patterns, 5 templates)
+2. **Email configuration:** Added EMAIL_* settings (console default, Gmail SMTP via env vars)
+3. **Login improvements:** Uses base template, added "Forgot password?" link
+4. **Registration improvements:** Uses base template, added password strength indicator
+5. **Documentation:** Updated architecture doc, data flow analysis, deployment guides, audit

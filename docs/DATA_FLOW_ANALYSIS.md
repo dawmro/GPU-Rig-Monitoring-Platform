@@ -51,6 +51,8 @@ Stores dynamic metrics for historical chart aggregation. Static fields live in L
 | 24 | PCIe max gen | `metrics.gpus[].pcie_max_gen` | `pcie_max_gen` | PositiveSmallIntegerField | ✅ |
 | 25 | PCIe current width | `metrics.gpus[].pcie_current_width` | `pcie_current_width` | PositiveSmallIntegerField | ✅ |
 | 26 | PCIe max width | `metrics.gpus[].pcie_max_width` | `pcie_max_width` | PositiveSmallIntegerField | ✅ |
+| 27 | GPU core clock | `metrics.gpus[].gpu_core_clock_mhz` | `gpu_core_clock_mhz` | PositiveIntegerField | ✅ |
+| 28 | GPU mem clock | `metrics.gpus[].gpu_mem_clock_mhz` | `gpu_mem_clock_mhz` | PositiveIntegerField | ✅ |
 
 ### StorageMetric (one row per disk per heartbeat)
 

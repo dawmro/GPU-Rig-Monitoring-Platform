@@ -97,11 +97,14 @@ Single phase:
 **Phase 1** (data > 1 day old):
 - Creates 1-hour buckets from per-minute data
 - Groups rows by `rig_uuid` (and `gpu_index`, `device`, etc.) into 1-hour windows
-- Applies aggregation per metric type:
-  - `AVG` for gauges: temperature, utilization, power, memory usage, GPU core/memory clock
-  - `SUM` for counters: network byte deltas, error_count
-  - `LAST` for static fields: model names, UUIDs, capacity, PCIe link info
+|- Applies aggregation per metric type:
+  - `AVG` for gauges: temperature, utilization, power, memory usage, GPU core/memory clock, utilization_pct
+  - `SUM` for counters: network byte deltas, error_count, read_bytes_delta, write_bytes_delta, read_iops_delta, write_iops_delta
+  - `LAST` for static fields: model names, UUIDs, capacity, PCIe link info, read_bytes, write_bytes, read_iops, write_iops, busy_time_ms
+  - Note: Disk I/O cumulative counters (read_bytes, write_bytes, read_iops, write_iops) use LAST — the latest cumulative value in the bucket
+  - Note: Disk I/O deltas use SUM — total bytes/IOPS transferred during the bucket period
 - Deletes original per-minute rows, inserts aggregated rows
+- FK-safe: parent rows referenced by children are excluded from compaction
 
 **Table Processing Order:**
 1. `metrics_gpu_process` (child with FK) — compacted first

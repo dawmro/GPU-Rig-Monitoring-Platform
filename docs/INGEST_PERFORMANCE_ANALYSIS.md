@@ -94,7 +94,16 @@ This query scans the rig's network metric history. With 31 days of data at 1 row
 
 **Root cause:** `update_or_create` per GPU. With 8 GPUs, this is 8 INSERT/UPDATE + 8 index lookups. Each query is fast (~1ms) but adds up.
 
-### 4.4 LatestDockerContainer — LOW IMPACT
+### 4.4 StorageMetric — LOW IMPACT (unchanged)
+
+**Typical:** 2 queries = 2.0ms
+**Large:** 2 queries = 2.0ms (per disk, 5 disks = 15 queries total)
+
+**Root cause:** `update_or_create` per disk (1 SELECT + 1 INSERT/UPDATE). Delta computation adds 1 SELECT for previous row. With 5 disks: 5 SELECT + 5 INSERT/UPDATE + 5 delta SELECT = 15 queries.
+
+**Note:** Schema 1.7 adds 10 fields per row (read/write bytes, IOPS, deltas, busy_time_ms, utilization). Row size increased ~3x but query count unchanged.
+
+### 4.5 LatestDockerContainer — LOW IMPACT
 
 **Typical:** 2 queries = 6.0ms
 **Large:** 20 queries = 8.0ms

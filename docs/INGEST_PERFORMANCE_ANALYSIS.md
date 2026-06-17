@@ -35,13 +35,15 @@ Two payload sizes were tested:
 
 | Table | Queries | Time | % of Total |
 |---|---|---|---|
-|| NetworkMetric | 3 | 10.0ms | 14% |
-|| MetricSnapshot | 2 | 6.0ms | 9% |
-|| LatestDockerContainer | 2 | 6ms | 9% |
-|| GPUMetric | 2 | 2.0ms | 3% |
-|| StorageMetric | 2 | 2.0ms | 3% |
-|| LatestSnapshot | 2 | 2.0ms | 3% |
-|| GPUProcess | 2 | 1.0ms | 1% |
+| NetworkMetric | 3 | 10.0ms | 14% |
+| MetricSnapshot | 2 | 6.0ms | 9% |
+| LatestDockerContainer | 2 | 6ms | 9% |
+| GPUMetric | 2 | 2.0ms | 3% |
+| StorageMetric | 2 | 2.0ms | 3% |
+| LatestSnapshot | 2 | 2.0ms | 3% |
+| GPUProcess | 2 | 1.0ms | 1% |
+
+**Note:** Schema 1.8 adds 3 fields to LatestSnapshot (top_cpu_processes_json, top_mem_processes_json, process_count). The process data is collected via psutil two-pass approach (baseline → 0.5s sleep → measure) and adds ~0.5s to total agent collection time, but this runs in parallel with network/storage collection so ingest time impact is minimal.
 
 ### Large Payload (8 GPUs, 5 disks, 3 NICs, 10 containers, 20 processes)
 

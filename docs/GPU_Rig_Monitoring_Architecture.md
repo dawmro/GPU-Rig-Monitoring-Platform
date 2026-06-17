@@ -107,10 +107,10 @@ Cron → Agent collects metrics → JSON payload → POST /api/v1/ingest/
   → DRF APIKeyAuthentication (X-API-Key header → Argon2id hash comparison)
   → DRF throttle (per-rig rate limit via X-Rig-UUID header, 2/min per rig)
   → Timestamp sanity check (reject if >5 min future or >1 hour past)
-  → IngestSerializer validation (schema version 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, or 1.7)
+  → IngestSerializer validation (schema version 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, or 1.8)
   → process_ingest() → DB upsert (MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, LatestDockerContainer, RigStatusEvent, LatestSnapshot)
   → StorageMetric: capacity, usage%, temp, SMART, read/write bytes, read/write IOPS, busy_time_ms, utilization%
-  → LatestSnapshot: 11 storage JSON arrays (devices, fstypes, mountpoints, capacities, usage%, temps, smart, deltas, totals)
+  → LatestSnapshot: 11 storage JSON arrays (devices, fstypes, mountpoints, capacities, usage%, temps, smart, deltas, totals), 3 process fields (top_cpu_processes_json, top_mem_processes_json, process_count)
   → Rig.latest_errors_json updated with latest error text
   → Rig.last_seen and Rig.status updated to ONLINE
   → Response: 200 (new) or 202 (duplicate/idempotent)
@@ -281,7 +281,18 @@ debug_mode: false         # Verbose logging
         "created": "2026-06-01T12:00:00Z",
         "status_text": "Up 2 days"
       }
-    ]
+    ],
+    "top_processes": {
+      "by_cpu": [
+        {"pid": 3502, "name": "firefox", "cpu_pct": 54.5, "mem_pct": 8.5,
+         "username": "qrv", "cmdline": "/usr/lib/firefox/firefox", "status": "S"}
+      ],
+      "by_mem": [
+        {"pid": 1688, "name": "python", "cpu_pct": 9.5, "mem_pct": 8.8,
+         "username": "qrv", "cmdline": "/home/qrv/.hermes/hermes-agent/venv/bin/python", "status": "S"}
+      ],
+      "total_count": 371
+    }
   },
   "motherboard": {
     "manufacturer": "Gigabyte Technology Co., Ltd.",
@@ -305,6 +316,15 @@ debug_mode: false         # Verbose logging
   ]
 }
 ```
+
+**Changelog from schema 1.7 → 1.8:**
+- Added `top_processes` object to `metrics` section with `by_cpu`, `by_mem`, and `total_count`
+- `by_cpu`: top 20 processes sorted by CPU% descending
+- `by_mem`: top 20 processes sorted by memory% descending
+- Each process entry: `pid`, `name`, `cpu_pct`, `mem_pct`, `username`, `cmdline`, `status`
+- Server stores in LatestSnapshot: `top_cpu_processes_json`, `top_mem_processes_json`, `process_count`
+- Live Metrics adds "Top Processes" card with two side-by-side tables (By CPU / By Memory)
+- Agent uses psutil two-pass approach: baseline → sleep 0.5s → measure
 
 **Changelog from schema 1.6 → 1.7:**
 - Added disk I/O metrics to `storage[]` objects: `read_bytes`, `write_bytes`, `read_iops`, `write_iops`, `busy_time_ms`
@@ -518,7 +538,7 @@ Plus one manual-refresh region:
 
 The rig detail page has three tabs:
 
-1. **Live Metrics** — cards with CPU%, memory bar, GPU model/index/temp/util/fan/power/PCIe/vRAM/clocks (all from LatestSnapshot), GPU Processes (per-process: name, type badge C/G/C+G, memory), Docker container count with container_id/image/status/created/status_text, storage disks with Total Read/Write (cumulative), Since last update (delta), IOPS, Utilization%, recent errors
+1. **Live Metrics** — cards with CPU%, memory bar, GPU model/index/temp/util/fan/power/PCIe/vRAM/clocks (all from LatestSnapshot), GPU Processes (per-process: name, type badge C/G/C+G, memory), Docker container count with container_id/image/status/created/status_text, storage disks with Total Read/Write (cumulative), Since last update (delta), IOPS, Utilization%, top processes by CPU and memory (PID, name, CPU%, mem%, user), recent errors
 2. **Historical Charts** — Combined chart suite: GPU (Temperature, Utilization, Memory, Power, Fan Speed — multi-GPU), CPU (Utilization, Temperature, Load Average), Memory & Swap (combined single chart, 3 datasets), Disk Usage (multi-disk), Network Traffic (combined RX/TX/Errors, dual Y-axes), Container CPU/Memory (multi-container), Uptime, Error Frequency — all implemented as Chart.js charts with multi-series support. Timeframe toggle buttons (24h, 7d, 30d) in the tab header with a ↻ Refresh button.
 3. **Errors** — latest system errors from journalctl/Windows Event Log (stored on Rig model, updated in place)
 
@@ -537,9 +557,10 @@ The dashboard display (Fleet Overview + Live Metrics) is fully decoupled from ti
 | CPU | cpu_model, cpu_physical_cores, cpu_logical_cores, cpu_utilization_pct, cpu_temp_c, cpu_load_avg_json |
 | Memory | mem_total_bytes, mem_used_bytes, mem_free_bytes, mem_cached_bytes, swap_total_bytes, swap_used_bytes |
 | System | uptime_s, motherboard_json, software_json, agent_version |
-|| GPU (×N) | 17 JSON arrays (uuid/model/temp/util/fan/clocks/mem/power/PCIe) |
-|| Storage (×N) | 7 JSON arrays (device/fstype/mountpoint/capacity/usage/temp/SMART) |
-|| Network (×N) | 7 JSON arrays (interface/IPv4/speed/rx/tx/errors) |
+||| GPU (×N) | 17 JSON arrays (uuid/model/temp/util/fan/clocks/mem/power/PCIe) |
+||| Storage (×N) | 7 JSON arrays (device/fstype/mountpoint/capacity/usage/temp/SMART) |
+||| Network (×N) | 7 JSON arrays (interface/IPv4/speed/rx/tx/errors) |
+||| Processes | top_cpu_processes_json, top_mem_processes_json, process_count |
 
 **Views using snapshot data:**
 - `rig_list` (Fleet Overview): Reads `LatestSnapshot` + `Rig` + `RigTag`. **0 timeseries queries.**
@@ -599,7 +620,7 @@ Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the age
 ||| `metrics_storagemetric` | metrics_app | Per-disk metrics (capacity, usage%, temp, SMART health, read/write bytes, read/write IOPS, busy_time_ms, utilization%; FK to snapshot) |
 ||| `metrics_networkmetric` | metrics_app | Per-interface metrics (rx/tx bytes, rx/tx deltas, speed, errors) |
 ||| `metrics_latest_docker_container` | metrics_app | Latest container snapshot (name, container_id, image, status, created, status_text; for Live Metrics) |
-|||| `metrics_latestsnapshot` | metrics_app | Denormalized latest snapshot per rig (fast dashboard loading). Single row per rig, updated every heartbeat. Stores all display data: cpu_model, cpu_physical_cores, cpu_logical_cores, cpu_utilization_pct, cpu_temp_c, cpu_load_avg_json, mem_total_bytes, mem_used_bytes, mem_free_bytes, mem_cached_bytes, swap_total_bytes, swap_used_bytes, uptime_s, motherboard_json, software_json, agent_version, 17 GPU JSON arrays, 11 storage JSON arrays, 7 network JSON arrays. Total: ~56 fields. |
+|||| `metrics_latestsnapshot` | metrics_app | Denormalized latest snapshot per rig (fast dashboard loading). Single row per rig, updated every heartbeat. Stores all display data: cpu_model, cpu_physical_cores, cpu_logical_cores, cpu_utilization_pct, cpu_temp_c, cpu_load_avg_json, mem_total_bytes, mem_used_bytes, mem_free_bytes, mem_cached_bytes, swap_total_bytes, swap_used_bytes, uptime_s, motherboard_json, software_json, agent_version, 17 GPU JSON arrays, 11 storage JSON arrays, 7 network JSON arrays, 3 process fields (top_cpu_processes_json, top_mem_processes_json, process_count). Total: ~59 fields. |
 || `metrics_rig_status_event` | metrics_app | Rig status transition log (online/stale/offline with timestamps) |
 || `audit_auditlog` | audit | Immutable audit trail |
 

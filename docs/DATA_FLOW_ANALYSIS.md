@@ -155,9 +155,10 @@ Errors are filtered on the server side — "no error" placeholders from agents
 | System | uptime_s, motherboard_json, software_json, agent_version | 4 |
 | GPU (×N) | gpu_count, gpu_models_json, gpu_temps_json, gpu_utils_json, gpu_fans_json, gpu_core_clocks_json, gpu_mem_clocks_json, gpu_mem_used_json, gpu_mem_total_json, gpu_mem_util_pcts_json, gpu_mem_free_json, gpu_power_draws_json, gpu_power_limits_json, gpu_pcie_gen_json, gpu_pcie_max_gen_json, gpu_pcie_width_json, gpu_pcie_max_width_json | 17 |
 || Storage (×N) | storage_count, storage_devices_json, storage_fstypes_json, storage_mountpoints_json, storage_capacities_json, storage_usage_pcts_json, storage_temps_json, storage_smart_json, storage_read_bytes_delta_json, storage_write_bytes_delta_json, storage_read_iops_delta_json, storage_write_iops_delta_json, storage_utilization_pcts_json, storage_read_bytes_total_json, storage_write_bytes_total_json, storage_read_iops_total_json, storage_write_iops_total_json | 17 |
-|| Network (×N) | network_count, network_interfaces_json, network_ipv4s_json, network_speeds_json, network_rx_bytes_json, network_tx_bytes_json, network_rx_errors_json, network_tx_errors_json | 8 |
-|| Metadata | updated_at (auto) | 1 |
-|| **Total** | | **~61 fields** |
+||| Network (×N) | network_count, network_interfaces_json, network_ipv4s_json, network_speeds_json, network_rx_bytes_json, network_tx_bytes_json, network_rx_errors_json, network_tx_errors_json | 8 |
+||| Processes | top_cpu_processes_json, top_mem_processes_json, process_count | 3 |
+||| Metadata | updated_at (auto) | 1 |
+||| **Total** | | **~64 fields** |
 
 **Views using LatestSnapshot:**
 - `rig_list` (Fleet Overview): Reads LatestSnapshot + Rig + RigTag. **0 timeseries queries.**

@@ -53,8 +53,8 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.6.10-win'
-__schema_version__ = '1.7'
+__version__ = '1.6.11-win'
+__schema_version__ = '1.8'
 
 # ── Config ──────────────────────────────────────────────────────────────────
 
@@ -901,6 +901,60 @@ Note: Per-container CPU/memory usage is NOT collected because:
         return []
 
 
+def collect_top_processes(limit=20):
+    """Collect top processes by CPU and memory usage using psutil.
+
+    Two-pass approach: first pass establishes CPU baseline, second pass
+    measures actual CPU%. Process objects are kept alive between passes
+    for accurate measurement.
+
+    Works on both Linux and Windows.
+    """
+    try:
+        import psutil
+        import time
+
+        procs = []
+        proc_objects = {}
+
+        # Pass 1: collect info + establish CPU baseline
+        for p in psutil.process_iter(['pid', 'name', 'memory_percent', 'username', 'cmdline']):
+            info = p.info
+            cmdline = info.get('cmdline')
+            info['cmdline'] = ' '.join(cmdline)[:200] if cmdline else ''
+            info['mem_pct'] = info.get('memory_percent', 0.0)
+            info['cpu_pct'] = 0.0
+            info['status'] = ''
+            try:
+                proc_obj = psutil.Process(info['pid'])
+                proc_obj.cpu_percent(interval=None)  # baseline
+                proc_objects[info['pid']] = proc_obj
+            except Exception:
+                pass
+            procs.append(info)
+
+        # Wait for measurement interval
+        time.sleep(0.5)
+
+        # Pass 2: get actual CPU% using same Process objects
+        for p in procs:
+            proc_obj = proc_objects.get(p['pid'])
+            if proc_obj:
+                try:
+                    p['cpu_pct'] = proc_obj.cpu_percent(interval=None)
+                except Exception:
+                    p['cpu_pct'] = 0.0
+            else:
+                p['cpu_pct'] = 0.0
+
+        by_cpu = sorted(procs, key=lambda x: x['cpu_pct'], reverse=True)[:limit]
+        by_mem = sorted(procs, key=lambda x: x['mem_pct'], reverse=True)[:limit]
+        return {'by_cpu': by_cpu, 'by_mem': by_mem, 'total_count': len(procs)}
+    except Exception as e:
+        logging.getLogger('processes').warning('Process collection failed: %s', e)
+        return None
+
+
 def collect_software():
     """Collect software/OS info."""
     result = {
@@ -1012,6 +1066,7 @@ def build_payload(config):
         'gpus': collect_gpus(),
         'gpu_processes': collect_gpu_processes(),
         'docker_containers': collect_docker(),
+        'top_processes': collect_top_processes(),
     }
 
     payload = {

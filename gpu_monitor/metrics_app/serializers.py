@@ -21,7 +21,7 @@ class IngestSerializer(serializers.Serializer):
     errors = serializers.ListField(required=False, default=list)
 
     def validate_schema_version(self, value):
-        if value not in ('1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7'):
+        if value not in ('1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8'):
             raise serializers.ValidationError(f"Unsupported schema_version: {value}")
         return value
 
@@ -57,6 +57,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
     storage_list = metrics_data.get('storage', [])
     network_list = metrics_data.get('network', [])
     docker_containers = metrics_data.get('docker_containers', [])
+    top_processes = metrics_data.get('top_processes')
 
     try:
         with transaction.atomic():
@@ -437,6 +438,9 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     'network_tx_bytes_json': network_tx_bytes,
                     'network_rx_errors_json': network_rx_errors,
                     'network_tx_errors_json': network_tx_errors,
+                    'top_cpu_processes_json': top_processes.get('by_cpu', []) if top_processes else [],
+                    'top_mem_processes_json': top_processes.get('by_mem', []) if top_processes else [],
+                    'process_count': top_processes.get('total_count', 0) if top_processes else 0,
                 },
             )
             # Invalidate cached snapshot so next read gets fresh data

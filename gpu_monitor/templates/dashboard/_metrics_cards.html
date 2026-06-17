@@ -320,6 +320,75 @@
 </div>
 {% endif %}
 <!-- ════════════════════════════════════════════════════════════════ -->
+<!-- Top Processes (by CPU and Memory) -->
+<!-- ════════════════════════════════════════════════════════════════ -->
+{% if top_cpu_processes or top_mem_processes %}
+<div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
+    <h3 class="text-gray-400 text-sm font-medium mb-2">
+        Top Processes{% if process_count %} ({{ process_count }} total){% endif %}
+        {% if is_data_stale %}
+        <span class="text-xs text-yellow-400 ml-1">(stale)</span>
+        {% endif %}
+    </h3>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {% if top_cpu_processes %}
+        <div>
+            <h4 class="text-xs text-gray-500 font-medium mb-1">By CPU</h4>
+            <table class="w-full text-xs">
+                <thead class="text-gray-500 border-b border-gray-700">
+                    <tr>
+                        <th class="text-left pb-1 pr-3 font-medium">PID</th>
+                        <th class="text-left pb-1 pr-3 font-medium">Process</th>
+                        <th class="text-right pb-1 pr-3 font-medium">CPU%</th>
+                        <th class="text-right pb-1 pr-3 font-medium">Mem%</th>
+                        <th class="text-left pb-1 font-medium">User</th>
+                    </tr>
+                </thead>
+                <tbody class="text-gray-400">
+                    {% for proc in top_cpu_processes|slice:":10" %}
+                    <tr class="border-b border-gray-700/30 last:border-0">
+                        <td class="py-1 pr-3 font-mono text-gray-500">{{ proc.pid|default:"—" }}</td>
+                        <td class="py-1 pr-3 truncate" title="{{ proc.cmdline|default:proc.name }}">{{ proc.name|default:"—"|truncatechars:24 }}</td>
+                        <td class="py-1 pr-3 text-right {% if proc.cpu_pct > 50 %}text-red-400{% elif proc.cpu_pct > 20 %}text-yellow-400{% endif %}">{{ proc.cpu_pct|floatformat:1 }}</td>
+                        <td class="py-1 pr-3 text-right">{{ proc.mem_pct|floatformat:1 }}</td>
+                        <td class="py-1 text-gray-500 truncate">{{ proc.username|default:"—"|truncatechars:16 }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+        {% if top_mem_processes %}
+        <div>
+            <h4 class="text-xs text-gray-500 font-medium mb-1">By Memory</h4>
+            <table class="w-full text-xs">
+                <thead class="text-gray-500 border-b border-gray-700">
+                    <tr>
+                        <th class="text-left pb-1 pr-3 font-medium">PID</th>
+                        <th class="text-left pb-1 pr-3 font-medium">Process</th>
+                        <th class="text-right pb-1 pr-3 font-medium">CPU%</th>
+                        <th class="text-right pb-1 pr-3 font-medium">Mem%</th>
+                        <th class="text-left pb-1 font-medium">User</th>
+                    </tr>
+                </thead>
+                <tbody class="text-gray-400">
+                    {% for proc in top_mem_processes|slice:":10" %}
+                    <tr class="border-b border-gray-700/30 last:border-0">
+                        <td class="py-1 pr-3 font-mono text-gray-500">{{ proc.pid|default:"—" }}</td>
+                        <td class="py-1 pr-3 truncate" title="{{ proc.cmdline|default:proc.name }}">{{ proc.name|default:"—"|truncatechars:24 }}</td>
+                        <td class="py-1 pr-3 text-right">{{ proc.cpu_pct|floatformat:1 }}</td>
+                        <td class="py-1 pr-3 text-right {% if proc.mem_pct > 10 %}text-red-400{% elif proc.mem_pct > 5 %}text-yellow-400{% endif %}">{{ proc.mem_pct|floatformat:1 }}</td>
+                        <td class="py-1 text-gray-500 truncate">{{ proc.username|default:"—"|truncatechars:16 }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+<!-- ════════════════════════════════════════════════════════════════ -->
 <!-- Network (per interface) -->
 <!-- ════════════════════════════════════════════════════════════════ -->
 <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">

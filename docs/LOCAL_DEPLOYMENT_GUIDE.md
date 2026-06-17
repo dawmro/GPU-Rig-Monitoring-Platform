@@ -206,9 +206,26 @@ DB_USER=gpu_monitor
 DB_PASSWORD=local_dev_password
 DB_HOST=127.0.0.1
 DB_PORT=5432
+
+# Email configuration (optional — for password recovery)
+# Leave EMAIL_HOST empty for development (emails printed to console)
+# For production with Gmail SMTP, uncomment and fill in:
+# EMAIL_HOST=smtp.gmail.com
+# EMAIL_PORT=587
+# EMAIL_USE_TLS=true
+# EMAIL_HOST_USER=youragent@gmail.com
+# EMAIL_HOST_PASSWORD=*** efgh ijkl mnop
+# DEFAULT_FROM_EMAIL=noreply@yourdomain.com
 EOF
 
 chmod 600 /opt/gpu_monitor/.env
+
+> **Email setup for production:**
+> 1. Enable 2-Factor Authentication on your Google account
+> 2. Generate App Password: https://myaccount.google.com/apppasswords
+> 3. Select "Mail" → "Other (Custom name)" → "GPU Rig Monitor"
+> 4. Copy the 16-character password into EMAIL_HOST_PASSWORD
+> 5. Gmail sending limit: ~500 emails/day (sufficient for password recovery)
 ```
 
 > **Important:** Generate a proper secret key instead of the placeholder:

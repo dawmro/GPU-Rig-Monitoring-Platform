@@ -663,6 +663,43 @@ ALLOWED_HOSTS = '*'              # Accept any host (local testing only)
 CSRF_TRUSTED_ORIGINS = ['http://*', 'https://*']
 ```
 
+### 7.5 Email / SMTP Configuration
+
+The platform uses email for password recovery. Two modes are supported:
+
+**Development (default):** Console backend — emails are printed to stdout, not sent.
+
+```python
+# .env — no EMAIL_HOST set → console backend
+# Emails appear in Gunicorn logs / terminal output
+```
+
+**Production (Gmail SMTP):** Real emails sent via Gmail.
+
+```python
+# .env — set EMAIL_HOST to enable SMTP
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_USE_TLS=true
+EMAIL_HOST_USER=youragent@gmail.com
+EMAIL_HOST_PASSWORD=abcd efgh ijkl mnop   # 16-char app-specific password
+DEFAULT_FROM_EMAIL=noreply@yourdomain.com
+```
+
+**Gmail App Password setup:**
+1. Enable 2-Factor Authentication on the Google account
+2. Go to https://myaccount.google.com/apppasswords
+3. Select app: "Mail", device: "Other (Custom name)" → "GPU Rig Monitor"
+4. Copy the 16-character password (ignore spaces)
+5. Set as `EMAIL_HOST_PASSWORD` in `.env`
+
+**Sending limits:** Free Gmail accounts can send ~500 emails/day. For a monitoring platform with <100 password resets/day, this is sufficient.
+
+**Troubleshooting:**
+- If `EMAIL_HOST` is not set, console backend is used automatically
+- Check `gunicorn-error.log` for SMTP authentication errors
+- Gmail may block sign-ins from "less secure apps" — use App Passwords, not account password
+
 ---
 
 ## 8. Operational Runbook

@@ -1,12 +1,7 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GPU Rig Monitor - Register</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-gray-900 text-gray-100 min-h-screen flex items-center justify-center">
+{% extends "base.html" %}
+{% block title %}Create Account{% endblock %}
+{% block content %}
+<div class="flex items-center justify-center min-h-[60vh]">
     <div class="bg-gray-800 p-8 rounded-xl shadow-lg w-full max-w-md">
         <h1 class="text-2xl font-bold text-center mb-2">🖥️ GPU Rig Monitor</h1>
         <p class="text-gray-400 text-center mb-6">Create your account</p>
@@ -17,7 +12,7 @@
         {% endfor %}
         {% endif %}
 
-        <form method="post" class="space-y-4">
+        <form method="post" class="space-y-4" id="register-form">
             {% csrf_token %}
             <div>
                 <label class="block text-sm text-gray-400 mb-1">Email</label>
@@ -26,9 +21,14 @@
             </div>
             <div>
                 <label class="block text-sm text-gray-400 mb-1">Password</label>
-                <input type="password" name="password" required minlength="8"
+                <input type="password" name="password" required minlength="8" id="password"
                     class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-500">
-                <p class="text-xs text-gray-500 mt-1">Minimum 8 characters</p>
+                <div class="mt-1">
+                    <div class="h-1 bg-gray-700 rounded overflow-hidden">
+                        <div id="password-strength" class="h-full w-0 transition-all duration-300"></div>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1" id="password-hint">Minimum 8 characters</p>
+                </div>
             </div>
             <div>
                 <label class="block text-sm text-gray-400 mb-1">Confirm Password</label>
@@ -45,5 +45,28 @@
             <a href="{% url 'accounts:login' %}" class="text-blue-400 hover:text-blue-300">Sign In</a>
         </p>
     </div>
-</body>
-</html>
+</div>
+{% block extra_js %}
+<script>
+document.getElementById('password').addEventListener('input', function() {
+    var val = this.value;
+    var bar = document.getElementById('password-strength');
+    var hint = document.getElementById('password-hint');
+    var strength = 0;
+    if (val.length >= 8) strength++;
+    if (val.length >= 12) strength++;
+    if (/[A-Z]/.test(val)) strength++;
+    if (/[0-9]/.test(val)) strength++;
+    if (/[^A-Za-z0-9]/.test(val)) strength++;
+
+    var pct = Math.min(100, (strength / 5) * 100);
+    bar.style.width = pct + '%';
+    bar.className = 'h-full transition-all duration-300 ' +
+        (strength <= 1 ? 'bg-red-500' : strength <= 2 ? 'bg-orange-500' : strength <= 3 ? 'bg-yellow-500' : 'bg-green-500');
+    hint.textContent = strength <= 1 ? 'Weak' : strength <= 2 ? 'Fair' : strength <= 3 ? 'Good' : 'Strong';
+    hint.className = 'text-xs mt-1 ' +
+        (strength <= 1 ? 'text-red-400' : strength <= 2 ? 'text-orange-400' : strength <= 3 ? 'text-yellow-400' : 'text-green-400');
+});
+</script>
+{% endblock %}
+{% endblock %}

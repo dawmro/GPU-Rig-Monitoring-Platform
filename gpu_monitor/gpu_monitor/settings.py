@@ -119,6 +119,45 @@ CSRF_COOKIE_SAMESITE = 'Lax'
 CSRF_TRUSTED_ORIGINS = ['http://*', 'https://*']
 SESSION_ENGINE = 'django.contrib.sessions.backends.db'
 
+# ── Email Configuration ──────────────────────────────────────────────────────
+# Default: console backend (prints emails to terminal) — safe for development.
+# For production with Gmail SMTP, set these environment variables:
+#   EMAIL_HOST=smtp.gmail.com
+#   EMAIL_PORT=587
+#   EMAIL_USE_TLS=true
+#   EMAIL_HOST_USER=youragent@gmail.com
+#   EMAIL_HOST_PASSWORD=xxxx xxxx xxxx xxxx   (16-char app-specific password)
+#   DEFAULT_FROM_EMAIL=noreply@yourdomain.com
+#
+# Gmail setup:
+#   1. Enable 2-Factor Authentication on the Google account
+#   2. Generate App Password: https://myaccount.google.com/apppasswords
+#      Select app: "Mail", Select device: "Other (Custom name)" → "GPU Rig Monitor"
+#      Copy the 16-character password (spaces are for display only)
+#   3. Use that password as EMAIL_HOST_PASSWORD
+#   4. Sending limit: ~500 emails/day for free Gmail accounts
+#
+# To switch from console to SMTP, set EMAIL_HOST — if EMAIL_HOST is empty,
+# the console backend is used automatically.
+_email_host = os.environ.get('EMAIL_HOST', '')
+if _email_host:
+    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+    EMAIL_HOST = _email_host
+    EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
+    EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'true').lower() in ('true', '1', 'yes')
+    EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
+    EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+else:
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+    EMAIL_HOST = 'localhost'
+    EMAIL_PORT = 587
+    EMAIL_USE_TLS = True
+    EMAIL_HOST_USER = ''
+    EMAIL_HOST_PASSWORD = ''
+
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@gpurgmonitor.local')
+SERVER_EMAIL = DEFAULT_FROM_EMAIL
+
 # Only configure file logging if the log directory is writable
 _log_dir = BASE_DIR / 'logs'
 _log_file = _log_dir / 'app.log'

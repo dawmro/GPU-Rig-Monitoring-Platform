@@ -330,7 +330,7 @@
         <span class="text-xs text-yellow-400 ml-1">(stale)</span>
         {% endif %}
     </h3>
-    <div class="space-y-3">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {% if top_cpu_processes %}
         <div>
             <h4 class="text-xs text-gray-500 font-medium mb-1">By CPU</h4>
@@ -386,7 +386,6 @@
         </div>
         {% endif %}
     </div>
-</div>
 {% endif %}
 <!-- ════════════════════════════════════════════════════════════════ -->
 <!-- Network (per interface) -->

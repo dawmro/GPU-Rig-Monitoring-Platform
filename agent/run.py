@@ -675,32 +675,79 @@ def collect_docker():
 
 
 def collect_top_processes(limit=20):
-    """Collect top processes by CPU and memory usage.
+    """Collect top processes by CPU and memory usage using top -bn1.
+
+    Uses the system's 'top' command for accurate CPU% in a single shot.
+    This avoids the psutil limitation where cpu_percent returns 0.0 on first call.
 
     Returns dict with:
       - by_cpu: top N processes sorted by CPU% (descending)
       - by_mem: top N processes sorted by memory% (descending)
       - total_count: total number of running processes
 
-    Each process entry: {pid, name, cpu_pct, mem_pct, username, num_threads, cmdline}
+    Each process entry: {pid, name, cpu_pct, mem_pct, username, cmdline, status}
     """
     try:
-        import psutil
-        attrs = ['pid', 'name', 'cpu_percent', 'memory_percent',
-                 'username', 'num_threads', 'cmdline']
-        procs = []
-        for p in psutil.process_iter(attrs):
-            info = p.info
-            # Truncate cmdline to keep payload small
-            cmdline = info.get('cmdline')
-            if cmdline:
-                info['cmdline'] = ' '.join(cmdline)[:200]
-            else:
-                info['cmdline'] = ''
-            procs.append(info)
+        import subprocess
+        import re
 
-        by_cpu = sorted(procs, key=lambda x: x.get('cpu_percent', 0), reverse=True)[:limit]
-        by_mem = sorted(procs, key=lambda x: x.get('memory_percent', 0), reverse=True)[:limit]
+        out = subprocess.run(
+            ['top', '-bn1'],
+            capture_output=True, text=True, timeout=15
+        )
+        if out.returncode != 0:
+            return None
+
+        procs = []
+        in_tasks = False
+        for line in out.stdout.splitlines():
+            # Look for the header line that precedes process list
+            if re.match(r'^\s*PID\s+USER\s+PR\s+NI\s+VIRT\s+RES\s+SHR\s+S\s+%CPU\s+', line):
+                in_tasks = True
+                continue
+            if not in_tasks:
+                continue
+            # Stop at blank line after process list
+            if not line.strip():
+                break
+
+            # Parse: PID USER PR NI VIRT RES SHR S %CPU %MEM TIME+ COMMAND
+            parts = line.split(None, 11)  # max 12 fields
+            if len(parts) < 12:
+                continue
+            try:
+                pid = int(parts[0])
+                username = parts[1]
+                status = parts[8]  # S column: R, S, D, Z, T
+                cpu_pct = float(parts[9])
+                mem_pct = float(parts[10])
+                cmdline = parts[11] if len(parts) > 11 else ''
+
+                # Extract process name (first word of cmdline)
+                name = cmdline.split()[0] if cmdline else ''
+                # Shorten name if it's a path
+                if '/' in name:
+                    name = name.rsplit('/', 1)[-1]
+                # Truncate name for display
+                name = name[:30]
+
+                procs.append({
+                    'pid': pid,
+                    'name': name,
+                    'cpu_pct': cpu_pct,
+                    'mem_pct': mem_pct,
+                    'username': username,
+                    'cmdline': cmdline[:200],
+                    'status': status,
+                })
+            except (ValueError, IndexError):
+                continue
+
+        if not procs:
+            return None
+
+        by_cpu = sorted(procs, key=lambda x: x['cpu_pct'], reverse=True)[:limit]
+        by_mem = sorted(procs, key=lambda x: x['mem_pct'], reverse=True)[:limit]
 
         return {
             'by_cpu': by_cpu,

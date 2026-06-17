@@ -904,35 +904,144 @@ Note: Per-container CPU/memory usage is NOT collected because:
 def collect_top_processes(limit=20):
     """Collect top processes by CPU and memory usage.
 
+    On Windows: uses wmic for accurate CPU% in a single shot.
+    On Linux: uses top -bn1 (not reachable from this file).
+
     Returns dict with:
       - by_cpu: top N processes sorted by CPU% (descending)
       - by_mem: top N processes sorted by memory% (descending)
       - total_count: total number of running processes
 
-    Each process entry: {pid, name, cpu_pct, mem_pct, username, num_threads, cmdline}
+    Each process entry: {pid, name, cpu_pct, mem_pct, username, cmdline, status}
     """
     try:
-        import psutil
-        attrs = ['pid', 'name', 'cpu_percent', 'memory_percent',
-                 'username', 'num_threads', 'cmdline']
-        procs = []
-        for p in psutil.process_iter(attrs):
-            info = p.info
-            cmdline = info.get('cmdline')
-            if cmdline:
-                info['cmdline'] = ' '.join(cmdline)[:200]
-            else:
-                info['cmdline'] = ''
-            procs.append(info)
+        import subprocess
+        import re
 
-        by_cpu = sorted(procs, key=lambda x: x.get('cpu_percent', 0), reverse=True)[:limit]
-        by_mem = sorted(procs, key=lambda x: x.get('memory_percent', 0), reverse=True)[:limit]
+        if platform.system() == 'Windows':
+            # Windows: use tasklist for process info (name, PID, memory)
+            # Note: tasklist doesn't provide CPU%, so we use psutil for CPU
+            out = subprocess.run(
+                ['tasklist', '/fo', 'csv', '/nh'],
+                capture_output=True, text=True, timeout=15
+            )
+            if out.returncode != 0:
+                return None
 
-        return {
-            'by_cpu': by_cpu,
-            'by_mem': by_mem,
-            'total_count': len(procs),
-        }
+            procs = []
+            for line in out.stdout.strip().splitlines():
+                # Format: "name","pid","session","session#","mem"
+                parts = line.split('","')
+                if len(parts) < 5:
+                    continue
+                try:
+                    name = parts[0].strip('"')
+                    pid = int(parts[1].strip('"'))
+                    mem_str = parts[4].strip().strip('"').replace(' K', '').replace(',', '')
+                    mem_kb = int(mem_str)
+
+                    procs.append({
+                        'pid': pid,
+                        'name': name[:30],
+                        'cpu_pct': 0.0,
+                        'mem_pct': 0.0,
+                        'username': '',
+                        'cmdline': name[:200],
+                        'status': '',
+                    })
+                except (ValueError, IndexError):
+                    continue
+
+            # Get total memory for percentage calculation
+            total_mem = 0
+            try:
+                import psutil as _psutil
+                total_mem = _psutil.virtual_memory().total / 1024  # KB
+            except Exception:
+                pass
+            if total_mem > 0:
+                for p in procs:
+                    p['mem_pct'] = round((mem_kb / total_mem) * 100, 2)
+
+            # Get CPU% using psutil (requires interval for accuracy)
+            try:
+                import psutil as _psutil
+                for p in procs:
+                    try:
+                        proc = _psutil.Process(p['pid'])
+                        p['cpu_pct'] = proc.cpu_percent(interval=0.1)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+            by_mem = sorted(procs, key=lambda x: x['mem_pct'], reverse=True)[:limit]
+            by_cpu = sorted(procs, key=lambda x: x['cpu_pct'], reverse=True)[:limit]
+
+            return {
+                'by_cpu': by_cpu,
+                'by_mem': by_mem,
+                'total_count': len(procs),
+            }
+        else:
+            # Linux: use top -bn1 for accurate CPU%
+            out = subprocess.run(
+                ['top', '-bn1'],
+                capture_output=True, text=True, timeout=15
+            )
+            if out.returncode != 0:
+                return None
+
+            procs = []
+            in_tasks = False
+            for line in out.stdout.splitlines():
+                if re.match(r'^\s*PID\s+USER\s+PR\s+NI\s+VIRT\s+RES\s+SHR\s+S\s+%CPU\s+', line):
+                    in_tasks = True
+                    continue
+                if not in_tasks:
+                    continue
+                if not line.strip():
+                    break
+
+                parts = line.split(None, 11)
+                if len(parts) < 12:
+                    continue
+                try:
+                    pid = int(parts[0])
+                    username = parts[1]
+                    status = parts[8]
+                    cpu_pct = float(parts[9])
+                    mem_pct = float(parts[10])
+                    cmdline = parts[11] if len(parts) > 11 else ''
+
+                    name = cmdline.split()[0] if cmdline else ''
+                    if '/' in name:
+                        name = name.rsplit('/', 1)[-1]
+                    name = name[:30]
+
+                    procs.append({
+                        'pid': pid,
+                        'name': name,
+                        'cpu_pct': cpu_pct,
+                        'mem_pct': mem_pct,
+                        'username': username,
+                        'cmdline': cmdline[:200],
+                        'status': status,
+                    })
+                except (ValueError, IndexError):
+                    continue
+
+            if not procs:
+                return None
+
+            by_cpu = sorted(procs, key=lambda x: x['cpu_pct'], reverse=True)[:limit]
+            by_mem = sorted(procs, key=lambda x: x['mem_pct'], reverse=True)[:limit]
+
+            return {
+                'by_cpu': by_cpu,
+                'by_mem': by_mem,
+                'total_count': len(procs),
+            }
     except Exception as e:
         logging.getLogger('processes').warning('Process collection failed: %s', e)
         return None

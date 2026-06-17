@@ -338,21 +338,21 @@
                 <table class="w-full text-xs">
                     <thead class="text-gray-500 border-b border-gray-700">
                         <tr>
-                            <th class="text-left pb-1 font-medium">PID</th>
-                            <th class="text-left pb-1 font-medium">Process</th>
-                            <th class="text-right pb-1 font-medium">CPU%</th>
-                            <th class="text-right pb-1 font-medium">Mem%</th>
+                            <th class="text-left pb-1 pr-2 font-medium">PID</th>
+                            <th class="text-left pb-1 pr-2 font-medium">Process</th>
+                            <th class="text-right pb-1 pr-2 font-medium">CPU%</th>
+                            <th class="text-right pb-1 pr-2 font-medium">Mem%</th>
                             <th class="text-left pb-1 font-medium">User</th>
                         </tr>
                     </thead>
                     <tbody class="text-gray-400">
                         {% for proc in top_cpu_processes|slice:":10" %}
                         <tr class="border-b border-gray-700/30 last:border-0">
-                            <td class="py-0.5 font-mono text-gray-500">{{ proc.pid|default:"—" }}</td>
-                            <td class="py-0.5 truncate max-w-[120px]" title="{{ proc.cmdline|default:proc.name }}">{{ proc.name|default:"—"|truncatechars:20 }}</td>
-                            <td class="py-0.5 text-right {% if proc.cpu_percent > 50 %}text-red-400{% elif proc.cpu_percent > 20 %}text-yellow-400{% endif %}">{{ proc.cpu_percent|floatformat:1 }}</td>
-                            <td class="py-0.5 text-right">{{ proc.memory_percent|floatformat:1 }}</td>
-                            <td class="py-0.5 text-gray-500 truncate max-w-[80px]">{{ proc.username|default:"—"|truncatechars:12 }}</td>
+                            <td class="py-1 pr-2 font-mono text-gray-500">{{ proc.pid|default:"—" }}</td>
+                            <td class="py-1 pr-2 truncate max-w-[120px]" title="{{ proc.cmdline|default:proc.name }}">{{ proc.name|default:"—"|truncatechars:20 }}</td>
+                            <td class="py-1 pr-2 text-right {% if proc.cpu_percent > 50 %}text-red-400{% elif proc.cpu_percent > 20 %}text-yellow-400{% endif %}">{{ proc.cpu_percent|floatformat:1 }}</td>
+                            <td class="py-1 pr-2 text-right">{{ proc.memory_percent|floatformat:1 }}</td>
+                            <td class="py-1 text-gray-500 truncate max-w-[80px]">{{ proc.username|default:"—"|truncatechars:12 }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -367,21 +367,21 @@
                 <table class="w-full text-xs">
                     <thead class="text-gray-500 border-b border-gray-700">
                         <tr>
-                            <th class="text-left pb-1 font-medium">PID</th>
-                            <th class="text-left pb-1 font-medium">Process</th>
-                            <th class="text-right pb-1 font-medium">CPU%</th>
-                            <th class="text-right pb-1 font-medium">Mem%</th>
+                            <th class="text-left pb-1 pr-2 font-medium">PID</th>
+                            <th class="text-left pb-1 pr-2 font-medium">Process</th>
+                            <th class="text-right pb-1 pr-2 font-medium">CPU%</th>
+                            <th class="text-right pb-1 pr-2 font-medium">Mem%</th>
                             <th class="text-left pb-1 font-medium">User</th>
                         </tr>
                     </thead>
                     <tbody class="text-gray-400">
                         {% for proc in top_mem_processes|slice:":10" %}
                         <tr class="border-b border-gray-700/30 last:border-0">
-                            <td class="py-0.5 font-mono text-gray-500">{{ proc.pid|default:"—" }}</td>
-                            <td class="py-0.5 truncate max-w-[120px]" title="{{ proc.cmdline|default:proc.name }}">{{ proc.name|default:"—"|truncatechars:20 }}</td>
-                            <td class="py-0.5 text-right">{{ proc.cpu_percent|floatformat:1 }}</td>
-                            <td class="py-0.5 text-right {% if proc.memory_percent > 10 %}text-red-400{% elif proc.memory_percent > 5 %}text-yellow-400{% endif %}">{{ proc.memory_percent|floatformat:1 }}</td>
-                            <td class="py-0.5 text-gray-500 truncate max-w-[80px]">{{ proc.username|default:"—"|truncatechars:12 }}</td>
+                            <td class="py-1 pr-2 font-mono text-gray-500">{{ proc.pid|default:"—" }}</td>
+                            <td class="py-1 pr-2 truncate max-w-[120px]" title="{{ proc.cmdline|default:proc.name }}">{{ proc.name|default:"—"|truncatechars:20 }}</td>
+                            <td class="py-1 pr-2 text-right">{{ proc.cpu_percent|floatformat:1 }}</td>
+                            <td class="py-1 pr-2 text-right {% if proc.memory_percent > 10 %}text-red-400{% elif proc.memory_percent > 5 %}text-yellow-400{% endif %}">{{ proc.memory_percent|floatformat:1 }}</td>
+                            <td class="py-1 text-gray-500 truncate max-w-[80px]">{{ proc.username|default:"—"|truncatechars:12 }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>

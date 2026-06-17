@@ -43,7 +43,7 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.5.8'
+__version__ = '1.5.9'
 __schema_version__ = '1.7'
 
 # ── Config ──────────────────────────────────────────────────────────────────
@@ -602,13 +602,17 @@ def collect_docker():
 
     docker_prefix = None
     for prefix in docker_cmds_to_try:
-        test = subprocess.run(
-            prefix + ['ps', '-a', '--format', '{{.ID}}'],
-            capture_output=True, text=True, timeout=10
-        )
-        if test.returncode == 0:
-            docker_prefix = prefix
-            break
+        try:
+            test = subprocess.run(
+                prefix + ['ps', '-a', '--format', '{{.ID}}'],
+                capture_output=True, text=True, timeout=10
+            )
+            if test.returncode == 0:
+                docker_prefix = prefix
+                break
+        except (FileNotFoundError, OSError):
+            # Docker binary not found or not accessible — try next method
+            continue
 
     if docker_prefix is None:
         logging.getLogger('docker').warning(

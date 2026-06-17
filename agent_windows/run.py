@@ -53,7 +53,7 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.6.8-win'
+__version__ = '1.6.9-win'
 __schema_version__ = '1.7'
 
 # ── Config ──────────────────────────────────────────────────────────────────
@@ -752,11 +752,18 @@ Note: Per-container CPU/memory usage is NOT collected because:
     docker_prefix = ['docker']
 
     # Quick test if docker is accessible
-    test = subprocess.run(
-        docker_prefix + ['ps', '-a', '--format', '{{.ID}}'],
-        capture_output=True, text=True, timeout=10,
-        encoding='utf-8', errors='replace'
-    )
+    try:
+        test = subprocess.run(
+            docker_prefix + ['ps', '-a', '--format', '{{.ID}}'],
+            capture_output=True, text=True, timeout=10,
+            encoding='utf-8', errors='replace'
+        )
+    except (FileNotFoundError, OSError):
+        logging.getLogger('docker').warning(
+            'Docker collection failed: docker CLI not found. '
+            'Ensure Docker Desktop is installed and docker is in PATH.'
+        )
+        return []
     if test.returncode != 0:
         logging.getLogger('docker').warning(
             'Docker collection failed: cannot access docker CLI. '

@@ -58,6 +58,18 @@ Stores dynamic metrics for historical chart aggregation. Static fields live in L
 |---|-------|-------------|----------|------|---------|
 | 27 | Storage usage | `metrics.storage[].usage_pct` | `usage_pct` | FloatField | ✅ |
 | 28 | Storage temp | `metrics.storage[].temp_c` | `temp_c` | FloatField | ✅ |
+| 29 | Storage capacity | `metrics.storage[].capacity_bytes` | `capacity_bytes` | BigIntegerField | — |
+| 30 | SMART health | `metrics.storage[].smart_health` | `smart_health` | CharField | — |
+| 31 | Read bytes (cumulative) | `metrics.storage[].read_bytes` | `read_bytes` | BigIntegerField | — |
+| 32 | Write bytes (cumulative) | `metrics.storage[].write_bytes` | `write_bytes` | BigIntegerField | — |
+| 33 | Read bytes (delta) | Computed in serializer | `read_bytes_delta` | BigIntegerField | ✅ |
+| 34 | Write bytes (delta) | Computed in serializer | `write_bytes_delta` | BigIntegerField | ✅ |
+| 35 | Read IOPS (cumulative) | `metrics.storage[].read_iops` | `read_iops` | PositiveIntegerField | — |
+| 36 | Write IOPS (cumulative) | `metrics.storage[].write_iops` | `write_iops` | PositiveIntegerField | — |
+| 37 | Read IOPS (delta) | Computed in serializer | `read_iops_delta` | PositiveIntegerField | ✅ |
+| 38 | Write IOPS (delta) | Computed in serializer | `write_iops_delta` | PositiveIntegerField | ✅ |
+| 39 | Busy time (cumulative) | `metrics.storage[].busy_time_ms` | `busy_time_ms` | PositiveIntegerField | — |
+| 40 | Utilization % | Computed in serializer | `utilization_pct` | FloatField | ✅ |
 
 ### NetworkMetric (one row per interface per heartbeat)
 
@@ -140,10 +152,10 @@ Errors are filtered on the server side — "no error" placeholders from agents
 | Memory | mem_total_bytes, mem_used_bytes, mem_free_bytes, mem_cached_bytes, swap_total_bytes, swap_used_bytes | 6 |
 | System | uptime_s, motherboard_json, software_json, agent_version | 4 |
 | GPU (×N) | gpu_count, gpu_models_json, gpu_temps_json, gpu_utils_json, gpu_fans_json, gpu_core_clocks_json, gpu_mem_clocks_json, gpu_mem_used_json, gpu_mem_total_json, gpu_mem_util_pcts_json, gpu_mem_free_json, gpu_power_draws_json, gpu_power_limits_json, gpu_pcie_gen_json, gpu_pcie_max_gen_json, gpu_pcie_width_json, gpu_pcie_max_width_json | 17 |
-| Storage (×N) | storage_count, storage_devices_json, storage_fstypes_json, storage_mountpoints_json, storage_capacities_json, storage_usage_pcts_json, storage_temps_json, storage_smart_json | 8 |
-| Network (×N) | network_count, network_interfaces_json, network_ipv4s_json, network_speeds_json, network_rx_bytes_json, network_tx_bytes_json, network_rx_errors_json, network_tx_errors_json | 8 |
-| Metadata | updated_at (auto) | 1 |
-| **Total** | | **~52 fields** |
+|| Storage (×N) | storage_count, storage_devices_json, storage_fstypes_json, storage_mountpoints_json, storage_capacities_json, storage_usage_pcts_json, storage_temps_json, storage_smart_json, storage_read_bytes_delta_json, storage_write_bytes_delta_json, storage_read_iops_delta_json, storage_write_iops_delta_json, storage_utilization_pcts_json, storage_read_bytes_total_json, storage_write_bytes_total_json, storage_read_iops_total_json, storage_write_iops_total_json | 17 |
+|| Network (×N) | network_count, network_interfaces_json, network_ipv4s_json, network_speeds_json, network_rx_bytes_json, network_tx_bytes_json, network_rx_errors_json, network_tx_errors_json | 8 |
+|| Metadata | updated_at (auto) | 1 |
+|| **Total** | | **~61 fields** |
 
 **Views using LatestSnapshot:**
 - `rig_list` (Fleet Overview): Reads LatestSnapshot + Rig + RigTag. **0 timeseries queries.**

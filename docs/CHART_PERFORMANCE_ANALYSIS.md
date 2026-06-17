@@ -21,6 +21,10 @@ Historical charts are NOT polled automatically — they load on demand.
 | 7d | 1-hour | ~168 | ~150ms |
 | 30d | 1-hour | ~720 | ~120ms |
 | Error freq 30d | 1-hour | ~720 | ~100ms |
+| Disk I/O 24h | 1-minute | ~1,440 | ~50ms |
+| Disk I/O 30d | 1-hour | ~720 | ~150ms |
+
+**Disk I/O charts** (new in schema 1.7): 5 new chart metrics — `disk_read_bytes_delta`, `disk_write_bytes_delta`, `disk_read_iops_delta`, `disk_write_iops_delta`, `disk_utilization_pct`. Multi-disk support via `multi_disk=true` query param. Uses `SUM` for byte/IOPS deltas, `AVG` for utilization.
 
 ## What Changed
 

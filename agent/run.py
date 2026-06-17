@@ -675,15 +675,10 @@ def collect_docker():
 
 
 def collect_top_processes(limit=20):
-    """Collect top processes by CPU and memory usage via top -bn1.
+    """Collect top processes by CPU and memory usage.
 
-    Uses the system's 'top' command for accurate CPU% in a single shot.
-    Falls back to psutil if top is not available.
-
-    Returns dict with:
-      - by_cpu: top N processes sorted by CPU% (descending)
-      - by_mem: top N processes sorted by memory% (descending)
-      - total_count: total number of running processes
+    Primary: uses top -bn1 (Linux) for accurate single-shot CPU%.
+    Fallback: uses psutil with threaded concurrent CPU sampling.
     """
     import subprocess
     import re
@@ -696,93 +691,71 @@ def collect_top_processes(limit=20):
             capture_output=True, text=True, timeout=15,
             env={'LANG': 'C', 'PATH': '/usr/bin:/bin:/usr/sbin:/sbin'}
         )
-        if out.returncode != 0:
-            raise RuntimeError(f'top returned {out.returncode}')
-
-        procs = []
-        in_tasks = False
-        for line in out.stdout.splitlines():
-            # Match header: PID USER ... %CPU %MEM ...
-            if re.match(r'^\s*PID\s+USER\s+PR\s+NI\s+VIRT\s+RES\s+SHR\s+S\s+%CPU\s+', line):
-                in_tasks = True
-                continue
-            if not in_tasks:
-                continue
-            if not line.strip():
-                break
-
-            parts = line.split(None, 11)
-            if len(parts) < 12:
-                continue
-            try:
-                pid = int(parts[0])
-                username = parts[1]
-                status = parts[8]
-                cpu_pct = float(parts[9])
-                mem_pct = float(parts[10])
-                cmdline = parts[11]
-
-                name = cmdline.split()[0] if cmdline else ''
-                if '/' in name:
-                    name = name.rsplit('/', 1)[-1]
-                name = name[:30]
-
-                procs.append({
-                    'pid': pid,
-                    'name': name,
-                    'cpu_pct': cpu_pct,
-                    'mem_pct': mem_pct,
-                    'username': username,
-                    'cmdline': cmdline[:200],
-                    'status': status,
-                })
-            except (ValueError, IndexError):
-                continue
-
-        if procs:
-            by_cpu = sorted(procs, key=lambda x: x['cpu_pct'], reverse=True)[:limit]
-            by_mem = sorted(procs, key=lambda x: x['mem_pct'], reverse=True)[:limit]
-            return {'by_cpu': by_cpu, 'by_mem': by_mem, 'total_count': len(procs)}
+        if out.returncode == 0:
+            procs = []
+            in_tasks = False
+            for line in out.stdout.splitlines():
+                if re.match(r'^\s*PID\s+USER\s+PR\s+NI\s+VIRT\s+RES\s+SHR\s+S\s+%CPU\s+', line):
+                    in_tasks = True
+                    continue
+                if not in_tasks:
+                    continue
+                if not line.strip():
+                    break
+                parts = line.split(None, 11)
+                if len(parts) < 12:
+                    continue
+                try:
+                    pid = int(parts[0])
+                    username = parts[1]
+                    status = parts[7]
+                    cpu_pct = float(parts[8])
+                    mem_pct = float(parts[9])
+                    cmdline = parts[11]
+                    name = cmdline.split()[0] if cmdline else ''
+                    if '/' in name:
+                        name = name.rsplit('/', 1)[-1]
+                    procs.append({
+                        'pid': pid, 'name': name[:30], 'cpu_pct': cpu_pct,
+                        'mem_pct': mem_pct, 'username': username,
+                        'cmdline': cmdline[:200], 'status': status,
+                    })
+                except (ValueError, IndexError):
+                    continue
+            if procs:
+                by_cpu = sorted(procs, key=lambda x: x['cpu_pct'], reverse=True)[:limit]
+                by_mem = sorted(procs, key=lambda x: x['mem_pct'], reverse=True)[:limit]
+                return {'by_cpu': by_cpu, 'by_mem': by_mem, 'total_count': len(procs)}
     except Exception as e:
-        logging.getLogger('processes').debug('top collection failed: %s, falling back to psutil', e)
+        logging.getLogger('processes').debug('top failed: %s, using psutil', e)
 
-    # Fallback: use psutil with two-pass CPU measurement
-    # Key: must keep Process objects alive between passes
+    # Fallback: psutil with threaded concurrent CPU sampling
     try:
         import psutil
-        import time
+        from concurrent.futures import ThreadPoolExecutor, as_completed
 
+        # Collect process info (fast, single pass)
         procs = []
-        proc_objects = {}  # pid -> Process object
-
-        # Pass 1: Create Process objects and establish baseline
         for p in psutil.process_iter(['pid', 'name', 'memory_percent', 'username', 'cmdline']):
             info = p.info
             cmdline = info.get('cmdline')
             info['cmdline'] = ' '.join(cmdline)[:200] if cmdline else ''
             info['mem_pct'] = info.get('memory_percent', 0.0)
+            info['cpu_pct'] = 0.0
             info['status'] = ''
-            try:
-                proc_obj = psutil.Process(info['pid'])
-                proc_obj.cpu_percent(interval=None)  # baseline (returns 0.0)
-                proc_objects[info['pid']] = proc_obj
-            except Exception:
-                pass
             procs.append(info)
 
-        # Wait for measurement interval
-        time.sleep(0.5)
+        # Sample CPU% concurrently (max 32 threads)
+        def sample_cpu(proc_info):
+            try:
+                p = psutil.Process(proc_info['pid'])
+                proc_info['cpu_pct'] = p.cpu_percent(interval=0.1)
+            except Exception:
+                pass
+            return proc_info
 
-        # Pass 2: Get actual CPU% using same Process objects
-        for p in procs:
-            proc_obj = proc_objects.get(p['pid'])
-            if proc_obj:
-                try:
-                    p['cpu_pct'] = proc_obj.cpu_percent(interval=None)
-                except Exception:
-                    p['cpu_pct'] = 0.0
-            else:
-                p['cpu_pct'] = 0.0
+        with ThreadPoolExecutor(max_workers=32) as pool:
+            list(pool.map(sample_cpu, procs))
 
         by_cpu = sorted(procs, key=lambda x: x.get('cpu_pct', 0), reverse=True)[:limit]
         by_mem = sorted(procs, key=lambda x: x.get('mem_pct', 0), reverse=True)[:limit]

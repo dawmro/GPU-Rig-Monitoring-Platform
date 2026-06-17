@@ -53,7 +53,7 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.6.9-win'
+__version__ = '1.6.10-win'
 __schema_version__ = '1.7'
 
 # ── Config ──────────────────────────────────────────────────────────────────
@@ -276,7 +276,99 @@ def _get_windows_disk_io():
     return result
 
 
-def _partition_letter_to_physical(device_str):
+def _partition_index_for_drive(device_str):
+    """Get the physical disk index for a Windows drive letter using WMI.
+
+    Uses Win32_LogicalDiskToPartition → Win32_DiskPartitionToDiskDrive
+    association to find which PhysicalDrive a partition belongs to.
+
+    Input: 'C:\\' or 'D:\\'
+    Output: integer disk index (e.g. 0, 1, 2) or None
+    """
+    try:
+        import wmi
+        c = wmi.WMI()
+        drive_letter = device_str[0].upper()
+        for ld in c.Win32_LogicalDisk(DriveType=3):
+            if ld.DeviceID.startswith(drive_letter):
+                for assoc in ld.associators("Win32_LogicalDiskToPartition"):
+                    for pdisk in assoc.associators("Win32_DiskPartitionToDiskDrive"):
+                        return getattr(pdisk, 'Index', None)
+    except Exception:
+        pass
+    return None
+
+
+def _guess_partition_disk_index(device_str, disk_io):
+    """Fallback: guess which physical disk a partition belongs to.
+
+    Uses the partition's drive letter to match against known PhysicalDrive names.
+    This is a last resort when WMI associations fail.
+
+    Strategy: return the first PhysicalDrive index that has I/O data.
+    This is imprecise but better than returning None.
+    """
+    # Try to use diskpart or wmic to get the disk index
+    try:
+        out = subprocess.run(
+            ['wmic', 'path', 'Win32_LogicalDiskToPartition', 'get',
+             'Antecedent,Dependent', '/format:csv'],
+            capture_output=True, text=True, timeout=10
+        )
+        if out.returncode == 0:
+            drive_letter = device_str[0].upper()
+            for line in out.stdout.strip().split('\n'):
+                line = line.strip()
+                if not line or line.startswith('Antecedent'):
+                    continue
+                # Parse: \\.\PHYSICALDRIVE0, C:
+                parts = line.split(',')
+                if len(parts) >= 2:
+                    dependent = parts[-1].strip()
+                    antecedent = parts[0].strip()
+                    if drive_letter in dependent:
+                        # Extract index from \\.\PHYSICALDRIVE{N}
+                        import re
+                        m = re.search(r'PHYSICALDRIVE(\d+)', antecedent)
+                        if m:
+                            return int(m.group(1))
+    except Exception:
+        pass
+    return None
+
+
+def _get_linux_disk_io():
+    """Get per-disk I/O counters on Linux.
+
+    Returns dict keyed by disk name (e.g. 'sda', 'nvme0n1') with
+    read_bytes, write_bytes, read_iops, write_iops, busy_time_ms.
+    """
+    try:
+        import psutil
+        io = psutil.disk_io_counters(perdisk=True)
+        if not io:
+            return {}
+    except Exception:
+        return {}
+
+    import re
+    result = {}
+    for name, counters in io.items():
+        # Skip partitions (e.g. sda1, nvme0n1p1), keep whole disks only
+        if re.match(r'^[a-z]+\d+$', name) and not name.startswith('nvme'):
+            continue
+        if re.match(r'^nvme\dn\d+p\d+$', name):
+            continue
+        if name.startswith('loop') or name.startswith('sr') or name.startswith('dm-'):
+            continue
+        result[name] = {
+            'read_bytes': counters.read_bytes,
+            'write_bytes': counters.write_bytes,
+            'read_iops': counters.read_count,
+            'write_iops': counters.write_count,
+            'busy_time_ms': getattr(counters, 'busy_time', None),
+        }
+    return result
     """Map a Windows drive letter to its PhysicalDrive name.
 
     Uses multiple strategies in order of reliability:
@@ -386,33 +478,133 @@ def _get_windows_disks_wmi():
 
 
 def collect_storage():
-    """Collect all storage metrics per disk: capacity, usage, temp, smart,
+    """Collect all storage metrics per physical disk: capacity, usage, temp, smart,
     plus disk I/O counters (throughput, IOPS, utilization).
 
-    I/O counters are per-physical-disk. All partitions on the same physical
-    disk share the same I/O counters. Counters are cumulative; deltas are
+    On Windows, reports per-physical-disk (PhysicalDriveN) rather than per-partition
+    to avoid unreliable WMI partition-to-disk mapping. Capacity/usage is aggregated
+    from all partitions on each physical disk.
+
+    I/O counters are per-physical-disk. Counters are cumulative; deltas are
     computed server-side during ingest.
     """
     try:
         import psutil
         disks = []
-        # Get per-physical-disk I/O counters once
-        disk_io = _get_windows_disk_io() if platform.system() == 'Windows' else {}
-        partitions = psutil.disk_partitions()
-        # On Windows, if psutil returns no partitions, fall back to WMI
-        if platform.system() == 'Windows' and not partitions:
-            partitions = _get_windows_disks_wmi()
-        for part in partitions:
-            # Skip virtual/special filesystems on non-Windows
-            if platform.system() != 'Windows':
-                if part.fstype in ('squashfs', 'tmpfs', 'devtmpfs'):
-                    continue
-            # On Windows, skip CD-ROM and removable drives with no media
-            if platform.system() == 'Windows':
+
+        if platform.system() == 'Windows':
+            # Windows: report per-physical-disk to avoid WMI mapping issues
+            disk_io = _get_windows_disk_io()
+
+            # Collect partition info for capacity/usage, grouped by physical disk
+            # Map: physical_disk_index -> {'partitions': [...], 'total_capacity': N, 'total_used': N}
+            disk_partitions = {}
+            for part in psutil.disk_partitions():
                 if part.fstype == '' or part.fstype.lower() == 'cdfs':
                     continue
-            try:
-                usage = psutil.disk_usage(part.mountpoint)
+                try:
+                    usage = psutil.disk_usage(part.mountpoint)
+                except (PermissionError, OSError):
+                    continue
+
+                # Map partition to physical disk index via WMI
+                phys_idx = _partition_index_for_drive(part.device)
+                if phys_idx is None:
+                    phys_idx = _guess_partition_disk_index(part.device, disk_io)
+
+                if phys_idx not in disk_partitions:
+                    disk_partitions[phys_idx] = {
+                        'partitions': [],
+                        'total_capacity': 0,
+                        'total_used': 0,
+                    }
+                disk_partitions[phys_idx]['partitions'].append({
+                    'device': part.device,
+                    'mountpoint': part.mountpoint,
+                    'fstype': part.fstype,
+                    'capacity_bytes': usage.total,
+                    'usage_pct': round(usage.percent, 1),
+                })
+                disk_partitions[phys_idx]['total_capacity'] += usage.total
+                disk_partitions[phys_idx]['total_used'] += usage.total * usage.percent / 100.0
+
+            # Build disk entries: one per physical disk with I/O counters
+            for phys_idx, info in sorted(disk_partitions.items()):
+                phys_name = f'PhysicalDrive{phys_idx}'
+                io = disk_io.get(phys_name, {})
+
+                # Use the first partition as the "primary" for display
+                primary = info['partitions'][0]
+                total_capacity = info['total_capacity']
+                total_used = info['total_used']
+                avg_usage_pct = round(total_used / total_capacity * 100, 1) if total_capacity else 0
+
+                disk = {
+                    'device': phys_name,
+                    'mountpoint': primary['mountpoint'],
+                    'fstype': primary['fstype'],
+                    'capacity_bytes': total_capacity,
+                    'usage_pct': avg_usage_pct,
+                    'temp_c': None,
+                    'smart_health': '',
+                    # Disk I/O counters (cumulative, per-physical-disk)
+                    'read_bytes': io.get('read_bytes'),
+                    'write_bytes': io.get('write_bytes'),
+                    'read_iops': io.get('read_iops'),
+                    'write_iops': io.get('write_iops'),
+                    'busy_time_ms': io.get('busy_time_ms'),
+                }
+
+                # Try SMART health
+                try:
+                    physical_wmi = f'\\\\.\\PHYSICALDRIVE{phys_idx}'
+                    disk['smart_health'] = _read_smart_windows(physical_wmi)
+                except Exception:
+                    pass
+
+                disks.append(disk)
+
+            # Handle case where we have I/O data for disks with no partition info
+            # (e.g., unmounted disks)
+            for phys_name, io in disk_io.items():
+                if phys_name.startswith('PhysicalDrive'):
+                    idx = int(phys_name.replace('PhysicalDrive', ''))
+                    if idx not in disk_partitions:
+                        disk = {
+                            'device': phys_name,
+                            'mountpoint': '',
+                            'fstype': '',
+                            'capacity_bytes': None,
+                            'usage_pct': None,
+                            'temp_c': None,
+                            'smart_health': '',
+                            'read_bytes': io.get('read_bytes'),
+                            'write_bytes': io.get('write_bytes'),
+                            'read_iops': io.get('read_iops'),
+                            'write_iops': io.get('write_iops'),
+                            'busy_time_ms': io.get('busy_time_ms'),
+                        }
+                        try:
+                            disk['smart_health'] = _read_smart_windows(
+                                f'\\\\.\\PHYSICALDRIVE{idx}')
+                        except Exception:
+                            pass
+                        disks.append(disk)
+
+        else:
+            # Linux: report per-partition with I/O counters from parent whole-disk
+            disk_io = _get_linux_disk_io() if platform.system() == 'Linux' else {}
+            for part in psutil.disk_partitions():
+                if part.fstype in ('squashfs', 'tmpfs', 'devtmpfs'):
+                    continue
+                try:
+                    usage = psutil.disk_usage(part.mountpoint)
+                except (PermissionError, OSError):
+                    continue
+
+                whole_disk = _disk_to_whole_disk(part.device)
+                io = disk_io.get(whole_disk, {})
+
                 disk = {
                     'device': part.device,
                     'mountpoint': part.mountpoint,
@@ -421,34 +613,15 @@ def collect_storage():
                     'usage_pct': round(usage.percent, 1),
                     'temp_c': None,
                     'smart_health': '',
+                    'read_bytes': io.get('read_bytes'),
+                    'write_bytes': io.get('write_bytes'),
+                    'read_iops': io.get('read_iops'),
+                    'write_iops': io.get('write_iops'),
+                    'busy_time_ms': io.get('busy_time_ms'),
                 }
-                # Attach I/O counters for this physical disk (Windows)
-                if platform.system() == 'Windows' and disk_io:
-                    try:
-                        physical = _get_physical_drive_for_partition(part.device)
-                        if physical:
-                            disk['smart_health'] = _read_smart_windows(physical)
-                            phys_name = _normalize_physical_drive_name(physical)
-                        else:
-                            phys_name = _partition_letter_to_physical(part.device)
-                        # Try per-disk I/O via physical drive name
-                        io = {}
-                        if phys_name:
-                            io = disk_io.get(phys_name, {})
-                            if io:
-                                logging.getLogger('storage').debug(
-                                    'I/O for %s mapped to %s', part.device, phys_name)
-                        else:
-                            logging.getLogger('storage').debug(
-                                'No physical drive mapping for %s, I/O counters not attached', part.device)
-                        disk['read_bytes'] = io.get('read_bytes')
-                        disk['write_bytes'] = io.get('write_bytes')
-                        disk['read_iops'] = io.get('read_iops')
-                        disk['write_iops'] = io.get('write_iops')
-                        disk['busy_time_ms'] = io.get('busy_time_ms')
-                    except Exception:
-                        pass
-                elif platform.system() == 'Linux':
+
+                # Try SMART for temperature
+                if platform.system() == 'Linux':
                     try:
                         out = subprocess.run(
                             ['sudo', 'smartctl', '-a', part.device],
@@ -466,13 +639,9 @@ def collect_storage():
                 else:
                     disk['device'] = _get_physical_disk_name(part.device)
                     disk['smart_health'] = 'unsupported'
+
                 disks.append(disk)
-            except PermissionError:
-                logging.getLogger('storage').debug('Permission denied for %s, skipping', part.device)
-                continue
-            except OSError as e:
-                logging.getLogger('storage').debug('OS error for %s: %s, skipping', part.device, e)
-                continue
+
         return disks
     except Exception as e:
         logging.getLogger('storage').warning('Storage collection failed: %s', e)

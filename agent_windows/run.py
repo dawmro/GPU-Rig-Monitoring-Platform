@@ -917,29 +917,39 @@ def collect_top_processes(limit=20):
         if platform.system() == 'Windows':
             # Windows: use psutil for process collection
             import psutil
-            attrs = ['pid', 'name', 'memory_percent', 'username', 'cmdline']
+            import time
+
+            # Two-pass CPU measurement (must keep Process objects alive)
             procs = []
-            for p in psutil.process_iter(attrs):
+            proc_objects = {}
+
+            # Pass 1: Create Process objects and establish baseline
+            for p in psutil.process_iter(['pid', 'name', 'memory_percent', 'username', 'cmdline']):
                 info = p.info
                 cmdline = info.get('cmdline')
                 info['cmdline'] = ' '.join(cmdline)[:200] if cmdline else ''
-                info['cpu_pct'] = 0.0  # Will be populated below
                 info['mem_pct'] = info.get('memory_percent', 0.0)
                 info['status'] = ''
+                try:
+                    proc_obj = psutil.Process(info['pid'])
+                    proc_obj.cpu_percent(interval=None)
+                    proc_objects[info['pid']] = proc_obj
+                except Exception:
+                    pass
                 procs.append(info)
 
-            # Get CPU% using psutil with a single system-wide call first
-            # Then per-process with short interval for top consumers
-            try:
-                # First pass: quick cpu_percent (returns 0.0 first time)
-                for p in procs[:50]:  # Only top 50 to avoid timeout
+            time.sleep(0.5)
+
+            # Pass 2: Get actual CPU% using same Process objects
+            for p in procs:
+                proc_obj = proc_objects.get(p['pid'])
+                if proc_obj:
                     try:
-                        proc = psutil.Process(p['pid'])
-                        p['cpu_pct'] = proc.cpu_percent(interval=0.05)
+                        p['cpu_pct'] = proc_obj.cpu_percent(interval=None)
                     except Exception:
-                        pass
-            except Exception:
-                pass
+                        p['cpu_pct'] = 0.0
+                else:
+                    p['cpu_pct'] = 0.0
 
             by_mem = sorted(procs, key=lambda x: x.get('mem_pct', 0), reverse=True)[:limit]
             by_cpu = sorted(procs, key=lambda x: x.get('cpu_pct', 0), reverse=True)[:limit]

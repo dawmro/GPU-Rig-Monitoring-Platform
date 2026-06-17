@@ -746,18 +746,46 @@ def collect_top_processes(limit=20):
     except Exception as e:
         logging.getLogger('processes').debug('top collection failed: %s, falling back to psutil', e)
 
-    # Fallback: use psutil (CPU% will be 0.0 on first run, but better than nothing)
+    # Fallback: use psutil with two-pass CPU measurement
+    # Key: must keep Process objects alive between passes
     try:
         import psutil
-        attrs = ['pid', 'name', 'cpu_percent', 'memory_percent', 'username', 'cmdline']
+        import time
+
         procs = []
-        for p in psutil.process_iter(attrs):
+        proc_objects = {}  # pid -> Process object
+
+        # Pass 1: Create Process objects and establish baseline
+        for p in psutil.process_iter(['pid', 'name', 'memory_percent', 'username', 'cmdline']):
             info = p.info
             cmdline = info.get('cmdline')
             info['cmdline'] = ' '.join(cmdline)[:200] if cmdline else ''
+            info['mem_pct'] = info.get('memory_percent', 0.0)
+            info['status'] = ''
+            try:
+                proc_obj = psutil.Process(info['pid'])
+                proc_obj.cpu_percent(interval=None)  # baseline (returns 0.0)
+                proc_objects[info['pid']] = proc_obj
+            except Exception:
+                pass
             procs.append(info)
-        by_cpu = sorted(procs, key=lambda x: x.get('cpu_percent', 0), reverse=True)[:limit]
-        by_mem = sorted(procs, key=lambda x: x.get('memory_percent', 0), reverse=True)[:limit]
+
+        # Wait for measurement interval
+        time.sleep(0.5)
+
+        # Pass 2: Get actual CPU% using same Process objects
+        for p in procs:
+            proc_obj = proc_objects.get(p['pid'])
+            if proc_obj:
+                try:
+                    p['cpu_pct'] = proc_obj.cpu_percent(interval=None)
+                except Exception:
+                    p['cpu_pct'] = 0.0
+            else:
+                p['cpu_pct'] = 0.0
+
+        by_cpu = sorted(procs, key=lambda x: x.get('cpu_pct', 0), reverse=True)[:limit]
+        by_mem = sorted(procs, key=lambda x: x.get('mem_pct', 0), reverse=True)[:limit]
         return {'by_cpu': by_cpu, 'by_mem': by_mem, 'total_count': len(procs)}
     except Exception as e:
         logging.getLogger('processes').warning('Process collection failed: %s', e)

@@ -404,7 +404,7 @@ async function loadCharts() {
         function() { return loadChartMemSwap('chartMemSwap', uuid, range); },
         function() { return loadChartLoadAvg('chartCpuLoad', uuid, range); },
         function() { return loadChartMultiKey('chartDiskUsage', 'disk_usage_pct', uuid, range, '%', 'multi_disk'); },
-        function() { return loadChartMultiKeyDual('chartDiskReadWriteThroughput', 'disk_read_bytes_delta', 'disk_write_bytes_delta', uuid, range, ' MB/s', 'multi_disk', 'rgba(59, 130, 246, 0.8)', 'rgba(16, 185, 129, 0.8)'); },
+        function() { return loadChartMultiKeyDual('chartDiskReadWriteThroughput', 'disk_read_bytes_delta', 'disk_write_bytes_delta', uuid, range, ' MB', 'multi_disk', 'rgba(59, 130, 246, 0.8)', 'rgba(16, 185, 129, 0.8)'); },
         function() { return loadChartMultiKeyDual('chartDiskReadWriteIops', 'disk_read_iops_delta', 'disk_write_iops_delta', uuid, range, ' IOPS', 'multi_disk', 'rgba(59, 130, 246, 0.8)', 'rgba(16, 185, 129, 0.8)'); },
         function() { return loadChartMultiKey('chartDiskUtilization', 'disk_utilization_pct', uuid, range, '%', 'multi_disk'); },
         function() { return loadChartNetworkCombined('chartNetCombined', uuid, range); },

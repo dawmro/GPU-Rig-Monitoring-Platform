@@ -230,7 +230,7 @@ Errors are filtered on the server side — "no error" placeholders from agents
 - No queryset LIMITS — returns exact data points
 
 ### Live metrics
-- `dashboard/views.py` — `_fetch_rig_metrics()` uses `DISTINCT ON`
+- `dashboard/views.py` — `_fetch_rig_metrics()` reads from LatestSnapshot JSON arrays (no timeseries queries for GPU/storage/network)
 - `dashboard/views.py` — `rig_detail()` passes metrics to template
 
 ### Data retention

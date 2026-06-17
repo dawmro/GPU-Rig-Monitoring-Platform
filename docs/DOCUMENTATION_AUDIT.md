@@ -1,7 +1,7 @@
 # Documentation Audit Report
 
-**Date:** 2026-06-12
-**Branch:** `feature/agent-local-ip`
+**Date:** 2026-06-17
+**Branch:** `fix/windows-disk-io`
 
 ---
 
@@ -48,9 +48,9 @@
 
 ## Summary
 
-- **Total documents:** 12 (down from 14)
+- **Total documents:** 12
 - **Keep:** 12
-- **Deleted:** 3
+- **Deleted:** 2 (DOCUMENTATION_UPDATE_PLAN.md, DOC_VS_CODE_DISCREPANCIES.md — working documents)
 
 All remaining documentation is accurate and up-to-date.
 
@@ -58,9 +58,10 @@ All remaining documentation is accurate and up-to-date.
 
 ## Changes in This Branch
 
-1. **Primary IP in header:** Added `primary_ip` derived from first non-loopback interface's IPv4 (from existing `network_ipv4s_json` data)
-2. **Template display:** Shows primary IP below status badge in rig detail header
-3. **No agent changes:** IP was already collected per-interface in network data
-4. **No model changes:** Uses existing `network_ipv4s_json` — no new fields needed
-5. **Redundancy removed:** Original `local_ip` feature was reverted (duplicate of existing Network section data)
-6. **Documentation:** Updated audit, removed schema 1.6 changelog and version bumps
+1. **Disk I/O monitoring:** Added read_bytes, write_bytes, read_iops, write_iops, busy_time_ms to storage payload (schema 1.7)
+2. **Cumulative totals in LatestSnapshot:** 4 new JSON arrays for Total Read/Write/IOPS display
+3. **format_bytes_total filter:** New template filter for human-readable sizes
+4. **Windows wmic drive mapping:** Reliable partition-to-physical-disk mapping using wmic CLI
+5. **Fleet Overview:** Added Disk Util [%] column
+6. **Live Metrics storage card:** Shows Total Read/Write (cumulative), Since last update (delta), IOPS, Utilization%
+7. **Documentation:** Updated all docs to reflect schema 1.7 changes

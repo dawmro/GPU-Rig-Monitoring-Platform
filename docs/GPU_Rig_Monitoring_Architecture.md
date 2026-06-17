@@ -189,14 +189,14 @@ retry_attempts: 3         # Exponential backoff: 1s → 2s → 4s
 debug_mode: false         # Verbose logging
 ```
 
-### 3.3 Payload Schema (v1.1)
+### 3.3 Payload Schema (v1.7)
 
 ```json
 {
   "rig_uuid": "UUIDv4",
   "rig_name": "my-server",
-  "schema_version": "1.2",
-  "agent_version": "1.2.0",
+  "schema_version": "1.7",
+  "agent_version": "1.5.9",
   "timestamp": "2026-06-07T19:54:06Z",
   "metrics": {
     "cpu": {
@@ -223,7 +223,12 @@ debug_mode: false         # Verbose logging
         "capacity_bytes": 1000200990720,
         "usage_pct": 51.7,
         "temp_c": null,
-        "smart_health": ""
+        "smart_health": "",
+        "read_bytes": 37688539648,
+        "write_bytes": 156538570752,
+        "read_iops": 3309393,
+        "write_iops": 6397960,
+        "busy_time_ms": null
       }
     ],
     "network": [
@@ -249,7 +254,13 @@ debug_mode: false         # Verbose logging
         "temp_c": 46,
         "fan_speed_pct": 0,
         "power_draw_w": 8.843,
-        "power_limit_w": 170.0
+        "power_limit_w": 170.0,
+        "pcie_current_gen": 1,
+        "pcie_max_gen": 3,
+        "pcie_current_width": 16,
+        "pcie_max_width": 16,
+        "gpu_core_clock_mhz": 210,
+        "gpu_mem_clock_mhz": 405
       }
     ],
     "gpu_processes": [
@@ -259,13 +270,6 @@ debug_mode: false         # Verbose logging
         "type": "G",
         "name": "/usr/lib/xorg/Xorg",
         "gpu_mem_mb": 6
-      },
-      {
-        "gpu_index": 0,
-        "pid": 3199,
-        "type": "C",
-        "name": "./srbminer_custom_bin",
-        "gpu_mem_mb": 2936
       }
     ],
     "docker_containers": [
@@ -302,24 +306,26 @@ debug_mode: false         # Verbose logging
 }
 ```
 
-**Changelog from schema 1.4 → 1.5:**
-- Added `container_id` and `uptime_s` to docker container metrics
-- `container_id`: first 12 chars of Docker container hash (`c.id[:12]`)
-- `uptime_s`: calculated from `State['StartedAt']` timestamp
-- Docker Live Metrics now shows table with: Status, Name, Image, Container ID, Uptime
-- Containers sorted by uptime descending (longest running first)
+**Changelog from schema 1.6 → 1.7:**
+- Added disk I/O metrics to `storage[]` objects: `read_bytes`, `write_bytes`, `read_iops`, `write_iops`, `busy_time_ms`
+- `read_bytes`/`write_bytes`: cumulative bytes since boot (like network rx/tx_bytes)
+- `read_iops`/`write_iops`: cumulative operation counts since boot
+- `busy_time_ms`: cumulative milliseconds disk spent doing I/O (Linux only; Windows returns null)
+- Server computes deltas during ingest by comparing with previous reading for each disk
+- Server derives `utilization_pct` from `busy_time_delta / sample_interval * 100`
+- 5 new chart metrics: `disk_read_bytes_delta`, `disk_write_bytes_delta`, `disk_read_iops_delta`, `disk_write_iops_delta`, `disk_utilization_pct`
+- Live Metrics storage card shows: Total Read/Write (cumulative), Since last update (delta), IOPS, Utilization%
+- Fleet Overview adds Disk Util [%] column (max across all disks, color-coded)
 
-**Changelog from schema 1.3 → 1.4:**
+**Changelog from schema 1.5 → 1.6:**
 - Added `gpu_core_clock_mhz` and `gpu_mem_clock_mhz` to GPU metrics (pynvml `NVML_CLOCK_GRAPHICS` and `NVML_CLOCK_MEM`)
-- Added `gpu_core_clock_mhz` and `gpu_mem_clock_mhz` fields to `GPUMetric` model
 - Added GPU Core Clock and GPU Memory Clock charts (multi-GPU)
 - Added clock display to Live Metrics GPU card
 
-**Changelog from schema 1.1 → 1.2:**
-- Added `gpu_processes[]` array with per-GPU process data from nvidia-smi
-- Each process: `gpu_index`, `pid`, `type` (C/G/C+G), `name`, `gpu_mem_mb`
-- Added `GPUProcessMetric` model for server-side storage (latest snapshot only, delete-before-insert pattern)
-- Server deduplicates by deleting all old process rows per rig before inserting new ones
+**Changelog from schema 1.4 → 1.5:**
+- Added `container_id` and `status_text` to docker container metrics
+- Docker Live Metrics now shows table with: Status, Name, Image, Container ID, Uptime
+- Containers sorted by uptime descending (longest running first)
 
 ### 3.4 Transport
 
@@ -486,6 +492,7 @@ HTMX polls use `hx-swap="innerHTML"` (not `outerHTML`). This is critical: `inner
 | GPU Fan [%] | LatestSnapshot.gpu_fans_json | Space-separated color-coded values via `gpu_fan_cell_json` |
 || CPU [%] | LatestSnapshot.cpu_utilization_pct | Percentage |
 || Memory [%] | LatestSnapshot.mem_used_bytes, mem_total_bytes | Used / Total (GB) |
+|| Disk Util [%] | LatestSnapshot.storage_utilization_pcts_json | Color-coded max utilization |
 
 ### 5.3 Rig Detail Page (`/dashboard/rigs/<uuid>/`)
 
@@ -511,7 +518,7 @@ Plus one manual-refresh region:
 
 The rig detail page has three tabs:
 
-1. **Live Metrics** — cards with CPU%, memory bar, GPU model/index/temp/util/fan/power/PCIe/vRAM (all from LatestSnapshot), GPU Processes (per-process: name, type badge C/G/C+G, memory), Docker container count with container_id/image/status/created/status_text, storage disks, recent errors
+1. **Live Metrics** — cards with CPU%, memory bar, GPU model/index/temp/util/fan/power/PCIe/vRAM/clocks (all from LatestSnapshot), GPU Processes (per-process: name, type badge C/G/C+G, memory), Docker container count with container_id/image/status/created/status_text, storage disks with Total Read/Write (cumulative), Since last update (delta), IOPS, Utilization%, recent errors
 2. **Historical Charts** — Combined chart suite: GPU (Temperature, Utilization, Memory, Power, Fan Speed — multi-GPU), CPU (Utilization, Temperature, Load Average), Memory & Swap (combined single chart, 3 datasets), Disk Usage (multi-disk), Network Traffic (combined RX/TX/Errors, dual Y-axes), Container CPU/Memory (multi-container), Uptime, Error Frequency — all implemented as Chart.js charts with multi-series support. Timeframe toggle buttons (24h, 7d, 30d) in the tab header with a ↻ Refresh button.
 3. **Errors** — latest system errors from journalctl/Windows Event Log (stored on Rig model, updated in place)
 
@@ -1061,7 +1068,7 @@ sudo -u postgres psql gpu_monitor
 | `rigs/` | Rig inventory app (models, status management command) |
 | `metrics_app/` | Ingestion API (models, serializers, views) |
 | `dashboard/` | HTMX dashboard (views, URLs) |
-| `dashboard/templatetags/gpu_filters.py` | GPU model name cleanup filters |
+|| `dashboard/templatetags/gpu_filters.py` | Template filters: gpu_model_name, gpu_model_short, gpu_compact_summary_json, gpu_temp_cell_json, gpu_util_cell_json, gpu_fan_cell_json, time_since, last_seen_short, format_iops, format_throughput_mb, max_disk_util, format_bytes_total |
 | `audit/` | Audit logging (models, middleware) |
 | `templates/base.html` | Base layout (HTMX, Tailwind, Chart.js, clock JS) |
 | `templates/dashboard/rig_list.html` | Fleet Overview page |

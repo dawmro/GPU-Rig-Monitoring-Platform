@@ -291,6 +291,16 @@ Configure automated data compaction and cleanup. This is essential for long-term
 echo '0 3 * * * qrv bash /opt/gpu_monitor/deploy/data_retention.sh >> /var/log/monitoring-agent/cleanup-cron.log 2>&1' | sudo tee /etc/cron.d/monitoring-data-cleanup
 ```
 
+The cron job runs `data_retention.sh` which executes three steps:
+1. `compact_data` — aggregate old data into 1-hour buckets
+2. `cleanup_old_data` — delete data older than 31 days
+3. `VACUUM ANALYZE` — reclaim dead tuples and update planner statistics
+
+Alternatively, you can use the combined `daily_maintenance` command directly:
+```bash
+echo '0 3 * * * qrv cd /opt/gpu_monitor && source venv/bin/activate && set -a && source .env && set +a && python manage.py daily_maintenance --verbose >> /var/log/monitoring-agent/cleanup-cron.log 2>&1' | sudo tee /etc/cron.d/monitoring-data-cleanup
+```
+
 > **Note:** The cron job runs as `qrv` (not root). Ensure `/opt/gpu_monitor/logs/` is owned by `qrv`:
 > ```bash
 > sudo chown -R qrv:qrv /opt/gpu_monitor/logs/
@@ -298,7 +308,7 @@ echo '0 3 * * * qrv bash /opt/gpu_monitor/deploy/data_retention.sh >> /var/log/m
 
 #### What It Does
 
-The `data_retention.sh` wrapper runs two commands daily:
+The `data_retention.sh` wrapper runs three steps daily:
 
 1. **`compact_data`** — Single-phase aggregation of old data:
    - Data > 1 day old → 1-hour buckets (60× reduction)
@@ -312,12 +322,28 @@ The `data_retention.sh` wrapper runs two commands daily:
    - 31 days provides 1-day safety margin beyond the 30-day max chart range
    - Handles tables with non-standard primary keys (e.g., `metrics_latest_snapshot` uses `rig_uuid`)
 
+3. **`VACUUM ANALYZE`** — Reclaims dead tuples and updates query planner statistics:
+   - Runs on all 5 metrics tables after compaction and cleanup
+   - Uses regular `VACUUM ANALYZE` (not `VACUUM FULL`) — no exclusive lock, runs concurrently with production traffic
+   - Reclaims space from dead tuples for reuse within the table
+   - Updates planner statistics so query plans stay optimal after data distribution changes
+   - Takes seconds per table (not minutes like VACUUM FULL)
+
+> **Why not VACUUM FULL?** `VACUUM FULL` acquires an exclusive lock on each table, blocking all reads/writes for the duration. For large tables (millions of rows), this could block agent ingest for 30+ seconds, causing missed heartbeats and false "stale" alarms. Regular `VACUUM ANALYZE` runs concurrently with no blocking.
+
+> **Why run it manually?** PostgreSQL's autovacuum daemon handles dead tuple cleanup eventually, but after bulk DELETE operations (from compact_data and cleanup_old_data), a manual `VACUUM ANALYZE` ensures immediate reclamation and fresh planner statistics.
+
 #### Manual Run
 
 ```bash
 cd /opt/gpu_monitor
 source venv/bin/activate
 set -a && source .env && set +a
+
+# Run all maintenance steps at once (recommended)
+python manage.py daily_maintenance --verbose
+
+# Or run individual steps:
 
 # Compact data (dry run first)
 python manage.py compact_data --dry-run --verbose
@@ -333,6 +359,16 @@ python manage.py cleanup_old_data --days=31 --verbose
 ```
 
 #### Command Options
+
+**daily_maintenance:**
+| Flag | Description |
+|---|---|
+| `--days N` | Retention period in days (default: 31) |
+| `--dry-run` | Preview without making changes |
+| `--verbose` | Show detailed per-table statistics |
+| `--skip-compact` | Skip compaction step |
+| `--skip-cleanup` | Skip cleanup step |
+| `--skip-vacuum` | Skip vacuum analyze step |
 
 **compact_data:**
 | Flag | Description |

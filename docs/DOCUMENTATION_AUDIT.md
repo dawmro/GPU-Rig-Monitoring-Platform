@@ -1,7 +1,7 @@
 # Documentation Audit Report
 
 **Date:** 2026-06-17
-**Branch:** `feature/running-processes`
+**Branch:** `feature/vacuum-maintenance`
 
 ---
 
@@ -24,6 +24,7 @@
 | `BACKFILL_ANALYSIS.md` | 7KB | ✅ Current | Backfill command exists and works. |
 | `INGEST_PERFORMANCE_ANALYSIS.md` | 6KB | ✅ Current | Detailed ingest performance measurements. |
 | `CHART_PERFORMANCE_ANALYSIS.md` | 2KB | ✅ Current | Updated Live Metrics description. |
+| `VACUUM_ANALYSIS.md` | 6KB | ✅ New | PostgreSQL VACUUM FULL vs VACUUM ANALYZE analysis and recommendations. |
 
 ### ✅ KEEP — Design Context & Plans
 
@@ -48,8 +49,8 @@
 
 ## Summary
 
-- **Total documents:** 12
-- **Keep:** 12
+- **Total documents:** 13
+- **Keep:** 13
 - **Deleted:** 2 (DOCUMENTATION_UPDATE_PLAN.md, DOC_VS_CODE_DISCREPANCIES.md — working documents)
 
 All remaining documentation is accurate and up-to-date.
@@ -58,11 +59,9 @@ All remaining documentation is accurate and up-to-date.
 
 ## Changes in This Branch
 
-1. **Running processes monitoring:** Added `collect_top_processes()` to both Linux and Windows agents
-2. **Agent payload:** Added `top_processes` section with `by_cpu`, `by_mem`, `total_count`
-3. **Server model:** Added `top_cpu_processes_json`, `top_mem_processes_json`, `process_count` to LatestSnapshot
-4. **Server serializer:** Updated `process_ingest()` to store process data in LatestSnapshot
-5. **Dashboard:** Updated `_fetch_rig_metrics()` and `_metrics_cards.html` to display process tables
-6. **Schema version:** 1.7 → 1.8
-7. **Agent versions:** Linux 1.5.9 → 1.5.10, Windows 1.6.10-win → 1.6.11-win
-8. **Documentation:** Updated architecture doc, data flow analysis, deployment guides, audit
+1. **VACUUM ANALYZE maintenance:** Added `VACUUM ANALYZE` step to daily maintenance after compact_data and cleanup_old_data
+2. **New management command:** `daily_maintenance` — runs compact + cleanup + vacuum in one command
+3. **Updated data_retention.sh:** Added VACUUM ANALYZE step for 5 metrics tables
+4. **New documentation:** `VACUUM_ANALYSIS.md` — detailed analysis of VACUUM FULL vs VACUUM ANALYZE
+5. **Updated deployment guide:** Documented VACUUM ANALYZE step, daily_maintenance command, cron job options
+6. **Updated data retention plan:** Documented VACUUM ANALYZE step in wrapper script

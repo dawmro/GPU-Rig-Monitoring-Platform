@@ -185,7 +185,16 @@ The wrapper:
 1. Activates the virtualenv and sources `.env`
 2. Runs `compact_data --verbose` (single phase: 1-minute → 1-hour buckets)
 3. Runs `cleanup_old_data --days=31` (uses default retention)
-4. Logs all output to `/var/log/monitoring-agent/cleanup-cron.log`
+4. Runs `VACUUM ANALYZE` on all 5 metrics tables (reclaims dead tuples, updates planner statistics)
+5. Logs all output to `/var/log/monitoring-agent/cleanup.log`
+
+**VACUUM ANALYZE** is a targeted maintenance operation that:
+- Reclaims space from dead tuples (created by DELETE operations in steps 2-3)
+- Updates query planner statistics so the optimizer chooses efficient query plans
+- Runs concurrently with production traffic (no exclusive lock, unlike VACUUM FULL)
+- Takes seconds per table
+
+**Why not VACUUM FULL?** `VACUUM FULL` rewrites the entire table and requires an exclusive lock, blocking all reads/writes. For large tables (millions of rows), this could block agent ingest for 30+ seconds. Regular `VACUUM ANALYZE` achieves the same dead tuple reclamation and statistics update without blocking.
 
 ---
 

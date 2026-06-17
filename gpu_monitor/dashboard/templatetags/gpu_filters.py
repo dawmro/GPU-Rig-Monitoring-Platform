@@ -335,3 +335,29 @@ def max_disk_util(values):
         return max(valid) if valid else 0
     except (ValueError, TypeError):
         return 0
+
+
+@register.filter
+def format_bytes_total(value):
+    """Format cumulative bytes as human-readable size (GB/TB).
+
+    Examples:
+        37688539648 -> '35.1 GB'
+        1614605331456 -> '1.5 TB'
+        None -> '—'
+    """
+    if value is None:
+        return '—'
+    try:
+        value = float(value)
+    except (ValueError, TypeError):
+        return '—'
+    if value >= 1_000_000_000_000:
+        return f'{value / 1_000_000_000_000:.1f} TB'
+    elif value >= 1_000_000_000:
+        return f'{value / 1_000_000_000:.1f} GB'
+    elif value >= 1_000_000:
+        return f'{value / 1_000_000:.1f} MB'
+    elif value >= 1_000:
+        return f'{value / 1_000:.1f} KB'
+    return f'{value:.0f} B'

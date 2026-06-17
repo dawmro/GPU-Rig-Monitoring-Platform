@@ -1,6 +1,6 @@
 #!/bin/bash
 # GPU Rig Monitoring Platform — Daily data retention cleanup
-# Runs compact_data and cleanup_old_data management commands
+# Runs compact_data, cleanup_old_data, and VACUUM ANALYZE
 # Designed to be called by cron
 
 OPT="/opt/gpu_monitor"
@@ -23,5 +23,16 @@ python manage.py compact_data --verbose >> "$LOG_DIR/cleanup.log" 2>&1 || true
 # Phase 2: Delete data older than retention period
 echo "Cleaning up data older than ${RETENTION_DAYS} days..." >> "$LOG_DIR/cleanup.log"
 python manage.py cleanup_old_data --days="$RETENTION_DAYS" >> "$LOG_DIR/cleanup.log" 2>&1 || true
+
+# Phase 3: VACUUM ANALYZE on metrics tables
+# Reclaims dead tuples and updates planner statistics after bulk DELETEs
+echo "Running VACUUM ANALYZE..." >> "$LOG_DIR/cleanup.log"
+sudo -u postgres psql -d gpu_monitor -c "
+  VACUUM ANALYZE metrics_gpumetric;
+  VACUUM ANALYZE metrics_storagemetric;
+  VACUUM ANALYZE metrics_networkmetric;
+  VACUUM ANALYZE metrics_gpu_process;
+  VACUUM ANALYZE metrics_metricsnapshot;
+" >> "$LOG_DIR/cleanup.log" 2>&1 || true
 
 echo "=== Cleanup complete $(date '+%Y-%m-%d %H:%M:%S') ===" >> "$LOG_DIR/cleanup.log"

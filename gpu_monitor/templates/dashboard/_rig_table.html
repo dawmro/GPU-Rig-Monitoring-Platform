@@ -1,29 +1,29 @@
 {% load gpu_filters %}
 <div class="bg-gray-800 rounded-lg border border-gray-700 overflow-x-auto">
-    <table class="w-full text-sm">
+    <table class="w-full text-xs">
         <thead class="bg-gray-750 text-gray-400 border-b border-gray-700">
             <tr>
-                <th class="text-left px-4 py-3 font-medium">Rig Name</th>
-                <th class="text-left px-4 py-3 font-medium">Status</th>
-                <th class="text-left px-4 py-3 font-medium">Last Seen</th>
-                <th class="text-left px-4 py-3 font-medium">Tags</th>
-                <th class="text-left px-4 py-3 font-medium">GPU</th>
-                <th class="text-left px-4 py-3 font-medium">GPU Temp [°C]</th>
-                <th class="text-left px-4 py-3 font-medium">GPU Util [%]</th>
-                <th class="text-left px-4 py-3 font-medium">GPU Fan [%]</th>
-                <th class="text-left px-4 py-3 font-medium">CPU [%]</th>
-                <th class="text-left px-4 py-3 font-medium">Disk Util [%]</th>
+                <th class="text-left px-3 py-2 font-medium">Rig Name</th>
+                <th class="text-left px-3 py-2 font-medium">Status</th>
+                <th class="text-left px-3 py-2 font-medium">Last Seen</th>
+                <th class="text-left px-3 py-2 font-medium">Tags</th>
+                <th class="text-left px-2 py-2 font-medium">GPU</th>
+                <th class="text-left px-2 py-2 font-medium">GPU Temp [°C]</th>
+                <th class="text-left px-2 py-2 font-medium">GPU Util [%]</th>
+                <th class="text-left px-2 py-2 font-medium">GPU Fan [%]</th>
+                <th class="text-left px-2 py-2 font-medium">CPU [%]</th>
+                <th class="text-left px-2 py-2 font-medium">Disk Util [%]</th>
             </tr>
         </thead>
         <tbody>
             {% for item in rig_data %}
             <tr class="border-b border-gray-700/50 hover:bg-gray-750">
-                <td class="px-4 py-3">
+                <td class="px-3 py-2">
                     <a href="{% url 'dashboard:rig-detail' item.rig.uuid %}"
-                       class="text-blue-400 hover:text-blue-300 font-medium"
+                       class="text-blue-400 hover:text-blue-300 font-medium truncate inline-block max-w-[140px]"
                        title="{{ item.rig.name }}">
                         {% if item.rig.name|length > 16 %}
-                            {{ item.rig.name|slice:":16" }}…
+                            {{ item.rig.name|slice:"16" }}…
                         {% else %}
                             {{ item.rig.name }}
                         {% endif %}
@@ -35,29 +35,29 @@
                     </div>
                     {% endif %}
                 </td>
-                <td class="px-4 py-3">
+                <td class="px-3 py-2">
                     {% if item.rig.status == 'online' %}
-                    <span class="badge-online px-2 py-0.5 rounded text-xs">Online</span>
+                    <span class="badge-online px-1.5 py-0.5 rounded text-xs">Online</span>
                     {% elif item.rig.status == 'stale' %}
-                    <span class="badge-stale px-2 py-0.5 rounded text-xs">Stale</span>
+                    <span class="badge-stale px-1.5 py-0.5 rounded text-xs">Stale</span>
                     {% else %}
-                    <span class="badge-offline px-2 py-0.5 rounded text-xs">Offline</span>
+                    <span class="badge-offline px-1.5 py-0.5 rounded text-xs">Offline</span>
                     {% endif %}
                 </td>
-                <td class="px-4 py-3 text-gray-400">
+                <td class="px-3 py-2 text-gray-400 whitespace-nowrap">
                     {% if item.rig.last_seen %}
-                        {{ item.rig.last_seen|last_seen_short }} ago
+                        {{ item.rig.last_seen|last_seen_short }}
                     {% else %}
                         Never
                     {% endif %}
                 </td>
-                <td class="px-4 py-3">
+                <td class="px-3 py-2">
                     {% for tag in item.rig.tags.all %}
-                    <span class="px-2 py-0.5 rounded text-xs" style="background: {{ tag.color }}22; color: {{ tag.color }}">{{ tag.name }}</span>
+                    <span class="px-1.5 py-0.5 rounded text-xs" style="background: {{ tag.color }}22; color: {{ tag.color }}">{{ tag.name }}</span>
                     {% endfor %}
                 </td>
                 {# GPU Model column: compact multi-GPU display with count #}
-                <td class="px-2 py-3 whitespace-nowrap">
+                <td class="px-2 py-2 whitespace-nowrap">
                     {% if item.snapshot.gpu_count %}
                         <span title="{% for model in item.snapshot.gpu_models_json %}GPU{{ forloop.counter }}: {{ model|default:"Unknown" }}{% if not forloop.last %} | {% endif %}{% endfor %}">
                             {{ item.snapshot|gpu_compact_summary_json }}
@@ -65,7 +65,7 @@
                     {% else %}—{% endif %}
                 </td>
                 {# GPU Temp column: space-separated color-coded values #}
-                <td class="px-2 py-3 whitespace-nowrap">
+                <td class="px-2 py-2 whitespace-nowrap">
                     {% if item.snapshot.gpu_count %}
                         <span title="{% for temp in item.snapshot.gpu_temps_json %}GPU{{ forloop.counter }}: {% if temp != None %}{{ temp|floatformat:1 }}°C{% else %}N/A{% endif %}{% if not forloop.last %} | {% endif %}{% endfor %}">
                             {% gpu_temp_cell_json item.snapshot %}
@@ -73,7 +73,7 @@
                     {% else %}—{% endif %}
                 </td>
                 {# GPU Util column: space-separated color-coded values #}
-                <td class="px-2 py-3 whitespace-nowrap">
+                <td class="px-2 py-2 whitespace-nowrap">
                     {% if item.snapshot.gpu_count %}
                         <span title="{% for util in item.snapshot.gpu_utils_json %}GPU{{ forloop.counter }}: {% if util != None %}{{ util|floatformat:1 }}%{% else %}N/A{% endif %}{% if not forloop.last %} | {% endif %}{% endfor %}">
                             {% gpu_util_cell_json item.snapshot %}
@@ -81,7 +81,7 @@
                     {% else %}—{% endif %}
                 </td>
                 {# GPU Fan Speed column: space-separated color-coded values #}
-                <td class="px-2 py-3 whitespace-nowrap">
+                <td class="px-2 py-2 whitespace-nowrap">
                     {% if item.snapshot.gpu_count %}
                         <span title="{% for fan in item.snapshot.gpu_fans_json %}GPU{{ forloop.counter }}: {% if fan != None %}{{ fan|floatformat:0 }}%{% else %}N/A{% endif %}{% if not forloop.last %} | {% endif %}{% endfor %}">
                             {% gpu_fan_cell_json item.snapshot %}
@@ -89,13 +89,13 @@
                     {% else %}—{% endif %}
                 </td>
                 {# CPU column #}
-                <td class="px-2 py-3 text-gray-400 whitespace-nowrap">
+                <td class="px-2 py-2 text-gray-400 whitespace-nowrap">
                     {% if item.snapshot and item.snapshot.cpu_utilization_pct != None %}
                         {{ item.snapshot.cpu_utilization_pct|floatformat:1 }}
                     {% else %}—{% endif %}
                 </td>
                 {# Disk Util column: max utilization across all disks #}
-                <td class="px-2 py-3 whitespace-nowrap">
+                <td class="px-2 py-2 whitespace-nowrap">
                     {% if item.snapshot.storage_utilization_pcts_json %}
                         {% with max_util=item.snapshot.storage_utilization_pcts_json|max_disk_util %}
                         <span class="{% if max_util >= 80 %}text-red-400{% elif max_util >= 60 %}text-orange-400{% elif max_util >= 40 %}text-yellow-400{% elif max_util >= 20 %}text-green-400{% else %}text-gray-500{% endif %}">

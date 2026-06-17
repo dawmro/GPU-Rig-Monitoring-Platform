@@ -257,7 +257,18 @@ DB_USER=gpu_monitor
 DB_PASSWORD=your-random-password-here
 DB_HOST=127.0.0.1
 DB_PORT=5432
+
+# Optional: uncomment for Gmail SMTP password recovery
+# See Architecture doc §7.5 for setup instructions
+# EMAIL_HOST=smtp.gmail.com
+# EMAIL_PORT=587
+# EMAIL_USE_TLS=true
+# EMAIL_HOST_USER=youragent@gmail.com
+# EMAIL_HOST_PASSWORD=*** efgh ijkl mnop
+# DEFAULT_FROM_EMAIL=noreply@yourdomain.com
 ```
+
+> **Email setup (optional):** For password recovery via Gmail SMTP, see §7.5 in the Architecture doc. Leave `EMAIL_HOST` commented out for development (emails print to console).
 
 ### 4.6 Create an Admin User
 

@@ -256,6 +256,11 @@ class LatestSnapshot(models.Model):
     storage_read_iops_delta_json = models.JSONField(default=list, blank=True)    # [150, 80] IOPS
     storage_write_iops_delta_json = models.JSONField(default=list, blank=True)   # [200, 45] IOPS
     storage_utilization_pcts_json = models.JSONField(default=list, blank=True)   # [45.2, 12.1] %
+    # Disk I/O metrics — cumulative totals since boot (for Total Read/Write display)
+    storage_read_bytes_total_json = models.JSONField(default=list, blank=True)   # [37688539648, 1614605331456] bytes
+    storage_write_bytes_total_json = models.JSONField(default=list, blank=True)  # [156538570752, 1016877289472] bytes
+    storage_read_iops_total_json = models.JSONField(default=list, blank=True)    # [3309393, 43692476] operations
+    storage_write_iops_total_json = models.JSONField(default=list, blank=True)   # [6397960, 15305417] operations
 
     # Network data stored as JSON arrays for fast dashboard access
     # Each array has one entry per network interface, ordered by interface name

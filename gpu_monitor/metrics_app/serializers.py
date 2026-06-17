@@ -322,6 +322,11 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
             storage_read_iops_delta = []
             storage_write_iops_delta = []
             storage_utilization_pcts = []
+            # Cumulative totals since boot (raw counters from agent)
+            storage_read_bytes_total = []
+            storage_write_bytes_total = []
+            storage_read_iops_total = []
+            storage_write_iops_total = []
             for disk in storage_list:
                 device_name = disk.get('device', '')
                 storage_devices.append(device_name)
@@ -338,6 +343,11 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                 storage_read_iops_delta.append(deltas.get('read_iops_delta'))
                 storage_write_iops_delta.append(deltas.get('write_iops_delta'))
                 storage_utilization_pcts.append(deltas.get('utilization_pct'))
+                # Cumulative totals from raw agent payload
+                storage_read_bytes_total.append(disk.get('read_bytes'))
+                storage_write_bytes_total.append(disk.get('write_bytes'))
+                storage_read_iops_total.append(disk.get('read_iops'))
+                storage_write_iops_total.append(disk.get('write_iops'))
 
             # Build network summary data for LatestSnapshot
             network_interfaces = []
@@ -415,6 +425,10 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     'storage_read_iops_delta_json': storage_read_iops_delta,
                     'storage_write_iops_delta_json': storage_write_iops_delta,
                     'storage_utilization_pcts_json': storage_utilization_pcts,
+                    'storage_read_bytes_total_json': storage_read_bytes_total,
+                    'storage_write_bytes_total_json': storage_write_bytes_total,
+                    'storage_read_iops_total_json': storage_read_iops_total,
+                    'storage_write_iops_total_json': storage_write_iops_total,
                     'network_count': len(network_list),
                     'network_interfaces_json': network_interfaces,
                     'network_ipv4s_json': network_ipv4s,

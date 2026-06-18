@@ -357,8 +357,8 @@ debug_mode: false         # Verbose logging
 
 | Agent | File | Version | Schema | Platform | Scheduling |
 |-------|------|---------|--------|----------|------------|
-| Linux | `agent/run.py` | 1.5.9 | 1.7 | Any Linux, VMware NAT | `cron` every 60s with `flock` |
-| Windows | `agent_windows/run.py` | 1.6.10-win | 1.7 | Windows 10/11 | Task Scheduler (1 min) with `pythonw.exe` (hidden window) |
+|| Linux | `agent/run.py` | 1.5.11 | 1.8 | Any Linux, VMware NAT | `cron` every 60s with `flock` |
+|| Windows | `agent_windows/run.py` | 1.6.12-win | 1.8 | Windows 10/11 | Task Scheduler (1 min) with `pythonw.exe` (hidden window) |
 
 **Versioning rules:**
 - `agent_version` (e.g. `1.1.0`): incremented for agent-side changes (collectors, payload format, bug fixes). Format: `MAJOR.MINOR.PATCH`.

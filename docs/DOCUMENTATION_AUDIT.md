@@ -11,7 +11,7 @@
 
 | Document | Size | Status | Notes |
 |---|---|---|---|
-| `GPU_Rig_Monitoring_Architecture.md` | 70KB | ✅ Current | Main architecture reference. v1.8 with disk I/O monitoring, cumulative totals, password recovery, Gmail SMTP, running processes (psutil two-pass). Agent versions: Linux 1.5.10, Windows 1.6.11-win, schema 1.8. |
+| `GPU_Rig_Monitoring_Architecture.md` | 70KB | ✅ Current | Main architecture reference. v1.8 with disk I/O monitoring, cumulative totals, password recovery, Gmail SMTP, running processes (psutil two-pass). Agent versions: Linux 1.5.11, Windows 1.6.12-win, schema 1.8. |
 | `DATA_FLOW_ANALYSIS.md` | 17KB | ✅ Current | Complete payload-to-DB field mapping including disk I/O, GPU clock fields, running processes. |
 | `DATA_RETENTION_PLAN.md` | 8KB | ✅ Current | Retention strategy, compaction, cleanup, VACUUM ANALYZE. |
 | `LOCAL_DEPLOYMENT_GUIDE.md` | 39KB | ✅ Current | Updated with email config, password recovery, log file creation. |

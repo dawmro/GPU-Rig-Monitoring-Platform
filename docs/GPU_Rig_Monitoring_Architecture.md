@@ -136,7 +136,7 @@ Rate limiting design:
 | `metrics_app/views.py` | IngestView, HealthView, ChartDataView, RigMetricsView |
 | `metrics_app/serializers.py` | IngestSerializer, process_ingest() |
 || `metrics_app/models.py` | MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, LatestDockerContainer, LatestSnapshot (with GPU JSON fields), RigStatusEvent |
-| `dashboard/views.py` | rig_list, rig_detail, htmx_metrics, htmx_rig_status, rig_rename |
+| `dashboard/views.py` | index_view (root → dashboard/login redirect), rig_list, rig_detail, htmx_metrics, htmx_rig_status, rig_rename |
 | `dashboard/templatetags/gpu_filters.py` | gpu_model_name, gpu_model_short, gpu_compact_summary_json, gpu_temp_cell_json, gpu_util_cell_json, gpu_fan_cell_json, time_since, last_seen_short filters |
 | `rigs/models.py` | Rig, RigTag |
 | `accounts/authentication.py` | APIKeyAuthentication |

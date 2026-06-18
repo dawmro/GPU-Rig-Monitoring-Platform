@@ -97,8 +97,8 @@ ${CLONE_MINUTE} ${CLONE_HOUR} * * * root bash /opt/gpu_monitor/deploy/data_reten
 EOF
 chmod 644 "$CLEANUP_CRON_FILE"
 # Copy cleanup script
-cp gpu_monitor/deploy/data_retention.sh "$OPT/gpu_monitor/deploy/data_retention.sh"
-chmod +x "$OPT/gpu_monitor/deploy/data_retention.sh"
+cp gpu_monitor/deploy/data_retention.sh /opt/gpu_monitor/deploy/data_retention.sh
+chmod +x /opt/gpu_monitor/deploy/data_retention.sh
 echo "Data cleanup: daily at $(printf '%02d:%02d' $CLONE_HOUR $CLONE_MINUTE)"
 
 echo ""

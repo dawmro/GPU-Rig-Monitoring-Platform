@@ -56,12 +56,26 @@ if [ "$SCRIPT_DIR" != "$APP_DIR" ] && [ -f "$SCRIPT_DIR/manage.py" ]; then
 fi
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 
-# ── Python virtualenv ──────────────────────────────────────────────────────
+# ── Log directory and files ──────────────────────────────────────────────────
 mkdir -p "$APP_DIR/logs"
 chown "$APP_USER:$APP_USER" "$APP_DIR/logs"
+chmod 755 "$APP_DIR/logs"
+
+# Create log files that Django and Gunicorn expect (prevents PermissionError)
+touch "$APP_DIR/logs/app.log"
+touch "$APP_DIR/logs/gunicorn-access.log"
+touch "$APP_DIR/logs/gunicorn-error.log"
+chown "$APP_USER:$APP_USER" "$APP_DIR/logs/app.log"
+chown "$APP_USER:$APP_USER" "$APP_DIR/logs/gunicorn-access.log"
+chown "$APP_USER:$APP_USER" "$APP_DIR/logs/gunicorn-error.log"
+chmod 664 "$APP_DIR/logs/app.log"
+chmod 664 "$APP_DIR/logs/gunicorn-access.log"
+chmod 664 "$APP_DIR/logs/gunicorn-error.log"
+
 mkdir -p "$APP_DIR/staticfiles"
 chown "$APP_USER:$APP_USER" "$APP_DIR/staticfiles"
 
+# ── Python virtualenv ──────────────────────────────────────────────────────
 sudo -u "$APP_USER" bash << 'APP'
 cd /opt/gpu_monitor
 if [ ! -d venv ]; then

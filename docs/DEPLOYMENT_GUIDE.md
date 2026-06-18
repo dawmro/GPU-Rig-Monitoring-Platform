@@ -463,7 +463,29 @@ python manage.py cleanup_old_data --days=0 --verbose
 
 **Permission denied on logs:**
 ```bash
-sudo chown -R qrv:qrv /opt/gpu_monitor/logs/
+# Fix ownership and permissions on the logs directory
+sudo chown -R monitoring:monitoring /opt/gpu_monitor/logs/
+sudo chmod 755 /opt/gpu_monitor/logs/
+sudo chmod 664 /opt/gpu_monitor/logs/*.log
+```
+
+**Django migrate fails with "ValueError: Unable to configure handler 'file'":**
+This happens when the log files don't exist or have wrong permissions against the user running manage.py.
+```bash
+# Create log files with correct ownership and permissions
+sudo -u monitoring bash -c 'touch /opt/gpu_monitor/logs/app.log'
+sudo chown monitoring:monitoring /opt/gpu_monitor/logs/app.log
+sudo chmod 664 /opt/gpu_monitor/logs/app.log
+# Then retry:
+sudo -u monitoring bash -c 'cd /opt/gpu_monitor && source venv/bin/activate && set -a && source .env && set +a && python manage.py migrate'
+```
+
+**Gunicorn fails with "Permission denied" on log files:**
+The `monitoring` user must own all log files. The systemd service runs Gunicorn as `User=monitoring`.
+```bash
+sudo chown -R monitoring:monitoring /opt/gpu_monitor/logs/
+sudo chmod 755 /opt/gpu_monitor/logs/
+sudo chmod 664 /opt/gpu_monitor/logs/*.log
 ```
 
 ### 4.8 Verify the Deployment

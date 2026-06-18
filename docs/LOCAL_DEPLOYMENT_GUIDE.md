@@ -176,6 +176,20 @@ cp -r /home/qrv/workspace/GPU-Rig-Monitoring-Platform/gpu_monitor/* /opt/gpu_mon
 mkdir -p /opt/gpu_monitor/logs
 mkdir -p /opt/gpu_monitor/staticfiles
 
+# Create log files that Django expects (prevents PermissionError on first run)
+touch /opt/gpu_monitor/logs/app.log
+touch /opt/gpu_monitor/logs/gunicorn-access.log
+touch /opt/gpu_monitor/logs/gunicorn-error.log
+
+# Set ownership — the deploy user must own everything
+chown -R "$USER:$USER" /opt/gpu_monitor/logs
+
+# Set permissions
+chmod 755 /opt/gpu_monitor/logs
+chmod 664 /opt/gpu_monitor/logs/app.log
+chmod 664 /opt/gpu_monitor/logs/gunicorn-access.log
+chmod 664 /opt/gpu_monitor/logs/gunicorn-error.log
+
 # Fix permissions — Gunicorn needs to read all files
 # If you later add new template/views files, re-run this:
 chmod -R 644 /opt/gpu_monitor/templates/
@@ -866,8 +880,8 @@ GPU-Rig-Monitoring-Platform/
 |---------|-------|-----|
 | `502 Bad Gateway` | Gunicorn not running | `sudo systemctl restart gunicorn` |
 | `500 Internal Server Error` | Django config error | Check `/opt/gpu_monitor/logs/gunicorn-error.log` |
-| `FileNotFoundError: logs/app.log` | Missing `logs/` directory | `mkdir -p /opt/gpu_monitor/logs` |
-| `ValueError: Dependency on app with no migrations` | Migration files missing | `python manage.py makemigrations accounts rigs metrics_app dashboard audit` then `python manage.py migrate` |
+|| `FileNotFoundError: logs/app.log` or `ValueError: Unable to configure handler 'file'` | Missing log files or wrong permissions | `mkdir -p /opt/gpu_monitor/logs && touch /opt/gpu_monitor/logs/app.log && chown -R $USER:$USER /opt/gpu_monitor/logs && chmod 755 /opt/gpu_monitor/logs && chmod 664 /opt/gpu_monitor/logs/*.log` |
+|| `ValueError: Dependency on app with no migrations` | Migration files missing | `python manage.py makemigrations accounts rigs metrics_app dashboard audit` then `python manage.py migrate` |
 | `psycopg2.OperationalError: password authentication failed` | Wrong DB password | Reset: `sudo -u postgres psql -c "ALTER USER gpu_monitor PASSWORD 'local_dev_password';"` — ensure `.env` matches |
 | `psycopg2.OperationalError: connection refused` | PostgreSQL not running | `sudo systemctl restart postgresql` |
 | `collectstatic` fails | Missing `staticfiles/` dir | `mkdir -p /opt/gpu_monitor/staticfiles` then re-run |

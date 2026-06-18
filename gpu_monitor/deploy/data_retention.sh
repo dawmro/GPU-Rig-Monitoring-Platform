@@ -12,7 +12,13 @@ mkdir -p "$LOG_DIR"
 
 cd "$OPT"
 source venv/bin/activate
-set -a && source .env && set +a
+# Source .env safely — export only KEY=VALUE lines, skip comments and empty lines
+while IFS='=' read -r key value; do
+    [[ "$key" =~ ^[[:space:]]*# ]] && continue
+    [[ -z "$key" ]] && continue
+    key=$(echo "$key" | xargs)
+    export "$key=$value"
+done < .env
 
 echo "=== Data retention cleanup $(date '+%Y-%m-%d %H:%M:%S') ===" >> "$LOG_DIR/cleanup.log"
 

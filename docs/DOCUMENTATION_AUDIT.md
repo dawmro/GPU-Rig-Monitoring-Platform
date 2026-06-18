@@ -1,7 +1,7 @@
 # Documentation Audit Report
 
 **Date:** 2026-06-17
-**Branch:** `feature/vacuum-maintenance`
+**Branch:** `fix/deployment-log-permissions`
 
 ---
 
@@ -11,11 +11,11 @@
 
 | Document | Size | Status | Notes |
 |---|---|---|---|
-|| `GPU_Rig_Monitoring_Architecture.md` | 70KB | ✅ Current | Main architecture reference. v1.8 with disk I/O monitoring, cumulative totals, password recovery, Gmail SMTP, running processes (psutil two-pass). Agent versions: Linux 1.5.10, Windows 1.6.11-win, schema 1.8. |
-|| `DATA_FLOW_ANALYSIS.md` | 17KB | ✅ Current | Complete payload-to-DB field mapping including disk I/O, GPU clock fields, running processes. |
-|| `DATA_RETENTION_PLAN.md` | 8KB | ✅ Current | Retention strategy, compaction, cleanup. Still valid. |
-|| `LOCAL_DEPLOYMENT_GUIDE.md` | 38KB | ✅ Current | Updated with email config and password recovery. |
-|| `DEPLOYMENT_GUIDE.md` | 53KB | ✅ Current | Updated with email config, VACUUM ANALYZE, comprehensive security hardening. |
+| `GPU_Rig_Monitoring_Architecture.md` | 70KB | ✅ Current | Main architecture reference. v1.8 with disk I/O monitoring, cumulative totals, password recovery, Gmail SMTP, running processes (psutil two-pass). Agent versions: Linux 1.5.10, Windows 1.6.11-win, schema 1.8. |
+| `DATA_FLOW_ANALYSIS.md` | 17KB | ✅ Current | Complete payload-to-DB field mapping including disk I/O, GPU clock fields, running processes. |
+| `DATA_RETENTION_PLAN.md` | 8KB | ✅ Current | Retention strategy, compaction, cleanup, VACUUM ANALYZE. |
+| `LOCAL_DEPLOYMENT_GUIDE.md` | 39KB | ✅ Current | Updated with email config, password recovery, log file creation. |
+| `DEPLOYMENT_GUIDE.md` | 54KB | ✅ Current | Updated with email config, VACUUM ANALYZE, comprehensive security hardening, log permission fixes. |
 
 ### ✅ KEEP — Operational Guides
 
@@ -59,9 +59,8 @@ All remaining documentation is accurate and up-to-date.
 
 ## Changes in This Branch
 
-1. **VACUUM ANALYZE maintenance:** Added `VACUUM ANALYZE` step to daily maintenance after compact_data and cleanup_old_data
-2. **New management command:** `daily_maintenance` — runs compact + cleanup + vacuum in one command
-3. **Updated data_retention.sh:** Added VACUUM ANALYZE step for 5 metrics tables
-4. **New documentation:** `VACUUM_ANALYSIS.md` — detailed analysis of VACUUM FULL vs VACUUM ANALYZE
-5. **Updated deployment guide:** Documented VACUUM ANALYZE step, daily_maintenance command, cron job options
-6. **Updated data retention plan:** Documented VACUUM ANALYZE step in wrapper script
+1. **Fixed log file permissions issue:** Added log file creation (`app.log`, `gunicorn-access.log`, `gunicorn-error.log`) with correct ownership and permissions in both install script and deployment docs
+2. **Updated server_install.sh:** Creates log files before running Django migrations to prevent `ValueError: Unable to configure handler 'file'`
+3. **Updated DEPLOYMENT_GUIDE.md:** Added troubleshooting entries for log permission errors, expanded log fix commands
+4. **Updated LOCAL_DEPLOYMENT_GUIDE.md:** Added log file creation step before migrations, updated troubleshooting
+5. **Fixed inconsistent table formatting** in DOCUMENTATION_AUDIT.md

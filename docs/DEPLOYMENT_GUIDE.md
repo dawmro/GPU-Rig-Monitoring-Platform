@@ -301,7 +301,9 @@ The cron job runs `data_retention.sh` which executes three steps:
 2. `cleanup_old_data` — delete data older than 31 days
 3. `VACUUM ANALYZE` — reclaim dead tuples and update planner statistics
 
-Alternatively, you can use the combined `daily_maintenance` command directly:
+> **Note:** `data_retention.sh` is the production maintenance script deployed by the agent install script. There is also a `daily_maintenance` Django management command that does the same thing — **use one or the other, not both**. Running both would compact, clean up, and vacuum twice daily, which is unnecessary load on the database.
+
+**Alternative using the Django management command directly** (not recommended for production — use `data_retention.sh` instead):
 ```bash
 echo '0 3 * * * qrv cd /opt/gpu_monitor && source venv/bin/activate && set -a && source .env && set +a && python manage.py daily_maintenance --verbose >> /var/log/monitoring-agent/cleanup-cron.log 2>&1' | sudo tee /etc/cron.d/monitoring-data-cleanup
 ```
@@ -313,7 +315,7 @@ echo '0 3 * * * qrv cd /opt/gpu_monitor && source venv/bin/activate && set -a &&
 
 #### What It Does
 
-The `data_retention.sh` wrapper runs three steps daily:
+The `data_retention.sh` wrapper runs three steps daily. This is the **production** maintenance script — the agent install script (`agent/install.sh`) deploys it automatically. Do NOT also add `daily_maintenance.sh` to cron — they do the same work and running both would execute maintenance twice daily.
 
 1. **`compact_data`** — Single-phase aggregation of old data:
    - Data > 1 day old → 1-hour buckets (60× reduction)

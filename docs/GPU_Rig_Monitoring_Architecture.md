@@ -747,7 +747,7 @@ DEFAULT_FROM_EMAIL=noreply@yourdomain.com
 
 ```bash
 # Sync code from workspace to /opt
-cd /home/qrv/workspace/GPU-Rig-Monitoring-Platform
+cd $HOME/workspace/GPU-Rig-Monitoring-Platform
 bash scripts/sync_to_opt.sh
 # This: copies files, runs migrations, restarts Gunicorn
 ```

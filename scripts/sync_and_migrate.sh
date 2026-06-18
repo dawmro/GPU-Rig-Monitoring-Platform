@@ -4,7 +4,7 @@
 
 set -e
 
-WORKSPACE="/home/qrv/workspace/GPU-Rig-Monitoring-Platform"
+WORKSPACE="$HOME/workspace/GPU-Rig-Monitoring-Platform"
 OPT="/opt/gpu_monitor"
 
 echo "=== Syncing updated files ==="

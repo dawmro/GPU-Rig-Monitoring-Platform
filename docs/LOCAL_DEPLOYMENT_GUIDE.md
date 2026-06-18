@@ -117,7 +117,7 @@ lsb_release -a       # Ubuntu 22.04 or 24.04
 This guide assumes the project is checked out at:
 
 ```
-/home/qrv/workspace/GPU-Rig-Monitoring-Platform/
+$HOME/workspace/GPU-Rig-Monitoring-Platform/
 ```
 
 If your path is different, adjust all `cp` commands accordingly.
@@ -170,7 +170,7 @@ If you see `?column? | 1`, the database is ready.
 
 ```bash
 # Copy the Django project (adjust path if your checkout is elsewhere)
-cp -r /home/qrv/workspace/GPU-Rig-Monitoring-Platform/gpu_monitor/* /opt/gpu_monitor/
+cp -r $HOME/workspace/GPU-Rig-Monitoring-Platform/gpu_monitor/* /opt/gpu_monitor/
 
 # Create directories Django needs
 mkdir -p /opt/gpu_monitor/logs
@@ -422,7 +422,7 @@ sudo /opt/monitoring-agent/venv/bin/pip install pynvml 2>/dev/null || \
 ### 4.3 Copy Agent Files
 
 ```bash
-sudo cp /home/qrv/workspace/GPU-Rig-Monitoring-Platform/agent/run.py /opt/monitoring-agent/run.py
+sudo cp $HOME/workspace/GPU-Rig-Monitoring-Platform/agent/run.py /opt/monitoring-agent/run.py
 sudo chmod +x /opt/monitoring-agent/run.py
 ```
 

@@ -7,7 +7,7 @@
 #   bash scripts/sync_to_opt.sh --no-migrate # skip makemigrations (faster)
 #   sudo bash scripts/sync_to_opt.sh         # if file ownership needs root
 
-WORKSPACE="/home/qrv/workspace/GPU-Rig-Monitoring-Platform"
+WORKSPACE="$HOME/workspace/GPU-Rig-Monitoring-Platform"
 OPT="/opt"
 
 set -e

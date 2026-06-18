@@ -32,6 +32,7 @@ fi
 # Create directories
 mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$LOG_DIR"
 chown "$SERVICE_USER:$SERVICE_USER" "$LOG_DIR"
+chmod 755 "$LOG_DIR"
 
 # Set up Python virtual environment
 if [ ! -d "$INSTALL_DIR/venv" ]; then

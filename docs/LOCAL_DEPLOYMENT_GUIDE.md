@@ -404,6 +404,7 @@ sudo mkdir -p /opt/monitoring-agent /etc/monitoring-agent /var/log/monitoring-ag
 
 # Log directory must be writable by the agent user
 sudo chown monitoring-agent:monitoring-agent /var/log/monitoring-agent
+sudo chmod 755 /var/log/monitoring-agent
 ```
 
 ### 4.2 Install Agent Dependencies
@@ -899,8 +900,9 @@ GPU-Rig-Monitoring-Platform/
 
 | Problem | Cause | Fix |
 |---------|-------|-----|
-| `PermissionError: config.yaml` | File owned by root | `sudo chown monitoring-agent:monitoring-agent /etc/monitoring-agent/config.yaml` |
-| `AttributeError: module 'logging' has no attribute 'handlers'` | Missing import in `run.py` | Ensure `import logging.handlers` is present after `import logging` |
+|| `PermissionError: config.yaml` | File owned by root | `sudo chown monitoring-agent:monitoring-agent /etc/monitoring-agent/config.yaml` |
+|| `PermissionError: update.log` or `PermissionError: cron.log` | Log directory not writable by agent | `sudo chown -R monitoring-agent:monitoring-agent /var/log/monitoring-agent/ && sudo chmod 755 /var/log/monitoring-agent/` |
+|| `AttributeError: module 'logging' has no attribute 'handlers'` | Missing import in `run.py` | Ensure `import logging.handlers` is present after `import logging` |
 | `401 Unauthorized` | Invalid API key | Regenerate key on dashboard, update `config.yaml` |
 | `Connection refused` | Server not running | `curl -v http://localhost/api/v1/health/` |
 | `SSL: CERTIFICATE_VERIFY_FAILED` | Using HTTPS without cert | Use `http://localhost` for local testing |

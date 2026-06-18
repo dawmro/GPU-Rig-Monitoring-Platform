@@ -471,6 +471,13 @@ sudo chmod 755 /opt/gpu_monitor/logs/
 sudo chmod 664 /opt/gpu_monitor/logs/*.log
 ```
 
+**Agent update check fails with "Permission denied: update.log":**
+The `monitoring-agent` user needs write access to its log directory.
+```bash
+sudo chown -R monitoring-agent:monitoring-agent /var/log/monitoring-agent/
+sudo chmod 755 /var/log/monitoring-agent/
+```
+
 **Django migrate fails with "ValueError: Unable to configure handler 'file'":**
 This happens when the log files don't exist or have wrong permissions against the user running manage.py.
 ```bash

@@ -48,6 +48,7 @@ fi
 # Copy agent files
 cp run.py "$INSTALL_DIR/run.py"
 chmod +x "$INSTALL_DIR/run.py"
+chown "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/run.py"
 
 # Config file
 if [ ! -f "$CONFIG_DIR/config.yaml" ]; then
@@ -86,6 +87,7 @@ chmod 644 "$UPDATE_CRON_FILE"
 # Also copy check_update.py
 cp check_update.py "$INSTALL_DIR/check_update.py"
 chmod +x "$INSTALL_DIR/check_update.py"
+chown "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/check_update.py"
 echo "Auto-update: daily check scheduled at $(printf '%02d:%02d' $HOUR $MINUTE)"
 
 # Data cleanup — random time daily (2-4 AM) to prevent thundering herd

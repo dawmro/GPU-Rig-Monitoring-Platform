@@ -405,6 +405,10 @@ sudo mkdir -p /opt/monitoring-agent /etc/monitoring-agent /var/log/monitoring-ag
 # Log directory must be writable by the agent user
 sudo chown monitoring-agent:monitoring-agent /var/log/monitoring-agent
 sudo chmod 755 /var/log/monitoring-agent
+
+# Install directory must be owned by the agent user
+sudo chown monitoring-agent:monitoring-agent /opt/monitoring-agent
+sudo chmod 755 /opt/monitoring-agent
 ```
 
 ### 4.2 Install Agent Dependencies

@@ -15,7 +15,7 @@
 || `DATA_FLOW_ANALYSIS.md` | 17KB | ✅ Current | Complete payload-to-DB field mapping including disk I/O, GPU clock fields, running processes. |
 || `DATA_RETENTION_PLAN.md` | 8KB | ✅ Current | Retention strategy, compaction, cleanup. Still valid. |
 || `LOCAL_DEPLOYMENT_GUIDE.md` | 38KB | ✅ Current | Updated with email config and password recovery. |
-|| `DEPLOYMENT_GUIDE.md` | 37KB | ✅ Current | Updated with email config. |
+|| `DEPLOYMENT_GUIDE.md` | 53KB | ✅ Current | Updated with email config, VACUUM ANALYZE, comprehensive security hardening. |
 
 ### ✅ KEEP — Operational Guides
 

@@ -141,11 +141,30 @@ done
 
 # ── Step 7: Fix permissions ────────────────────────────────────────
 echo "--- Fixing permissions ---"
+
+# Server-side: Django files owned by deploy/monitoring user
+# (whoever runs the server)
 find "$OPT/gpu_monitor" -name "*.py" -exec chmod 644 {} \;
 find "$OPT/gpu_monitor/templates" -name "*.html" -exec chmod 644 {} \;
 find "$OPT/gpu_monitor" -type d -exec chmod 755 {} \;
 find "$OPT/gpu_monitor/deploy" -name "*.sh" -exec chmod 755 {} \; 2>/dev/null || true
 find "$OPT/gpu_monitor" -name "manage.py" -exec chmod 755 {} \; 2>/dev/null || true
+
+# Agent-side: all files must be readable/executable by monitoring-agent
+if [ -d "$OPT/monitoring-agent" ]; then
+    chown -R monitoring-agent:monitoring-agent "$OPT/monitoring-agent"
+    chmod 755 "$OPT/monitoring-agent"
+    [ -f "$OPT/monitoring-agent/run.py" ] && chmod 755 "$OPT/monitoring-agent/run.py"
+    [ -f "$OPT/monitoring-agent/check_update.py" ] && chmod 755 "$OPT/monitoring-agent/check_update.py"
+    [ -f "$OPT/monitoring-agent/install.sh" ] && chmod 755 "$OPT/monitoring-agent/install.sh"
+fi
+
+# Agent log directory must be writable by monitoring-agent
+if [ -d "/var/log/monitoring-agent" ]; then
+    chown -R monitoring-agent:monitoring-agent /var/log/monitoring-agent/
+    chmod 755 /var/log/monitoring-agent/
+fi
+
 # Clear stale .pyc cache (root-owned from gunicorn) to prevent migration loader issues
 find "$OPT/gpu_monitor" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 

@@ -19,6 +19,9 @@ echo "=== Syncing Linux agent $WORKSPACE/agent -> $OPT/monitoring-agent ---"
 if [ -f "$WORKSPACE/agent/run.py" ]; then
     cp "$WORKSPACE/agent/run.py" "$OPT/monitoring-agent/run.py"
     chmod +x "$OPT/monitoring-agent/run.py"
+    # Ensure monitoring-agent user can read/execute the file
+    [ "$(stat -c %U "$OPT/monitoring-agent/run.py")" != "monitoring-agent" ] && \
+        sudo chown monitoring-agent:monitoring-agent "$OPT/monitoring-agent/run.py"
     echo "  Synced: agent/run.py -> $OPT/monitoring-agent/run.py"
 else
     echo "  ERROR: $WORKSPACE/agent/run.py not found"

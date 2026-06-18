@@ -478,6 +478,15 @@ sudo chown -R monitoring-agent:monitoring-agent /var/log/monitoring-agent/
 sudo chmod 755 /var/log/monitoring-agent/
 ```
 
+**Agent cron job fails with "Permission denied" on run.py or check_update.py:**
+The agent files in `/opt/monitoring-agent/` are owned by root but need to be readable/executable by the `monitoring-agent` user.
+```bash
+sudo chown -R monitoring-agent:monitoring-agent /opt/monitoring-agent/
+sudo chmod 755 /opt/monitoring-agent/
+sudo chmod 755 /opt/monitoring-agent/run.py
+sudo chmod 755 /opt/monitoring-agent/check_update.py
+```
+
 **Django migrate fails with "ValueError: Unable to configure handler 'file'":**
 This happens when the log files don't exist or have wrong permissions against the user running manage.py.
 ```bash
@@ -602,8 +611,9 @@ chmod +x /tmp/agent/install.sh
 | 2 | Creates directories: `/opt/monitoring-agent/`, `/etc/monitoring-agent/`, `/var/log/monitoring-agent/` |
 | 3 | Creates Python virtualenv and installs dependencies |
 | 4 | Copies `run.py` and creates config template |
-| 5 | Configures sudoers for SMART disk queries |
-| 6 | Creates cron job (every 60 seconds, with `flock` to prevent overlaps) |
+| 5 | Sets ownership of all agent files to `monitoring-agent` user |
+| 6 | Configures sudoers for SMART disk queries |
+| 7 | Creates cron job (every 60 seconds, with `flock` to prevent overlaps) |
 
 **Agent permissions (what the agent needs and why):**
 

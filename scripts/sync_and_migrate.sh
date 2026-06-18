@@ -1,10 +1,16 @@
 #!/bin/bash
 # Sync updated files from workspace to /opt/gpu_monitor
 # Run this script as root or with sudo
+#
+# Usage:
+#   sudo bash scripts/sync_and_migrate.sh [USER]
+#   USER defaults to SUDO_USER or LOGNAME
 
 set -e
 
-WORKSPACE="$HOME/workspace/GPU-Rig-Monitoring-Platform"
+# Determine workspace user: argument > SUDO_USER > LOGNAME > current user
+SYNC_USER="${1:-${SUDO_USER:-${LOGNAME:-$(whoami)}}}"
+WORKSPACE="/home/$SYNC_USER/workspace/GPU-Rig-Monitoring-Platform"
 OPT="/opt/gpu_monitor"
 
 echo "=== Syncing updated files ==="

@@ -7,7 +7,7 @@
 # Usage:
 #   sudo bash scripts/sync_agent.sh
 
-WORKSPACE="/home/qrv/workspace/GPU-Rig-Monitoring-Platform"
+WORKSPACE="$HOME/workspace/GPU-Rig-Monitoring-Platform"
 OPT="/opt"
 
 set -e

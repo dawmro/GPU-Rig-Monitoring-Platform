@@ -7,7 +7,7 @@
 #   bash scripts/sync_to_opt.sh --no-migrate # skip makemigrations (faster)
 #   sudo bash scripts/sync_to_opt.sh         # if file ownership needs root
 
-WORKSPACE="/home/qrv/workspace/GPU-Rig-Monitoring-Platform"
+WORKSPACE="$HOME/workspace/GPU-Rig-Monitoring-Platform"
 OPT="/opt"
 
 set -e
@@ -123,7 +123,16 @@ find "$OPT/gpu_monitor" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/nul
 # After generating, copy new migration files BACK to workspace for git tracking.
 cd "$OPT/gpu_monitor"
 source venv/bin/activate
-set -a && source .env && set +a
+# Source .env safely — export only KEY=VALUE lines, skip comments and empty lines
+while IFS='=' read -r key value; do
+    # Skip comments and empty lines
+    [[ "$key" =~ ^[[:space:]]*# ]] && continue
+    [[ -z "$key" ]] && continue
+    # Remove leading/trailing whitespace from key
+    key=$(echo "$key" | xargs)
+    # Export the variable
+    export "$key=$value"
+done < .env
 
 if [[ "$1" != "--no-migrate" ]]; then
     echo "--- Checking for model changes ---"

@@ -499,6 +499,15 @@ sudo -u postgres psql -d gpu_monitor -c "SELECT 1"
 
 # Health endpoint returns healthy?
 curl -s https://monitor.example.com/api/v1/health/ | python3 -m json.tool
+
+# Root URL redirects to login (unauthenticated)?
+curl -s -o /dev/null -w "%{http_code} %{redirect_url}\n" https://monitor.example.com/
+# Expected: 302 https://monitor.example.com/accounts/login/
+
+# Root URL redirects to dashboard (authenticated)?
+# Log in via browser first, then:
+curl -s -o /dev/null -w "%{http_code} %{redirect_url}\n" https://monitor.example.com/ --cookie "sessionid=YOUR_SESSION_COOKIE"
+# Expected: 302 https://monitor.example.com/dashboard/rigs/
 ```
 
 Expected health response:
@@ -518,8 +527,14 @@ Expected health response:
 Open your browser and navigate to:
 
 ```
-https://monitor.example.com/accounts/login/
+https://monitor.example.com/
 ```
+
+The root URL (`/`) automatically redirects:
+- **Authenticated users** → `/dashboard/rigs/` (fleet overview)
+- **Unauthenticated users** → `/accounts/login/` (login page)
+
+You can also navigate directly to `/accounts/login/`.
 
 Log in with the admin credentials from Step 4.6. You should see the fleet overview page with no rigs yet.
 

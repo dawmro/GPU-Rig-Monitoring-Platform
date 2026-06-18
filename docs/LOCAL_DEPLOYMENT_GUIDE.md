@@ -7,7 +7,7 @@ This guide walks through deploying the complete GPU Rig Monitoring Platform on a
 
 By the end you will have:
 
-- A **Django dashboard** accessible at `http://localhost/` showing real-time rig telemetry
+- A **Django dashboard** accessible at `http://localhost/` showing real-time rig telemetry (root URL redirects to dashboard or login)
 - A **monitoring agent** running via cron that collects hardware metrics and sends them to the server
 - Live updating metrics with HTMX-powered 30-second polling
 
@@ -556,8 +556,13 @@ Expected:
 
 ### 5.2 Log Into the Dashboard
 
-1. Open your browser: **http://localhost/accounts/login/**
-2. Log in with the superuser credentials from Step 3.5
+1. Open your browser: **http://localhost/**
+2. The root URL (`/`) automatically redirects:
+   - **Authenticated users** → `/dashboard/rigs/` (fleet overview)
+   - **Unauthenticated users** → `/accounts/login/` (login page)
+3. Log in with the superuser credentials from Step 3.5
+
+You can also navigate directly to `/accounts/login/` if preferred.
 
 ### 5.3 Create an API Key
 

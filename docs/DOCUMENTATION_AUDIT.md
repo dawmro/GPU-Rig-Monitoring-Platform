@@ -1,7 +1,7 @@
 # Documentation Audit Report
 
 **Date:** 2026-06-17
-**Branch:** `fix/deployment-log-permissions`
+**Branch:** `fix/root-url-landing-page`
 
 ---
 

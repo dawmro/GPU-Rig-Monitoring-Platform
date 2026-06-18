@@ -12,6 +12,17 @@ from metrics_app.models import MetricSnapshot, LatestSnapshot, GPUMetric, GPUPro
 from audit.middleware import log_audit_event
 
 
+def index_view(request):
+    """Root URL landing page.
+
+    Authenticated users are redirected to the dashboard (rig list).
+    Unauthenticated users are redirected to the login page.
+    """
+    if request.user.is_authenticated:
+        return redirect('dashboard:rig-list')
+    return redirect('accounts:login')
+
+
 def rate_limit(max_requests, window_s):
     """Simple per-user/IP rate limit decorator for Django views.
 

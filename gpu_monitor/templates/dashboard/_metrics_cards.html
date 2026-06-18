@@ -211,7 +211,7 @@
                     <span class="text-gray-500">GPU{{ gpu.gpu_index }}</span> {{ gpu.model|default:"Unknown GPU" }}
                 </span>
                 {% if gpu.gpu_uuid %}
-                <span class="text-xs text-gray-600 font-mono" title="{{ gpu.gpu_uuid }}">{{ gpu.gpu_uuid|truncatechars:12 }}</span>
+                <span class="text-[10px] text-gray-500 font-mono break-all" title="{{ gpu.gpu_uuid }}">{{ gpu.gpu_uuid }}</span>
                 {% endif %}
             </div>
             <div class="flex items-center gap-3 mb-1">

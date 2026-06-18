@@ -3,12 +3,43 @@
 # Safe to run repeatedly — never touches .env, venv, logs, or user data
 #
 # Usage:
-#   bash scripts/sync_to_opt.sh              # full sync (default)
-#   bash scripts/sync_to_opt.sh --no-migrate # skip makemigrations (faster)
-#   sudo bash scripts/sync_to_opt.sh         # if file ownership needs root
+#   bash scripts/sync_to_opt.sh                    # full sync (default)
+#   bash scripts/sync_to_opt.sh --no-migrate       # skip makemigrations (faster)
+#   sudo bash scripts/sync_to_opt.sh [USER]        # if file ownership needs root
+#                                                   # USER defaults to SUDO_USER or LOGNAME
 
-WORKSPACE="$HOME/workspace/GPU-Rig-Monitoring-Platform"
 OPT="/opt"
+
+# Parse options
+NO_MIGRATE=false
+SYNC_USER=""
+
+for arg in "$@"; do
+    case "$arg" in
+        --no-migrate)
+            NO_MIGRATE=true
+            ;;
+        --help|-h)
+            sed -n '2,10p' "$0" | sed 's/^# \?//'
+            exit 0
+            ;;
+        -*)
+            echo "Unknown option: $arg" >&2
+            exit 1
+            ;;
+        *)
+            # Positional argument = username
+            SYNC_USER="$arg"
+            ;;
+    esac
+done
+
+# Determine workspace user: argument > SUDO_USER > LOGNAME > current user
+if [ -z "$SYNC_USER" ]; then
+    SYNC_USER="${SUDO_USER:-${LOGNAME:-$(whoami)}}"
+fi
+
+WORKSPACE="/home/$SYNC_USER/workspace/GPU-Rig-Monitoring-Platform"
 
 set -e
 echo "=== Syncing $WORKSPACE -> $OPT ==="
@@ -134,7 +165,7 @@ while IFS='=' read -r key value; do
     export "$key=$value"
 done < .env
 
-if [[ "$1" != "--no-migrate" ]]; then
+if [[ "$NO_MIGRATE" == "false" ]]; then
     echo "--- Checking for model changes ---"
     if python manage.py makemigrations --check 2>/dev/null; then
         echo "  No model changes — migrations up to date"

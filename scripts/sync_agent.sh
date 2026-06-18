@@ -5,9 +5,12 @@
 # and ensures the payload.json log directory exists.
 #
 # Usage:
-#   sudo bash scripts/sync_agent.sh
+#   sudo bash scripts/sync_agent.sh [USER]
+#   USER defaults to SUDO_USER or LOGNAME
 
-WORKSPACE="$HOME/workspace/GPU-Rig-Monitoring-Platform"
+# Determine workspace user: argument > SUDO_USER > LOGNAME > current user
+SYNC_USER="${1:-${SUDO_USER:-${LOGNAME:-$(whoami)}}}"
+WORKSPACE="/home/$SYNC_USER/workspace/GPU-Rig-Monitoring-Platform"
 OPT="/opt"
 
 set -e

@@ -53,7 +53,7 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.6.12-win'
+__version__ = '1.6.13-win'
 __schema_version__ = '1.8'
 
 # ── Config ──────────────────────────────────────────────────────────────────
@@ -700,9 +700,17 @@ def collect_gpus():
             except Exception as e:
                 logging.getLogger('gpu').debug('GPU %d clock info not available: %s', i, e)
 
+            # pynvml returns bytes for uuid and name in Python 3; decode them
+            raw_uuid = pynvml.nvmlDeviceGetUUID(handle)
+            if isinstance(raw_uuid, bytes):
+                raw_uuid = raw_uuid.decode('utf-8')
+            raw_name = pynvml.nvmlDeviceGetName(handle)
+            if isinstance(raw_name, bytes):
+                raw_name = raw_name.decode('utf-8')
+
             gpus.append({
-                'uuid': pynvml.nvmlDeviceGetUUID(handle),
-                'model': pynvml.nvmlDeviceGetName(handle),
+                'uuid': raw_uuid,
+                'model': raw_name,
                 'mem_total_mb': info.total // (1024 * 1024),
                 'mem_used_mb': info.used // (1024 * 1024),
                 'mem_free_mb': info.free // (1024 * 1024),

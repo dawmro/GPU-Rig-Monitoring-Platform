@@ -693,8 +693,26 @@ def collect_top_processes(limit=20):
         # Pass 1: collect info + establish CPU baseline
         for p in psutil.process_iter(['pid', 'name', 'memory_percent', 'username', 'cmdline']):
             info = p.info
+            # Ensure all string fields are actually str, not bytes
             cmdline = info.get('cmdline')
-            info['cmdline'] = ' '.join(cmdline)[:200] if cmdline else ''
+            if cmdline:
+                # psutil may return bytes elements; decode them
+                cmdline_parts = []
+                for part in cmdline:
+                    if isinstance(part, bytes):
+                        part = part.decode('utf-8', errors='replace')
+                    cmdline_parts.append(part)
+                info['cmdline'] = ' '.join(cmdline_parts)[:200]
+            else:
+                info['cmdline'] = ''
+            # Ensure name is str too
+            name = info.get('name')
+            if isinstance(name, bytes):
+                info['name'] = name.decode('utf-8', errors='replace')
+            # Ensure username is str
+            username = info.get('username')
+            if isinstance(username, bytes):
+                info['username'] = username.decode('utf-8', errors='replace')
             info['mem_pct'] = info.get('memory_percent', 0.0)
             info['cpu_pct'] = 0.0
             info['status'] = ''
@@ -827,7 +845,7 @@ def send_payload(config, payload):
     import time
     import random
 
-    data = json.dumps(payload).encode('utf-8')
+    data = json.dumps(payload, default=str).encode('utf-8')
     headers = {
         'Content-Type': 'application/json',
         'X-API-Key': config['api_key'],

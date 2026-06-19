@@ -226,7 +226,7 @@
                 {% endif %}
             </div>
             {% if error_history %}
-            <div class="space-y-2 max-h-[600px] overflow-y-auto">
+            <div class="space-y-2 overflow-y-auto" style="max-height: calc(100vh - 250px);">
                 {% for err in error_history reversed %}
                 <div class="py-2 border-b border-gray-700/50 last:border-0">
                     <div class="flex items-center gap-2 mb-1">

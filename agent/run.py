@@ -44,7 +44,7 @@ import yaml
 import requests
 
 __version__ = '1.5.13'
-__schema_version__ = '1.8'
+__schema_version__ = '1.9'
 
 # ── Config ──────────────────────────────────────────────────────────────────
 

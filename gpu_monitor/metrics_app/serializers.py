@@ -1,6 +1,6 @@
 import logging
 from rest_framework import serializers, status
-from django.db import transaction
+from django.db import transaction, connection
 from django.utils import timezone
 from django.core.cache import cache
 from .models import MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, LatestDockerContainer, LatestSnapshot, RigStatusEvent
@@ -77,8 +77,15 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                 'uptime_s': software_data.get('uptime_s'),
                 'error_count': len(real_errors),
             }
-            # Only add cpu_freq fields if the model has them (migration applied)
-            if hasattr(MetricSnapshot, 'cpu_freq_current_mhz'):
+            # Only add cpu_freq fields if the DB column exists (migration applied)
+            # Check via connection.introspection, not hasattr (which returns True
+            # as soon as the model field is defined in Python, even before migration)
+            existing_cols = {
+                c.name for c in connection.introspection.get_table_description(
+                    connection.cursor(), 'metrics_metricsnapshot'
+                )
+            }
+            if 'cpu_freq_current_mhz' in existing_cols:
                 defaults['cpu_freq_current_mhz'] = cpu.get('freq', {}).get('current_mhz') if cpu.get('freq') else None
                 defaults['cpu_freq_min_mhz'] = cpu.get('freq', {}).get('min_mhz') if cpu.get('freq') else None
                 defaults['cpu_freq_max_mhz'] = cpu.get('freq', {}).get('max_mhz') if cpu.get('freq') else None
@@ -384,67 +391,74 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                 'cpu_model': cpu.get('model', ''),
                 'cpu_physical_cores': cpu.get('physical_cores'),
                 'cpu_logical_cores': cpu.get('logical_cores'),
-                    'mem_free_bytes': memory.get('free_bytes'),
-                    'mem_cached_bytes': memory.get('cached_bytes'),
-                    'swap_used_bytes': memory.get('swap_used_bytes'),
-                    # Memory static (updated in-place — can change on RAM upgrade)
-                    'mem_total_bytes': memory.get('total_bytes'),
-                    'swap_total_bytes': memory.get('swap_total_bytes'),
-                    # Motherboard (updated in-place — can change on mobo swap)
-                    'motherboard_json': motherboard_data,
-                    # Software (updated in-place — can change on OS/driver update)
-                    'software_json': software_data,
-                    'agent_version': validated.get('agent_version', '1.0.0'),
-                    # GPU
-                    'gpu_count': len(gpu_list),
-                    'gpu_uuids_json': gpu_uuids,
-                    'gpu_models_json': gpu_models,
-                    'gpu_temps_json': gpu_temps,
-                    'gpu_utils_json': gpu_utils,
-                    'gpu_fans_json': gpu_fans,
-                    'gpu_core_clocks_json': gpu_core_clocks,
-                    'gpu_mem_clocks_json': gpu_mem_clocks,
-                    'gpu_mem_used_json': gpu_mem_used,
-                    'gpu_mem_total_json': gpu_mem_total,
-                    'gpu_mem_util_pcts_json': gpu_mem_util_pcts,
-                    'gpu_mem_free_json': gpu_mem_free,
-                    'gpu_power_draws_json': gpu_power_draws,
-                    'gpu_power_limits_json': gpu_power_limits,
-                    'gpu_pcie_gen_json': gpu_pcie_gen,
-                    'gpu_pcie_max_gen_json': gpu_pcie_max_gen,
-                    'gpu_pcie_width_json': gpu_pcie_width,
-                    'gpu_pcie_max_width_json': gpu_pcie_max_width,
-                    'storage_count': len(storage_list),
-                    'storage_devices_json': storage_devices,
-                    'storage_fstypes_json': storage_fstypes,
-                    'storage_mountpoints_json': storage_mountpoints,
-                    'storage_capacities_json': storage_capacities,
-                    'storage_usage_pcts_json': storage_usage_pcts,
-                    'storage_temps_json': storage_temps,
-                    'storage_smart_json': storage_smart,
-                    'storage_read_bytes_delta_json': storage_read_bytes_delta,
-                    'storage_write_bytes_delta_json': storage_write_bytes_delta,
-                    'storage_read_iops_delta_json': storage_read_iops_delta,
-                    'storage_write_iops_delta_json': storage_write_iops_delta,
-                    'storage_utilization_pcts_json': storage_utilization_pcts,
-                    'storage_read_bytes_total_json': storage_read_bytes_total,
-                    'storage_write_bytes_total_json': storage_write_bytes_total,
-                    'storage_read_iops_total_json': storage_read_iops_total,
-                    'storage_write_iops_total_json': storage_write_iops_total,
-                    'network_count': len(network_list),
-                    'network_interfaces_json': network_interfaces,
-                    'network_ipv4s_json': network_ipv4s,
-                    'network_speeds_json': network_speeds,
-                    'network_rx_bytes_json': network_rx_bytes,
-                    'network_tx_bytes_json': network_tx_bytes,
-                    'network_rx_errors_json': network_rx_errors,
-                    'network_tx_errors_json': network_tx_errors,
-                    'top_cpu_processes_json': top_processes.get('by_cpu', []) if top_processes else [],
-                    'top_mem_processes_json': top_processes.get('by_mem', []) if top_processes else [],
-                    'process_count': top_processes.get('total_count', 0) if top_processes else 0,
+                # Memory dynamic
+                'mem_used_bytes': memory.get('used_bytes'),
+                'mem_free_bytes': memory.get('free_bytes'),
+                'mem_cached_bytes': memory.get('cached_bytes'),
+                'swap_used_bytes': memory.get('swap_used_bytes'),
+                # Memory static (updated in-place — can change on RAM upgrade)
+                'mem_total_bytes': memory.get('total_bytes'),
+                'swap_total_bytes': memory.get('swap_total_bytes'),
+                # Motherboard (updated in-place — can change on mobo swap)
+                'motherboard_json': motherboard_data,
+                # Software (updated in-place — can change on OS/driver update)
+                'software_json': software_data,
+                'agent_version': validated.get('agent_version', '1.0.0'),
+                # GPU
+                'gpu_count': len(gpu_list),
+                'gpu_uuids_json': gpu_uuids,
+                'gpu_models_json': gpu_models,
+                'gpu_temps_json': gpu_temps,
+                'gpu_utils_json': gpu_utils,
+                'gpu_fans_json': gpu_fans,
+                'gpu_core_clocks_json': gpu_core_clocks,
+                'gpu_mem_clocks_json': gpu_mem_clocks,
+                'gpu_mem_used_json': gpu_mem_used,
+                'gpu_mem_total_json': gpu_mem_total,
+                'gpu_mem_util_pcts_json': gpu_mem_util_pcts,
+                'gpu_mem_free_json': gpu_mem_free,
+                'gpu_power_draws_json': gpu_power_draws,
+                'gpu_power_limits_json': gpu_power_limits,
+                'gpu_pcie_gen_json': gpu_pcie_gen,
+                'gpu_pcie_max_gen_json': gpu_pcie_max_gen,
+                'gpu_pcie_width_json': gpu_pcie_width,
+                'gpu_pcie_max_width_json': gpu_pcie_max_width,
+                'storage_count': len(storage_list),
+                'storage_devices_json': storage_devices,
+                'storage_fstypes_json': storage_fstypes,
+                'storage_mountpoints_json': storage_mountpoints,
+                'storage_capacities_json': storage_capacities,
+                'storage_usage_pcts_json': storage_usage_pcts,
+                'storage_temps_json': storage_temps,
+                'storage_smart_json': storage_smart,
+                'storage_read_bytes_delta_json': storage_read_bytes_delta,
+                'storage_write_bytes_delta_json': storage_write_bytes_delta,
+                'storage_read_iops_delta_json': storage_read_iops_delta,
+                'storage_write_iops_delta_json': storage_write_iops_delta,
+                'storage_utilization_pcts_json': storage_utilization_pcts,
+                'storage_read_bytes_total_json': storage_read_bytes_total,
+                'storage_write_bytes_total_json': storage_write_bytes_total,
+                'storage_read_iops_total_json': storage_read_iops_total,
+                'storage_write_iops_total_json': storage_write_iops_total,
+                'network_count': len(network_list),
+                'network_interfaces_json': network_interfaces,
+                'network_ipv4s_json': network_ipv4s,
+                'network_speeds_json': network_speeds,
+                'network_rx_bytes_json': network_rx_bytes,
+                'network_tx_bytes_json': network_tx_bytes,
+                'network_rx_errors_json': network_rx_errors,
+                'network_tx_errors_json': network_tx_errors,
+                'top_cpu_processes_json': top_processes.get('by_cpu', []) if top_processes else [],
+                'top_mem_processes_json': top_processes.get('by_mem', []) if top_processes else [],
+                'process_count': top_processes.get('total_count', 0) if top_processes else 0,
             }
-            # Only add cpu_freq fields if the model has them (migration applied)
-            if hasattr(LatestSnapshot, 'cpu_freq_current_mhz'):
+            # Only add cpu_freq fields if the DB column exists (migration applied)
+            existing_ls_cols = {
+                c.name for c in connection.introspection.get_table_description(
+                    connection.cursor(), 'metrics_latestsnapshot'
+                )
+            }
+            if 'cpu_freq_current_mhz' in existing_ls_cols:
                 ls_defaults['cpu_freq_current_mhz'] = cpu.get('freq', {}).get('current_mhz') if cpu.get('freq') else None
                 ls_defaults['cpu_freq_min_mhz'] = cpu.get('freq', {}).get('min_mhz') if cpu.get('freq') else None
                 ls_defaults['cpu_freq_max_mhz'] = cpu.get('freq', {}).get('max_mhz') if cpu.get('freq') else None

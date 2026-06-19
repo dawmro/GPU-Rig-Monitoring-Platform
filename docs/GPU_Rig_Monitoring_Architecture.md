@@ -621,7 +621,7 @@ Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the age
 ||| `metrics_storagemetric` | metrics_app | Per-disk metrics (capacity, usage%, temp, SMART health, read/write bytes, read/write IOPS, busy_time_ms, utilization%; FK to snapshot) |
 ||| `metrics_networkmetric` | metrics_app | Per-interface metrics (rx/tx bytes, rx/tx deltas, speed, errors) |
 ||| `metrics_latest_docker_container` | metrics_app | Latest container snapshot (name, container_id, image, status, created, status_text; for Live Metrics) |
-|||| `metrics_latestsnapshot` | metrics_app | Denormalized latest snapshot per rig (fast dashboard loading). Single row per rig, updated every heartbeat. Stores all display data: cpu_model, cpu_physical_cores, cpu_logical_cores, cpu_utilization_pct, cpu_temp_c, cpu_load_avg_json, cpu_freq_current_mhz, cpu_freq_min_mhz, cpu_freq_max_mhz, mem_total_bytes, mem_used_bytes, mem_free_bytes, mem_cached_bytes, swap_total_bytes, swap_used_bytes, uptime_s, motherboard_json, software_json, agent_version, 17 GPU JSON arrays, 11 storage JSON arrays, 7 network JSON arrays, 3 process fields (top_cpu_processes_json, top_mem_processes_json, process_count). Total: ~62 fields. |
+|||| `metrics_latest_snapshot` | metrics_app | Denormalized latest snapshot per rig (fast dashboard loading). Single row per rig, updated every heartbeat. Stores all display data: cpu_model, cpu_physical_cores, cpu_logical_cores, cpu_utilization_pct, cpu_temp_c, cpu_load_avg_json, cpu_freq_current_mhz, cpu_freq_min_mhz, cpu_freq_max_mhz, mem_total_bytes, mem_used_bytes, mem_free_bytes, mem_cached_bytes, swap_total_bytes, swap_used_bytes, uptime_s, motherboard_json, software_json, agent_version, 17 GPU JSON arrays, 11 storage JSON arrays, 7 network JSON arrays, 3 process fields (top_cpu_processes_json, top_mem_processes_json, process_count). Total: ~62 fields. |
 || `metrics_rig_status_event` | metrics_app | Rig status transition log (online/stale/offline with timestamps) |
 || `audit_auditlog` | audit | Immutable audit trail |
 
@@ -918,7 +918,7 @@ Each ingest performs multiple database operations:
 || `metrics_storagemetric` | UPSERT | Per-disk metrics |
 || `metrics_networkmetric` | UPSERT | Per-interface metrics |
 || `metrics_latest_docker_container` | DELETE+INSERT | Latest container snapshot (image, status, created, status_text) |
-|| `metrics_latestsnapshot` | UPSERT | Denormalized display cache (CPU, memory, motherboard, software, GPU/storage/network JSON arrays) |
+||| `metrics_latest_snapshot` | UPSERT | Denormalized display cache (CPU, memory, motherboard, software, GPU/storage/network JSON arrays) |
 || `rig_status_event` | INSERT (conditional) | Only on status transitions |
 || **Total** | **~15-50 writes** | Depending on GPU/disk/container count |
 

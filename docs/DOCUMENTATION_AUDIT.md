@@ -1,7 +1,7 @@
 # Documentation Audit Report
 
 **Date:** 2026-06-17
-**Branch:** `fix/root-url-landing-page`
+**Branch:** `feature/cpu-frequency`
 
 ---
 

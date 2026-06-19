@@ -161,6 +161,9 @@ class RigMetricsView(APIView):
                 'timestamp': snapshot.timestamp.isoformat() if snapshot.timestamp else None,
                 'cpu_utilization_pct': snapshot.cpu_utilization_pct,
                 'cpu_temp_c': snapshot.cpu_temp_c,
+                'cpu_freq_current_mhz': snapshot.cpu_freq_current_mhz,
+                'cpu_freq_min_mhz': snapshot.cpu_freq_min_mhz,
+                'cpu_freq_max_mhz': snapshot.cpu_freq_max_mhz,
                 'mem_used_bytes': snapshot.mem_used_bytes,
                 'mem_total_bytes': snapshot.mem_total_bytes,
             }
@@ -179,7 +182,7 @@ class ChartDataView(APIView):
     authentication_classes = [SessionAuthentication]
 
     SNAPSHOT_METRICS = {
-        'cpu_utilization_pct', 'cpu_temp_c',
+        'cpu_utilization_pct', 'cpu_temp_c', 'cpu_freq_current_mhz',
         'mem_total_bytes', 'mem_used_bytes', 'mem_free_bytes', 'mem_cached_bytes',
         'swap_used_bytes', 'swap_total_bytes',
     }

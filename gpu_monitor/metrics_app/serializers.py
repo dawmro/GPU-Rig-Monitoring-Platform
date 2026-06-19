@@ -21,7 +21,7 @@ class IngestSerializer(serializers.Serializer):
     errors = serializers.ListField(required=False, default=list)
 
     def validate_schema_version(self, value):
-        if value not in ('1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8'):
+        if value not in ('1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8', '1.9'):
             raise serializers.ValidationError(f"Unsupported schema_version: {value}")
         return value
 
@@ -62,24 +62,31 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
     try:
         with transaction.atomic():
             # Upsert metric snapshot with idempotency
+            # Build defaults dict, only including model fields that exist
+            # (graceful handling when migration hasn't been applied yet)
+            defaults = {
+                'cpu_utilization_pct': cpu.get('utilization_pct'),
+                'cpu_temp_c': cpu.get('temp_c'),
+                'cpu_load_avg_json': cpu.get('load_avg', []),
+                'mem_total_bytes': memory.get('total_bytes'),
+                'mem_used_bytes': memory.get('used_bytes'),
+                'mem_free_bytes': memory.get('free_bytes'),
+                'mem_cached_bytes': memory.get('cached_bytes'),
+                'swap_used_bytes': memory.get('swap_used_bytes'),
+                'swap_total_bytes': memory.get('swap_total_bytes'),
+                'uptime_s': software_data.get('uptime_s'),
+                'error_count': len(real_errors),
+            }
+            # Only add cpu_freq fields if the model has them (migration applied)
+            if hasattr(MetricSnapshot, 'cpu_freq_current_mhz'):
+                defaults['cpu_freq_current_mhz'] = cpu.get('freq', {}).get('current_mhz') if cpu.get('freq') else None
+                defaults['cpu_freq_min_mhz'] = cpu.get('freq', {}).get('min_mhz') if cpu.get('freq') else None
+                defaults['cpu_freq_max_mhz'] = cpu.get('freq', {}).get('max_mhz') if cpu.get('freq') else None
             snapshot, created = MetricSnapshot.objects.update_or_create(
                 rig_uuid=rig_uuid,
                 schema_version=schema_version,
                 timestamp=ts,
-                defaults={
-                    'cpu_utilization_pct': cpu.get('utilization_pct'),
-                    'cpu_temp_c': cpu.get('temp_c'),
-                    'cpu_load_avg_json': cpu.get('load_avg', []),
-                    'mem_total_bytes': memory.get('total_bytes'),
-                    'mem_used_bytes': memory.get('used_bytes'),
-                    'mem_free_bytes': memory.get('free_bytes'),
-                    'mem_cached_bytes': memory.get('cached_bytes'),
-                    'swap_used_bytes': memory.get('swap_used_bytes'),
-                    'swap_total_bytes': memory.get('swap_total_bytes'),
-                    'status': rig.status if rig else None,
-                    'uptime_s': software_data.get('uptime_s'),
-                    'error_count': len(real_errors),
-                },
+                defaults=defaults,
             )
 
             # Store per-GPU metrics (with uuid, model, mem_total — all per-row for tracking)
@@ -368,21 +375,15 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                 network_tx_errors.append(iface.get('tx_errors', 0))
 
             # Update latest snapshot (denormalized)
-            LatestSnapshot.objects.update_or_create(
-                rig_uuid=rig_uuid,
-                defaults={
-                    'schema_version': schema_version,
-                    'timestamp': ts,
-                    # CPU dynamic
-                    'cpu_utilization_pct': cpu.get('utilization_pct'),
-                    'cpu_temp_c': cpu.get('temp_c'),
-                    'cpu_load_avg_json': cpu.get('load_avg', []),
-                    # CPU static (updated in-place — can change on CPU swap)
-                    'cpu_model': cpu.get('model', ''),
-                    'cpu_physical_cores': cpu.get('physical_cores'),
-                    'cpu_logical_cores': cpu.get('logical_cores'),
-                    # Memory dynamic
-                    'mem_used_bytes': memory.get('used_bytes'),
+            ls_defaults = {
+                'schema_version': schema_version,
+                'timestamp': ts,
+                'cpu_utilization_pct': cpu.get('utilization_pct'),
+                'cpu_temp_c': cpu.get('temp_c'),
+                'cpu_load_avg_json': cpu.get('load_avg', []),
+                'cpu_model': cpu.get('model', ''),
+                'cpu_physical_cores': cpu.get('physical_cores'),
+                'cpu_logical_cores': cpu.get('logical_cores'),
                     'mem_free_bytes': memory.get('free_bytes'),
                     'mem_cached_bytes': memory.get('cached_bytes'),
                     'swap_used_bytes': memory.get('swap_used_bytes'),
@@ -441,7 +442,15 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     'top_cpu_processes_json': top_processes.get('by_cpu', []) if top_processes else [],
                     'top_mem_processes_json': top_processes.get('by_mem', []) if top_processes else [],
                     'process_count': top_processes.get('total_count', 0) if top_processes else 0,
-                },
+            }
+            # Only add cpu_freq fields if the model has them (migration applied)
+            if hasattr(LatestSnapshot, 'cpu_freq_current_mhz'):
+                ls_defaults['cpu_freq_current_mhz'] = cpu.get('freq', {}).get('current_mhz') if cpu.get('freq') else None
+                ls_defaults['cpu_freq_min_mhz'] = cpu.get('freq', {}).get('min_mhz') if cpu.get('freq') else None
+                ls_defaults['cpu_freq_max_mhz'] = cpu.get('freq', {}).get('max_mhz') if cpu.get('freq') else None
+            LatestSnapshot.objects.update_or_create(
+                rig_uuid=rig_uuid,
+                defaults=ls_defaults,
             )
             # Invalidate cached snapshot so next read gets fresh data
             cache.delete(f'lsnap_{rig_uuid}')

@@ -120,21 +120,23 @@ if [ -f "$WORKSPACE/agent_windows/check_update.py" ]; then
     echo "  Synced: agent_windows/check_update.py"
 fi
 
-# ── Step 6: Copy deploy scripts (always sync — content may change) ─────
-echo "--- Deploy scripts ---"
+# ── Step 6: Copy deploy files (always sync — content may change) ─────
+echo "--- Deploy files ---"
 mkdir -p "$OPT/gpu_monitor/deploy"
-for script in "$WORKSPACE/gpu_monitor/deploy/"*.sh; do
-    [ -f "$script" ] || continue
-    base=$(basename "$script")
-    cp "$script" "$OPT/gpu_monitor/deploy/$base"
-    chmod +x "$OPT/gpu_monitor/deploy/$base"
+# Copy all files from deploy/ (scripts, configs, systemd units, nginx.conf)
+for f in "$WORKSPACE/gpu_monitor/deploy/"*; do
+    [ -f "$f" ] || continue
+    base=$(basename "$f")
+    cp "$f" "$OPT/gpu_monitor/deploy/$base"
+    # Make scripts executable, leave config files readable
+    [[ "$base" == *.sh ]] && chmod +x "$OPT/gpu_monitor/deploy/$base" || chmod 644 "$OPT/gpu_monitor/deploy/$base"
     echo "  Synced: $base"
 done
-# Also copy top-level scripts
-for script in "$WORKSPACE/scripts/"*.sh; do
-    [ -f "$script" ] || continue
-    base=$(basename "$script")
-    cp "$script" "$OPT/gpu_monitor/deploy/$base"
+# Also copy top-level scripts (sync_to_opt.sh, etc.)
+for f in "$WORKSPACE/scripts/"*.sh; do
+    [ -f "$f" ] || continue
+    base=$(basename "$f")
+    cp "$f" "$OPT/gpu_monitor/deploy/$base"
     chmod +x "$OPT/gpu_monitor/deploy/$base"
     echo "  Synced: $base"
 done
@@ -247,5 +249,8 @@ echo "=== Done ==="
 curl -s http://localhost/api/v1/health | python3 -m json.tool
 
 # ── NEVER OVERWRITTEN ───────────────────────────────────────────────
-# .env, venv/, logs/, staticfiles/, config.yaml, cron jobs, systemd units,
+# .env, venv/, logs/, staticfiles/, config.yaml, cron jobs,
 # and the PostgreSQL database are never touched by this script.
+# Note: systemd units (gunicorn.service) and nginx.conf are synced
+# to /opt/gpu_monitor/deploy/ but must be installed separately via
+# server_install.sh or manually.

@@ -155,7 +155,7 @@ systemctl enable nginx
 
 # ── TLS certificate ────────────────────────────────────────────────────────
 echo "==> Obtaining TLS certificate..."
-certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --email "admin@$DOMAIN" --redirect 2>/dev/null || {
+certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --email "admin@$DOMAIN" --redirect || {
     echo "⚠️  Certbot failed. Run manually later:"
     echo "   certbot --nginx -d $DOMAIN"
 }

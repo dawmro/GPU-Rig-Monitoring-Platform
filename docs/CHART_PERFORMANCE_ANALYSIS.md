@@ -22,9 +22,13 @@ Historical charts are NOT polled automatically — they load on demand.
 | 30d | 1-hour | ~720 | ~120ms |
 | Error freq 30d | 1-hour | ~720 | ~100ms |
 | Disk I/O 24h | 1-minute | ~1,440 | ~50ms |
-| Disk I/O 30d | 1-hour | ~720 | ~150ms |
+|| Disk I/O 30d | 1-hour | ~720 | ~150ms |
+|| CPU Freq 24h | 1-minute | ~1,440 | ~30ms |
+|| CPU Freq 30d | 1-hour | ~720 | ~120ms |
 
-**Disk I/O charts** (new in schema 1.7): 5 new chart metrics — `disk_read_bytes_delta`, `disk_write_bytes_delta`, `disk_read_iops_delta`, `disk_write_iops_delta`, `disk_utilization_pct`. Multi-disk support via `multi_disk=true` query param. Uses `SUM` for byte/IOPS deltas, `AVG` for utilization.
+**CPU Frequency chart** (new in schema 1.9): Single-line chart showing `cpu_freq_current_mhz` over time. Same SQL aggregation pattern as CPU temp/utilization. Reads from `MetricSnapshot.cpu_freq_current_mhz` (FloatField). Null values handled gracefully (gaps in line for platforms without frequency support).
+
+**Disk I/O charts**
 
 ## What Changed
 
@@ -57,6 +61,8 @@ Could use Chart.js's `data` update API for smoother transitions.
 Live metrics use a completely different path from charts:
 - `dashboard/views.py _fetch_rig_metrics()` — reads from LatestSnapshot (single row per rig)
 - GPU, storage, and network data comes from LatestSnapshot JSON arrays (no timeseries queries)
+- CPU frequency from `LatestSnapshot.cpu_freq_current_mhz` (FloatField, updated every heartbeat)
+- Error history from `Rig.error_history_json` (rolling 1000 errors with dedup)
 - Docker container metrics and GPU processes still query timeseries tables (small, fast)
 - Historical Charts (ChartDataView) are separate — they read from timeseries tables with SQL aggregation
 - Performance: < 100ms per rig (was ~1500ms before snapshot optimization)

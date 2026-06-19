@@ -19,6 +19,9 @@ class MetricSnapshot(models.Model):
     cpu_utilization_pct = models.FloatField(null=True)
     cpu_temp_c = models.FloatField(null=True)
     cpu_load_avg_json = models.JSONField(default=list, blank=True)
+    cpu_freq_current_mhz = models.FloatField(null=True, blank=True)
+    cpu_freq_min_mhz = models.FloatField(null=True, blank=True)
+    cpu_freq_max_mhz = models.FloatField(null=True, blank=True)
 
     # Memory metrics (dynamic — used for charts)
     mem_total_bytes = models.BigIntegerField(null=True)

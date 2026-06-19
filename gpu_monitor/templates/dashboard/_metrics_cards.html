@@ -44,6 +44,19 @@
                 </span>
             {% else %}—{% endif %}
         </span>
+        {% if snapshot.cpu_freq_current_mhz != None %}
+        <span>
+            Freq:
+            <span class="text-cyan-400">
+                {{ snapshot.cpu_freq_current_mhz|floatformat:0 }} MHz
+            </span>
+            {% if snapshot.cpu_freq_min_mhz or snapshot.cpu_freq_max_mhz %}
+            <span class="text-gray-600">
+                ({{ snapshot.cpu_freq_min_mhz|floatformat:0|default:"?" }}-{{ snapshot.cpu_freq_max_mhz|floatformat:0|default:"?" }})
+            </span>
+            {% endif %}
+        </span>
+        {% endif %}
         {% if snapshot.cpu_load_avg_json %}
         <span>
             Load:

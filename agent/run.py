@@ -43,7 +43,7 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.5.12'
+__version__ = '1.5.13'
 __schema_version__ = '1.8'
 
 # ── Config ──────────────────────────────────────────────────────────────────
@@ -173,6 +173,21 @@ def collect_cpu():
         except Exception:
             pass
 
+        # CPU frequency via psutil
+        cpu_freq = None
+        try:
+            freq = psutil.cpu_freq(percpu=False)
+            if freq is not None and freq.current is not None:
+                cpu_freq = {
+                    'current_mhz': round(freq.current, 1),
+                    'min_mhz': round(freq.min, 1) if freq.min is not None else None,
+                    'max_mhz': round(freq.max, 1) if freq.max is not None else None,
+                }
+        except (AttributeError, OSError, NotImplementedError) as e:
+            logging.getLogger('cpu').debug('CPU frequency unavailable: %s', e)
+        except Exception as e:
+            logging.getLogger('cpu').warning('CPU frequency collection failed: %s', e)
+
         model = 'Unknown'
         try:
             import cpuinfo
@@ -188,6 +203,7 @@ def collect_cpu():
             'load_avg': list(load_avg),
             'utilization_pct': cpu_percent,
             'temp_c': temp_c,
+            'freq': cpu_freq,
         }
     except Exception as e:
         logging.getLogger('cpu').warning('CPU collection failed: %s', e)

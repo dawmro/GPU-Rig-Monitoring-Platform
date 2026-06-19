@@ -159,6 +159,12 @@
                 <canvas id="chartCpuTemp"></canvas>
             </div>
 
+            <!-- CPU Frequency Chart -->
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
+                <h3 class="text-sm font-medium text-gray-300 mb-3">CPU Frequency (<span class="chart-timeframe-label">24h</span>)</h3>
+                <canvas id="chartCpuFreq"></canvas>
+            </div>
+
             <!-- Memory & Swap Combined Chart -->
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
                 <h3 class="text-sm font-medium text-gray-300 mb-3">Memory & Swap (<span class="chart-timeframe-label">24h</span>)</h3>
@@ -412,6 +418,7 @@ async function loadCharts() {
         function() { return loadChartMultiGpu('chartGpuMemClock',  'gpu_mem_clock_mhz',  uuid, range, ' MHz'); },
         function() { return loadChart('chartCpuUtil',    'cpu_utilization_pct',  uuid, range, '%',   'rgba(16, 185, 129, 0.8)', 'rgba(16, 185, 129, 0.15)'); },
         function() { return loadChart('chartCpuTemp',    'cpu_temp_c',           uuid, range, '°C',  'rgba(245, 158, 11, 0.8)', 'rgba(245, 158, 11, 0.15)'); },
+        function() { return loadChart('chartCpuFreq',    'cpu_freq_current_mhz', uuid, range, ' MHz', 'rgba(59, 130, 246, 0.8)', 'rgba(59, 130, 246, 0.15)'); },
         function() { return loadChartMemSwap('chartMemSwap', uuid, range); },
         function() { return loadChartLoadAvg('chartCpuLoad', uuid, range); },
         function() { return loadChartMultiKey('chartDiskUsage', 'disk_usage_pct', uuid, range, '%', 'multi_disk'); },

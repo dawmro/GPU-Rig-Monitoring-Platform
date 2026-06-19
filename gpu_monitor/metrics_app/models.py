@@ -197,6 +197,12 @@ class LatestSnapshot(models.Model):
     cpu_utilization_pct = models.FloatField(null=True)
     cpu_temp_c = models.FloatField(null=True)
     cpu_load_avg_json = models.JSONField(default=list, blank=True)
+
+    # CPU frequency (dynamic — updated every heartbeat)
+    cpu_freq_current_mhz = models.FloatField(null=True, blank=True)
+    cpu_freq_min_mhz = models.FloatField(null=True, blank=True)
+    cpu_freq_max_mhz = models.FloatField(null=True, blank=True)
+
     # CPU info (static — can change on CPU swap, updated in-place)
     cpu_model = models.CharField(max_length=255, blank=True, default='')
     cpu_physical_cores = models.PositiveIntegerField(null=True)

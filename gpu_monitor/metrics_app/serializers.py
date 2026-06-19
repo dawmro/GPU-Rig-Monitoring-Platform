@@ -463,11 +463,39 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     {'source': e.get('source', ''), 'message': e.get('message', '')[:200], 'timestamp': e.get('timestamp', '')}
                     for e in real_errors[:10]
                 ]
-                rig.save(update_fields=['latest_errors_json'])
             elif rig:
-                # No real errors — clear the error list
                 rig.latest_errors_json = []
-                rig.save(update_fields=['latest_errors_json'])
+
+            # Append to rolling error history with deduplication
+            if rig:
+                import hashlib
+                history = list(rig.error_history_json) if rig.error_history_json else []
+                seen_hashes = list(rig._seen_error_hashes_json) if rig._seen_error_hashes_json else []
+                seen_set = set(seen_hashes)
+
+                for err in real_errors:
+                    fingerprint = hashlib.sha256(
+                        (err.get('source', '') + err.get('message', '')).encode('utf-8')
+                    ).hexdigest()[:16]
+
+                    if fingerprint not in seen_set:
+                        history.append({
+                            'source': err.get('source', ''),
+                            'message': err.get('message', '')[:200],
+                            'timestamp': err.get('timestamp', ''),
+                            'received_at': timezone.now().isoformat(),
+                        })
+                        seen_set.add(fingerprint)
+                        seen_hashes.append(fingerprint)
+
+                if len(history) > 1000:
+                    history = history[-1000:]
+                if len(seen_hashes) > 200:
+                    seen_hashes = seen_hashes[-200:]
+
+                rig.error_history_json = history
+                rig._seen_error_hashes_json = seen_hashes
+                rig.save(update_fields=['latest_errors_json', 'error_history_json', '_seen_error_hashes_json'])
 
             http_status = status.HTTP_200_OK if created else status.HTTP_202_ACCEPTED
             status_label = 'new' if created else 'duplicate'

@@ -36,6 +36,14 @@ class Rig(models.Model):
     # Format: [{"source": "kernel", "message": "...", "timestamp": "..."}]
     latest_errors_json = models.JSONField(default=list, blank=True)
 
+    # Rolling error history — last 1000 unique errors with deduplication
+    # Each entry: {source, message, timestamp, received_at}
+    error_history_json = models.JSONField(default=list, blank=True)
+
+    # Rolling set of error fingerprints for deduplication (hash of source + message)
+    # Max 200 entries (~3 min window at 60s heartbeat interval)
+    _seen_error_hashes_json = models.JSONField(default=list, blank=True, db_column='seen_error_hashes_json')
+
     class Meta:
         db_table = 'rigs_rig'
 

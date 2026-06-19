@@ -219,17 +219,28 @@
     <!-- Tab: Errors -->
     <div id="tab-content-errors" class="tab-content hidden">
         <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
-            <h3 class="text-sm font-medium text-gray-300 mb-4">Latest Errors</h3>
-            {% if recent_errors %}
-                {% for err in recent_errors %}
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-sm font-medium text-gray-300">Error History</h3>
+                {% if error_history %}
+                <span class="text-xs text-gray-500">{{ error_history|length }} errors</span>
+                {% endif %}
+            </div>
+            {% if error_history %}
+            <div class="space-y-2 overflow-y-auto" style="max-height: calc(100vh - 250px);">
+                {% for err in error_history reversed %}
                 <div class="py-2 border-b border-gray-700/50 last:border-0">
                     <div class="flex items-center gap-2 mb-1">
-                        <span class="text-xs px-2 py-0.5 rounded bg-red-900/50 text-red-300">{{ err.source|default:"unknown" }}</span>
-                        <span class="text-xs text-gray-500">{{ err.timestamp|default:"" }}</span>
+                        <span class="text-xs px-2 py-0.5 rounded bg-red-900/50 text-red-300">
+                            {{ err.source|default:"unknown" }}
+                        </span>
+                        <span class="text-xs text-gray-500" title="{{ err.received_at|default:'' }}">
+                            {{ err.timestamp|default:err.received_at|default:"unknown"|truncatechars:30 }}
+                        </span>
                     </div>
-                    <p class="text-sm text-gray-400 font-mono">{{ err.message|truncatechars:200 }}</p>
+                    <p class="text-sm text-gray-400 font-mono break-all">{{ err.message|truncatechars:300 }}</p>
                 </div>
                 {% endfor %}
+            </div>
             {% else %}
                 <p class="text-green-400 text-sm">✓ No errors recorded.</p>
             {% endif %}

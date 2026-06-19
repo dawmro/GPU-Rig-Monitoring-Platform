@@ -357,13 +357,13 @@ debug_mode: false         # Verbose logging
 
 | Agent | File | Version | Schema | Platform | Scheduling |
 |-------|------|---------|--------|----------|------------|
-|| Linux | `agent/run.py` | 1.5.12 | 1.8 | Any Linux, VMware NAT | `cron` every 60s with `flock` |
-|| Windows | `agent_windows/run.py` | 1.6.13-win | 1.8 | Windows 10/11 | Task Scheduler (1 min) with `pythonw.exe` (hidden window) |
+|| Linux | `agent/run.py` | 1.5.13 | 1.9 | Any Linux, VMware NAT | `cron` every 60s with `flock` |
+||| Windows | `agent_windows/run.py` | 1.6.14-win | 1.9 | Windows 10/11 | Task Scheduler (1 min) with `pythonw.exe` (hidden window) |
 
 **Versioning rules:**
 - `agent_version` (e.g. `1.1.0`): incremented for agent-side changes (collectors, payload format, bug fixes). Format: `MAJOR.MINOR.PATCH`.
 - `schema_version` (e.g. `1.1`): incremented only when the payload structure changes in a way that affects the server's serialization/storage. Format: `MAJOR.MINOR`.
-- Schema versions 1.0 through 1.6 are supported (backward compatible via `validate_schema_version` in `IngestSerializer`).
+- Schema versions 1.0 through 1.9 are supported (backward compatible via `validate_schema_version` in `IngestSerializer`).
 - When schema versions change, the `validate_schema_version` method in `IngestSerializer` is updated to accept the new version. The same serializer handles all supported versions.
 - See §11.5 for the contract testing strategy.
 
@@ -511,6 +511,7 @@ HTMX polls use `hx-swap="innerHTML"` (not `outerHTML`). This is critical: `inner
 | GPU Util [%] | LatestSnapshot.gpu_utils_json | Space-separated color-coded values via `gpu_util_cell_json` |
 | GPU Fan [%] | LatestSnapshot.gpu_fans_json | Space-separated color-coded values via `gpu_fan_cell_json` |
 || CPU [%] | LatestSnapshot.cpu_utilization_pct | Percentage |
+|| CPU Freq [MHz] | LatestSnapshot.cpu_freq_current_mhz | Current / Min-Max range |
 || Memory [%] | LatestSnapshot.mem_used_bytes, mem_total_bytes | Used / Total (GB) |
 || Disk Util [%] | LatestSnapshot.storage_utilization_pcts_json | Color-coded max utilization |
 
@@ -554,7 +555,7 @@ The dashboard display (Fleet Overview + Live Metrics) is fully decoupled from ti
 
 | Category | Fields |
 |---|---|
-| CPU | cpu_model, cpu_physical_cores, cpu_logical_cores, cpu_utilization_pct, cpu_temp_c, cpu_load_avg_json |
+|| CPU | cpu_model, cpu_physical_cores, cpu_logical_cores, cpu_utilization_pct, cpu_temp_c, cpu_load_avg_json, cpu_freq_current_mhz, cpu_freq_min_mhz, cpu_freq_max_mhz |
 | Memory | mem_total_bytes, mem_used_bytes, mem_free_bytes, mem_cached_bytes, swap_total_bytes, swap_used_bytes |
 | System | uptime_s, motherboard_json, software_json, agent_version |
 ||| GPU (×N) | 17 JSON arrays (uuid/model/temp/util/fan/clocks/mem/power/PCIe) |
@@ -620,7 +621,7 @@ Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the age
 ||| `metrics_storagemetric` | metrics_app | Per-disk metrics (capacity, usage%, temp, SMART health, read/write bytes, read/write IOPS, busy_time_ms, utilization%; FK to snapshot) |
 ||| `metrics_networkmetric` | metrics_app | Per-interface metrics (rx/tx bytes, rx/tx deltas, speed, errors) |
 ||| `metrics_latest_docker_container` | metrics_app | Latest container snapshot (name, container_id, image, status, created, status_text; for Live Metrics) |
-|||| `metrics_latestsnapshot` | metrics_app | Denormalized latest snapshot per rig (fast dashboard loading). Single row per rig, updated every heartbeat. Stores all display data: cpu_model, cpu_physical_cores, cpu_logical_cores, cpu_utilization_pct, cpu_temp_c, cpu_load_avg_json, mem_total_bytes, mem_used_bytes, mem_free_bytes, mem_cached_bytes, swap_total_bytes, swap_used_bytes, uptime_s, motherboard_json, software_json, agent_version, 17 GPU JSON arrays, 11 storage JSON arrays, 7 network JSON arrays, 3 process fields (top_cpu_processes_json, top_mem_processes_json, process_count). Total: ~59 fields. |
+|||| `metrics_latestsnapshot` | metrics_app | Denormalized latest snapshot per rig (fast dashboard loading). Single row per rig, updated every heartbeat. Stores all display data: cpu_model, cpu_physical_cores, cpu_logical_cores, cpu_utilization_pct, cpu_temp_c, cpu_load_avg_json, cpu_freq_current_mhz, cpu_freq_min_mhz, cpu_freq_max_mhz, mem_total_bytes, mem_used_bytes, mem_free_bytes, mem_cached_bytes, swap_total_bytes, swap_used_bytes, uptime_s, motherboard_json, software_json, agent_version, 17 GPU JSON arrays, 11 storage JSON arrays, 7 network JSON arrays, 3 process fields (top_cpu_processes_json, top_mem_processes_json, process_count). Total: ~62 fields. |
 || `metrics_rig_status_event` | metrics_app | Rig status transition log (online/stale/offline with timestamps) |
 || `audit_auditlog` | audit | Immutable audit trail |
 
@@ -1191,18 +1192,18 @@ sudo -u postgres psql gpu_monitor
 
 ### A. Full JSON Schema Definitions (Agent Payload)
 
-**Current: v1.1** (see changelog below)
+**Current: v1.9** (see changelog below)
 
 ```json
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "GPU Rig Monitoring Agent Payload v1.1",
+  "title": "GPU Rig Monitoring Agent Payload v1.9",
   "type": "object",
   "required": ["rig_uuid", "schema_version", "timestamp", "metrics"],
   "properties": {
     "rig_uuid": { "type": "string", "format": "uuid" },
     "rig_name": { "type": "string", "maxLength": 128 },
-    "schema_version": { "type": "string", "enum": ["1.0", "1.1"] },
+    "schema_version": { "type": "string", "enum": ["1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9"] },
     "agent_version": { "type": "string" },
     "timestamp": { "type": "string", "format": "date-time" },
     "metrics": {
@@ -1216,7 +1217,15 @@ sudo -u postgres psql gpu_monitor
             "logical_cores": { "type": "integer" },
             "load_avg": { "type": "array", "items": { "type": "number" } },
             "utilization_pct": { "type": "number" },
-            "temp_c": { "type": ["number", "null"] }
+            "temp_c": { "type": ["number", "null"] },
+            "freq": {
+              "type": ["object", "null"],
+              "properties": {
+                "current_mhz": { "type": "number" },
+                "min_mhz": { "type": ["number", "null"] },
+                "max_mhz": { "type": ["number", "null"] }
+              }
+            }
           }
         },
         "memory": {
@@ -1332,6 +1341,21 @@ sudo -u postgres psql gpu_monitor
 - Added `motherboard` as a top-level key (previously nested inside `inventory`)
 - `schema_version` enum now accepts both `"1.0"` and `"1.1"` (backward compatible)
 - All metric fields preserved — no data loss
+
+**Schema 1.1 → 1.8 changelog (cumulative):**
+- Added disk I/O fields: `read_bytes_delta`, `write_bytes_delta`, `read_iops_delta`, `write_iops_delta`, `utilization_pct`, `busy_time_ms`, cumulative counters
+- Added GPU clock fields: `gpu_core_clock_mhz`, `gpu_mem_clock_mhz`
+- Added running processes: `top_processes` with `by_cpu`, `by_mem`, `total_count`
+- Added `error_history_json` (rolling buffer) and `_seen_error_hashes_json` (dedup) on Rig
+- Added `cpu_freq_*` fields on MetricSnapshot and LatestSnapshot
+- All changes backward compatible — older agents continue working
+
+**Schema 1.8 → 1.9 changelog:**
+- Added `freq` object to `metrics.cpu` payload: `{current_mhz, min_mhz, max_mhz}`
+- 3 new FloatFields on MetricSnapshot: `cpu_freq_current_mhz`, `cpu_freq_min_mhz`, `cpu_freq_max_mhz`
+- 3 new FloatFields on LatestSnapshot: same names
+- Backward compatible: `hasattr()` check in serializer skips fields if migration not applied
+- `freq` is `null` on platforms that don't support it (macOS, some VMs)
 
 ### B. Endpoint Catalog (Summary)
 

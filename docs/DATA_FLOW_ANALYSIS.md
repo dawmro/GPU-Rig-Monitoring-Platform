@@ -17,22 +17,27 @@ Stores dynamic metrics for historical chart aggregation. Static fields live in L
 |---|-------|-------------|----------|------|---------|
 | 1 | CPU utilization | `metrics.cpu.utilization_pct` | `cpu_utilization_pct` | FloatField | ✅ |
 | 2 | CPU temperature | `metrics.cpu.temp_c` | `cpu_temp_c` | FloatField | ✅ |
-| 3 | CPU load avg | `metrics.cpu.load_avg` | `cpu_load_avg_json` | JSONField[3] | ✅ |
-| 4 | Memory total | `metrics.memory.total_bytes` | `mem_total_bytes` | BigIntegerField | ✅ |
-| 5 | Memory used | `metrics.memory.used_bytes` | `mem_used_bytes` | BigIntegerField | ✅ |
-| 6 | Memory free | `metrics.memory.free_bytes` | `mem_free_bytes` | BigIntegerField | ✅ |
-| 7 | Memory cached | `metrics.memory.cached_bytes` | `mem_cached_bytes` | BigIntegerField | ✅ |
-| 8 | Swap used | `metrics.memory.swap_used_bytes` | `swap_used_bytes` | BigIntegerField | ✅ |
-| 9 | Swap total | `metrics.memory.swap_total_bytes` | `swap_total_bytes` | BigIntegerField | ✅ |
-| 10 | Uptime | `software.uptime_s` | `uptime_s` | PositiveIntegerField | ✅ |
-| 11 | Rig status | `rig.status` (view) | `status` | CharField | ✅ |
-| 12 | Error count | `errors[]` length | `error_count` | PositiveIntegerField | ✅ |
+|| 3 | CPU load avg | `metrics.cpu.load_avg` | `cpu_load_avg_json` | JSONField[3] | ✅ |
+|| 4 | CPU freq current | `metrics.cpu.freq.current_mhz` | `cpu_freq_current_mhz` | FloatField | ✅ |
+|| 5 | CPU freq min | `metrics.cpu.freq.min_mhz` | `cpu_freq_min_mhz` | FloatField | — |
+|| 6 | CPU freq max | `metrics.cpu.freq.max_mhz` | `cpu_freq_max_mhz` | FloatField | — |
+|| 7 | Memory total | `metrics.memory.total_bytes` | `mem_total_bytes` | BigIntegerField | ✅ |
+|| 8 | Memory used | `metrics.memory.used_bytes` | `mem_used_bytes` | BigIntegerField | ✅ |
+|| 9 | Memory free | `metrics.memory.free_bytes` | `mem_free_bytes` | BigIntegerField | ✅ |
+|| 10 | Memory cached | `metrics.memory.cached_bytes` | `mem_cached_bytes` | BigIntegerField | ✅ |
+|| 11 | Swap used | `metrics.memory.swap_used_bytes` | `swap_used_bytes` | BigIntegerField | ✅ |
+|| 12 | Swap total | `metrics.memory.swap_total_bytes` | `swap_total_bytes` | BigIntegerField | ✅ |
+|| 13 | Uptime | `software.uptime_s` | `uptime_s` | PositiveIntegerField | ✅ |
+|| 14 | Rig status | `rig.status` (view) | `status` | CharField | ✅ |
+|| 15 | Error count | `errors[]` length | `error_count` | PositiveIntegerField | ✅ |
 
-### Rig (latest error text — updated in place, not per-snapshot)
+### Rig (latest error text + history — updated in place, not per-snapshot)
 
 | # | Value | Payload Path | DB Field | Type | Charts? |
 |---|-------|-------------|----------|------|---------|
-| 48 | Latest errors | `errors[]` | `latest_errors_json` | JSONField | ✅ (latest only) |
+| 48 | Latest errors | `errors[]` (first 10) | `latest_errors_json` | JSONField | ✅ (latest only) |
+| 49 | Error history | `errors[]` (dedup) | `error_history_json` | JSONField | ✅ (rolling 1000) |
+| 50 | Error dedup hashes | (computed) | `_seen_error_hashes_json` | JSONField | — |
 
 ### GPUMetric (one row per GPU per heartbeat)
 
@@ -132,13 +137,15 @@ Errors are filtered on the server side — "no error" placeholders from agents
 
 | Data | Stored In | Reason |
 |------|-----------|--------|
-| CPU/memory metrics | MetricSnapshot (dedicated fields) | Queried for charts, need indexing |
-| CPU model, cores | LatestSnapshot | Static per rig, overwritten on heartbeat |
-| Motherboard info | LatestSnapshot (`motherboard_json`) | Static per rig, overwritten on heartbeat |
-| Software info | LatestSnapshot (`software_json`) | Static per rig, overwritten on heartbeat |
-| CPU load avg | MetricSnapshot (`cpu_load_avg_json`) | Small fixed-size array, charted |
-| Error count | MetricSnapshot (`error_count`) | Per-snapshot count for error frequency charts |
-| Latest error text | `Rig.latest_errors_json` (JSON) | Latest payload only |
+|| CPU/memory metrics | MetricSnapshot (dedicated fields) | Queried for charts, need indexing |
+|| CPU model, cores | LatestSnapshot | Static per rig, overwritten on heartbeat |
+|| CPU frequency | MetricSnapshot + LatestSnapshot | Current freq for display + charts |
+|| Motherboard info | LatestSnapshot (`motherboard_json`) | Static per rig, overwritten on heartbeat |
+|| Software info | LatestSnapshot (`software_json`) | Static per rig, overwritten on heartbeat |
+|| CPU load avg | MetricSnapshot (`cpu_load_avg_json`) | Small fixed-size array, charted |
+|| Error count | MetricSnapshot (`error_count`) | Per-snapshot count for error frequency charts |
+|| Latest error text | `Rig.latest_errors_json` (JSON) | First 10 errors from latest payload |
+|| Error history | `Rig.error_history_json` (JSON) | Rolling buffer of 1000 unique errors with dedup |
 
 ### Denormalized cache (LatestSnapshot)
 
@@ -150,15 +157,15 @@ Errors are filtered on the server side — "no error" placeholders from agents
 
 | Category | Fields | Count |
 |---|---|---|
-| CPU | schema_version, timestamp, cpu_model, cpu_physical_cores, cpu_logical_cores, cpu_utilization_pct, cpu_temp_c, cpu_load_avg_json | 8 |
-| Memory | mem_total_bytes, mem_used_bytes, mem_free_bytes, mem_cached_bytes, swap_total_bytes, swap_used_bytes | 6 |
-| System | uptime_s, motherboard_json, software_json, agent_version | 4 |
-| GPU (×N) | gpu_count, gpu_models_json, gpu_temps_json, gpu_utils_json, gpu_fans_json, gpu_core_clocks_json, gpu_mem_clocks_json, gpu_mem_used_json, gpu_mem_total_json, gpu_mem_util_pcts_json, gpu_mem_free_json, gpu_power_draws_json, gpu_power_limits_json, gpu_pcie_gen_json, gpu_pcie_max_gen_json, gpu_pcie_width_json, gpu_pcie_max_width_json | 17 |
+|| CPU | schema_version, timestamp, cpu_model, cpu_physical_cores, cpu_logical_cores, cpu_utilization_pct, cpu_temp_c, cpu_load_avg_json, cpu_freq_current_mhz, cpu_freq_min_mhz, cpu_freq_max_mhz | 11 |
+|| Memory | mem_total_bytes, mem_used_bytes, mem_free_bytes, mem_cached_bytes, swap_total_bytes, swap_used_bytes | 6 |
+|| System | uptime_s, motherboard_json, software_json, agent_version | 4 |
+|| GPU (×N) | gpu_count, gpu_models_json, gpu_temps_json, gpu_utils_json, gpu_fans_json, gpu_core_clocks_json, gpu_mem_clocks_json, gpu_mem_used_json, gpu_mem_total_json, gpu_mem_util_pcts_json, gpu_mem_free_json, gpu_power_draws_json, gpu_power_limits_json, gpu_pcie_gen_json, gpu_pcie_max_gen_json, gpu_pcie_width_json, gpu_pcie_max_width_json | 17 |
 || Storage (×N) | storage_count, storage_devices_json, storage_fstypes_json, storage_mountpoints_json, storage_capacities_json, storage_usage_pcts_json, storage_temps_json, storage_smart_json, storage_read_bytes_delta_json, storage_write_bytes_delta_json, storage_read_iops_delta_json, storage_write_iops_delta_json, storage_utilization_pcts_json, storage_read_bytes_total_json, storage_write_bytes_total_json, storage_read_iops_total_json, storage_write_iops_total_json | 17 |
-||| Network (×N) | network_count, network_interfaces_json, network_ipv4s_json, network_speeds_json, network_rx_bytes_json, network_tx_bytes_json, network_rx_errors_json, network_tx_errors_json | 8 |
-||| Processes | top_cpu_processes_json, top_mem_processes_json, process_count | 3 |
-||| Metadata | updated_at (auto) | 1 |
-||| **Total** | | **~64 fields** |
+|| Network (×N) | network_count, network_interfaces_json, network_ipv4s_json, network_speeds_json, network_rx_bytes_json, network_tx_bytes_json, network_rx_errors_json, network_tx_errors_json | 8 |
+|| Processes | top_cpu_processes_json, top_mem_processes_json, process_count | 3 |
+|| Metadata | updated_at (auto) | 1 |
+|| **Total** | | **~67 fields** |
 
 **Views using LatestSnapshot:**
 - `rig_list` (Fleet Overview): Reads LatestSnapshot + Rig + RigTag. **0 timeseries queries.**

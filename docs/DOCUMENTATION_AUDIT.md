@@ -1,7 +1,7 @@
 # Documentation Audit Report
 
-**Date:** 2026-06-17
-**Branch:** `feature/cpu-frequency`
+**Date:** 2026-06-19
+**Branch:** `docs/update-all-docs`
 
 ---
 
@@ -11,8 +11,8 @@
 
 | Document | Size | Status | Notes |
 |---|---|---|---|
-| `GPU_Rig_Monitoring_Architecture.md` | 70KB | ✅ Current | Main architecture reference. v1.8 with disk I/O monitoring, cumulative totals, password recovery, Gmail SMTP, running processes (psutil two-pass). Agent versions: Linux 1.5.12, Windows 1.6.13-win, schema 1.8. |
-| `DATA_FLOW_ANALYSIS.md` | 17KB | ✅ Current | Complete payload-to-DB field mapping including disk I/O, GPU clock fields, running processes. |
+| `GPU_Rig_Monitoring_Architecture.md` | 70KB | ⚠️ Needs update | Agent versions, schema 1.9, CPU frequency fields, error history fields need updating. |
+| `DATA_FLOW_ANALYSIS.md` | 17KB | ⚠️ Needs update | CPU frequency fields in MetricSnapshot, error_history_json in Rig table. |
 | `DATA_RETENTION_PLAN.md` | 8KB | ✅ Current | Retention strategy, compaction, cleanup, VACUUM ANALYZE. |
 | `LOCAL_DEPLOYMENT_GUIDE.md` | 40KB | ✅ Current | Updated with email config, password recovery, log file creation, agent directory permissions. |
 | `DEPLOYMENT_GUIDE.md` | 56KB | ✅ Current | Updated with email config, VACUUM ANALYZE, comprehensive security hardening, log permission fixes, agent permission fixes. |
@@ -23,8 +23,8 @@
 |---|---|---|---|
 | `BACKFILL_ANALYSIS.md` | 7KB | ✅ Current | Backfill command exists and works. |
 | `INGEST_PERFORMANCE_ANALYSIS.md` | 6KB | ✅ Current | Detailed ingest performance measurements. |
-| `CHART_PERFORMANCE_ANALYSIS.md` | 2KB | ✅ Current | Updated Live Metrics description. |
-| `VACUUM_ANALYSIS.md` | 6KB | ✅ New | PostgreSQL VACUUM FULL vs VACUUM ANALYZE analysis and recommendations. |
+| `CHART_PERFORMANCE_ANALYSIS.md` | 2KB | ⚠️ Needs update | New CPU Frequency chart. |
+| `VACUUM_ANALYSIS.md` | 6KB | ✅ Current | PostgreSQL VACUUM FULL vs VACUUM ANALYZE analysis and recommendations. |
 
 ### ✅ KEEP — Design Context & Plans
 
@@ -53,14 +53,14 @@
 - **Keep:** 13
 - **Deleted:** 2 (DOCUMENTATION_UPDATE_PLAN.md, DOC_VS_CODE_DISCREPANCIES.md — working documents)
 
-All remaining documentation is accurate and up-to-date.
-
 ---
 
 ## Changes in This Branch
 
-1. **Fixed log file permissions issue:** Added log file creation (`app.log`, `gunicorn-access.log`, `gunicorn-error.log`) with correct ownership and permissions in both install script and deployment docs
-2. **Updated server_install.sh:** Creates log files before running Django migrations to prevent `ValueError: Unable to configure handler 'file'`
-3. **Updated DEPLOYMENT_GUIDE.md:** Added troubleshooting entries for log permission errors, expanded log fix commands
-4. **Updated LOCAL_DEPLOYMENT_GUIDE.md:** Added log file creation step before migrations, updated troubleshooting
-5. **Fixed inconsistent table formatting** in DOCUMENTATION_AUDIT.md
+1. **Updated all docs to reflect latest code changes:**
+   - Agent versions: Linux 1.5.13, Windows 1.6.14-win
+   - Schema version: 1.9 (CPU frequency fields added)
+   - CPU frequency: 3 new FloatFields on MetricSnapshot and LatestSnapshot
+   - Error history: `error_history_json` (1000 errors) + `_seen_error_hashes_json` (dedup) on Rig
+   - New CPU Frequency chart in rig detail
+   - Errors tab now shows full history (responsive height)

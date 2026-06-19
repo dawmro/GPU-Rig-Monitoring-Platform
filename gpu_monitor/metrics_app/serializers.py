@@ -1,6 +1,6 @@
 import logging
 from rest_framework import serializers, status
-from django.db import transaction, connection
+from django.db import transaction
 from django.utils import timezone
 from django.core.cache import cache
 from .models import MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, LatestDockerContainer, LatestSnapshot, RigStatusEvent
@@ -68,6 +68,9 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                 'cpu_utilization_pct': cpu.get('utilization_pct'),
                 'cpu_temp_c': cpu.get('temp_c'),
                 'cpu_load_avg_json': cpu.get('load_avg', []),
+                'cpu_freq_current_mhz': cpu.get('freq', {}).get('current_mhz') if cpu.get('freq') else None,
+                'cpu_freq_min_mhz': cpu.get('freq', {}).get('min_mhz') if cpu.get('freq') else None,
+                'cpu_freq_max_mhz': cpu.get('freq', {}).get('max_mhz') if cpu.get('freq') else None,
                 'mem_total_bytes': memory.get('total_bytes'),
                 'mem_used_bytes': memory.get('used_bytes'),
                 'mem_free_bytes': memory.get('free_bytes'),
@@ -77,18 +80,6 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                 'uptime_s': software_data.get('uptime_s'),
                 'error_count': len(real_errors),
             }
-            # Only add cpu_freq fields if the DB column exists (migration applied)
-            # Check via connection.introspection, not hasattr (which returns True
-            # as soon as the model field is defined in Python, even before migration)
-            existing_cols = {
-                c.name for c in connection.introspection.get_table_description(
-                    connection.cursor(), 'metrics_metricsnapshot'
-                )
-            }
-            if 'cpu_freq_current_mhz' in existing_cols:
-                defaults['cpu_freq_current_mhz'] = cpu.get('freq', {}).get('current_mhz') if cpu.get('freq') else None
-                defaults['cpu_freq_min_mhz'] = cpu.get('freq', {}).get('min_mhz') if cpu.get('freq') else None
-                defaults['cpu_freq_max_mhz'] = cpu.get('freq', {}).get('max_mhz') if cpu.get('freq') else None
             snapshot, created = MetricSnapshot.objects.update_or_create(
                 rig_uuid=rig_uuid,
                 schema_version=schema_version,
@@ -385,9 +376,14 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
             ls_defaults = {
                 'schema_version': schema_version,
                 'timestamp': ts,
+                # CPU dynamic
                 'cpu_utilization_pct': cpu.get('utilization_pct'),
                 'cpu_temp_c': cpu.get('temp_c'),
                 'cpu_load_avg_json': cpu.get('load_avg', []),
+                'cpu_freq_current_mhz': cpu.get('freq', {}).get('current_mhz') if cpu.get('freq') else None,
+                'cpu_freq_min_mhz': cpu.get('freq', {}).get('min_mhz') if cpu.get('freq') else None,
+                'cpu_freq_max_mhz': cpu.get('freq', {}).get('max_mhz') if cpu.get('freq') else None,
+                # CPU static (updated in-place — can change on CPU swap)
                 'cpu_model': cpu.get('model', ''),
                 'cpu_physical_cores': cpu.get('physical_cores'),
                 'cpu_logical_cores': cpu.get('logical_cores'),
@@ -452,16 +448,6 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                 'top_mem_processes_json': top_processes.get('by_mem', []) if top_processes else [],
                 'process_count': top_processes.get('total_count', 0) if top_processes else 0,
             }
-            # Only add cpu_freq fields if the DB column exists (migration applied)
-            existing_ls_cols = {
-                c.name for c in connection.introspection.get_table_description(
-                    connection.cursor(), 'metrics_latestsnapshot'
-                )
-            }
-            if 'cpu_freq_current_mhz' in existing_ls_cols:
-                ls_defaults['cpu_freq_current_mhz'] = cpu.get('freq', {}).get('current_mhz') if cpu.get('freq') else None
-                ls_defaults['cpu_freq_min_mhz'] = cpu.get('freq', {}).get('min_mhz') if cpu.get('freq') else None
-                ls_defaults['cpu_freq_max_mhz'] = cpu.get('freq', {}).get('max_mhz') if cpu.get('freq') else None
             LatestSnapshot.objects.update_or_create(
                 rig_uuid=rig_uuid,
                 defaults=ls_defaults,

@@ -7,14 +7,32 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+
+def env_bool(name: str, default: bool = False) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in ("true", "1", "yes", "on")
+
+
+def env_list(name: str, default=None):
+    if default is None:
+        default = []
+    value = os.environ.get(name, "")
+    if not value.strip():
+        return default
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
 SECRET_KEY = os.environ.get(
-    'DJANGO_SECRET_KEY',
-    'django-insecure-dgh%o#sc)en+d9xdisy2+v3mzs(+jyzsmyh5s_dp-f%dtb!1wo'
+    "DJANGO_SECRET_KEY",
+    "django-insecure-dgh%o#sc)en+d9xdisy2+v3mzs(+jyzsmyh5s_dp-f%dtb!1wo",
 )
 
-DEBUG = os.environ.get('DJANGO_DEBUG', 'True').lower() in ('true', '1', 'yes')
+DEBUG = env_bool("DJANGO_DEBUG", True)
 
-ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', '*').split(',')
+# Host header allowlist: hostnames/IPs only, comma-separated in .env
+ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", ["127.0.0.1", "localhost"])
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -109,15 +127,39 @@ REST_FRAMEWORK = {
     },
 }
 
-# Session / cookie settings for IP address access
-# Allow session cookies to work with raw IP addresses (no domain restriction)
-SESSION_COOKIE_SECURE = False
-SESSION_COOKIE_HTTPONLY = True
-SESSION_COOKIE_SAMESITE = 'Lax'
-CSRF_COOKIE_SECURE = False
-CSRF_COOKIE_SAMESITE = 'Lax'
-CSRF_TRUSTED_ORIGINS = ['http://*', 'https://*']
-SESSION_ENGINE = 'django.contrib.sessions.backends.db'
+# Security settings controlled from .env
+# ALLOWED_HOSTS uses hostnames/IPs only
+# CSRF_TRUSTED_ORIGINS uses full origins with scheme, e.g. https://example.com
+CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS", [])
+
+SECURE_SSL_REDIRECT = env_bool("SECURE_SSL_REDIRECT", not DEBUG)
+SESSION_COOKIE_SECURE = env_bool("SESSION_COOKIE_SECURE", not DEBUG)
+CSRF_COOKIE_SECURE = env_bool("CSRF_COOKIE_SECURE", not DEBUG)
+
+SESSION_COOKIE_HTTPONLY = env_bool("SESSION_COOKIE_HTTPONLY", True)
+SESSION_COOKIE_SAMESITE = os.environ.get("SESSION_COOKIE_SAMESITE", "Lax")
+CSRF_COOKIE_SAMESITE = os.environ.get("CSRF_COOKIE_SAMESITE", "Lax")
+
+# Because Django is behind Nginx and Nginx forwards X-Forwarded-Proto,
+# Django needs this so request.is_secure() works correctly.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# Optional forwarded host/port support behind reverse proxies
+USE_X_FORWARDED_HOST = env_bool("USE_X_FORWARDED_HOST", True)
+USE_X_FORWARDED_PORT = env_bool("USE_X_FORWARDED_PORT", True)
+
+SESSION_ENGINE = "django.contrib.sessions.backends.db"
+
+# Optional extra browser security headers/settings
+SECURE_CONTENT_TYPE_NOSNIFF = env_bool("SECURE_CONTENT_TYPE_NOSNIFF", True)
+SECURE_BROWSER_XSS_FILTER = env_bool("SECURE_BROWSER_XSS_FILTER", True)
+X_FRAME_OPTIONS = os.environ.get("X_FRAME_OPTIONS", "DENY")
+SECURE_REFERRER_POLICY = os.environ.get("SECURE_REFERRER_POLICY", "same-origin")
+
+SECURE_HSTS_SECONDS = int(os.environ.get("SECURE_HSTS_SECONDS", "0"))
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool("SECURE_HSTS_INCLUDE_SUBDOMAINS", False)
+SECURE_HSTS_PRELOAD = env_bool("SECURE_HSTS_PRELOAD", False)
+
 
 # ── Email Configuration ──────────────────────────────────────────────────────
 # Default: console backend (prints emails to terminal) — safe for development.

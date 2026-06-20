@@ -95,6 +95,7 @@ class IngestView(APIView):
                 owner=user,
                 name=name[:128],
                 expected_gpus=0,
+                enrolled_by_api_key=api_key,
             )
             log_audit_event(request, 'rig.enrolled', 'Rig', rig.uuid,
                           {'agent_version': data.get('agent_version', ''), 'ip': request.META.get('REMOTE_ADDR')})

@@ -1,4 +1,5 @@
 import secrets
+from django.db import models
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import login, logout, authenticate
 from django.contrib.auth.decorators import login_required
@@ -78,7 +79,9 @@ def logout_view(request):
 
 @login_required
 def api_keys(request):
-    keys = ApiKey.objects.filter(user=request.user)
+    keys = ApiKey.objects.filter(user=request.user).annotate(
+        rig_count=models.Count('enrolled_rigs')
+    )
     return render(request, 'accounts/api_keys.html', {'keys': keys})
 
 
@@ -137,6 +140,21 @@ def delete_api_key(request, key_id):
         key.delete()
         log_audit_event(request, 'apikey.deleted', 'ApiKey', key_id, {'name': name})
         messages.success(request, f'Key "{name}" deleted permanently')
+    return redirect('accounts:api-keys')
+
+
+@login_required
+def reactivate_api_key(request, key_id):
+    if request.method == 'POST':
+        key = get_object_or_404(ApiKey, id=key_id, user=request.user)
+        if key.is_active:
+            messages.error(request, 'Key is already active.')
+            return redirect('accounts:api-keys')
+        key.is_active = True
+        key.revoked_at = None
+        key.save(update_fields=['is_active', 'revoked_at'])
+        log_audit_event(request, 'apikey.reactivated', 'ApiKey', key.id, {})
+        messages.success(request, f'Key "{key.name}" reactivated')
     return redirect('accounts:api-keys')
 
 

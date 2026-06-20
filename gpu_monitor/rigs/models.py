@@ -32,6 +32,10 @@ class Rig(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     tags = models.ManyToManyField(RigTag, blank=True, related_name='rigs')
 
+    # Track which API key enrolled this rig (for per-key rig counting)
+    enrolled_by_api_key = models.ForeignKey('accounts.ApiKey', null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='enrolled_rigs')
+
     # Latest error text from most recent payload (like motherboard_json — updated in place)
     # Format: [{"source": "kernel", "message": "...", "timestamp": "..."}]
     latest_errors_json = models.JSONField(default=list, blank=True)

@@ -85,7 +85,8 @@ def api_keys(request):
     ).prefetch_related(
         models.Prefetch('enrolled_rigs', queryset=Rig.objects.only('uuid', 'name', 'status'))
     )
-    return render(request, 'accounts/api_keys.html', {'keys': keys})
+    all_users = User.objects.exclude(id=request.user.id).order_by('email')
+    return render(request, 'accounts/api_keys.html', {'keys': keys, 'all_users': all_users})
 
 
 @login_required
@@ -102,6 +103,7 @@ def create_api_key(request):
         api_key = ApiKey.objects.create(
             user=request.user,
             name=name,
+            base_name=name,
             key_hash=key_hash,
         )
 
@@ -146,6 +148,90 @@ def delete_api_key(request, key_id):
         if request.headers.get('HX-Request'):
             return HttpResponse('')
         messages.success(request, f'Key "{name}" deleted permanently')
+    return redirect('accounts:api-keys')
+
+
+def _generate_transfer_name(base_name, target_user):
+    """Generate a unique name for a transferred key in the target user's namespace.
+
+    Uses base_name (always clean, never has transfer suffixes) as the starting point.
+    If the target user already has a key with that name, appends an incrementing counter.
+    The result is truncated to 255 chars max.
+    """
+    new_name = base_name
+
+    # Handle collision with incrementing counter
+    counter = 1
+    final_name = new_name
+    while ApiKey.objects.filter(user=target_user, name=final_name).exists():
+        final_name = f"{base_name}-{counter}"
+        counter += 1
+
+    # Truncate to 255 chars max (reserve space for collision suffix)
+    if len(final_name) > 255:
+        # Reserve for "-999" = 4 chars
+        base_truncated = base_name[:255 - 4]
+        final_name = base_truncated
+        counter = 1
+        while ApiKey.objects.filter(user=target_user, name=final_name).exists():
+            final_name = f"{base_truncated}-{counter}"
+            counter += 1
+
+    return final_name[:255]
+
+
+@login_required
+def transfer_api_keys(request):
+    if request.method != 'POST':
+        return redirect('accounts:api-keys')
+
+    key_ids = request.POST.getlist('key_ids')
+    target_user_id = request.POST.get('target_user_id')
+
+    if not key_ids:
+        messages.error(request, 'Select at least one key to transfer.')
+        return redirect('accounts:api-keys')
+
+    if not target_user_id:
+        messages.error(request, 'Select a target user.')
+        return redirect('accounts:api-keys')
+
+    target_user = get_object_or_404(User, id=target_user_id)
+
+    if target_user == request.user:
+        messages.error(request, 'Cannot transfer keys to yourself.')
+        return redirect('accounts:api-keys')
+
+    keys = ApiKey.objects.filter(id__in=key_ids, user=request.user)
+    transferred = 0
+    errors = []
+
+    for key in keys:
+        # Generate unique name in target user's namespace
+        new_name = _generate_transfer_name(key.base_name, target_user)
+
+        # Update key ownership and metadata
+        old_user = key.user
+        key.user = target_user
+        key.name = new_name
+        key.transfer_count = key.transfer_count + 1
+        key.save(update_fields=['user', 'name', 'transfer_count'])
+
+        # CRITICAL: Update rig ownership for all rigs enrolled by this key
+        rig_count = key.enrolled_rigs.count()
+        Rig.objects.filter(enrolled_by_api_key=key).update(owner=target_user)
+
+        log_audit_event(request, 'apikey.transferred', 'ApiKey', key.id, {
+            'from_user': old_user.id,
+            'to_user': target_user.id,
+            'rig_count': rig_count,
+        })
+        transferred += 1
+
+    messages.success(
+        request,
+        f'Transferred {transferred} key(s) to {target_user.email}.'
+    )
     return redirect('accounts:api-keys')
 
 

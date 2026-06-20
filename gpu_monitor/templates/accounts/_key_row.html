@@ -1,7 +1,12 @@
 <div class="key-row bg-gray-800 border border-gray-700 rounded p-4">
     <div class="flex items-center justify-between">
         <div>
-            <span class="font-medium">{{ key.name }}</span>
+            <div class="flex items-center gap-2">
+                <span class="font-medium">{{ key.name }}</span>
+                {% if key.transfer_count > 0 %}
+                <span class="text-xs text-gray-500" title="Transferred {{ key.transfer_count }} time(s)">↻ {{ key.transfer_count }}</span>
+                {% endif %}
+            </div>
             <span class="text-gray-500 text-sm ml-2">{% if key.is_active %}🟢 Active{% else %}🔴 Revoked{% endif %}</span>
             <span class="text-xs text-gray-500 ml-2">{{ key.rig_count }} rig{{ key.rig_count|pluralize }}</span>
             <div class="text-xs text-gray-500">Created: {{ key.created_at|date:"Y-m-d H:i" }}{% if key.revoked_at %} · Revoked: {{ key.revoked_at|date:"Y-m-d H:i" }}{% endif %}</div>

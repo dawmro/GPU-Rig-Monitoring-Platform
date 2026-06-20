@@ -80,7 +80,7 @@ COMPACT_TABLES = [
             'cpu_utilization_pct': 'avg', 'cpu_temp_c': 'avg',
             'cpu_freq_current_mhz': 'avg', 'cpu_freq_min_mhz': 'last', 'cpu_freq_max_mhz': 'last',
             'cpu_load_avg_json': 'last', 'mem_used_bytes': 'avg',
-            'mem_free_bytes': 'avg', 'mem_cached_bytes': 'avg',
+            'mem_free_bytes': 'avg', 'mem_cached_bytes': 'avg', 'mem_total_bytes': 'last',
             'swap_used_bytes': 'avg', 'swap_total_bytes': 'last',
             'uptime_s': 'max', 'status': 'last', 'error_count': 'sum',
         },

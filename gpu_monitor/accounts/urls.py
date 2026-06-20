@@ -12,7 +12,6 @@ urlpatterns = [
     path('accounts/change-password/', views.profile_view, name='change-password'),
     path('accounts/api-keys/', views.api_keys, name='api-keys'),
     path('accounts/api-keys/create/', views.create_api_key, name='create-api-key'),
-    path('accounts/api-keys/transfer/', views.transfer_api_keys, name='transfer-api-keys'),
     path('accounts/api-keys/<str:key_id>/revoke/', views.revoke_api_key, name='revoke-api-key'),
     path('accounts/api-keys/<str:key_id>/delete/', views.delete_api_key, name='delete-api-key'),
     path('accounts/api-keys/<str:key_id>/reactivate/', views.reactivate_api_key, name='reactivate-api-key'),

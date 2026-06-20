@@ -78,6 +78,7 @@ COMPACT_TABLES = [
         'group_by': ['rig_uuid'],
         'agg_fields': {
             'cpu_utilization_pct': 'avg', 'cpu_temp_c': 'avg',
+            'cpu_freq_current_mhz': 'avg', 'cpu_freq_min_mhz': 'last', 'cpu_freq_max_mhz': 'last',
             'cpu_load_avg_json': 'last', 'mem_used_bytes': 'avg',
             'mem_free_bytes': 'avg', 'mem_cached_bytes': 'avg',
             'swap_used_bytes': 'avg', 'swap_total_bytes': 'last',

@@ -11,6 +11,7 @@
                 <th class="text-left px-2 py-2 font-medium">GPU Temp [°C]</th>
                 <th class="text-left px-2 py-2 font-medium">GPU Util [%]</th>
                 <th class="text-left px-2 py-2 font-medium">GPU Fan [%]</th>
+                <th class="text-left px-2 py-2 font-medium">CPU Temp [°C]</th>
                 <th class="text-left px-2 py-2 font-medium">CPU [%]</th>
                 <th class="text-left px-2 py-2 font-medium">Disk Util [%]</th>
             </tr>
@@ -88,7 +89,15 @@
                         </span>
                     {% else %}—{% endif %}
                 </td>
-                {# CPU column #}
+                {# CPU Temp column #}
+                <td class="px-2 py-2 whitespace-nowrap">
+                    {% if item.snapshot and item.snapshot.cpu_temp_c != None %}
+                        <span class="{% if item.snapshot.cpu_temp_c > 85 %}text-red-400{% elif item.snapshot.cpu_temp_c > 70 %}text-yellow-400{% else %}text-green-400{% endif %}">
+                            {{ item.snapshot.cpu_temp_c|floatformat:1 }}°C
+                        </span>
+                    {% else %}—{% endif %}
+                </td>
+                {# CPU Util column #}
                 <td class="px-2 py-2 text-gray-400 whitespace-nowrap">
                     {% if item.snapshot and item.snapshot.cpu_utilization_pct != None %}
                         {{ item.snapshot.cpu_utilization_pct|floatformat:1 }}
@@ -107,7 +116,7 @@
             </tr>
             {% empty %}
             <tr>
-                <td colspan="10" class="px-4 py-8 text-center text-gray-500">
+                <td colspan="11" class="px-4 py-8 text-center text-gray-500">
                     No rigs found. Deploy the monitoring agent to enroll your first rig.
                 </td>
             </tr>

@@ -85,7 +85,10 @@ def api_keys(request):
     ).prefetch_related(
         models.Prefetch('enrolled_rigs', queryset=Rig.objects.only('uuid', 'name', 'status'))
     )
-    return render(request, 'accounts/api_keys.html', {'keys': keys})
+    all_users = None
+    if request.user.is_staff:
+        all_users = User.objects.exclude(id=request.user.id).order_by('email')
+    return render(request, 'accounts/api_keys.html', {'keys': keys, 'all_users': all_users})
 
 
 @login_required
@@ -177,6 +180,61 @@ def _generate_transfer_name(base_name, target_user):
             counter += 1
 
     return final_name[:255]
+
+
+@login_required
+def transfer_api_keys(request):
+    if not request.user.is_staff:
+        messages.error(request, 'Only staff users can transfer API keys.')
+        return redirect('accounts:api-keys')
+
+    if request.method != 'POST':
+        return redirect('accounts:api-keys')
+
+    key_ids = request.POST.getlist('key_ids')
+    target_user_id = request.POST.get('target_user_id')
+
+    if not key_ids:
+        messages.error(request, 'Select at least one key to transfer.')
+        return redirect('accounts:api-keys')
+
+    if not target_user_id:
+        messages.error(request, 'Select a target user.')
+        return redirect('accounts:api-keys')
+
+    target_user = get_object_or_404(User, id=target_user_id)
+
+    keys = ApiKey.objects.filter(id__in=key_ids, user=request.user)
+    transferred = 0
+
+    for key in keys:
+        # Generate unique name in target user's namespace
+        new_name = _generate_transfer_name(key.base_name, target_user)
+
+        # Update key ownership and metadata
+        old_user = key.user
+        key.user = target_user
+        key.name = new_name
+        key.transfer_count = key.transfer_count + 1
+        key.save(update_fields=['user', 'name', 'transfer_count'])
+
+        # CRITICAL: Update rig ownership for all rigs enrolled by this key
+        rig_count = Rig.objects.filter(
+            enrolled_by_api_key=key
+        ).update(owner=target_user)
+
+        log_audit_event(request, 'apikey.transferred', 'ApiKey', key.id, {
+            'from_user': old_user.id,
+            'to_user': target_user.id,
+            'rig_count': rig_count,
+        })
+        transferred += 1
+
+    messages.success(
+        request,
+        f'Transferred {transferred} key(s) to {target_user.email}.'
+    )
+    return redirect('accounts:api-keys')
 
 
 @login_required

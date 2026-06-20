@@ -15,20 +15,51 @@
         </button>
     </form>
 
+    {% if keys %}
+    {% if user.is_staff %}
+    <div class="bg-gray-800 border border-gray-700 rounded p-4 mb-4">
+        <div class="flex items-center justify-between mb-3">
+            <span class="text-sm text-gray-400">{{ keys|length }} key{{ keys|length|pluralize }}</span>
+            <div class="flex items-center gap-3">
+                <select id="transfer-target-user" name="target_user_id"
+                        class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white">
+                    <option value="">Transfer selected to...</option>
+                    {% for u in all_users %}
+                    <option value="{{ u.id }}">{{ u.email }}</option>
+                    {% endfor %}
+                </select>
+                <button type="submit" form="transfer-form"
+                        class="bg-yellow-600 hover:bg-yellow-700 px-3 py-1.5 rounded text-white text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                        id="transfer-btn" disabled>
+                    Transfer Selected
+                </button>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <form id="transfer-form" method="post" action="{% url 'accounts:transfer-api-keys' %}">
+        {% csrf_token %}
+    {% endif %}
     <div id="key-list" class="space-y-2">
         {% for key in keys %}
         <div class="key-row bg-gray-800 border border-gray-700 rounded p-4">
             <div class="flex items-center justify-between">
-                <div>
-                    <div class="flex items-center gap-2">
-                        <span class="font-medium">{{ key.name }}</span>
-                        {% if key.transfer_count > 0 %}
-                        <span class="text-xs text-gray-500" title="Transferred {{ key.transfer_count }} time(s)">↻ {{ key.transfer_count }}</span>
-                        {% endif %}
-                    </div>
-                    <span class="text-gray-500 text-sm">{% if key.is_active %}🟢 Active{% else %}🔴 Revoked{% endif %}</span>
-                    <span class="text-xs text-gray-500 ml-2">{{ key.rig_count }} rig{{ key.rig_count|pluralize }}</span>
-                    <div class="text-xs text-gray-500">Created: {{ key.created_at|date:"Y-m-d H:i" }}{% if key.revoked_at %} · Revoked: {{ key.revoked_at|date:"Y-m-d H:i" }}{% endif %}</div>
+                <div class="{% if user.is_staff %}flex items-start gap-3{% endif %}">
+                    {% if user.is_staff %}
+                    <input type="checkbox" name="key_ids" value="{{ key.id }}"
+                           class="mt-1 w-4 h-4 rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-500 focus:ring-offset-0 transfer-checkbox">
+                    {% endif %}
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <span class="font-medium">{{ key.name }}</span>
+                            {% if key.transfer_count > 0 %}
+                            <span class="text-xs text-gray-500" title="Transferred {{ key.transfer_count }} time(s)">↻ {{ key.transfer_count }}</span>
+                            {% endif %}
+                        </div>
+                        <span class="text-gray-500 text-sm">{% if key.is_active %}🟢 Active{% else %}🔴 Revoked{% endif %}</span>
+                        <span class="text-xs text-gray-500 ml-2">{{ key.rig_count }} rig{{ key.rig_count|pluralize }}</span>
+                        <div class="text-xs text-gray-500">Created: {{ key.created_at|date:"Y-m-d H:i" }}{% if key.revoked_at %} · Revoked: {{ key.revoked_at|date:"Y-m-d H:i" }}{% endif %}</div>
                     {% if key.rig_count > 1 %}
                     <div class="mt-2 flex items-center gap-1.5 text-xs text-yellow-500">
                         <span>⚠️</span>
@@ -80,4 +111,27 @@
         <p class="text-gray-500">No API keys yet. Create one above.</p>
         {% endfor %}
     </div>
+    {% if keys and user.is_staff %}
+    </form>
+    {% endif %}
+</div>
+
+{% if user.is_staff %}
+<script>
+// Enable/disable transfer button based on checkbox selection
+document.querySelectorAll('.transfer-checkbox').forEach(function(checkbox) {
+    checkbox.addEventListener('change', function() {
+        var anyChecked = document.querySelectorAll('.transfer-checkbox:checked').length > 0;
+        var targetUser = document.getElementById('transfer-target-user').value;
+        document.getElementById('transfer-btn').disabled = !(anyChecked && targetUser);
+    });
+});
+
+document.getElementById('transfer-target-user').addEventListener('change', function() {
+    var anyChecked = document.querySelectorAll('.transfer-checkbox:checked').length > 0;
+    var targetUser = this.value;
+    document.getElementById('transfer-btn').disabled = !(anyChecked && targetUser);
+});
+</script>
+{% endif %}
 {% endblock %}

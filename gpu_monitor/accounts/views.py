@@ -5,6 +5,7 @@ from django.contrib.auth import login, logout, authenticate
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import HttpResponse
+from django.utils import timezone
 from .models import ApiKey, User
 from audit.middleware import log_audit_event
 from rigs.models import RigTag

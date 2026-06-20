@@ -115,13 +115,28 @@ def revoke_api_key(request, key_id):
     if request.method == 'POST':
         key = get_object_or_404(ApiKey, id=key_id, user=request.user)
         key.is_active = False
-        key.save(update_fields=['is_active'])
+        key.revoked_at = timezone.now()
+        key.save(update_fields=['is_active', 'revoked_at'])
 
         log_audit_event(request, 'apikey.revoked', 'ApiKey', key.id, {})
 
         if request.headers.get('HX-Request'):
             return HttpResponse('')
         messages.success(request, f'Key "{key.name}" revoked')
+    return redirect('accounts:api-keys')
+
+
+@login_required
+def delete_api_key(request, key_id):
+    if request.method == 'POST':
+        key = get_object_or_404(ApiKey, id=key_id, user=request.user)
+        if key.is_active:
+            messages.error(request, 'Cannot delete an active key. Revoke it first.')
+            return redirect('accounts:api-keys')
+        name = key.name
+        key.delete()
+        log_audit_event(request, 'apikey.deleted', 'ApiKey', key_id, {'name': name})
+        messages.success(request, f'Key "{name}" deleted permanently')
     return redirect('accounts:api-keys')
 
 

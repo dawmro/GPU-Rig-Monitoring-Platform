@@ -23,12 +23,19 @@
                 <span class="text-gray-500 text-sm ml-2">{% if key.is_active %}🟢 Active{% else %}🔴 Revoked{% endif %}</span>
                 <div class="text-xs text-gray-500">Created: {{ key.created_at|date:"Y-m-d H:i" }}</div>
             </div>
+            <div class="flex items-center gap-2">
             {% if key.is_active %}
             <form hx-post="{% url 'accounts:revoke-api-key' key.id %}" hx-target="closest div" hx-swap="outerHTML">
                 {% csrf_token %}
                 <button type="submit" class="text-red-400 hover:text-red-300 text-sm">Revoke</button>
             </form>
+            {% else %}
+            <form hx-post="{% url 'accounts:delete-api-key' key.id %}" hx-target="closest div" hx-swap="outerHTML">
+                {% csrf_token %}
+                <button type="submit" class="text-gray-500 hover:text-red-400 text-sm">Delete</button>
+            </form>
             {% endif %}
+            </div>
         </div>
         {% empty %}
         <p class="text-gray-500">No API keys yet. Create one above.</p>

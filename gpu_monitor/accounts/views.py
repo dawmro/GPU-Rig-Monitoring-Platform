@@ -8,7 +8,7 @@ from django.http import HttpResponse
 from django.utils import timezone
 from .models import ApiKey, User
 from audit.middleware import log_audit_event
-from rigs.models import RigTag
+from rigs.models import Rig, RigTag
 
 
 def register_view(request):
@@ -82,6 +82,8 @@ def logout_view(request):
 def api_keys(request):
     keys = ApiKey.objects.filter(user=request.user).annotate(
         rig_count=models.Count('enrolled_rigs')
+    ).prefetch_related(
+        models.Prefetch('enrolled_rigs', queryset=Rig.objects.only('uuid', 'name', 'status'))
     )
     return render(request, 'accounts/api_keys.html', {'keys': keys})
 

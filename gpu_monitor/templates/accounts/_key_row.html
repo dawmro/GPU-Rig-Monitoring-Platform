@@ -5,6 +5,18 @@
             <span class="text-gray-500 text-sm ml-2">{% if key.is_active %}🟢 Active{% else %}🔴 Revoked{% endif %}</span>
             <span class="text-xs text-gray-500 ml-2">{{ key.rig_count }} rig{{ key.rig_count|pluralize }}</span>
             <div class="text-xs text-gray-500">Created: {{ key.created_at|date:"Y-m-d H:i" }}{% if key.revoked_at %} · Revoked: {{ key.revoked_at|date:"Y-m-d H:i" }}{% endif %}</div>
+        {% if key.rig_count > 1 %}
+        <div class="mt-2 flex items-center gap-1.5 text-xs text-yellow-500">
+            <span>⚠️</span>
+            <span>This key is used by {{ key.rig_count }} rigs. For better security, use a unique key per rig.</span>
+        </div>
+        {% endif %}
+        {% if key.rig_count == 1 %}
+        <div class="mt-2 flex items-center gap-1.5 text-xs text-green-600">
+            <span>✓</span>
+            <span>Unique key — only one rig uses this key.</span>
+        </div>
+        {% endif %}
         </div>
         <div class="flex items-center gap-2">
         {% if key.is_active %}

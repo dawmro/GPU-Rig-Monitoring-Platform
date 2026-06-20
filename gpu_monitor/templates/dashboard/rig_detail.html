@@ -522,7 +522,8 @@ async function loadChart(canvasId, metric, uuid, range, unit, borderColor, bgCol
                     y: {
                         grid: { color: 'rgba(255,255,255,0.05)' },
                         ticks: { color: '#9ca3af' },
-                        beginAtZero: true
+                        beginAtZero: true,
+                        title: { display: true, text: unit, color: '#6b7280', font: { size: 11 } }
                     }
                 },
                 interaction: {
@@ -1007,7 +1008,7 @@ async function loadChartMultiKeyDual(canvasId, metricRead, metricWrite, uuid, ra
                             }
                         }
                     },
-                    y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#9ca3af' }, beginAtZero: true }
+                    y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#9ca3af' }, beginAtZero: true, title: { display: true, text: unit, color: '#6b7280', font: { size: 11 } } }
                 },
                 interaction: { mode: 'nearest', axis: 'x', intersect: false }
             }
@@ -1136,6 +1137,7 @@ async function loadChartMultiGpu(canvasId, metric, uuid, range, unit) {
                         grid: { color: 'rgba(255,255,255,0.05)' },
                         ticks: { color: '#9ca3af' },
                         beginAtZero: true,
+                        title: { display: true, text: unit, color: '#6b7280', font: { size: 11 } }
                     }
                 },
                 interaction: {
@@ -1249,6 +1251,7 @@ async function loadChartMultiKey(canvasId, metric, uuid, range, unit, multi_para
                         grid: { color: 'rgba(255,255,255,0.05)' },
                         ticks: { color: '#9ca3af' },
                         beginAtZero: true,
+                        title: { display: true, text: unit, color: '#6b7280', font: { size: 11 } }
                     }
                 },
                 interaction: {

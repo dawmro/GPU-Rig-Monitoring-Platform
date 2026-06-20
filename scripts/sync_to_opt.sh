@@ -76,6 +76,17 @@ rsync -av --delete \
     "$WORKSPACE/gpu_monitor/templates/" "$OPT/gpu_monitor/templates/" 2>/dev/null \
 || cp -r "$WORKSPACE/gpu_monitor/templates/"* "$OPT/gpu_monitor/templates/" 2>/dev/null || true
 
+# ── Step 2b: Copy project-level static files ──────────────────────────
+echo "--- Static files ---"
+if [ -d "$WORKSPACE/gpu_monitor/static" ]; then
+    mkdir -p "$OPT/gpu_monitor/static"
+    rsync -av --delete \
+        --exclude='__pycache__' \
+        "$WORKSPACE/gpu_monitor/static/" "$OPT/gpu_monitor/static/" 2>/dev/null \
+    || cp -r "$WORKSPACE/gpu_monitor/static/"* "$OPT/gpu_monitor/static/" 2>/dev/null || true
+    echo "  Synced: static/"
+fi
+
 # ── Step 3: Copy management commands ────────────────────────────────
 echo "--- Management commands ---"
 for cmd_dir in "$WORKSPACE/gpu_monitor/"*/management/commands/; do

@@ -1,0 +1,25 @@
+<div class="bg-gray-800 border border-gray-700 rounded p-4 flex items-center justify-between">
+    <div>
+        <span class="font-medium">{{ key.name }}</span>
+        <span class="text-gray-500 text-sm ml-2">{% if key.is_active %}🟢 Active{% else %}🔴 Revoked{% endif %}</span>
+        <span class="text-xs text-gray-500 ml-2">{{ key.rig_count }} rig{{ key.rig_count|pluralize }}</span>
+        <div class="text-xs text-gray-500">Created: {{ key.created_at|date:"Y-m-d H:i" }}{% if key.revoked_at %} · Revoked: {{ key.revoked_at|date:"Y-m-d H:i" }}{% endif %}</div>
+    </div>
+    <div class="flex items-center gap-2">
+    {% if key.is_active %}
+    <form hx-post="{% url 'accounts:revoke-api-key' key.id %}" hx-target="closest div" hx-swap="outerHTML">
+        {% csrf_token %}
+        <button type="submit" class="text-red-400 hover:text-red-300 text-sm">Revoke</button>
+    </form>
+    {% else %}
+    <form hx-post="{% url 'accounts:reactivate-api-key' key.id %}" hx-target="closest div" hx-swap="outerHTML">
+        {% csrf_token %}
+        <button type="submit" class="text-green-400 hover:text-green-300 text-sm">Reactivate</button>
+    </form>
+    <form hx-post="{% url 'accounts:delete-api-key' key.id %}" hx-target="closest div" hx-swap="outerHTML">
+        {% csrf_token %}
+        <button type="submit" class="text-gray-500 hover:text-red-400 text-sm">Delete</button>
+    </form>
+    {% endif %}
+    </div>
+</div>

@@ -124,7 +124,8 @@ def revoke_api_key(request, key_id):
         log_audit_event(request, 'apikey.revoked', 'ApiKey', key.id, {})
 
         if request.headers.get('HX-Request'):
-            return HttpResponse('')
+            key.rig_count = key.enrolled_rigs.count()
+            return render(request, 'accounts/_key_row.html', {'key': key})
         messages.success(request, f'Key "{key.name}" revoked')
     return redirect('accounts:api-keys')
 
@@ -139,6 +140,8 @@ def delete_api_key(request, key_id):
         name = key.name
         key.delete()
         log_audit_event(request, 'apikey.deleted', 'ApiKey', key_id, {'name': name})
+        if request.headers.get('HX-Request'):
+            return HttpResponse('')
         messages.success(request, f'Key "{name}" deleted permanently')
     return redirect('accounts:api-keys')
 
@@ -154,6 +157,9 @@ def reactivate_api_key(request, key_id):
         key.revoked_at = None
         key.save(update_fields=['is_active', 'revoked_at'])
         log_audit_event(request, 'apikey.reactivated', 'ApiKey', key.id, {})
+        if request.headers.get('HX-Request'):
+            key.rig_count = key.enrolled_rigs.count()
+            return render(request, 'accounts/_key_row.html', {'key': key})
         messages.success(request, f'Key "{key.name}" reactivated')
     return redirect('accounts:api-keys')
 

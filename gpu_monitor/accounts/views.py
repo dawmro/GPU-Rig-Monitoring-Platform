@@ -157,19 +157,22 @@ def _generate_transfer_name(base_name, target_user):
     If the target user already has a key with that name, appends an incrementing counter.
     The result is truncated to 255 chars max.
     """
-    new_name = base_name
+    # Fallback to key's current name if base_name is empty (legacy keys)
+    effective_base = base_name or 'key'
+
+    new_name = effective_base
 
     # Handle collision with incrementing counter
     counter = 1
     final_name = new_name
     while ApiKey.objects.filter(user=target_user, name=final_name).exists():
-        final_name = f"{base_name}-{counter}"
+        final_name = f"{effective_base}-{counter}"
         counter += 1
 
     # Truncate to 255 chars max (reserve space for collision suffix)
     if len(final_name) > 255:
         # Reserve for "-999" = 4 chars
-        base_truncated = base_name[:255 - 4]
+        base_truncated = effective_base[:255 - 4]
         final_name = base_truncated
         counter = 1
         while ApiKey.objects.filter(user=target_user, name=final_name).exists():

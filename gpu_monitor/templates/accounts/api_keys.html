@@ -18,28 +18,27 @@
     {% if keys %}
     {% if user.is_staff %}
     <div class="bg-gray-800 border border-gray-700 rounded p-4 mb-4">
-        <div class="flex items-center justify-between mb-3">
-            <span class="text-sm text-gray-400">{{ keys|length }} key{{ keys|length|pluralize }}</span>
-            <div class="flex items-center gap-3">
-                <select id="transfer-target-user" name="target_user_id"
-                        class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white">
-                    <option value="">Transfer selected to...</option>
-                    {% for u in all_users %}
-                    <option value="{{ u.id }}">{{ u.email }}</option>
-                    {% endfor %}
-                </select>
-                <button type="submit" form="transfer-form"
-                        class="bg-yellow-600 hover:bg-yellow-700 px-3 py-1.5 rounded text-white text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                        id="transfer-btn" disabled>
-                    Transfer Selected
-                </button>
+        <form id="transfer-form" method="post" action="{% url 'accounts:transfer-api-keys' %}">
+            {% csrf_token %}
+            <div class="flex items-center justify-between mb-3">
+                <span class="text-sm text-gray-400">{{ keys|length }} key{{ keys|length|pluralize }}</span>
+                <div class="flex items-center gap-3">
+                    <select id="transfer-target-user" name="target_user_id"
+                            class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white">
+                        <option value="">Transfer selected to...</option>
+                        {% for u in all_users %}
+                        <option value="{{ u.id }}">{{ u.email }}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="submit"
+                            class="bg-yellow-600 hover:bg-yellow-700 px-3 py-1.5 rounded text-white text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                            id="transfer-btn" disabled>
+                        Transfer Selected
+                    </button>
+                </div>
             </div>
-        </div>
+        </form>
     </div>
-    {% endif %}
-
-    <form id="transfer-form" method="post" action="{% url 'accounts:transfer-api-keys' %}">
-        {% csrf_token %}
     {% endif %}
     <div id="key-list" class="space-y-2">
         {% for key in keys %}
@@ -112,8 +111,6 @@
         <p class="text-gray-500">No API keys yet. Create one above.</p>
         {% endfor %}
     </div>
-    {% if keys and user.is_staff %}
-    </form>
     {% endif %}
 </div>
 

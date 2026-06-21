@@ -104,17 +104,21 @@ class IngestView(APIView):
                 return Response({'status': 'error', 'message': 'UUID already claimed by another user'}, status=409)
 
         # Update enrolled_by_api_key to the current key (handles key rotation on the agent)
-        if rig.enrolled_by_api_key_id != api_key.id:
+        # Combine with the last_seen/status update below to minimize DB writes
+        enrolled_by_key_changed = rig.enrolled_by_api_key_id != api_key.id
+        if enrolled_by_key_changed:
             rig.enrolled_by_api_key = api_key
-            rig.save(update_fields=['enrolled_by_api_key'])
 
         # Process the payload
         result, http_status = process_ingest(rig_uuid, data, user.id, rig=rig)
 
-        # Update rig last_seen and status
+        # Update rig last_seen, status, and optionally enrolled_by_api_key
         rig.last_seen = timezone.now()
         rig.status = Rig.Status.ONLINE
-        rig.save(update_fields=['last_seen', 'status'])
+        update_fields = ['last_seen', 'status']
+        if enrolled_by_key_changed:
+            update_fields.append('enrolled_by_api_key')
+        rig.save(update_fields=update_fields)
 
         return Response(result, status=http_status)
 

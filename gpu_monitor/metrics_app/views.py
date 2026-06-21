@@ -250,7 +250,7 @@ class ChartDataView(APIView):
         labels, start_bucket, end_bucket = self._build_buckets(range_hours, bucket_minutes)
         total_buckets = len(labels)
         trunc = TruncMinute if bucket_minutes == 1 else TruncHour
-        agg_func = Sum if metric in {'net_rx_bytes_delta', 'net_tx_bytes_delta', 'error_frequency', 'disk_read_bytes_delta', 'disk_write_bytes_delta', 'disk_read_iops_delta', 'disk_write_iops_delta'} else Avg
+        agg_func = Sum if metric in {'net_rx_bytes_delta', 'net_tx_bytes_delta', 'net_rx_errors', 'net_tx_errors', 'error_frequency', 'disk_read_bytes_delta', 'disk_write_bytes_delta', 'disk_read_iops_delta', 'disk_write_iops_delta'} else Avg
 
         # Helper: run SQL aggregation and map to values array
         def chart_values(qs, field):

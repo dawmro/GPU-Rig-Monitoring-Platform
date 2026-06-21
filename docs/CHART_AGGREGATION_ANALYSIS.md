@@ -126,26 +126,23 @@ This is semantically correct — the chart shows "average hourly throughput" whi
 
 Also added `min` support to the SQL generation in `_compact_table()`.
 
-### Bug 2: Disk Read/Write and IOPS deltas — WRONG aggregation in ChartDataView
+### Bug 2: Disk Read/Write and IOPS deltas + Network errors — WRONG aggregation in ChartDataView
 
 **Before fix:**
-```python
-agg_func = Sum if metric in {'net_rx_bytes_delta', 'net_tx_bytes_delta', 'error_frequency'} else Avg
-```
-
-**After fix:**
 ```python
 agg_func = Sum if metric in {'net_rx_bytes_delta', 'net_tx_bytes_delta', 'error_frequency', 'disk_read_bytes_delta', 'disk_write_bytes_delta', 'disk_read_iops_delta', 'disk_write_iops_delta'} else Avg
 ```
 
-**Rationale:** Disk I/O deltas represent bytes/IOPS transferred since the last reading. When charting:
-- **24h chart (1-min buckets):** Each bucket has 1 row. SUM = the delta itself = bytes/min. ✅
-- **7d chart (1-hour buckets):** Each bucket has 60 rows (raw data) or 1 row (compacted). SUM of all deltas in the hour = total bytes/IOPS for that hour. ✅
+**After fix:**
+```python
+agg_func = Sum if metric in {'net_rx_bytes_delta', 'net_tx_bytes_delta', 'net_rx_errors', 'net_tx_errors', 'error_frequency', 'disk_read_bytes_delta', 'disk_write_bytes_delta', 'disk_read_iops_delta', 'disk_write_iops_delta'} else Avg
+```
 
-Using `AVG` was wrong because:
-- For raw data: AVG of 60 deltas = average bytes per minute (not total)
-- For compacted data: AVG of 1 row = the SUM value (correct by accident)
-- This caused the 24h chart to show much higher values than the 7d chart for the same period
+**Rationale:** 
+- Disk I/O deltas represent bytes/IOPS transferred since last reading. SUM gives total per bucket.
+- Network errors are cumulative counters. SUM gives total errors per bucket.
+- Using `AVG` was wrong because it gave average-per-minute instead of total-per-hour for 7d/30d charts.
+- This caused the 24h chart to show much higher values than the 7d chart for the same period.
 
 **All other aggregations are correct:**
 - compact_data.py uses appropriate aggregation per field type

@@ -1,29 +1,46 @@
 <div class="key-row bg-gray-800 border border-gray-700 rounded p-4">
-    <div class="flex items-center justify-between">
-        <div>
+    <div class="flex items-start justify-between">
+        <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2">
                 <span class="font-medium">{{ key.name }}</span>
                 {% if key.transfer_count > 0 %}
                 <span class="text-xs text-gray-500" title="Transferred {{ key.transfer_count }} time(s)">↻ {{ key.transfer_count }}</span>
                 {% endif %}
             </div>
-            <span class="text-gray-500 text-sm ml-2">{% if key.is_active %}🟢 Active{% else %}🔴 Revoked{% endif %}</span>
-            <span class="text-xs text-gray-500 ml-2">{{ key.rig_count }} rig{{ key.rig_count|pluralize }}</span>
+            <div class="flex items-center gap-2 mt-1">
+                <span class="text-gray-500 text-sm">{% if key.is_active %}🟢 Active{% else %}🔴 Revoked{% endif %}</span>
+                <span class="text-xs text-gray-500">{{ key.rig_count }} rig{{ key.rig_count|pluralize }}</span>
+            </div>
             <div class="text-xs text-gray-500">Created: {{ key.created_at|date:"Y-m-d H:i" }}{% if key.revoked_at %} · Revoked: {{ key.revoked_at|date:"Y-m-d H:i" }}{% endif %}</div>
-        {% if key.rig_count > 1 %}
-        <div class="mt-2 flex items-center gap-1.5 text-xs text-yellow-500">
-            <span>⚠️</span>
-            <span>This key is used by {{ key.rig_count }} rigs. For better security, use a unique key per rig.</span>
+            {% if key.rig_count > 1 %}
+            <div class="mt-2 flex items-center gap-1.5 text-xs text-yellow-500">
+                <span>⚠️</span>
+                <span>This key is used by {{ key.rig_count }} rigs. For better security, use a unique key per rig.</span>
+            </div>
+            {% endif %}
+            {% if key.rig_count == 1 %}
+            <div class="mt-2 flex items-center gap-1.5 text-xs text-green-600">
+                <span>✓</span>
+                <span>Unique key — only one rig uses this key.</span>
+            </div>
+            {% endif %}
+            {% if key.enrolled_rigs.all %}
+            <div class="mt-3 pt-3 border-t border-gray-700">
+                <div class="text-xs text-gray-500 mb-2">Enrolled rigs:</div>
+                <div class="space-y-1">
+                    {% for rig in key.enrolled_rigs.all %}
+                    <div class="flex items-center gap-2 text-xs">
+                        <a href="{% url 'dashboard:rig-detail' rig.uuid %}" class="text-blue-400 hover:text-blue-300 font-mono truncate max-w-[200px]" title="{{ rig.name }}">{{ rig.name|default:"Unnamed" }}</a>
+                        <span class="text-gray-600 font-mono">{{ rig.uuid|truncatechars:12 }}</span>
+                        <span class="text-gray-600">·</span>
+                        <span class="text-gray-500">{{ rig.status }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
         </div>
-        {% endif %}
-        {% if key.rig_count == 1 %}
-        <div class="mt-2 flex items-center gap-1.5 text-xs text-green-600">
-            <span>✓</span>
-            <span>Unique key — only one rig uses this key.</span>
-        </div>
-        {% endif %}
-        </div>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2 flex-shrink-0 ml-4">
         {% if key.is_active %}
         <form hx-post="{% url 'accounts:revoke-api-key' key.id %}" hx-target="closest .key-row" hx-swap="outerHTML">
             {% csrf_token %}
@@ -41,19 +58,4 @@
         {% endif %}
         </div>
     </div>
-    {% if key.enrolled_rigs.all %}
-    <div class="mt-3 pt-3 border-t border-gray-700">
-        <div class="text-xs text-gray-500 mb-2">Enrolled rigs:</div>
-        <div class="space-y-1">
-            {% for rig in key.enrolled_rigs.all %}
-            <div class="flex items-center gap-2 text-xs">
-                <a href="{% url 'dashboard:rig-detail' rig.uuid %}" class="text-blue-400 hover:text-blue-300 font-mono truncate max-w-[200px]" title="{{ rig.name }}">{{ rig.name|default:"Unnamed" }}</a>
-                <span class="text-gray-600 font-mono">{{ rig.uuid|truncatechars:12 }}</span>
-                <span class="text-gray-600">·</span>
-                <span class="text-gray-500">{{ rig.status }}</span>
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-    {% endif %}
 </div>

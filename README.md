@@ -24,8 +24,10 @@ A single-server telemetry dashboard for GPU rigs running AI/LLM workloads. Colle
 │  │ Linux + Windows │                                   │   Proxy      │  │
 │  └─────────────────┘                                   └──────┬───────┘  │
 └───────────────────────────────────────────────────────────────┼──────────┘
-                                                                │ HTTPS
-                                                                │ (TLS 1.3)
+                                                                │ HTTP
+                                                                │ (or HTTPS
+                                                                │  if TLS
+                                                                │  configured)
 ┌───────────────────────────────────────────────────────────────┼──────────┐
 │                   SINGLE UBUNTU VPS (Trusted)                 │          │
 │                                                               ▼          │
@@ -124,26 +126,29 @@ Deployed to each monitored rig. Collect hardware metrics (CPU, GPU, memory, stor
 
 | Category | Metrics | Agent |
 |----------|---------|-------|
-| **CPU** | Model, cores, load avg, temperature, utilization % | Linux, Windows |
+| **CPU** | Model, cores, load avg, temperature, utilization %, frequency (current/min/max) | Linux, Windows |
 | **Memory** | Total, used, free, cached, swap | Linux, Windows |
-| **GPU** | Model, memory (used/free/total), utilization, temp, power, fan, PCIe link | Linux, Windows |
+| **GPU** | Model, memory (used/free/total), utilization, temp, power, fan, PCIe link, core/mem clocks | Linux, Windows |
 | **GPU Processes** | Per-process name, type (C/G/C+G), memory usage | Linux, Windows |
-| **Storage** | Per-device capacity, usage %, SMART health, NVMe logs, temperature | Linux, Windows |
+| **Storage** | Per-device capacity, usage %, SMART health, NVMe logs, temperature, read/write bytes, IOPS, utilization | Linux, Windows |
 | **Network** | Per-interface IPv4, speed, RX/TX bytes, error counts | Linux, Windows |
-| **Docker** | Container count, names, images, status, restart count | Linux, Windows |
-| **Motherboard** | Manufacturer, model, BIOS version | Linux, Windows |
-| **Software** | Hostname, OS distro, kernel, uptime, NVIDIA driver, Docker version | Linux, Windows |
-| **Errors** | System errors from last 5 minutes (journalctl / Windows Event Log) | Linux, Windows |
+| **Docker** | Container count, names, images, status, container ID, uptime | Linux, Windows |
+| **Top Processes** | Top 20 by CPU and memory (pid, name, cpu%, mem%, username, cmdline) | Linux, Windows |
+| **Errors** | System errors with deduplication (up to 1000 entries, rolling window) | Linux, Windows |
 
 ## Dashboard Features
 
 | Tab | Description |
 |-----|-------------|
-| **Live Metrics** | Auto-refreshing cards (CPU, Memory, GPU, Storage, Network, Docker, Errors) via 30s HTMX polling |
-| **Historical Charts** | Multi-series time-range charts (GPU temp/util/memory/power, CPU, Storage, Network, Error frequency) |
-| **Errors** | Recent system errors with source, timestamp, and count |
+| **Live Metrics** | Auto-refreshing cards (CPU, Memory, GPU, Storage, Network, Docker, Errors, Top Processes) via 30s HTMX polling |
+| **Historical Charts** | Multi-series time-range charts (GPU temp/util/memory/power/clocks, CPU temp/util/freq, Storage, Network, Error frequency) |
+| **Errors** | Full error history (up to 1000 entries) with source, timestamp, and deduplication |
 
-**Fleet overview:** All rigs with per-GPU summaries, tag filtering, status badges (🟢 Online / 🟡 Stale / 🔴 Offline).
+**Fleet overview:** All rigs with per-GPU summaries (including CPU temp), tag filtering, status badges (🟢 Online / 🟡 Stale / 🔴 Offline).
+
+**API Key Management:** Create, revoke, reactivate, and delete API keys. Each key shows enrolled rigs and transfer count. Unique key per rig recommended.
+
+**Admin Transfer Keys (staff only):** Transfer API keys and their enrolled rigs between any users.
 
 **Rig status state machine:**
 - 🟢 **Online** — last seen ≤ 2 minutes ago
@@ -167,12 +172,12 @@ Deployed to each monitored rig. Collect hardware metrics (CPU, GPU, memory, stor
 
 ## Security
 
-- **Per-rig rate limiting:** 5 req/min per `rig_uuid` (no IP-based blocking)
+- **Per-rig rate limiting:** 2 req/min per `rig_uuid` (burst=5)
 - **General rate limiting:** 30 req/s per IP (burst protection)
-- **TLS 1.3** via Let's Encrypt (auto-renewed)
 - **Timestamp validation:** payloads with timestamps >5 min future or >1 hour past are rejected (400)
 - **Dual authentication:** `X-API-Key` (user) + `X-Rig-UUID` (rig identification)
 - **Agent isolation:** agents authenticate via API key only — no access to other users' rigs
+- **API key management:** Create, revoke, reactivate, delete keys. Transfer keys between users (admin).
 
 ## Tech Stack
 

@@ -1,8 +1,8 @@
 # GPU Rig Monitoring Platform — Architecture Document
 
-**Version:** 1.5
+**Version:** 1.6
 **Status:** Implemented — Living Architecture Reference
-**Last Updated:** 2026-06-17
+**Last Updated:** 2026-06-21
 
 ---
 
@@ -107,11 +107,12 @@ Cron → Agent collects metrics → JSON payload → POST /api/v1/ingest/
   → DRF APIKeyAuthentication (X-API-Key header → Argon2id hash comparison)
   → DRF throttle (per-rig rate limit via X-Rig-UUID header, 2/min per rig)
   → Timestamp sanity check (reject if >5 min future or >1 hour past)
-  → IngestSerializer validation (schema version 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, or 1.8)
+  → IngestSerializer validation (schema version 1.0 through 1.9)
   → process_ingest() → DB upsert (MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, LatestDockerContainer, RigStatusEvent, LatestSnapshot)
   → StorageMetric: capacity, usage%, temp, SMART, read/write bytes, read/write IOPS, busy_time_ms, utilization%
   → LatestSnapshot: 11 storage JSON arrays (devices, fstypes, mountpoints, capacities, usage%, temps, smart, deltas, totals), 3 process fields (top_cpu_processes_json, top_mem_processes_json, process_count)
   → Rig.latest_errors_json updated with latest error text
+  → Rig.enrolled_by_api_key updated to current key (handles key rotation)
   → Rig.last_seen and Rig.status updated to ONLINE
   → Response: 200 (new) or 202 (duplicate/idempotent)
 
@@ -459,6 +460,9 @@ On every agent heartbeat, `IngestView` sets `Rig.status = ONLINE` and `Rig.last_
 | GET | `/accounts/api-keys/` | Session | API key management |
 | POST | `/accounts/api-keys/create/` | Session | Create new API key |
 | POST | `/accounts/api-keys/<key_id>/revoke/` | Session | Revoke API key |
+| POST | `/accounts/api-keys/<key_id>/reactivate/` | Session | Reactivate revoked API key |
+| POST | `/accounts/api-keys/<key_id>/delete/` | Session | Delete revoked API key |
+| GET | `/accounts/admin/transfer-keys/` | Session (staff) | Transfer API keys between users |
 | GET | `/accounts/tags/` | Session | Tag management |
 | POST | `/accounts/tags/create/` | Session | Create tag |
 | POST | `/accounts/tags/<tag_id>/update/` | Session | Update tag |
@@ -611,8 +615,8 @@ Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the age
 | Table | App | Purpose |
 |-------|-----|---------|
 | `accounts_user` | accounts | Custom user model (email-based) |
-| `accounts_apikey` | accounts | API keys for agent ingestion (Argon2id hashed) |
-|| `rigs_rig` | rigs | Rig inventory (uuid PK, owner FK, status, last_seen, name, latest_errors_json) |
+| `accounts_apikey` | accounts | API keys for agent ingestion (Argon2id hashed). Fields: name, base_name (clean original name for transfer naming), key_hash, is_active, created_at, last_used_at, revoked_at, transfer_count |
+| `rigs_rig` | rigs | Rig inventory (uuid PK, owner FK, status, last_seen, name, latest_errors_json, error_history_json, enrolled_by_api_key FK to accounts_apikey) |
 || `rigs_rigtag` | rigs | Tags (name, color) |
 || `rigs_rig_tags` | rigs | M2M through table |
 || `metrics_metricsnapshot` | metrics_app | Per-heartbeat metrics for charts (cpu, memory, uptime, error_count) |

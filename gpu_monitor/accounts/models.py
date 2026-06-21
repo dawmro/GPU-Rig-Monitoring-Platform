@@ -30,11 +30,13 @@ class ApiKey(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='api_keys')
     name = models.CharField(max_length=255)
+    base_name = models.CharField(max_length=255, blank=True)
     key_hash = models.CharField(max_length=255)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     last_used_at = models.DateTimeField(null=True, blank=True)
     revoked_at = models.DateTimeField(null=True, blank=True)
+    transfer_count = models.PositiveIntegerField(default=0)
 
     class Meta:
         unique_together = ('user', 'name')

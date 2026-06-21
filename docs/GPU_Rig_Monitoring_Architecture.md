@@ -1,8 +1,8 @@
 # GPU Rig Monitoring Platform — Architecture Document
 
-**Version:** 1.5
+**Version:** 1.6
 **Status:** Implemented — Living Architecture Reference
-**Last Updated:** 2026-06-17
+**Last Updated:** 2026-06-21
 
 ---
 
@@ -107,11 +107,12 @@ Cron → Agent collects metrics → JSON payload → POST /api/v1/ingest/
   → DRF APIKeyAuthentication (X-API-Key header → Argon2id hash comparison)
   → DRF throttle (per-rig rate limit via X-Rig-UUID header, 2/min per rig)
   → Timestamp sanity check (reject if >5 min future or >1 hour past)
-  → IngestSerializer validation (schema version 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, or 1.8)
+  → IngestSerializer validation (schema version 1.0 through 1.9)
   → process_ingest() → DB upsert (MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, LatestDockerContainer, RigStatusEvent, LatestSnapshot)
   → StorageMetric: capacity, usage%, temp, SMART, read/write bytes, read/write IOPS, busy_time_ms, utilization%
   → LatestSnapshot: 11 storage JSON arrays (devices, fstypes, mountpoints, capacities, usage%, temps, smart, deltas, totals), 3 process fields (top_cpu_processes_json, top_mem_processes_json, process_count)
   → Rig.latest_errors_json updated with latest error text
+  → Rig.enrolled_by_api_key updated to current key (handles key rotation)
   → Rig.last_seen and Rig.status updated to ONLINE
   → Response: 200 (new) or 202 (duplicate/idempotent)
 
@@ -195,8 +196,8 @@ debug_mode: false         # Verbose logging
 {
   "rig_uuid": "UUIDv4",
   "rig_name": "my-server",
-  "schema_version": "1.7",
-  "agent_version": "1.5.9",
+  "schema_version": "1.9",
+  "agent_version": "1.5.13",
   "timestamp": "2026-06-07T19:54:06Z",
   "metrics": {
     "cpu": {
@@ -316,6 +317,13 @@ debug_mode: false         # Verbose logging
   ]
 }
 ```
+
+**Changelog from schema 1.8 → 1.9:**
+- Added `cpu_freq_current_mhz`, `cpu_freq_min_mhz`, `cpu_freq_max_mhz` to CPU metrics (psutil `cpu_freq()`)
+- Added CPU Frequency chart (single-line, reads from `MetricSnapshot.cpu_freq_current_mhz`)
+- Added `error_history_json` to Rig model (rolling 1000 errors with dedup via `_seen_error_hashes_json`)
+- Server updates `Rig.enrolled_by_api_key` on every ingest (supports key rotation without re-enrollment)
+- Added `base_name` and `transfer_count` fields to ApiKey model (for admin key transfer between users)
 
 **Changelog from schema 1.7 → 1.8:**
 - Added `top_processes` object to `metrics` section with `by_cpu`, `by_mem`, and `total_count`
@@ -459,6 +467,9 @@ On every agent heartbeat, `IngestView` sets `Rig.status = ONLINE` and `Rig.last_
 | GET | `/accounts/api-keys/` | Session | API key management |
 | POST | `/accounts/api-keys/create/` | Session | Create new API key |
 | POST | `/accounts/api-keys/<key_id>/revoke/` | Session | Revoke API key |
+| POST | `/accounts/api-keys/<key_id>/reactivate/` | Session | Reactivate revoked API key |
+| POST | `/accounts/api-keys/<key_id>/delete/` | Session | Delete revoked API key |
+| GET | `/accounts/admin/transfer-keys/` | Session (staff) | Transfer API keys between users |
 | GET | `/accounts/tags/` | Session | Tag management |
 | POST | `/accounts/tags/create/` | Session | Create tag |
 | POST | `/accounts/tags/<tag_id>/update/` | Session | Update tag |
@@ -611,8 +622,8 @@ Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the age
 | Table | App | Purpose |
 |-------|-----|---------|
 | `accounts_user` | accounts | Custom user model (email-based) |
-| `accounts_apikey` | accounts | API keys for agent ingestion (Argon2id hashed) |
-|| `rigs_rig` | rigs | Rig inventory (uuid PK, owner FK, status, last_seen, name, latest_errors_json) |
+| `accounts_apikey` | accounts | API keys for agent ingestion (Argon2id hashed). Fields: name, base_name (clean original name for transfer naming), key_hash, is_active, created_at, last_used_at, revoked_at, transfer_count |
+| `rigs_rig` | rigs | Rig inventory (uuid PK, owner FK, status, last_seen, name, latest_errors_json, error_history_json, enrolled_by_api_key FK to accounts_apikey) |
 || `rigs_rigtag` | rigs | Tags (name, color) |
 || `rigs_rig_tags` | rigs | M2M through table |
 || `metrics_metricsnapshot` | metrics_app | Per-heartbeat metrics for charts (cpu, memory, uptime, error_count) |
@@ -632,7 +643,8 @@ Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the age
 | `update_rig_status` | Updates rig online/stale/offline status based on last_seen | Every 2 min (cron) |
 | `compact_data` | Aggregates old metric data into 1-hour buckets | Daily at 3 AM (cron) |
 | `cleanup_old_data` | Deletes data older than 31 days in batches of 10,000 | Daily at 3 AM (cron, after compact) |
-| `backfill_historical_data` | Creates test data by repeating recent data with shifted timestamps | Manual (testing only) |
+|| `backfill_historical_data` | Creates test data by repeating recent data with shifted timestamps | Manual (testing only) |
+|| `daily_maintenance` | Combined: compact_data + cleanup_old_data + VACUUM ANALYZE (all in one command) | Daily at 3 AM (cron) |
 
 ### 6.2 Key Constraints
 

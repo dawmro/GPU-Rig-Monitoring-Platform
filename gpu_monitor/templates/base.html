@@ -26,6 +26,9 @@
             <a href="{% url 'dashboard:rig-list' %}" class="text-gray-400 hover:text-white">Fleet</a>
             <a href="{% url 'accounts:tags' %}" class="text-gray-400 hover:text-white">Tags</a>
             <a href="{% url 'accounts:api-keys' %}" class="text-gray-400 hover:text-white">API Keys</a>
+            {% if user.is_staff %}
+            <a href="{% url 'accounts:admin-transfer-keys' %}" class="text-gray-400 hover:text-white">Transfer Keys</a>
+            {% endif %}
         </div>
         <div class="flex items-center gap-4">
             <a href="{% url 'accounts:profile' %}" class="text-gray-400 hover:text-white text-sm">{{ user.email }}</a>

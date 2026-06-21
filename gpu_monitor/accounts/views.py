@@ -1,12 +1,14 @@
 import secrets
+from django.db import models
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import login, logout, authenticate
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import HttpResponse
+from django.utils import timezone
 from .models import ApiKey, User
 from audit.middleware import log_audit_event
-from rigs.models import RigTag
+from rigs.models import Rig, RigTag
 
 
 def register_view(request):
@@ -78,7 +80,11 @@ def logout_view(request):
 
 @login_required
 def api_keys(request):
-    keys = ApiKey.objects.filter(user=request.user)
+    keys = ApiKey.objects.filter(user=request.user).annotate(
+        rig_count=models.Count('enrolled_rigs')
+    ).prefetch_related(
+        models.Prefetch('enrolled_rigs', queryset=Rig.objects.only('uuid', 'name', 'status'))
+    )
     return render(request, 'accounts/api_keys.html', {'keys': keys})
 
 
@@ -96,6 +102,7 @@ def create_api_key(request):
         api_key = ApiKey.objects.create(
             user=request.user,
             name=name,
+            base_name=name,
             key_hash=key_hash,
         )
 
@@ -115,13 +122,155 @@ def revoke_api_key(request, key_id):
     if request.method == 'POST':
         key = get_object_or_404(ApiKey, id=key_id, user=request.user)
         key.is_active = False
-        key.save(update_fields=['is_active'])
+        key.revoked_at = timezone.now()
+        key.save(update_fields=['is_active', 'revoked_at'])
 
         log_audit_event(request, 'apikey.revoked', 'ApiKey', key.id, {})
 
         if request.headers.get('HX-Request'):
-            return HttpResponse('')
+            key.rig_count = key.enrolled_rigs.count()
+            return render(request, 'accounts/_key_row.html', {'key': key})
         messages.success(request, f'Key "{key.name}" revoked')
+    return redirect('accounts:api-keys')
+
+
+@login_required
+def delete_api_key(request, key_id):
+    if request.method == 'POST':
+        key = get_object_or_404(ApiKey, id=key_id, user=request.user)
+        if key.is_active:
+            messages.error(request, 'Cannot delete an active key. Revoke it first.')
+            return redirect('accounts:api-keys')
+        name = key.name
+        key.delete()
+        log_audit_event(request, 'apikey.deleted', 'ApiKey', key_id, {'name': name})
+        if request.headers.get('HX-Request'):
+            return HttpResponse('')
+        messages.success(request, f'Key "{name}" deleted permanently')
+    return redirect('accounts:api-keys')
+
+
+def _generate_transfer_name(base_name, target_user):
+    """Generate a unique name for a transferred key in the target user's namespace.
+
+    Uses base_name (always clean, never has transfer suffixes) as the starting point.
+    If the target user already has a key with that name, appends an incrementing counter.
+    The result is truncated to 255 chars max.
+    """
+    # Fallback to key's current name if base_name is empty (legacy keys)
+    effective_base = base_name or 'key'
+
+    new_name = effective_base
+
+    # Handle collision with incrementing counter
+    counter = 1
+    final_name = new_name
+    while ApiKey.objects.filter(user=target_user, name=final_name).exists():
+        final_name = f"{effective_base}-{counter}"
+        counter += 1
+
+    # Truncate to 255 chars max (reserve space for collision suffix)
+    if len(final_name) > 255:
+        # Reserve for "-999" = 4 chars
+        base_truncated = effective_base[:255 - 4]
+        final_name = base_truncated
+        counter = 1
+        while ApiKey.objects.filter(user=target_user, name=final_name).exists():
+            final_name = f"{base_truncated}-{counter}"
+            counter += 1
+
+    return final_name[:255]
+
+
+@login_required
+def admin_transfer_keys(request):
+    if not request.user.is_staff:
+        messages.error(request, 'Only staff users can transfer API keys.')
+        return redirect('accounts:api-keys')
+
+    source_user_id = request.GET.get('source_user_id') or request.POST.get('source_user_id')
+    source_user = None
+    source_keys = None
+
+    # Step 1: Source user selected — load their keys
+    if source_user_id:
+        source_user = get_object_or_404(User, id=source_user_id)
+        source_keys = ApiKey.objects.filter(user=source_user).annotate(
+            rig_count=models.Count('enrolled_rigs')
+        ).prefetch_related(
+            models.Prefetch('enrolled_rigs', queryset=Rig.objects.only('uuid', 'name', 'status'))
+        ).order_by('-created_at')
+
+    # Step 2: Transfer submitted
+    if request.method == 'POST' and source_user:
+        key_ids = request.POST.getlist('key_ids')
+        target_user_id = request.POST.get('target_user_id')
+
+        if not key_ids:
+            messages.error(request, 'Select at least one key to transfer.')
+        elif not target_user_id:
+            messages.error(request, 'Select a target user.')
+        else:
+            target_user = get_object_or_404(User, id=target_user_id)
+
+            if target_user == source_user:
+                messages.error(request, 'Cannot transfer to the same user.')
+            else:
+                # Re-fetch keys and verify they still belong to source user (concurrency protection)
+                keys = ApiKey.objects.filter(id__in=key_ids, user=source_user)
+                transferred = 0
+
+                for key in keys:
+                    new_name = _generate_transfer_name(key.base_name, target_user)
+
+                    old_user = key.user
+                    key.user = target_user
+                    key.name = new_name
+                    key.transfer_count = key.transfer_count + 1
+                    key.save(update_fields=['user', 'name', 'transfer_count'])
+
+                    # Update rig ownership and clear tags (tags are per-user)
+                    rigs = Rig.objects.filter(enrolled_by_api_key=key)
+                    rig_count = rigs.update(owner=target_user)
+                    for rig in rigs:
+                        rig.tags.clear()
+
+                    log_audit_event(request, 'apikey.transferred', 'ApiKey', key.id, {
+                        'from_user': old_user.id,
+                        'to_user': target_user.id,
+                        'rig_count': rig_count,
+                    })
+                    transferred += 1
+
+                messages.success(
+                    request,
+                    f'Transferred {transferred} key(s) from {source_user.email} to {target_user.email}.'
+                )
+                return redirect('accounts:admin-transfer-keys')
+
+    all_users = User.objects.order_by('email')
+    return render(request, 'accounts/admin_transfer_keys.html', {
+        'all_users': all_users,
+        'source_user': source_user,
+        'source_keys': source_keys,
+    })
+
+
+@login_required
+def reactivate_api_key(request, key_id):
+    if request.method == 'POST':
+        key = get_object_or_404(ApiKey, id=key_id, user=request.user)
+        if key.is_active:
+            messages.error(request, 'Key is already active.')
+            return redirect('accounts:api-keys')
+        key.is_active = True
+        key.revoked_at = None
+        key.save(update_fields=['is_active', 'revoked_at'])
+        log_audit_event(request, 'apikey.reactivated', 'ApiKey', key.id, {})
+        if request.headers.get('HX-Request'):
+            key.rig_count = key.enrolled_rigs.count()
+            return render(request, 'accounts/_key_row.html', {'key': key})
+        messages.success(request, f'Key "{key.name}" reactivated')
     return redirect('accounts:api-keys')
 
 

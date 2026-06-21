@@ -3,7 +3,8 @@
 {% block content %}
 <div class="max-w-3xl mx-auto">
     <h2 class="text-xl font-bold mb-4">API Keys</h2>
-    <p class="text-gray-400 mb-4">API keys are used by the monitoring agent to authenticate with the server. Each key should ideally be used by only one rig for better security.</p>
+    <p class="text-gray-400 mb-4">API keys are used by the monitoring agent to authenticate with the server. Each key should ideally be used by only one rig for better security. A key can be used by multiple rigs, but this is not recommended — if the key is compromised, all rigs using it are affected.</p>
+    <p class="text-gray-400 mb-4">To transfer a rig to another user, the admin can transfer the API key (and all rigs enrolled by it) via the <strong>Transfer Keys</strong> page. The agent keeps working with the same key — no reconfiguration needed.</p>
 
     <form hx-post="{% url 'accounts:create-api-key' %}" hx-target="#key-list" hx-swap="afterbegin"
           class="flex gap-2 mb-6">

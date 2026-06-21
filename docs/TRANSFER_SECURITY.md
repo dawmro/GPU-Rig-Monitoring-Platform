@@ -205,32 +205,27 @@ If you want the transfer UI in the main dashboard (not Django admin):
 - Requires notification system
 - Slower process
 
-## Recommended: Approach 1 (Admin Panel Transfer)
+## Final Decision: Dedicated Admin Page in Dashboard (IMPLEMENTED)
 
-**Why:**
-- Simplest to implement
-- Uses existing Django admin infrastructure
-- No information leakage (only admin sees other users)
-- Full audit trail via Django admin log
-- No new UI to build and maintain
+The transfer functionality is implemented as a dedicated admin page at `/accounts/admin/transfer-keys/`, accessible only to staff users.
 
-**Security Guarantees:**
-- Only staff users can access the transfer functionality
+### Why This Approach
+- More user-friendly than Django admin panel
+- Clear 3-step flow: select source → select keys → select target
+- Shows preview of what will be transferred (keys + rigs)
+- Full audit trail via `log_audit_event`
+- No information leakage (only staff sees other users' emails)
+
+### What Was Removed
+- User-facing transfer UI was removed from `api_keys.html`
+- `transfer_api_keys` view was removed
+- `transfer-api-keys` URL was removed
+- Regular users never see transfer functionality
+
+### Security Guarantees
+- Only staff users can access the transfer page
 - Regular users never see other users' emails
-- All transfers are logged in Django admin history
-- Admin can review what will be transferred before confirming
-```
-
-## Final Decision: Remove User-Facing Transfer UI
-
-From the previous implementation:
-1. Remove the transfer form from `api_keys.html`
-2. Remove the `transfer_api_keys` view from `accounts/views.py`
-3. Remove the URL pattern for transfer
-4. Keep `_generate_transfer_name()` helper (admin view will use it)
-```
-
-This is the cleanest approach. The transfer functionality should only exist in the admin panel, not in the user-facing UI. This prevents:
-- Information leakage (users seeing other users' emails)
-- Unauthorized transfers (users transferring rigs without permission)
-- Spam/flood attacks (users creating fake rigs and transferring them)
+- All transfers are logged
+- Admin reviews what will be transferred before confirming
+- Cannot transfer to self
+- CSRF protection

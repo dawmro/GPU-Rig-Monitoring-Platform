@@ -105,9 +105,9 @@ This is semantically correct — the chart shows "average hourly throughput" whi
 
 ## Conclusion
 
-**One bug found and fixed:**
+**Two bugs found and fixed:**
 
-### cpu_freq_min_mhz / cpu_freq_max_mhz — WRONG aggregation in compact_data.py
+### Bug 1: cpu_freq_min_mhz / cpu_freq_max_mhz — WRONG aggregation in compact_data.py
 
 **Before fix:**
 ```python
@@ -126,9 +126,29 @@ This is semantically correct — the chart shows "average hourly throughput" whi
 
 Also added `min` support to the SQL generation in `_compact_table()`.
 
+### Bug 2: Disk Read/Write and IOPS deltas — WRONG aggregation in ChartDataView
+
+**Before fix:**
+```python
+agg_func = Sum if metric in {'net_rx_bytes_delta', 'net_tx_bytes_delta', 'error_frequency'} else Avg
+```
+
+**After fix:**
+```python
+agg_func = Sum if metric in {'net_rx_bytes_delta', 'net_tx_bytes_delta', 'error_frequency', 'disk_read_bytes_delta', 'disk_write_bytes_delta', 'disk_read_iops_delta', 'disk_write_iops_delta'} else Avg
+```
+
+**Rationale:** Disk I/O deltas represent bytes/IOPS transferred since the last reading. When charting:
+- **24h chart (1-min buckets):** Each bucket has 1 row. SUM = the delta itself = bytes/min. ✅
+- **7d chart (1-hour buckets):** Each bucket has 60 rows (raw data) or 1 row (compacted). SUM of all deltas in the hour = total bytes/IOPS for that hour. ✅
+
+Using `AVG` was wrong because:
+- For raw data: AVG of 60 deltas = average bytes per minute (not total)
+- For compacted data: AVG of 1 row = the SUM value (correct by accident)
+- This caused the 24h chart to show much higher values than the 7d chart for the same period
+
 **All other aggregations are correct:**
 - compact_data.py uses appropriate aggregation per field type
-- ChartDataView uses AVG for most metrics (correct for averaging across buckets)
-- Disk I/O deltas: SUM in compaction, AVG in charts → correct "average hourly throughput"
-- Network deltas: SUM in compaction, SUM in charts → correct for aggregating across interfaces
+- ChartDataView uses AVG for percentages/temperatures (correct for averaging across buckets)
+- Network deltas: SUM in both compaction and charts → correct
 - Error frequency: SUM in both → correct total error count

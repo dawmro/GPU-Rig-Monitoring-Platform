@@ -5,14 +5,15 @@
 # Usage:
 #   bash scripts/sync_to_opt.sh                    # full sync (default)
 #   bash scripts/sync_to_opt.sh --no-migrate       # skip makemigrations (faster)
-#   sudo bash scripts/sync_to_opt.sh [USER]        # if file ownership needs root
-#                                                   # USER defaults to SUDO_USER or LOGNAME
 
 OPT="/opt"
 
+# Derive workspace path from script location
+# BASH_SOURCE[0] = path to this script, dirname = scripts/, /.. = project root
+WORKSPACE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
 # Parse options
 NO_MIGRATE=false
-SYNC_USER=""
 
 for arg in "$@"; do
     case "$arg" in
@@ -20,26 +21,15 @@ for arg in "$@"; do
             NO_MIGRATE=true
             ;;
         --help|-h)
-            sed -n '2,10p' "$0" | sed 's/^# \?//'
+            sed -n '2,9p' "$0" | sed 's/^# \?//'
             exit 0
             ;;
         -*)
             echo "Unknown option: $arg" >&2
             exit 1
             ;;
-        *)
-            # Positional argument = username
-            SYNC_USER="$arg"
-            ;;
     esac
 done
-
-# Determine workspace user: argument > SUDO_USER > LOGNAME > current user
-if [ -z "$SYNC_USER" ]; then
-    SYNC_USER="${SUDO_USER:-${LOGNAME:-$(whoami)}}"
-fi
-
-WORKSPACE="/home/$SYNC_USER/workspace/GPU-Rig-Monitoring-Platform"
 
 set -e
 echo "=== Syncing $WORKSPACE -> $OPT ==="

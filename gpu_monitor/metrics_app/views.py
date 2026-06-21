@@ -103,6 +103,11 @@ class IngestView(APIView):
             if rig.owner_id != user.id:
                 return Response({'status': 'error', 'message': 'UUID already claimed by another user'}, status=409)
 
+        # Update enrolled_by_api_key to the current key (handles key rotation on the agent)
+        if rig.enrolled_by_api_key_id != api_key.id:
+            rig.enrolled_by_api_key = api_key
+            rig.save(update_fields=['enrolled_by_api_key'])
+
         # Process the payload
         result, http_status = process_ingest(rig_uuid, data, user.id, rig=rig)
 

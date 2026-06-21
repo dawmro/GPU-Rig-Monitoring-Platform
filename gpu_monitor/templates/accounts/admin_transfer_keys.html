@@ -26,42 +26,52 @@
         </form>
     </div>
 
-    <!-- Step 2: Select Keys and Target -->
+    <!-- Step 2: Select Keys -->
     {% if source_user %}
     <div class="bg-gray-800 border border-gray-700 rounded p-4 mb-4">
         <h3 class="text-sm font-medium text-gray-300 mb-3">Step 2: Select Key(s) from {{ source_user.email }}</h3>
 
         {% if source_keys %}
+        <div class="space-y-2 mb-4 max-h-[400px] overflow-y-auto">
+            {% for key in source_keys %}
+            <div class="bg-gray-750 border border-gray-600 rounded p-3">
+                <label class="flex items-start gap-3 cursor-pointer">
+                    <input type="checkbox" name="key_ids" value="{{ key.id }}"
+                           class="mt-1 w-4 h-4 rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-500 focus:ring-offset-0">
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2">
+                            <span class="font-medium">{{ key.name }}</span>
+                            <span class="text-gray-500 text-sm">{% if key.is_active %}🟢 Active{% else %}🔴 Revoked{% endif %}</span>
+                            <span class="text-xs text-gray-500">{{ key.rig_count }} rig{{ key.rig_count|pluralize }}</span>
+                        </div>
+                        <div class="text-xs text-gray-500">Created: {{ key.created_at|date:"Y-m-d H:i" }}{% if key.revoked_at %} · Revoked: {{ key.revoked_at|date:"Y-m-d H:i" }}{% endif %}</div>
+                        {% if key.enrolled_rigs.all %}
+                        <div class="mt-2 text-xs text-gray-500">
+                            Rigs: {% for rig in key.enrolled_rigs.all %}{{ rig.name|default:"Unnamed" }}{% if not forloop.last %}, {% endif %}{% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+                </label>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-gray-500">This user has no API keys.</p>
+        {% endif %}
+    </div>
+
+    <!-- Step 3: Select Target and Confirm -->
+    {% if source_user and source_keys %}
+    <div class="bg-gray-800 border border-gray-700 rounded p-4 mb-4">
+        <h3 class="text-sm font-medium text-gray-300 mb-3">Step 3: Select Target User</h3>
+
         <form method="post" action="{% url 'accounts:admin-transfer-keys' %}">
             {% csrf_token %}
             <input type="hidden" name="source_user_id" value="{{ source_user.id }}">
 
-            <div class="space-y-2 mb-4 max-h-[400px] overflow-y-auto">
-                {% for key in source_keys %}
-                <div class="bg-gray-750 border border-gray-600 rounded p-3">
-                    <label class="flex items-start gap-3 cursor-pointer">
-                        <input type="checkbox" name="key_ids" value="{{ key.id }}"
-                               class="mt-1 w-4 h-4 rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-500 focus:ring-offset-0">
-                        <div class="flex-1 min-w-0">
-                            <div class="flex items-center gap-2">
-                                <span class="font-medium">{{ key.name }}</span>
-                                <span class="text-gray-500 text-sm">{% if key.is_active %}🟢 Active{% else %}🔴 Revoked{% endif %}</span>
-                                <span class="text-xs text-gray-500">{{ key.rig_count }} rig{{ key.rig_count|pluralize }}</span>
-                            </div>
-                            <div class="text-xs text-gray-500">Created: {{ key.created_at|date:"Y-m-d H:i" }}{% if key.revoked_at %} · Revoked: {{ key.revoked_at|date:"Y-m-d H:i" }}{% endif %}</div>
-                            {% if key.enrolled_rigs.all %}
-                            <div class="mt-2 text-xs text-gray-500">
-                                Rigs: {% for rig in key.enrolled_rigs.all %}{{ rig.name|default:"Unnamed" }}{% if not forloop.last %}, {% endif %}{% endfor %}
-                            </div>
-                            {% endif %}
-                        </div>
-                    </label>
-                </div>
-                {% endfor %}
-            </div>
+            <!-- Hidden fields for selected keys (populated by JS) -->
+            <div id="selected-keys-inputs"></div>
 
-            <!-- Step 3: Select Target User -->
-            <h3 class="text-sm font-medium text-gray-300 mb-3">Step 3: Select Target User</h3>
             <div class="flex gap-3 mb-4">
                 <select name="target_user_id" required
                         class="flex-1 bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white">
@@ -86,10 +96,24 @@
                 Transfer Selected Keys
             </button>
         </form>
-        {% else %}
-        <p class="text-gray-500">This user has no API keys.</p>
-        {% endif %}
     </div>
     {% endif %}
+    {% endif %}
 </div>
+
+<script>
+// Copy selected key IDs from Step 2 checkboxes into Step 3 form
+document.getElementById('transfer-form').addEventListener('submit', function(e) {
+    var selected = document.querySelectorAll('.transfer-checkbox:checked');
+    var container = document.getElementById('selected-keys-inputs');
+    container.innerHTML = '';
+    selected.forEach(function(cb) {
+        var input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'key_ids';
+        input.value = cb.value;
+        container.appendChild(input);
+    });
+});
+</script>
 {% endblock %}

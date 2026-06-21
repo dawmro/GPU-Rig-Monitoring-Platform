@@ -78,7 +78,7 @@ COMPACT_TABLES = [
         'group_by': ['rig_uuid'],
         'agg_fields': {
             'cpu_utilization_pct': 'avg', 'cpu_temp_c': 'avg',
-            'cpu_freq_current_mhz': 'avg', 'cpu_freq_min_mhz': 'last', 'cpu_freq_max_mhz': 'last',
+            'cpu_freq_current_mhz': 'avg', 'cpu_freq_min_mhz': 'min', 'cpu_freq_max_mhz': 'max',
             'cpu_load_avg_json': 'last', 'mem_used_bytes': 'avg',
             'mem_free_bytes': 'avg', 'mem_cached_bytes': 'avg', 'mem_total_bytes': 'last',
             'swap_used_bytes': 'avg', 'swap_total_bytes': 'last',
@@ -135,6 +135,7 @@ class Command(BaseCommand):
                 f"AVG({f}) AS {f}" if agg == 'avg' else
                 f"SUM({f}) AS {f}" if agg == 'sum' else
                 f"MAX({f}) AS {f}" if agg == 'max' else
+                f"MIN({f}) AS {f}" if agg == 'min' else
                 f"(ARRAY_AGG({f} ORDER BY timestamp DESC))[1] AS {f}"
             )
         for f in static_fields:

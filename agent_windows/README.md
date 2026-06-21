@@ -174,17 +174,18 @@ agent_windows/
 
 | Metric | Source | Windows | Linux |
 |--------|--------|---------|-------|
-| CPU model, cores, load, temp, utilization | psutil + cpuinfo + WMI | ✅ | ✅ |
+| CPU model, cores, load, temp, utilization, frequency (current/min/max) | psutil + cpuinfo + WMI | ✅ | ✅ |
 | Memory (total, used, free, cached, swap) | psutil | ✅ | ✅ |
 | Motherboard (manufacturer, model, BIOS) | WMI (`Win32_BaseBoard`, `Win32_BIOS`) | ✅ | ✅ |
-| Storage (partitions, capacity, usage, SMART) | psutil + WMI | ✅ | ✅ |
+| Storage (partitions, capacity, usage, SMART, read/write bytes, IOPS) | psutil + WMI | ✅ | ✅ |
 | Network (interfaces, bytes, errors, speed) | psutil + WMI | ✅ | ✅ |
 | GPU (model, memory, util, temp, power, fan, PCIe link, core/mem clocks) | `pynvml` | ✅* | ✅* |
-| GPU processes (per-process: name, type C/G/C+G, memory) | `nvidia-smi` subprocess | ✅* | ✅* |
-| Docker containers (name, image, status, container_id, uptime, restarts, mem_limit) | `docker` CLI (subprocess) | ✅† | ✅† |
+| GPU processes (per-process: name, type C/G/C+G, memory) | `pynvml` | ✅* | ✅* |
+| Docker containers (name, image, status, container_id, uptime) | `docker` CLI (subprocess) | ✅† | ✅† |
+| Top processes (top 20 by CPU and memory) | psutil two-pass | ✅ | ✅ |
 | OS info (hostname, OS, kernel, uptime) | `platform` + psutil | ✅ | ✅ |
 | NVIDIA driver version | `nvidia-smi` subprocess | ✅* | ✅* |
-| System errors (last 5 min) | PowerShell `Get-WinEvent` | ✅ | ✅ |
+| System errors (with dedup, up to 1000 entries) | PowerShell `Get-WinEvent` | ✅ | ✅ |
 
 \* Requires NVIDIA GPU with drivers and `nvidia-ml-py3` installed.
 † Requires Docker Desktop running.

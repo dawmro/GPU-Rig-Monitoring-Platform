@@ -196,8 +196,8 @@ debug_mode: false         # Verbose logging
 {
   "rig_uuid": "UUIDv4",
   "rig_name": "my-server",
-  "schema_version": "1.7",
-  "agent_version": "1.5.9",
+  "schema_version": "1.9",
+  "agent_version": "1.5.13",
   "timestamp": "2026-06-07T19:54:06Z",
   "metrics": {
     "cpu": {
@@ -317,6 +317,13 @@ debug_mode: false         # Verbose logging
   ]
 }
 ```
+
+**Changelog from schema 1.8 → 1.9:**
+- Added `cpu_freq_current_mhz`, `cpu_freq_min_mhz`, `cpu_freq_max_mhz` to CPU metrics (psutil `cpu_freq()`)
+- Added CPU Frequency chart (single-line, reads from `MetricSnapshot.cpu_freq_current_mhz`)
+- Added `error_history_json` to Rig model (rolling 1000 errors with dedup via `_seen_error_hashes_json`)
+- Server updates `Rig.enrolled_by_api_key` on every ingest (supports key rotation without re-enrollment)
+- Added `base_name` and `transfer_count` fields to ApiKey model (for admin key transfer between users)
 
 **Changelog from schema 1.7 → 1.8:**
 - Added `top_processes` object to `metrics` section with `by_cpu`, `by_mem`, and `total_count`
@@ -636,7 +643,8 @@ Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the age
 | `update_rig_status` | Updates rig online/stale/offline status based on last_seen | Every 2 min (cron) |
 | `compact_data` | Aggregates old metric data into 1-hour buckets | Daily at 3 AM (cron) |
 | `cleanup_old_data` | Deletes data older than 31 days in batches of 10,000 | Daily at 3 AM (cron, after compact) |
-| `backfill_historical_data` | Creates test data by repeating recent data with shifted timestamps | Manual (testing only) |
+|| `backfill_historical_data` | Creates test data by repeating recent data with shifted timestamps | Manual (testing only) |
+|| `daily_maintenance` | Combined: compact_data + cleanup_old_data + VACUUM ANALYZE (all in one command) | Daily at 3 AM (cron) |
 
 ### 6.2 Key Constraints
 

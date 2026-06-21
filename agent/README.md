@@ -120,17 +120,18 @@ The cron job will start automatically within 1 minute.
 
 | Metric | Source | Linux | Windows |
 |--------|--------|-------|---------|
-| CPU model, cores, load, temp, utilization | psutil + cpuinfo + sysfs | ✅ | ✅ |
+| CPU model, cores, load, temp, utilization, frequency (current/min/max) | psutil + cpuinfo + sysfs | ✅ | ✅ |
 | Memory (total, used, free, cached, swap) | psutil | ✅ | ✅ |
 | Motherboard (manufacturer, model, BIOS) | `/sys/class/dmi/` | ✅ | ✅ |
-| Storage (partitions, capacity, usage, SMART/NVMe) | psutil + `smartctl`/`nvme` | ✅ | ✅ |
+| Storage (partitions, capacity, usage, SMART/NVMe, temp, read/write bytes, IOPS) | psutil + `smartctl`/`nvme` | ✅ | ✅ |
 | Network (interfaces, bytes, errors, speed) | psutil + sysfs | ✅ | ✅ |
 | GPU (model, memory, util, temp, power, fan, PCIe link, core/mem clocks) | `pynvml` | ✅* | ✅* |
-| GPU processes (per-process: name, type C/G/C+G, memory) | `nvidia-smi` subprocess | ✅* | ✅* |
-| Docker containers (name, image, status, container_id, uptime, restarts, mem_limit) | `docker` CLI (subprocess) | ✅† | ✅† |
+| GPU processes (per-process: name, type C/G/C+G, memory) | `pynvml` | ✅* | ✅* |
+| Docker containers (name, image, status, container_id, uptime) | `docker` CLI (subprocess) | ✅† | ✅† |
+| Top processes (top 20 by CPU and memory) | psutil two-pass | ✅ | ✅ |
 | OS info (hostname, OS, kernel, uptime) | `platform` + psutil | ✅ | ✅ |
 | NVIDIA driver version | `nvidia-smi` subprocess | ✅* | ✅* |
-| System errors (last 5 min) | `journalctl` | ✅ | ✅ |
+| System errors (with dedup, up to 1000 entries) | `journalctl` | ✅ | ✅ |
 
 \* Requires NVIDIA GPU with drivers and `nvidia-ml-py3` installed.
 † Requires Docker daemon running.

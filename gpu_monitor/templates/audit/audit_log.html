@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Activity Feed{% endblock %}
+{% block content %}
+<div class="max-w-[95%] mx-auto">
+    <h2 class="text-xl font-bold mb-4">Activity Feed</h2>
+
+    <!-- Filters -->
+    <form class="flex flex-wrap gap-3 mb-4" method="get">
+        <select name="action" class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white">
+            <option value="">All Actions</option>
+            {% for action in actions %}
+            <option value="{{ action }}" {% if action == action_filter %}selected{% endif %}>
+                {{ action }}
+            </option>
+            {% endfor %}
+        </select>
+        <input type="date" name="date_from" value="{{ date_from }}"
+               class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white">
+        <input type="date" name="date_to" value="{{ date_to }}"
+               class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white">
+        <button type="submit" class="bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded text-sm text-white">Filter</button>
+    </form>
+
+    <!-- Log entries -->
+    <div class="bg-gray-800 rounded-lg border border-gray-700">
+        {% for log in logs %}
+        <div class="border-b border-gray-700 p-3 hover:bg-gray-750">
+            <div class="flex items-start justify-between gap-4">
+                <!-- Left: Action description -->
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 mb-1">
+                        <!-- Action badge -->
+                        <span class="px-1.5 py-0.5 rounded text-xs font-medium
+                            {% if 'deleted' in log.action %}bg-red-900 text-red-300
+                            {% elif 'created' in log.action %}bg-green-900 text-green-300
+                            {% elif 'login' in log.action %}bg-blue-900 text-blue-300
+                            {% elif 'failed' in log.action or 'denied' in log.action %}bg-red-900 text-red-300
+                            {% elif 'transferred' in log.action %}bg-yellow-900 text-yellow-300
+                            {% elif 'password' in log.action %}bg-purple-900 text-purple-300
+                            {% elif 'revoked' in log.action %}bg-orange-900 text-orange-300
+                            {% elif 'reactivated' in log.action %}bg-teal-900 text-teal-300
+                            {% else %}bg-gray-700 text-gray-300{% endif %}">
+                            {{ log.action }}
+                        </span>
+                        <!-- User who performed the action -->
+                        {% if log.user %}
+                            <span class="text-xs text-gray-500">by user #{{ log.user.id }}</span>
+                        {% else %}
+                            <span class="text-xs text-gray-500">by system</span>
+                        {% endif %}
+                    </div>
+
+                    <!-- Human-readable description -->
+                    <div class="text-sm text-gray-300">
+                        {% include "audit/_log_description.html" with log=log %}
+                    </div>
+                </div>
+
+                <!-- Right: Timestamp and IP -->
+                <div class="text-right flex-shrink-0">
+                    <div class="text-xs text-gray-400 whitespace-nowrap">
+                        {{ log.timestamp|date:"Y-m-d H:i:s" }}
+                    </div>
+                    {% if log.ip_address %}
+                        <div class="text-xs text-gray-600 mt-1">{{ log.ip_address }}</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="px-4 py-8 text-center text-gray-500">
+            No audit log entries found.
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Pagination -->
+    {% if logs.has_other_pages %}
+    <div class="flex items-center justify-center gap-2 mt-4">
+        {% if logs.has_previous %}
+            <a href="?page={{ logs.previous_page_number }}&action={{ action_filter }}&date_from={{ date_from }}&date_to={{ date_to }}"
+               class="bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-sm">← Prev</a>
+        {% endif %}
+        <span class="text-gray-400 text-sm">Page {{ logs.number }} of {{ logs.paginator.num_pages }}</span>
+        {% if logs.has_next %}
+            <a href="?page={{ logs.next_page_number }}&action={{ action_filter }}&date_from={{ date_from }}&date_to={{ date_to }}"
+               class="bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-sm">Next →</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

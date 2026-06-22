@@ -429,6 +429,12 @@ ufw allow 80/tcp comment 'HTTP'
 ufw allow 443/tcp comment 'HTTPS'
 ufw --force enable
 
+# ── Log Rotation ──────────────────────────────────────────────────────────
+# Install logrotate configuration for all application logs.
+# Without rotation, gunicorn-access.log alone can grow to ~3 GB/day at 1000 rigs.
+echo "==> Installing logrotate configuration..."
+cp "$APP_DIR/deploy/logrotate.conf" /etc/logrotate.d/gpu-monitor
+
 # ── Start/enable services ────────────────────────────────────────────────
 # Enable and start the services after all config is in place.
 # Why this order:

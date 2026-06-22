@@ -22,6 +22,12 @@ done < .env
 
 echo "=== Data retention cleanup $(date '+%Y-%m-%d %H:%M:%S') ===" >> "$LOG_DIR/cleanup.log"
 
+# Check disk space
+DISK_USAGE=$(df /opt | tail -1 | awk '{print $5}' | tr -d '%')
+if [ "$DISK_USAGE" -gt 80 ]; then
+    echo "WARNING: Disk usage at ${DISK_USAGE}%" >> "$LOG_DIR/cleanup.log"
+fi
+
 # Phase 1: Compact old data (continue on error)
 echo "Compacting data..." >> "$LOG_DIR/cleanup.log"
 python manage.py compact_data --verbose >> "$LOG_DIR/cleanup.log" 2>&1 || true
@@ -40,5 +46,9 @@ sudo -u postgres psql -d gpu_monitor -c "
   VACUUM ANALYZE metrics_gpu_process;
   VACUUM ANALYZE metrics_metricsnapshot;
 " >> "$LOG_DIR/cleanup.log" 2>&1 || true
+
+# Phase 4: Clean up old audit log entries (90-day retention)
+echo "Cleaning up audit logs older than 90 days..." >> "$LOG_DIR/cleanup.log"
+python manage.py cleanup_audit_log --days=90 >> "$LOG_DIR/cleanup.log" 2>&1 || true
 
 echo "=== Cleanup complete $(date '+%Y-%m-%d %H:%M:%S') ===" >> "$LOG_DIR/cleanup.log"

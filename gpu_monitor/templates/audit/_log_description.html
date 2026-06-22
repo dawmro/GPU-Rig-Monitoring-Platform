@@ -1,0 +1,172 @@
+{% comment %}
+Human-readable description for each audit log action.
+Available variables: log (AuditLog instance)
+{% endcomment %}
+{% load audit_tags %}
+
+{% if log.action == "apikey.created" %}
+    Created API key
+    {% audit_target_name log as target_name %}
+    {% if target_name %}
+        <strong>"{{ target_name }}"</strong>
+    {% endif %}
+    {% if log.metadata_json.plaintext %}
+        <span class="text-gray-500">{{ log.metadata_json.plaintext }}</span>
+    {% elif log.metadata_json.key_prefix %}
+        <span class="text-gray-500">({{ log.metadata_json.key_prefix }})</span>
+    {% endif %}
+
+{% elif log.action == "apikey.revoked" %}
+    Revoked API key
+    {% audit_target_name log as target_name %}
+    {% if target_name %}
+        <strong>"{{ target_name }}"</strong>
+    {% endif %}
+
+{% elif log.action == "apikey.reactivated" %}
+    Reactivated API key
+    {% audit_target_name log as target_name %}
+    {% if target_name %}
+        <strong>"{{ target_name }}"</strong>
+    {% endif %}
+
+{% elif log.action == "apikey.deleted" %}
+    Deleted API key
+    {% audit_target_name log as target_name %}
+    {% if target_name %}
+        <strong>"{{ target_name }}"</strong>
+    {% endif %}
+
+{% elif log.action == "apikey.transferred" %}
+    Transferred API key
+    {% audit_target_name log as target_name %}
+    {% if target_name %}
+        <strong>"{{ target_name }}"</strong>
+    {% endif %}
+    {% if log.metadata_json.from_user_email and log.metadata_json.to_user_email %}
+        from <strong>{{ log.metadata_json.from_user_email }}</strong>
+        to <strong>{{ log.metadata_json.to_user_email }}</strong>
+    {% elif log.metadata_json.from_user and log.metadata_json.to_user %}
+        from user #{{ log.metadata_json.from_user }}
+        to user #{{ log.metadata_json.to_user }}
+    {% endif %}
+    {% if log.metadata_json.rig_count %}
+        <span class="text-gray-500">({{ log.metadata_json.rig_count }} rigs affected)</span>
+    {% endif %}
+
+{% elif log.action == "rig.owner.transferred" %}
+    Transferred rig ownership
+    {% audit_target_name log as target_name %}
+    {% if target_name %}
+        <strong>"{{ target_name }}"</strong>
+    {% endif %}
+    {% if log.metadata_json.from_user and log.metadata_json.to_user %}
+        from user #{{ log.metadata_json.from_user }}
+        to user #{{ log.metadata_json.to_user }}
+    {% endif %}
+
+{% elif log.action == "rig.enrolled" %}
+    New rig enrolled
+    {% audit_target_name log as target_name %}
+    {% if target_name %}
+        <strong>"{{ target_name }}"</strong>
+    {% endif %}
+    {% if log.metadata_json.agent_version %}
+        <span class="text-gray-500">(agent v{{ log.metadata_json.agent_version }})</span>
+    {% endif %}
+
+{% elif log.action == "rig.renamed" %}
+    Renamed rig
+    {% if log.metadata_json.old_name and log.metadata_json.new_name %}
+        from <strong>"{{ log.metadata_json.old_name }}"</strong>
+        to <strong>"{{ log.metadata_json.new_name }}"</strong>
+    {% endif %}
+
+{% elif log.action == "rig.deleted" %}
+    Deleted rig
+    {% audit_target_name log as target_name %}
+    {% if target_name %}
+        <strong>"{{ target_name }}"</strong>
+    {% endif %}
+
+{% elif log.action == "tag.created" %}
+    Created tag
+    {% audit_target_name log as target_name %}
+    <strong>"{{ target_name }}"</strong>
+    {% if log.metadata_json.color %}
+        <span style="background-color: {{ log.metadata_json.color }}; width: 12px; height: 12px; display: inline-block; border-radius: 2px; vertical-align: middle; margin-left: 4px;"></span>
+    {% endif %}
+
+{% elif log.action == "tag.updated" %}
+    Updated tag
+    {% audit_target_name log as target_name %}
+    {% if target_name %}
+        <strong>"{{ target_name }}"</strong>
+    {% endif %}
+
+{% elif log.action == "tag.deleted" %}
+    Deleted tag
+    {% audit_target_name log as target_name %}
+    {% if target_name %}
+        <strong>"{{ target_name }}"</strong>
+    {% endif %}
+
+{% elif log.action == "tag.added" %}
+    Added tag
+    {% if log.metadata_json.tag %}
+        <strong>"{{ log.metadata_json.tag }}"</strong>
+    {% endif %}
+    to rig
+    {% if log.metadata_json.rig_name %}
+        <strong>"{{ log.metadata_json.rig_name }}"</strong>
+    {% endif %}
+
+{% elif log.action == "tag.removed" %}
+    Removed tag
+    {% if log.metadata_json.tag %}
+        <strong>"{{ log.metadata_json.tag }}"</strong>
+    {% endif %}
+    from rig
+    {% if log.metadata_json.rig_name %}
+        <strong>"{{ log.metadata_json.rig_name }}"</strong>
+    {% endif %}
+
+{% elif log.action == "user.session.login" %}
+    Logged in
+    {% if log.metadata_json.ip %}
+        <span class="text-gray-500">(IP: {{ log.metadata_json.ip }})</span>
+    {% endif %}
+
+{% elif log.action == "user.session.logout" %}
+    Logged out
+
+{% elif log.action == "user.login.failed" %}
+    Failed login attempt
+    {% if log.metadata_json.attempted_email %}
+        for <strong>{{ log.metadata_json.attempted_email }}</strong>
+    {% endif %}
+
+{% elif log.action == "user.registered" %}
+    New user registered
+    {% if log.metadata_json.email %}
+        <strong>{{ log.metadata_json.email }}</strong>
+    {% endif %}
+    {% if log.metadata_json.is_admin %}
+        <span class="text-yellow-500">(admin)</span>
+    {% endif %}
+
+{% elif log.action == "user.password_changed" %}
+    Password changed
+
+{% elif log.action == "user.access_denied" %}
+    Access denied
+    {% if log.metadata_json.attempted_action %}
+        (attempted: {{ log.metadata_json.attempted_action }})
+    {% endif %}
+
+{% else %}
+    {{ log.action }}
+    {% if log.target_type %}
+        <span class="text-gray-500">{{ log.target_type }}:{{ log.target_id|truncatechars:12 }}</span>
+    {% endif %}
+{% endif %}

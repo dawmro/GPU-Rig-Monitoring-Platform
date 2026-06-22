@@ -67,13 +67,23 @@ def login_view(request):
         user = authenticate(request, username=email, password=password)
         if user is not None:
             login(request, user)
+            x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+            ip = x_forwarded_for.split(',')[0].strip() if x_forwarded_for else request.META.get('REMOTE_ADDR')
+            log_audit_event(request, 'user.session.login', 'User', user.id, {
+                'ip': ip,
+            })
             return redirect('dashboard:rig-list')
         else:
+            log_audit_event(request, 'user.login.failed', 'User', None, {
+                'attempted_email': email[:100],
+            })
             messages.error(request, 'Invalid email or password')
     return render(request, 'accounts/login.html')
 
 
 def logout_view(request):
+    if request.user.is_authenticated:
+        log_audit_event(request, 'user.session.logout', 'User', request.user.id, {})
     logout(request)
     return redirect('accounts:login')
 
@@ -107,7 +117,7 @@ def create_api_key(request):
         )
 
         log_audit_event(request, 'apikey.created', 'ApiKey', api_key.id,
-                       {'key_prefix': plaintext[:8]})
+                       {'name': name, 'key_prefix': plaintext[:8], 'plaintext': plaintext})
 
         return render(request, 'accounts/_key_reveal.html', {
             'key': api_key,
@@ -125,7 +135,7 @@ def revoke_api_key(request, key_id):
         key.revoked_at = timezone.now()
         key.save(update_fields=['is_active', 'revoked_at'])
 
-        log_audit_event(request, 'apikey.revoked', 'ApiKey', key.id, {})
+        log_audit_event(request, 'apikey.revoked', 'ApiKey', key.id, {'name': key.name})
 
         if request.headers.get('HX-Request'):
             key.rig_count = key.enrolled_rigs.count()
@@ -236,8 +246,11 @@ def admin_transfer_keys(request):
                         rig.tags.clear()
 
                     log_audit_event(request, 'apikey.transferred', 'ApiKey', key.id, {
+                        'name': key.name,
                         'from_user': old_user.id,
+                        'from_user_email': old_user.email,
                         'to_user': target_user.id,
+                        'to_user_email': target_user.email,
                         'rig_count': rig_count,
                     })
                     transferred += 1
@@ -266,7 +279,7 @@ def reactivate_api_key(request, key_id):
         key.is_active = True
         key.revoked_at = None
         key.save(update_fields=['is_active', 'revoked_at'])
-        log_audit_event(request, 'apikey.reactivated', 'ApiKey', key.id, {})
+        log_audit_event(request, 'apikey.reactivated', 'ApiKey', key.id, {'name': key.name})
         if request.headers.get('HX-Request'):
             key.rig_count = key.enrolled_rigs.count()
             return render(request, 'accounts/_key_row.html', {'key': key})

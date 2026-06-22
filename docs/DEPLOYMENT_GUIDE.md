@@ -796,30 +796,34 @@ The rig detail page has three tabs:
 
 ### 6.3 Log Rotation
 
-Configure `logrotate` for application logs:
+Configure `logrotate` for all application logs. The deploy directory includes a pre-built configuration:
 
 ```bash
-sudo tee /etc/logrotate.d/gpu-monitor << 'EOF'
-/opt/gpu_monitor/logs/*.log {
-    daily
-    missingok
-    rotate 14
-    compress
-    delaycompress
-    notifempty
-    copytruncate
-}
+sudo cp /opt/gpu_monitor/deploy/logrotate.conf /etc/logrotate.d/gpu-monitor
+```
 
-/var/log/monitoring-agent/*.log {
-    daily
-    missingok
-    rotate 7
-    compress
-    delaycompress
-    notifempty
-    copytruncate
-}
-EOF
+This configures rotation for:
+
+| Log File | Rotation | Retention | Notes |
+|---|---|---|---|
+| `gunicorn-access.log` | Daily | 14 days | High volume (~3 GB/day at 1000 rigs) |
+| `gunicorn-error.log` | Weekly | 8 weeks | Low volume |
+| `cleanup.log` | Weekly | 8 weeks | From data_retention.sh |
+| `rig_status.log` | Weekly | 4 weeks | From update_rig_status.sh cron |
+| `agent cron.log` | Weekly | 4 weeks | From agent cron |
+| `agent cleanup-cron.log` | Weekly | 8 weeks | From data_retention.sh cron wrapper |
+| `agent update.log` | Weekly | 4 weeks | From agent check_update.py |
+
+All logs are compressed with `delaycompress` (compress on next rotation cycle).
+
+**Activation:** After running the `sudo cp` command above, logrotate is automatically active. It runs daily via `/etc/cron.daily/logrotate` (standard Ubuntu). No additional activation needed.
+
+**Why not `copytruncate`?** The old config used `copytruncate` which copies then truncates the file. This can lose log entries during the copy window. The new config uses `create` (recreate file) with `postrotate` to reload gunicorn, which is cleaner and doesn't lose data.
+
+**Verify logrotate is working:**
+```bash
+sudo logrotate -d /etc/logrotate.d/gpu-monitor  # dry run
+sudo logrotate -f /etc/logrotate.d/gpu-monitor  # force rotation
 ```
 
 ### 6.4 Database Backups

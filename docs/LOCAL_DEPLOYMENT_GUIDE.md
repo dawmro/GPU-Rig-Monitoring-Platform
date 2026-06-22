@@ -791,6 +791,45 @@ You should see output like `Updated: 0 stale, 2 offline`. If you see `password a
 > **Important:** Without this cron job, rigs will always show "Online" even after they stop reporting. The `update_rig_status` management command checks `last_seen` timestamps and updates the status accordingly.
 > **Note:** The wrapper script uses `bash` explicitly because inline `source` doesn't work in cron's default `/bin/sh` shell. The wrapper must source `.env` with `set -a && source .env && set +a` **before** calling `python manage.py` — Django reads DB credentials from `os.environ`, and without sourcing `.env` the DB password is empty, causing `password authentication failed`.
 
+#### Log Rotation
+
+Configure log rotation to prevent log files from growing indefinitely. Without rotation, `gunicorn-access.log` alone can grow to ~3 GB/day at 1000 rigs.
+
+```bash
+# Copy the pre-built logrotate configuration
+sudo cp /opt/gpu_monitor/deploy/logrotate.conf /etc/logrotate.d/gpu-monitor
+```
+
+This configures rotation for all application logs:
+
+| Log File | Rotation | Retention |
+|---|---|---|
+| `gunicorn-access.log` | Daily | 14 days |
+| `gunicorn-error.log` | Weekly | 8 weeks |
+| `cleanup.log` | Weekly | 8 weeks |
+|| `rig_status.log` | Weekly | 4 weeks |
+| `agent cron.log` | Weekly | 4 weeks |
+| `agent cleanup-cron.log` | Weekly | 8 weeks |
+| `agent update.log` | Weekly | 4 weeks |
+
+All logs are compressed with `delaycompress` (compress on next rotation cycle).
+
+**Activation:** After running the `sudo cp` command above, logrotate is automatically active. It runs daily via `/etc/cron.daily/logrotate` (standard Ubuntu). No additional activation needed.
+
+**Verify logrotate is working:**
+```bash
+sudo logrotate -d /etc/logrotate.d/gpu-monitor  # dry run (shows what would happen)
+sudo logrotate -f /etc/logrotate.d/gpu-monitor  # force rotation now
+```
+
+**Check current log sizes:**
+```bash
+du -sh /opt/gpu_monitor/logs/
+du -sh /var/log/monitoring-agent/
+```
+
+> **Note:** On a local test machine with a single rig, log growth is minimal (~100 KB/day). Log rotation becomes critical in production with 100+ rigs.
+
 ---
 
 ## 6. Understanding the File Layout

@@ -2,11 +2,13 @@
 Human-readable description for each audit log action.
 Available variables: log (AuditLog instance)
 {% endcomment %}
+{% load audit_tags %}
 
 {% if log.action == "apikey.created" %}
     Created API key
-    {% if log.metadata_json.name %}
-        <strong>"{{ log.metadata_json.name }}"</strong>
+    {% audit_target_name log as target_name %}
+    {% if target_name %}
+        <strong>"{{ target_name }}"</strong>
     {% endif %}
     {% if log.metadata_json.plaintext %}
         <span class="text-gray-500">{{ log.metadata_json.plaintext }}</span>
@@ -16,26 +18,30 @@ Available variables: log (AuditLog instance)
 
 {% elif log.action == "apikey.revoked" %}
     Revoked API key
-    {% if log.metadata_json.name %}
-        <strong>"{{ log.metadata_json.name }}"</strong>
+    {% audit_target_name log as target_name %}
+    {% if target_name %}
+        <strong>"{{ target_name }}"</strong>
     {% endif %}
 
 {% elif log.action == "apikey.reactivated" %}
     Reactivated API key
-    {% if log.metadata_json.name %}
-        <strong>"{{ log.metadata_json.name }}"</strong>
+    {% audit_target_name log as target_name %}
+    {% if target_name %}
+        <strong>"{{ target_name }}"</strong>
     {% endif %}
 
 {% elif log.action == "apikey.deleted" %}
     Deleted API key
-    {% if log.metadata_json.name %}
-        <strong>"{{ log.metadata_json.name }}"</strong>
+    {% audit_target_name log as target_name %}
+    {% if target_name %}
+        <strong>"{{ target_name }}"</strong>
     {% endif %}
 
 {% elif log.action == "apikey.transferred" %}
     Transferred API key
-    {% if log.metadata_json.name %}
-        <strong>"{{ log.metadata_json.name }}"</strong>
+    {% audit_target_name log as target_name %}
+    {% if target_name %}
+        <strong>"{{ target_name }}"</strong>
     {% endif %}
     {% if log.metadata_json.from_user_email and log.metadata_json.to_user_email %}
         from <strong>{{ log.metadata_json.from_user_email }}</strong>
@@ -50,8 +56,9 @@ Available variables: log (AuditLog instance)
 
 {% elif log.action == "rig.owner.transferred" %}
     Transferred rig ownership
-    {% if log.metadata_json.rig_name %}
-        <strong>"{{ log.metadata_json.rig_name }}"</strong>
+    {% audit_target_name log as target_name %}
+    {% if target_name %}
+        <strong>"{{ target_name }}"</strong>
     {% endif %}
     {% if log.metadata_json.from_user and log.metadata_json.to_user %}
         from user #{{ log.metadata_json.from_user }}
@@ -60,8 +67,9 @@ Available variables: log (AuditLog instance)
 
 {% elif log.action == "rig.enrolled" %}
     New rig enrolled
-    {% if log.metadata_json.rig_name %}
-        <strong>"{{ log.metadata_json.rig_name }}"</strong>
+    {% audit_target_name log as target_name %}
+    {% if target_name %}
+        <strong>"{{ target_name }}"</strong>
     {% endif %}
     {% if log.metadata_json.agent_version %}
         <span class="text-gray-500">(agent v{{ log.metadata_json.agent_version }})</span>
@@ -76,27 +84,31 @@ Available variables: log (AuditLog instance)
 
 {% elif log.action == "rig.deleted" %}
     Deleted rig
-    {% if log.metadata_json.name %}
-        <strong>"{{ log.metadata_json.name }}"</strong>
+    {% audit_target_name log as target_name %}
+    {% if target_name %}
+        <strong>"{{ target_name }}"</strong>
     {% endif %}
 
 {% elif log.action == "tag.created" %}
     Created tag
-    <strong>"{{ log.metadata_json.name }}"</strong>
+    {% audit_target_name log as target_name %}
+    <strong>"{{ target_name }}"</strong>
     {% if log.metadata_json.color %}
         <span style="background-color: {{ log.metadata_json.color }}; width: 12px; height: 12px; display: inline-block; border-radius: 2px; vertical-align: middle; margin-left: 4px;"></span>
     {% endif %}
 
 {% elif log.action == "tag.updated" %}
     Updated tag
-    {% if log.metadata_json.name %}
-        <strong>"{{ log.metadata_json.name }}"</strong>
+    {% audit_target_name log as target_name %}
+    {% if target_name %}
+        <strong>"{{ target_name }}"</strong>
     {% endif %}
 
 {% elif log.action == "tag.deleted" %}
     Deleted tag
-    {% if log.metadata_json.name %}
-        <strong>"{{ log.metadata_json.name }}"</strong>
+    {% audit_target_name log as target_name %}
+    {% if target_name %}
+        <strong>"{{ target_name }}"</strong>
     {% endif %}
 
 {% elif log.action == "tag.added" %}

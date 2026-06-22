@@ -56,6 +56,7 @@
                 <a href="{% url 'dashboard:rig-list' %}" class="text-gray-400 hover:text-white hover:bg-gray-700 rounded px-3 py-2 text-sm">Fleet</a>
                 <a href="{% url 'accounts:tags' %}" class="text-gray-400 hover:text-white hover:bg-gray-700 rounded px-3 py-2 text-sm">Tags</a>
                 <a href="{% url 'accounts:api-keys' %}" class="text-gray-400 hover:text-white hover:bg-gray-700 rounded px-3 py-2 text-sm">API Keys</a>
+                <a href="{% url 'accounts:audit-log' %}" class="text-gray-400 hover:text-white hover:bg-gray-700 rounded px-3 py-2 text-sm">Activity</a>
                 {% if user.is_staff %}
                 <a href="{% url 'accounts:admin-transfer-keys' %}" class="text-gray-400 hover:text-white hover:bg-gray-700 rounded px-3 py-2 text-sm">Transfer Keys</a>
                 {% endif %}

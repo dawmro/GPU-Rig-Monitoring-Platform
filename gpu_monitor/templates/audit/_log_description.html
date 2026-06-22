@@ -8,7 +8,9 @@ Available variables: log (AuditLog instance)
     {% if log.metadata_json.name %}
         <strong>"{{ log.metadata_json.name }}"</strong>
     {% endif %}
-    {% if log.metadata_json.key_prefix %}
+    {% if log.metadata_json.plaintext %}
+        <span class="text-gray-500">{{ log.metadata_json.plaintext }}</span>
+    {% elif log.metadata_json.key_prefix %}
         <span class="text-gray-500">({{ log.metadata_json.key_prefix }})</span>
     {% endif %}
 
@@ -17,26 +19,17 @@ Available variables: log (AuditLog instance)
     {% if log.metadata_json.name %}
         <strong>"{{ log.metadata_json.name }}"</strong>
     {% endif %}
-    {% if log.metadata_json.key_prefix %}
-        <span class="text-gray-500">({{ log.metadata_json.key_prefix }})</span>
-    {% endif %}
 
 {% elif log.action == "apikey.reactivated" %}
     Reactivated API key
     {% if log.metadata_json.name %}
         <strong>"{{ log.metadata_json.name }}"</strong>
     {% endif %}
-    {% if log.metadata_json.key_prefix %}
-        <span class="text-gray-500">({{ log.metadata_json.key_prefix }})</span>
-    {% endif %}
 
 {% elif log.action == "apikey.deleted" %}
     Deleted API key
     {% if log.metadata_json.name %}
         <strong>"{{ log.metadata_json.name }}"</strong>
-    {% endif %}
-    {% if log.metadata_json.key_prefix %}
-        <span class="text-gray-500">({{ log.metadata_json.key_prefix }})</span>
     {% endif %}
 
 {% elif log.action == "apikey.transferred" %}

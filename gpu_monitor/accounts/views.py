@@ -117,7 +117,7 @@ def create_api_key(request):
         )
 
         log_audit_event(request, 'apikey.created', 'ApiKey', api_key.id,
-                       {'name': name, 'key_prefix': plaintext[:8]})
+                       {'name': name, 'key_prefix': plaintext[:8], 'plaintext': plaintext})
 
         return render(request, 'accounts/_key_reveal.html', {
             'key': api_key,
@@ -135,7 +135,7 @@ def revoke_api_key(request, key_id):
         key.revoked_at = timezone.now()
         key.save(update_fields=['is_active', 'revoked_at'])
 
-        log_audit_event(request, 'apikey.revoked', 'ApiKey', key.id, {'name': key.name, 'key_prefix': str(key.id)[:8]})
+        log_audit_event(request, 'apikey.revoked', 'ApiKey', key.id, {'name': key.name})
 
         if request.headers.get('HX-Request'):
             key.rig_count = key.enrolled_rigs.count()
@@ -153,7 +153,7 @@ def delete_api_key(request, key_id):
             return redirect('accounts:api-keys')
         name = key.name
         key.delete()
-        log_audit_event(request, 'apikey.deleted', 'ApiKey', key_id, {'name': name, 'key_prefix': str(key_id)[:8]})
+        log_audit_event(request, 'apikey.deleted', 'ApiKey', key_id, {'name': name})
         if request.headers.get('HX-Request'):
             return HttpResponse('')
         messages.success(request, f'Key "{name}" deleted permanently')
@@ -279,7 +279,7 @@ def reactivate_api_key(request, key_id):
         key.is_active = True
         key.revoked_at = None
         key.save(update_fields=['is_active', 'revoked_at'])
-        log_audit_event(request, 'apikey.reactivated', 'ApiKey', key.id, {'name': key.name, 'key_prefix': str(key.id)[:8]})
+        log_audit_event(request, 'apikey.reactivated', 'ApiKey', key.id, {'name': key.name})
         if request.headers.get('HX-Request'):
             key.rig_count = key.enrolled_rigs.count()
             return render(request, 'accounts/_key_row.html', {'key': key})

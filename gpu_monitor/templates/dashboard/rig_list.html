@@ -2,8 +2,10 @@
 {% block title %}Fleet Overview{% endblock %}
 {% block content %}
 <div class="max-w-[95%] mx-auto">
-    <div class="flex items-center justify-between mb-6">
-        <div class="flex items-center gap-4">
+    <!-- Header: responsive layout — stacked on small screens, inline on md+ -->
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-6">
+        <!-- Line 1: Title + rig counts -->
+        <div class="flex items-center gap-4 flex-shrink-0">
             <h1 class="text-2xl font-bold">Fleet Overview</h1>
             <div class="flex items-center gap-2 text-sm text-gray-400">
                 <span>{{ total_count }} rigs</span>
@@ -23,14 +25,15 @@
             </button>
             {% endif %}
         </div>
-        <div class="flex items-center gap-3">
-            <form class="flex gap-2" hx-get="{% url 'dashboard:rig-list' %}" hx-target="#rig-table-container" hx-swap="innerHTML">
+        <!-- Line 2: Search + filters (full width on small, right-aligned on md+) -->
+        <div class="flex flex-wrap items-center gap-2 md:gap-3 w-full md:w-auto">
+            <form class="flex flex-wrap gap-2 md:gap-2 w-full md:w-auto" hx-get="{% url 'dashboard:rig-list' %}" hx-target="#rig-table-container" hx-swap="innerHTML">
                 <input type="text" name="search" placeholder="Search rigs..." value="{{ search }}"
-                       class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white w-48"
+                       class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white flex-1 min-w-[120px] md:w-48"
                        hx-trigger="keyup changed delay:500ms"
                        hx-get="{% url 'dashboard:rig-list' %}" hx-target="#rig-table-container" hx-swap="innerHTML"
                        hx-include="[name='status'], [name='tag']">
-                <select name="status" class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white"
+                <select name="status" class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white flex-shrink-0"
                         hx-trigger="change"
                         hx-get="{% url 'dashboard:rig-list' %}" hx-target="#rig-table-container" hx-swap="innerHTML"
                         hx-include="[name='search'], [name='tag']">
@@ -39,7 +42,7 @@
                     <option value="stale" {% if status_filter == 'stale' %}selected{% endif %}>Stale</option>
                     <option value="offline" {% if status_filter == 'offline' %}selected{% endif %}>Offline</option>
                 </select>
-                <select name="tag" class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white"
+                <select name="tag" class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white flex-shrink-0"
                         hx-trigger="change"
                         hx-get="{% url 'dashboard:rig-list' %}" hx-target="#rig-table-container" hx-swap="innerHTML"
                         hx-include="[name='search'], [name='status']">

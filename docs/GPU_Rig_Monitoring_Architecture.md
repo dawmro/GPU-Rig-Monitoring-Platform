@@ -775,11 +775,24 @@ bash scripts/sync_to_opt.sh
 | Rig status | `/opt/gpu_monitor/logs/rig_status.log` | stdout | Weekly, 4 weeks |
 | Cleanup | `/opt/gpu_monitor/logs/cleanup.log` | stdout | Weekly, 8 weeks |
 | Agent (Linux) | `/var/log/monitoring-agent/agent.log` | Structured JSON | 10 MB × 4 files |
+| Agent cron | `/var/log/monitoring-agent/cron.log` | stdout | Weekly, 4 weeks |
+| Agent cleanup cron | `/var/log/monitoring-agent/cleanup-cron.log` | stdout | Weekly, 8 weeks |
+| Agent update | `/var/log/monitoring-agent/update.log` | stdout | Weekly, 4 weeks |
 | Agent payload (Linux) | `/var/log/monitoring-agent/payload.json` | Latest full JSON payload (overwritten each run) | — |
 | Agent payload (Windows) | `./logs/payload.json` (alongside agent) | Latest full JSON payload (overwritten each run) | — |
-| Agent cron | `/var/log/monitoring-agent/cron.log` | stdout | Weekly, 4 weeks |
 
-**Log rotation:** Configured via `/etc/logrotate.d/gpu-monitor`. See `docs/LOG_ANALYSIS.md` for disk space analysis and rotation settings. Without rotation, `gunicorn-access.log` alone can grow to ~3 GB/day at 1000 rigs.
+**Log rotation:** Configured via `/etc/logrotate.d/gpu-monitor` (7 files). See `docs/LOG_ANALYSIS.md` for disk space analysis and `docs/LOG_ROTATION_EDGE_CASES.md` for edge case details. Without rotation, `gunicorn-access.log` alone can grow to ~3 GB/day at 1000 rigs.
+
+**Activation:** After copying the config file, logrotate is automatically active (runs daily via `/etc/cron.daily/logrotate`). No additional activation command needed beyond placing the file in `/etc/logrotate.d/`:
+```bash
+sudo cp /opt/gpu_monitor/deploy/logrotate.conf /etc/logrotate.d/gpu-monitor
+```
+
+**Verification:**
+```bash
+sudo logrotate -d /etc/logrotate.d/gpu-monitor  # dry run (shows what would happen)
+sudo logrotate -f /etc/logrotate.d/gpu-monitor  # force rotation now
+```
 
 ### 8.3 Manual Operations
 

@@ -811,8 +811,12 @@ This configures rotation for:
 | `cleanup.log` | Weekly | 8 weeks | From data_retention.sh |
 | `rig_status.log` | Weekly | 4 weeks | From update_rig_status.sh cron |
 | `agent cron.log` | Weekly | 4 weeks | From agent cron |
+| `agent cleanup-cron.log` | Weekly | 8 weeks | From data_retention.sh cron wrapper |
+| `agent update.log` | Weekly | 4 weeks | From agent check_update.py |
 
 All logs are compressed with `delaycompress` (compress on next rotation cycle).
+
+**Activation:** After running the `sudo cp` command above, logrotate is automatically active. It runs daily via `/etc/cron.daily/logrotate` (standard Ubuntu). No additional activation needed.
 
 **Why not `copytruncate`?** The old config used `copytruncate` which copies then truncates the file. This can lose log entries during the copy window. The new config uses `create` (recreate file) with `postrotate` to reload gunicorn, which is cleaner and doesn't lose data.
 

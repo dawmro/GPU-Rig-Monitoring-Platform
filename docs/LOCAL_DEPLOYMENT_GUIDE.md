@@ -807,10 +807,14 @@ This configures rotation for all application logs:
 | `gunicorn-access.log` | Daily | 14 days |
 | `gunicorn-error.log` | Weekly | 8 weeks |
 | `cleanup.log` | Weekly | 8 weeks |
-| `rig_status.log` | Weekly | 4 weeks |
+|| `rig_status.log` | Weekly | 4 weeks |
 | `agent cron.log` | Weekly | 4 weeks |
+| `agent cleanup-cron.log` | Weekly | 8 weeks |
+| `agent update.log` | Weekly | 4 weeks |
 
 All logs are compressed with `delaycompress` (compress on next rotation cycle).
+
+**Activation:** After running the `sudo cp` command above, logrotate is automatically active. It runs daily via `/etc/cron.daily/logrotate` (standard Ubuntu). No additional activation needed.
 
 **Verify logrotate is working:**
 ```bash

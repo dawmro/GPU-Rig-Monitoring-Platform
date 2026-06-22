@@ -1,8 +1,8 @@
 # GPU Rig Monitoring Platform — Architecture Document
 
-**Version:** 1.6
+**Version:** 1.7
 **Status:** Implemented — Living Architecture Reference
-**Last Updated:** 2026-06-21
+**Last Updated:** 2026-06-23
 
 ---
 
@@ -140,8 +140,15 @@ Rate limiting design:
 | `dashboard/views.py` | index_view (root → dashboard/login redirect), rig_list, rig_detail, htmx_metrics, htmx_rig_status, rig_rename |
 | `dashboard/templatetags/gpu_filters.py` | gpu_model_name, gpu_model_short, gpu_compact_summary_json, gpu_temp_cell_json, gpu_util_cell_json, gpu_fan_cell_json, time_since, last_seen_short filters |
 | `rigs/models.py` | Rig, RigTag |
-| `accounts/authentication.py` | APIKeyAuthentication |
-| `rigs/management/commands/update_rig_status.py` | Rig status state machine (creates RigStatusEvent on transitions) |
+|| `accounts/authentication.py` | APIKeyAuthentication |
+|| `accounts/views.py` | Login, logout, API key management, tag management, audit events |
+|| `audit/views.py` | Activity feed view (audit_log_view) |
+|| `audit/models.py` | AuditLog model |
+|| `audit/templatetags/audit_tags.py` | audit_target_name template tag for DB lookup |
+|| `audit/urls.py` | Audit URL routing |
+|| `audit/management/commands/cleanup_audit_log.py` | Audit log retention cleanup |
+|| `audit/management/commands/backfill_audit_names.py` | Backfill target names for old entries |
+|| `rigs/management/commands/update_rig_status.py` | Rig status state machine (creates RigStatusEvent on transitions) |
 
 ---
 
@@ -470,6 +477,7 @@ On every agent heartbeat, `IngestView` sets `Rig.status = ONLINE` and `Rig.last_
 | POST | `/accounts/api-keys/<key_id>/reactivate/` | Session | Reactivate revoked API key |
 | POST | `/accounts/api-keys/<key_id>/delete/` | Session | Delete revoked API key |
 | GET | `/accounts/admin/transfer-keys/` | Session (staff) | Transfer API keys between users |
+| GET | `/accounts/audit-log/` | Session | Activity feed (audit log) |
 | GET | `/accounts/tags/` | Session | Tag management |
 | POST | `/accounts/tags/create/` | Session | Create tag |
 | POST | `/accounts/tags/<tag_id>/update/` | Session | Update tag |
@@ -483,9 +491,12 @@ On every agent heartbeat, `IngestView` sets `Rig.status = ONLINE` and `Rig.last_
 
 | Job | Frequency | Wrapper |
 |-----|-----------|---------|
-| Linux agent | 60s | `flock` + cron |
-| Rig status update | 2 min | `gpu_monitor/deploy/update_rig_status.sh` |
-| Frontend (Windows) agent | 60s | Task Scheduler + `pythonw.exe` |
+|| Linux agent | 60s | `flock` + cron |
+|| Rig status update | 2 min | `gpu_monitor/deploy/update_rig_status.sh` |
+|| Frontend (Windows) agent | 60s | Task Scheduler + `pythonw.exe` |
+|| Data retention | Daily 3 AM | `gpu_monitor/deploy/data_retention.sh` |
+|| Audit log cleanup | Daily 3 AM | `python manage.py cleanup_audit_log --days=90` |
+|| Log rotation | Daily (logrotate) | `/etc/cron.daily/logrotate` → `/etc/logrotate.d/gpu-monitor` |
 
 ---
 
@@ -1184,8 +1195,12 @@ sudo -u postgres psql gpu_monitor
 | `templates/dashboard/_rig_status_badge.html` | Status badge partial (HTMX-swapped) |
 | `templates/dashboard/_rig_name.html` | Rig name partial (HTMX-swapped on rename) |
 | `gpu_monitor/deploy/` | Nginx config, Gunicorn systemd unit, install scripts, cron wrappers |
-| `gpu_monitor/deploy/update_rig_status.sh` | Cron wrapper for rig status updates |
+|| `gpu_monitor/deploy/update_rig_status.sh` | Cron wrapper for rig status updates |
+| `gpu_monitor/deploy/data_retention.sh` | Daily maintenance: compact + cleanup + vacuum |
+| `gpu_monitor/deploy/logrotate.conf` | Logrotate configuration (copy to /etc/logrotate.d/) |
 | `scripts/sync_to_opt.sh` | Workspace → /opt deployment script |
+| `templates/audit/audit_log.html` | Activity feed page |
+| `templates/audit/_log_description.html` | Audit log description partial |
 | `.env` | Environment variables (mode 0600) |
 | `venv/` | Python virtual environment |
 | `logs/` | Application logs |

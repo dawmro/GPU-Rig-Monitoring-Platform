@@ -255,3 +255,11 @@ curl -s http://localhost/api/v1/health | python3 -m json.tool
 # Note: systemd units (gunicorn.service) and nginx.conf are synced
 # to /opt/gpu_monitor/deploy/ but must be installed separately via
 # server_install.sh or manually.
+
+# IMPORTANT: Log rotation is NOT automatically activated.
+# After running this script, you MUST enable logrotate to prevent
+# log files from growing indefinitely:
+#   sudo cp /opt/gpu_monitor/deploy/logrotate.conf /etc/logrotate.d/gpu-monitor
+#
+# Without rotation, gunicorn-access.log alone can grow to ~3 GB/day at 1000 rigs.
+# Verify with: sudo logrotate -d /etc/logrotate.d/gpu-monitor

@@ -67,13 +67,23 @@ def login_view(request):
         user = authenticate(request, username=email, password=password)
         if user is not None:
             login(request, user)
+            x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+            ip = x_forwarded_for.split(',')[0].strip() if x_forwarded_for else request.META.get('REMOTE_ADDR')
+            log_audit_event(request, 'user.session.login', 'User', user.id, {
+                'ip': ip,
+            })
             return redirect('dashboard:rig-list')
         else:
+            log_audit_event(request, 'user.login.failed', 'User', None, {
+                'attempted_email': email[:100],
+            })
             messages.error(request, 'Invalid email or password')
     return render(request, 'accounts/login.html')
 
 
 def logout_view(request):
+    if request.user.is_authenticated:
+        log_audit_event(request, 'user.session.logout', 'User', request.user.id, {})
     logout(request)
     return redirect('accounts:login')
 

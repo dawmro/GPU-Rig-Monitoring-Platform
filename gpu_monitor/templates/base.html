@@ -28,6 +28,7 @@
                 <a href="{% url 'dashboard:rig-list' %}" class="text-gray-400 hover:text-white">Fleet</a>
                 <a href="{% url 'accounts:tags' %}" class="text-gray-400 hover:text-white">Tags</a>
                 <a href="{% url 'accounts:api-keys' %}" class="text-gray-400 hover:text-white">API Keys</a>
+                <a href="{% url 'accounts:audit-log' %}" class="text-gray-400 hover:text-white">Activity</a>
                 {% if user.is_staff %}
                 <a href="{% url 'accounts:admin-transfer-keys' %}" class="text-gray-400 hover:text-white">Transfer Keys</a>
                 {% endif %}

@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Activity Feed{% endblock %}
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <h2 class="text-xl font-bold mb-4">Activity Feed</h2>
+
+    <!-- Filters -->
+    <form class="flex flex-wrap gap-3 mb-4" method="get">
+        <select name="action" class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white">
+            <option value="">All Actions</option>
+            {% for action in actions %}
+            <option value="{{ action }}" {% if action == action_filter %}selected{% endif %}>
+                {{ action }}
+            </option>
+            {% endfor %}
+        </select>
+        <input type="date" name="date_from" value="{{ date_from }}"
+               class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white">
+        <input type="date" name="date_to" value="{{ date_to }}"
+               class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white">
+        <button type="submit" class="bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded text-sm text-white">Filter</button>
+    </form>
+
+    <!-- Log entries -->
+    <div class="bg-gray-800 rounded-lg border border-gray-700 overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead class="bg-gray-750 text-gray-400 border-b border-gray-700">
+                <tr>
+                    <th class="text-left px-3 py-2">Timestamp</th>
+                    <th class="text-left px-3 py-2">Action</th>
+                    <th class="text-left px-3 py-2">Target</th>
+                    <th class="text-left px-3 py-2">Details</th>
+                    <th class="text-left px-3 py-2">IP</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in logs %}
+                <tr class="border-b border-gray-700/50 hover:bg-gray-750">
+                    <td class="px-3 py-2 text-gray-400 whitespace-nowrap">
+                        {{ log.timestamp|date:"Y-m-d H:i:s" }}
+                    </td>
+                    <td class="px-3 py-2">
+                        <span class="px-1.5 py-0.5 rounded text-xs
+                            {% if 'deleted' in log.action %}bg-red-900 text-red-300
+                            {% elif 'created' in log.action %}bg-green-900 text-green-300
+                            {% elif 'login' in log.action %}bg-blue-900 text-blue-300
+                            {% elif 'failed' in log.action or 'denied' in log.action %}bg-red-900 text-red-300
+                            {% elif 'transferred' in log.action %}bg-yellow-900 text-yellow-300
+                            {% elif 'password' in log.action %}bg-purple-900 text-purple-300
+                            {% else %}bg-gray-700 text-gray-300{% endif %}">
+                            {{ log.action }}
+                        </span>
+                    </td>
+                    <td class="px-3 py-2 text-gray-400">
+                        {% if log.target_type %}
+                            {{ log.target_type }}:{{ log.target_id|truncatechars:12 }}
+                        {% else %}—{% endif %}
+                    </td>
+                    <td class="px-3 py-2 text-gray-400 text-xs">
+                        {% if log.metadata_json %}
+                            {% for key, value in log.metadata_json.items %}
+                                <div><span class="text-gray-500">{{ key }}:</span> {{ value }}</div>
+                            {% endfor %}
+                        {% else %}—{% endif %}
+                    </td>
+                    <td class="px-3 py-2 text-gray-500 text-xs">
+                        {{ log.ip_address|default:"—" }}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="5" class="px-4 py-8 text-center text-gray-500">
+                        No audit log entries found.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    {% if logs.has_other_pages %}
+    <div class="flex items-center justify-center gap-2 mt-4">
+        {% if logs.has_previous %}
+            <a href="?page={{ logs.previous_page_number }}&action={{ action_filter }}&date_from={{ date_from }}&date_to={{ date_to }}"
+               class="bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-sm">← Prev</a>
+        {% endif %}
+        <span class="text-gray-400 text-sm">Page {{ logs.number }} of {{ logs.paginator.num_pages }}</span>
+        {% if logs.has_next %}
+            <a href="?page={{ logs.next_page_number }}&action={{ action_filter }}&date_from={{ date_from }}&date_to={{ date_to }}"
+               class="bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-sm">Next →</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

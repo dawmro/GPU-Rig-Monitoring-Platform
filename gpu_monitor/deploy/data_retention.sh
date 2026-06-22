@@ -41,4 +41,8 @@ sudo -u postgres psql -d gpu_monitor -c "
   VACUUM ANALYZE metrics_metricsnapshot;
 " >> "$LOG_DIR/cleanup.log" 2>&1 || true
 
+# Phase 4: Clean up old audit log entries (90-day retention)
+echo "Cleaning up audit logs older than 90 days..." >> "$LOG_DIR/cleanup.log"
+python manage.py cleanup_audit_log --days=90 >> "$LOG_DIR/cleanup.log" 2>&1 || true
+
 echo "=== Cleanup complete $(date '+%Y-%m-%d %H:%M:%S') ===" >> "$LOG_DIR/cleanup.log"

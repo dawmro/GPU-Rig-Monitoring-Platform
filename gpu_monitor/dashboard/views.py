@@ -440,8 +440,13 @@ def rig_rename(request, uuid):
 
     new_name = request.POST.get('name', '').strip()
     if new_name:
+        old_name = rig.name
         rig.name = new_name[:128]
         rig.save(update_fields=['name'])
+        log_audit_event(request, 'rig.renamed', 'Rig', rig.uuid, {
+            'old_name': old_name,
+            'new_name': rig.name,
+        })
 
     if request.headers.get('HX-Request'):
         return render(request, 'dashboard/_rig_name.html', {'rig': rig})

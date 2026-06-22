@@ -20,19 +20,47 @@
 </head>
 <body class="bg-gray-900 text-gray-100 min-h-screen">
     {% if user.is_authenticated %}
-    <nav class="bg-gray-800 border-b border-gray-700 px-6 py-3 flex items-center justify-between">
-        <div class="flex items-center gap-6">
-            <a href="{% url 'dashboard:rig-list' %}" class="text-lg font-bold">🖥️ GPU Rig Monitor</a>
-            <a href="{% url 'dashboard:rig-list' %}" class="text-gray-400 hover:text-white">Fleet</a>
-            <a href="{% url 'accounts:tags' %}" class="text-gray-400 hover:text-white">Tags</a>
-            <a href="{% url 'accounts:api-keys' %}" class="text-gray-400 hover:text-white">API Keys</a>
-            {% if user.is_staff %}
-            <a href="{% url 'accounts:admin-transfer-keys' %}" class="text-gray-400 hover:text-white">Transfer Keys</a>
-            {% endif %}
+    <nav class="bg-gray-800 border-b border-gray-700 px-4 md:px-6 py-3">
+        <!-- Desktop nav: hidden on mobile -->
+        <div class="hidden md:flex items-center justify-between">
+            <div class="flex items-center gap-6">
+                <a href="{% url 'dashboard:rig-list' %}" class="text-lg font-bold">🖥️ GPU Rig Monitor</a>
+                <a href="{% url 'dashboard:rig-list' %}" class="text-gray-400 hover:text-white">Fleet</a>
+                <a href="{% url 'accounts:tags' %}" class="text-gray-400 hover:text-white">Tags</a>
+                <a href="{% url 'accounts:api-keys' %}" class="text-gray-400 hover:text-white">API Keys</a>
+                {% if user.is_staff %}
+                <a href="{% url 'accounts:admin-transfer-keys' %}" class="text-gray-400 hover:text-white">Transfer Keys</a>
+                {% endif %}
+            </div>
+            <div class="flex items-center gap-4">
+                <a href="{% url 'accounts:profile' %}" class="text-gray-400 hover:text-white text-sm">{{ user.email }}</a>
+                <a href="{% url 'accounts:logout' %}" class="text-gray-400 hover:text-white text-sm">Logout</a>
+            </div>
         </div>
-        <div class="flex items-center gap-4">
-            <a href="{% url 'accounts:profile' %}" class="text-gray-400 hover:text-white text-sm">{{ user.email }}</a>
-            <a href="{% url 'accounts:logout' %}" class="text-gray-400 hover:text-white text-sm">Logout</a>
+
+        <!-- Mobile nav: hidden on desktop -->
+        <div class="flex md:hidden items-center justify-between">
+            <a href="{% url 'dashboard:rig-list' %}" class="text-lg font-bold">🖥️ GPU Rig Monitor</a>
+            <div class="flex items-center gap-3">
+                <a href="{% url 'accounts:profile' %}" class="text-gray-400 hover:text-white text-sm truncate max-w-[120px]">{{ user.email }}</a>
+                <button type="button" id="mobile-menu-btn" class="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-700 transition-colors" aria-label="Menu">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- Mobile dropdown menu -->
+        <div id="mobile-menu" class="hidden md:hidden mt-3 pb-3 border-t border-gray-700 pt-3">
+            <div class="flex flex-col gap-1">
+                <a href="{% url 'dashboard:rig-list' %}" class="text-gray-400 hover:text-white hover:bg-gray-700 rounded px-3 py-2 text-sm">Fleet</a>
+                <a href="{% url 'accounts:tags' %}" class="text-gray-400 hover:text-white hover:bg-gray-700 rounded px-3 py-2 text-sm">Tags</a>
+                <a href="{% url 'accounts:api-keys' %}" class="text-gray-400 hover:text-white hover:bg-gray-700 rounded px-3 py-2 text-sm">API Keys</a>
+                {% if user.is_staff %}
+                <a href="{% url 'accounts:admin-transfer-keys' %}" class="text-gray-400 hover:text-white hover:bg-gray-700 rounded px-3 py-2 text-sm">Transfer Keys</a>
+                {% endif %}
+                <hr class="border-gray-700 my-1">
+                <a href="{% url 'accounts:logout' %}" class="text-red-400 hover:text-red-300 hover:bg-gray-700 rounded px-3 py-2 text-sm">Logout</a>
+            </div>
         </div>
     </nav>
     {% endif %}
@@ -74,6 +102,35 @@
         
         btn.querySelector('span').textContent = showEmails ? 'Hide emails' : 'Show emails';
     }
+
+    // Mobile menu toggle
+    (function() {
+        var btn = document.getElementById('mobile-menu-btn');
+        var menu = document.getElementById('mobile-menu');
+        if (!btn || !menu) return;
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            menu.classList.toggle('hidden');
+        });
+        // Close on click outside
+        document.addEventListener('click', function(e) {
+            if (!menu.classList.contains('hidden') && !menu.contains(e.target) && !btn.contains(e.target)) {
+                menu.classList.add('hidden');
+            }
+        });
+        // Close on Escape
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && !menu.classList.contains('hidden')) {
+                menu.classList.add('hidden');
+            }
+        });
+        // Close on link click (page will navigate)
+        menu.querySelectorAll('a').forEach(function(link) {
+            link.addEventListener('click', function() {
+                menu.classList.add('hidden');
+            });
+        });
+    })();
     </script>
 {% block extra_js %}{% endblock %}
 </body>

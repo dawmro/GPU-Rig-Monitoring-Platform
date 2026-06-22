@@ -767,15 +767,19 @@ bash scripts/sync_to_opt.sh
 
 ### 8.2 Log Locations
 
-| Log | Path | Format |
-|-----|------|--------|
-| Gunicorn errors | `/opt/gpu_monitor/logs/gunicorn-error.log` | stdout |
-| Gunicorn access | `/opt/gpu_monitor/logs/gunicorn-access.log` | HTTP access |
-| Django app | `/opt/gpu_monitor/logs/app.log` | Structured JSON |
-| Agent (Linux) | `/var/log/monitoring-agent/agent.log` | Structured JSON |
-| Agent payload (Linux) | `/var/log/monitoring-agent/payload.json` | Latest full JSON payload (overwritten each run) |
-| Agent payload (Windows) | `./logs/payload.json` (alongside agent) | Latest full JSON payload (overwritten each run) |
-| Agent cron | `/var/log/monitoring-agent/cron.log` | stdout |
+| Log | Path | Format | Rotation |
+|-----|------|--------|----------|
+| Gunicorn errors | `/opt/gpu_monitor/logs/gunicorn-error.log` | stdout | Weekly, 8 weeks |
+| Gunicorn access | `/opt/gpu_monitor/logs/gunicorn-access.log` | HTTP access | Daily, 14 days |
+| Django app | `/opt/gpu_monitor/logs/app.log` | Structured JSON | 10 MB × 4 files |
+| Rig status | `/opt/gpu_monitor/logs/rig_status.log` | stdout | Weekly, 4 weeks |
+| Cleanup | `/opt/gpu_monitor/logs/cleanup.log` | stdout | Weekly, 8 weeks |
+| Agent (Linux) | `/var/log/monitoring-agent/agent.log` | Structured JSON | 10 MB × 4 files |
+| Agent payload (Linux) | `/var/log/monitoring-agent/payload.json` | Latest full JSON payload (overwritten each run) | — |
+| Agent payload (Windows) | `./logs/payload.json` (alongside agent) | Latest full JSON payload (overwritten each run) | — |
+| Agent cron | `/var/log/monitoring-agent/cron.log` | stdout | Weekly, 4 weeks |
+
+**Log rotation:** Configured via `/etc/logrotate.d/gpu-monitor`. See `docs/LOG_ANALYSIS.md` for disk space analysis and rotation settings. Without rotation, `gunicorn-access.log` alone can grow to ~3 GB/day at 1000 rigs.
 
 ### 8.3 Manual Operations
 

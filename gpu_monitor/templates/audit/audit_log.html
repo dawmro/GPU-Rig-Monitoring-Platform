@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Activity Feed{% endblock %}
 {% block content %}
-<div class="max-w-5xl mx-auto">
+<div class="max-w-[95%] mx-auto">
     <h2 class="text-xl font-bold mb-4">Activity Feed</h2>
 
     <!-- Filters -->
@@ -10,7 +10,7 @@
             <option value="">All Actions</option>
             {% for action in actions %}
             <option value="{{ action }}" {% if action == action_filter %}selected{% endif %}>
-                {{ action|title }}
+                {{ action }}
             </option>
             {% endfor %}
         </select>
@@ -24,7 +24,7 @@
     <!-- Log entries -->
     <div class="bg-gray-800 rounded-lg border border-gray-700">
         {% for log in logs %}
-        <div class="border-b border-gray-700/50 p-4 hover:bg-gray-750">
+        <div class="border-b border-gray-700/0 p-3 hover:bg-gray-750">
             <div class="flex items-start justify-between gap-4">
                 <!-- Left: Action description -->
                 <div class="flex-1 min-w-0">
@@ -40,11 +40,11 @@
                             {% elif 'revoked' in log.action %}bg-orange-900 text-orange-300
                             {% elif 'reactivated' in log.action %}bg-teal-900 text-teal-300
                             {% else %}bg-gray-700 text-gray-300{% endif %}">
-                            {{ log.action|title }}
+                            {{ log.action }}
                         </span>
                         <!-- User who performed the action -->
                         {% if log.user %}
-                            <span class="text-xs text-gray-500">by {{ log.user.email }}</span>
+                            <span class="text-xs text-gray-500">by user #{{ log.user.id }}</span>
                         {% else %}
                             <span class="text-xs text-gray-500">by system</span>
                         {% endif %}
@@ -54,15 +54,6 @@
                     <div class="text-sm text-gray-300">
                         {% include "audit/_log_description.html" with log=log %}
                     </div>
-
-                    <!-- Metadata details (collapsible) -->
-                    {% if log.metadata_json %}
-                    <div class="mt-2 text-xs text-gray-500">
-                        {% for key, value in log.metadata_json.items %}
-                            <span class="mr-3"><span class="text-gray-600">{{ key|title }}:</span> {{ value }}</span>
-                        {% endfor %}
-                    </div>
-                    {% endif %}
                 </div>
 
                 <!-- Right: Timestamp and IP -->

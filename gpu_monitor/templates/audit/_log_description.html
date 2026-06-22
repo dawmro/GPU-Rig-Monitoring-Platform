@@ -16,24 +16,27 @@ Available variables: log (AuditLog instance)
     Revoked API key
     {% if log.metadata_json.name %}
         <strong>"{{ log.metadata_json.name }}"</strong>
-    {% else %}
-        <span class="text-gray-500">{{ log.target_id }}</span>
+    {% endif %}
+    {% if log.metadata_json.key_prefix %}
+        <span class="text-gray-500">({{ log.metadata_json.key_prefix }})</span>
     {% endif %}
 
 {% elif log.action == "apikey.reactivated" %}
     Reactivated API key
     {% if log.metadata_json.name %}
         <strong>"{{ log.metadata_json.name }}"</strong>
-    {% else %}
-        <span class="text-gray-500">{{ log.target_id }}</span>
+    {% endif %}
+    {% if log.metadata_json.key_prefix %}
+        <span class="text-gray-500">({{ log.metadata_json.key_prefix }})</span>
     {% endif %}
 
 {% elif log.action == "apikey.deleted" %}
     Deleted API key
     {% if log.metadata_json.name %}
         <strong>"{{ log.metadata_json.name }}"</strong>
-    {% else %}
-        <span class="text-gray-500">{{ log.target_id }}</span>
+    {% endif %}
+    {% if log.metadata_json.key_prefix %}
+        <span class="text-gray-500">({{ log.metadata_json.key_prefix }})</span>
     {% endif %}
 
 {% elif log.action == "apikey.transferred" %}
@@ -82,15 +85,13 @@ Available variables: log (AuditLog instance)
     Deleted rig
     {% if log.metadata_json.name %}
         <strong>"{{ log.metadata_json.name }}"</strong>
-    {% else %}
-        <span class="text-gray-500">{{ log.target_id }}</span>
     {% endif %}
 
 {% elif log.action == "tag.created" %}
     Created tag
     <strong>"{{ log.metadata_json.name }}"</strong>
     {% if log.metadata_json.color %}
-        <span class="inline-block w-3 h-3 rounded align-middle ml-1" style="background-color: {{ log.metadata_json.color }}; width: 12px; height: 12px; display: inline-block; border-radius: 2px; vertical-align: middle;"></span>
+        <span style="background-color: {{ log.metadata_json.color }}; width: 12px; height: 12px; display: inline-block; border-radius: 2px; vertical-align: middle; margin-left: 4px;"></span>
     {% endif %}
 
 {% elif log.action == "tag.updated" %}
@@ -161,6 +162,6 @@ Available variables: log (AuditLog instance)
 {% else %}
     {{ log.action }}
     {% if log.target_type %}
-        <span class="text-gray-500">{{ log.target_type }}:{{ log.target_id }}</span>
+        <span class="text-gray-500">{{ log.target_type }}:{{ log.target_id|truncatechars:12 }}</span>
     {% endif %}
 {% endif %}

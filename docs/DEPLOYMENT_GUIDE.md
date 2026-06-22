@@ -794,6 +794,17 @@ The rig detail page has three tabs:
 - Timestamp validation: payloads with timestamps >5 min future or >1 hour past are rejected (400)
 - Agents send both `X-API-Key` (user auth) and `X-Rig-UUID` (rig identification) headers
 
+**Activity Feed:**
+- URL: `/accounts/audit-log/`
+- Shows all audit events (staff) or user's own events
+- Filterable by action type and date range
+- 50 entries per page with pagination
+- Color-coded action badges (create=green, delete=red, transfer=yellow, etc.)
+- Human-readable descriptions (e.g., "Transferred API key 'farm-key' from user@email to user@email (3 rigs affected)")
+- Full plaintext key shown for `apikey.created` events
+- Key name shown for all other API key events
+- Accessible from nav bar: "Activity" link (desktop and mobile)
+
 ### 6.3 Log Rotation
 
 Configure `logrotate` for all application logs. The deploy directory includes a pre-built configuration:

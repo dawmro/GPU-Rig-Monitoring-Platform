@@ -22,6 +22,12 @@ done < .env
 
 echo "=== Data retention cleanup $(date '+%Y-%m-%d %H:%M:%S') ===" >> "$LOG_DIR/cleanup.log"
 
+# Check disk space
+DISK_USAGE=$(df /opt | tail -1 | awk '{print $5}' | tr -d '%')
+if [ "$DISK_USAGE" -gt 80 ]; then
+    echo "WARNING: Disk usage at ${DISK_USAGE}%" >> "$LOG_DIR/cleanup.log"
+fi
+
 # Phase 1: Compact old data (continue on error)
 echo "Compacting data..." >> "$LOG_DIR/cleanup.log"
 python manage.py compact_data --verbose >> "$LOG_DIR/cleanup.log" 2>&1 || true

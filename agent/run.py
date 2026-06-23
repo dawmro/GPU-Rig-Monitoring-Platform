@@ -297,12 +297,15 @@ def estimate_cpu_power_w(cpu_utilization, cpu_cores):
     return round(cpu_power, 1)
 
 
-def collect_power():
+def collect_power(cpu_metrics):
     """Collect and calculate power consumption data.
 
     Tries RAPL first for accurate CPU power measurement.
     Falls back to estimation from utilization if RAPL unavailable.
     All power values returned are AC (wall) — PSU efficiency already factored in.
+
+    Args:
+        cpu_metrics: dict from collect_cpu() with 'utilization_pct' (0-100) and 'physical_cores'
 
     Returns:
         dict with cpu_power_w, gpu_power_w, other_power_w, total_power_w (all AC),
@@ -311,9 +314,9 @@ def collect_power():
     try:
         import psutil
 
-        # Get CPU utilization and core count
-        cpu_percent = psutil.cpu_percent(interval=0) / 100.0
-        cpu_cores = psutil.cpu_count(logical=False) or psutil.cpu_count(logical=True) or 1
+        # Use CPU utilization and core count from collect_cpu() to avoid duplicate measurement
+        cpu_percent = (cpu_metrics.get('utilization_pct') or 0) / 100.0
+        cpu_cores = cpu_metrics.get('physical_cores') or psutil.cpu_count(logical=False) or psutil.cpu_count(logical=True) or 1
 
         # Try RAPL first for CPU power
         cpu_power_w = read_cpu_power_w()
@@ -1008,7 +1011,7 @@ def build_payload(config):
         'motherboard': collect_motherboard(),
         'software': collect_software(),
         'errors': collect_errors(),
-        'power': collect_power(),
+        'power': collect_power(metrics['cpu']),
     }
 
     return payload

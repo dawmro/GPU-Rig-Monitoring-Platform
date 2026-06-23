@@ -453,32 +453,6 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                 'top_mem_processes_json': top_processes.get('by_mem', []) if top_processes else [],
                 'process_count': top_processes.get('total_count', 0) if top_processes else 0,
             }
-            LatestSnapshot.objects.update_or_create(
-                rig_uuid=rig_uuid,
-                defaults=ls_defaults,
-            )
-            # Invalidate cached snapshot so next read gets fresh data
-            cache.delete(f'lsnap_{rig_uuid}')
-
-            # Track rig status transitions
-            if rig:
-                previous_status = rig.status
-                current_status = Rig.Status.ONLINE  # Heartbeat always means online
-                if previous_status != current_status:
-                    RigStatusEvent.objects.create(
-                        rig_uuid=rig_uuid,
-                        status=current_status,
-                        previous_status=previous_status,
-                    )
-
-            # Update latest error text on Rig (like motherboard_json — updated in place)
-            if real_errors and rig:
-                rig.latest_errors_json = [
-                    {'source': e.get('source', ''), 'message': e.get('message', '')[:200], 'timestamp': e.get('timestamp', '')}
-                    for e in real_errors[:10]
-                ]
-            elif rig:
-                rig.latest_errors_json = []
 
             # ── Process power data ──────────────────────────────────────────
             # Agent sends pre-calculated power values (PSU efficiency already factored in)
@@ -515,13 +489,40 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                             total_power_w=round(total_power_w, 1),
                         )
 
-                    # Update LatestSnapshot with latest power values
+                    # Update LatestSnapshot power fields
                     ls_defaults['power_total_w'] = round(total_power_w, 1)
                     ls_defaults['power_gpu_w'] = round(gpu_power_w, 1)
                     ls_defaults['power_cpu_w'] = round(cpu_power_w, 1)
                     ls_defaults['power_other_w'] = other_power_w
                 except Exception as e:
                     logger.warning("Power processing failed for rig %s: %s", rig_uuid, str(e))
+
+            LatestSnapshot.objects.update_or_create(
+                rig_uuid=rig_uuid,
+                defaults=ls_defaults,
+            )
+            # Invalidate cached snapshot so next read gets fresh data
+            cache.delete(f'lsnap_{rig_uuid}')
+
+            # Track rig status transitions
+            if rig:
+                previous_status = rig.status
+                current_status = Rig.Status.ONLINE  # Heartbeat always online
+                if previous_status != current_status:
+                    RigStatusEvent.objects.create(
+                        rig_uuid=rig_uuid,
+                        status=current_status,
+                        previous_status=previous_status,
+                    )
+
+            # Update latest error text on Rig (like motherboard_json — updated in place)
+            if real_errors and rig:
+                rig.latest_errors_json = [
+                    {'source': e.get('source', ''), 'message': e.get('message', '')[:200], 'timestamp': e.get('timestamp', '')}
+                    for e in real_errors[:10]
+                ]
+            elif rig:
+                rig.latest_errors_json = []
 
             # Append to rolling error history with deduplication
             if rig:

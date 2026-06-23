@@ -10,7 +10,7 @@ class User(AbstractUser):
     email = models.EmailField(unique=True)
     is_admin = models.BooleanField(default=False)
     electricity_rate_kwh = models.DecimalField(
-        max_digits=6, decimal_places=4, default=0.1200,
+        max_digits=6, decimal_places=4, default=0.3300,
         help_text="Electricity cost per kWh"
     )
 

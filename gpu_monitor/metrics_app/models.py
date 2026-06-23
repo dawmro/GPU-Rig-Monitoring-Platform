@@ -288,6 +288,15 @@ class LatestSnapshot(models.Model):
     top_mem_processes_json = models.JSONField(default=list, blank=True)     # Top 20 by memory%
     process_count = models.PositiveIntegerField(default=0)                   # Total running processes
 
+    # Power consumption (latest values — for Live Metrics display)
+    power_gpu_w = models.FloatField(null=True, blank=True)      # Sum of all GPU power draws
+    power_cpu_w = models.FloatField(null=True, blank=True)      # CPU power (RAPL or estimated)
+    power_cpu_source = models.CharField(max_length=10, blank=True, default='')  # 'rapl' or 'estimate'
+    power_other_w = models.FloatField(null=True, blank=True)    # Flat 50W for RAM+disks+MB+fans
+    power_total_dc_w = models.FloatField(null=True, blank=True) # Total DC power
+    power_total_ac_w = models.FloatField(null=True, blank=True) # Total AC power (after PSU efficiency)
+    power_cost_per_hour = models.DecimalField(max_digits=8, decimal_places=4, null=True, blank=True)  # $/hr
+
     class Meta:
         db_table = 'metrics_latest_snapshot'
 

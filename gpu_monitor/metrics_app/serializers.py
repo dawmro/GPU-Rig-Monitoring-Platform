@@ -19,9 +19,10 @@ class IngestSerializer(serializers.Serializer):
     motherboard = serializers.JSONField(required=False, default=dict)
     software = serializers.JSONField(required=False, default=dict)
     errors = serializers.ListField(required=False, default=list)
+    power = serializers.JSONField(required=False, default=dict)
 
     def validate_schema_version(self, value):
-        if value not in ('1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8', '1.9'):
+        if value not in ('1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8', '1.9', '1.10'):
             raise serializers.ValidationError(f"Unsupported schema_version: {value}")
         return value
 
@@ -40,6 +41,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
     motherboard_data = validated.get('motherboard', {})
     software_data = validated.get('software', {})
     errors_data = validated.get('errors', [])
+    power_data = validated.get('power', {})
 
     # Filter out "no errors" placeholder entries from agents
     # Some agents send [{"source": "kernel", "message": "-- No entries --", "timestamp": ""}]
@@ -447,7 +449,22 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                 'top_cpu_processes_json': top_processes.get('by_cpu', []) if top_processes else [],
                 'top_mem_processes_json': top_processes.get('by_mem', []) if top_processes else [],
                 'process_count': top_processes.get('total_count', 0) if top_processes else 0,
+                # Power consumption (latest values)
+                'power_gpu_w': power_data.get('gpu_power_w') if power_data else None,
+                'power_cpu_w': power_data.get('cpu_power_w') if power_data else None,
+                'power_cpu_source': power_data.get('cpu_power_source', '') if power_data else '',
+                'power_other_w': power_data.get('other_power_w', 50) if power_data else None,
+                'power_total_dc_w': power_data.get('total_dc_power_w') if power_data else None,
+                'power_total_ac_w': power_data.get('total_ac_power_w') if power_data else None,
             }
+            # Calculate cost per hour if we have AC power and rig has rate
+            if rig and power_data and power_data.get('total_ac_power_w'):
+                try:
+                    rate = float(rig.electricity_rate_kwh) if rig.electricity_rate_kwh else 0.12
+                    ac_power_kw = float(power_data['total_ac_power_w']) / 1000
+                    ls_defaults['power_cost_per_hour'] = round(ac_power_kw * rate, 4)
+                except (TypeError, ValueError):
+                    pass
             LatestSnapshot.objects.update_or_create(
                 rig_uuid=rig_uuid,
                 defaults=ls_defaults,

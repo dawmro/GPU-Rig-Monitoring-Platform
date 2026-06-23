@@ -74,7 +74,7 @@
     <div class="text-gray-500">No data</div>
     {% endif %}
 </div>
-
+{% load gpu_filters %}
 <!-- ════════════════════════════════════════════════════════════════ -->
 <!-- Power Consumption -->
 <!-- ════════════════════════════════════════════════════════════════ -->
@@ -88,7 +88,6 @@
     {% if snapshot.power_total_w != None %}
     <div class="flex items-center justify-between mb-2">
         <span class="text-lg font-bold text-white">{{ snapshot.power_total_w|floatformat:0 }}W</span>
-        <span class="text-xs text-gray-500">AC</span>
     </div>
     <div class="grid grid-cols-3 gap-2 text-xs mb-2">
         <div class="bg-gray-700/50 rounded p-2 text-center">
@@ -105,6 +104,18 @@
             <div class="text-[10px] text-gray-500">est.</div>
         </div>
     </div>
+    {% if rig.electricity_rate_kwh %}
+    <div class="pt-2 border-t border-gray-700/50">
+        <div class="flex items-center justify-between text-xs mb-1">
+            <span class="text-gray-500">Cost:</span>
+            <span class="text-green-400 font-medium">${{ snapshot.power_total_w|multiply:rig.electricity_rate_kwh|divide:1000|floatformat:4 }}/hr</span>
+        </div>
+        <div class="flex items-center justify-between text-xs text-gray-500">
+            <span>Est. daily:</span>
+            <span>${{ snapshot.power_total_w|multiply:rig.electricity_rate_kwh|divide:1000|multiply:24|floatformat:2 }}</span>
+        </div>
+    </div>
+    {% endif %}
     {% elif snapshot %}
     <div class="text-sm text-gray-400">No power data</div>
     {% else %}

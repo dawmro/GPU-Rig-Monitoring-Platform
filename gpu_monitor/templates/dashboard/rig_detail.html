@@ -129,6 +129,18 @@
                 <canvas id="chartGpuPower"></canvas>
             </div>
 
+            <!-- Total System Power Chart -->
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
+                <h3 class="text-sm font-medium text-gray-300 mb-3">Total System Power (<span class="chart-timeframe-label">24h</span>)</h3>
+                <canvas id="chartTotalPower"></canvas>
+            </div>
+
+            <!-- CPU Power Chart -->
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
+                <h3 class="text-sm font-medium text-gray-300 mb-3">CPU Power (<span class="chart-timeframe-label">24h</span>)</h3>
+                <canvas id="chartCpuPower"></canvas>
+            </div>
+
             <!-- GPU Fan Speed Chart (multi-GPU) -->
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
                 <h3 class="text-sm font-medium text-gray-300 mb-3">GPU Fan Speed (<span class="chart-timeframe-label">24h</span>)</h3>
@@ -413,6 +425,8 @@ async function loadCharts() {
         function() { return loadChartMultiGpu('chartGpuUtil',      'gpu_util_pct',      uuid, range, '%'); },
         function() { return loadChartMultiGpu('chartGpuMem',       'gpu_mem_used_mb',   uuid, range, ' MB'); },
         function() { return loadChartMultiGpu('chartGpuPower',     'gpu_power_w',       uuid, range, 'W'); },
+        function() { return loadChart('chartTotalPower', 'total_system_power_w', uuid, range, 'W', 'rgba(59, 130, 246, 0.8)', 'rgba(59, 130, 246, 0.15)'); },
+        function() { return loadChart('chartCpuPower',   'cpu_power_w',          uuid, range, 'W', 'rgba(168, 85, 247, 0.8)', 'rgba(168, 85, 247, 0.15)'); },
         function() { return loadChartMultiGpu('chartGpuFan',       'gpu_fan_pct',       uuid, range, '%'); },
         function() { return loadChartMultiGpu('chartGpuCoreClock', 'gpu_core_clock_mhz', uuid, range, ' MHz'); },
         function() { return loadChartMultiGpu('chartGpuMemClock',  'gpu_mem_clock_mhz',  uuid, range, ' MHz'); },

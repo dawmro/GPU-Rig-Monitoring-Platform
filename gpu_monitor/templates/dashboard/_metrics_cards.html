@@ -104,15 +104,15 @@
             <div class="text-[10px] text-gray-500">est.</div>
         </div>
     </div>
-    {% if rig.electricity_rate_kwh %}
+    {% if user.electricity_rate_kwh %}
     <div class="pt-2 border-t border-gray-700/50">
         <div class="flex items-center justify-between text-xs mb-1">
             <span class="text-gray-500">Cost:</span>
-            <span class="text-green-400 font-medium">${{ snapshot.power_total_w|multiply:rig.electricity_rate_kwh|divide:1000|floatformat:4 }}/hr</span>
+            <span class="text-green-400 font-medium">${{ snapshot.power_total_w|multiply:user.electricity_rate_kwh|divide:1000|floatformat:4 }}/hr</span>
         </div>
         <div class="flex items-center justify-between text-xs text-gray-500">
             <span>Est. daily:</span>
-            <span>${{ snapshot.power_total_w|multiply:rig.electricity_rate_kwh|divide:1000|multiply:24|floatformat:2 }}</span>
+            <span>${{ snapshot.power_total_w|multiply:user.electricity_rate_kwh|divide:1000|multiply:24|floatformat:2 }}</span>
         </div>
     </div>
     {% endif %}

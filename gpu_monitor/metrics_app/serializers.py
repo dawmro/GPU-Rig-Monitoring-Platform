@@ -520,12 +520,6 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     ls_defaults['power_gpu_w'] = round(gpu_power_w, 1)
                     ls_defaults['power_cpu_w'] = round(cpu_power_w, 1)
                     ls_defaults['power_other_w'] = other_power_w
-                    # Calculate cost per hour
-                    try:
-                        rate = float(rig.electricity_rate_kwh) if rig.electricity_rate_kwh else 0.12
-                        ls_defaults['power_cost_per_hour'] = round((total_power_w / 1000) * rate, 4)
-                    except (TypeError, ValueError):
-                        pass
                 except Exception as e:
                     logger.warning("Power processing failed for rig %s: %s", rig_uuid, str(e))
 

@@ -302,9 +302,10 @@ def collect_power():
 
     Tries RAPL first for accurate CPU power measurement.
     Falls back to estimation from utilization if RAPL unavailable.
+    All power values returned are AC (wall) — PSU efficiency already factored in.
 
     Returns:
-        dict with cpu_power_w, gpu_power_w, total_dc_power_w, total_ac_power_w,
+        dict with cpu_power_w, gpu_power_w, other_power_w, total_power_w (all AC),
         and metadata about measurement source.
     """
     try:
@@ -324,7 +325,6 @@ def collect_power():
 
         # Get GPU power (already collected via pynvml)
         gpu_power_w = 0
-        gpu_power_details = []
         try:
             import pynvml
             pynvml.nvmlInit()
@@ -333,7 +333,6 @@ def collect_power():
                 handle = pynvml.nvmlDeviceGetHandleByIndex(i)
                 power = pynvml.nvmlDeviceGetPowerUsage(handle) / 1000.0  # mW to W
                 gpu_power_w += power
-                gpu_power_details.append(round(power, 1))
             pynvml.nvmlShutdown()
         except Exception:
             pass  # GPU power collection failure is non-fatal
@@ -341,22 +340,19 @@ def collect_power():
         # Flat estimate for other components (RAM + disks + MB + fans)
         other_power_w = 50
 
-        # Calculate totals
-        total_dc_power_w = round(gpu_power_w + cpu_power_w + other_power_w, 1)
-        psu_efficiency = 0.90  # 80 Plus Gold default
-        total_ac_power_w = round(total_dc_power_w / psu_efficiency, 1)
+        # Calculate total DC power, then apply PSU efficiency to get AC
+        PSU_EFFICIENCY = 0.90  # 80 Plus Gold
+        total_dc = gpu_power_w + cpu_power_w + other_power_w
+        total_power_w = round(total_dc / PSU_EFFICIENCY, 1)
 
         return {
-            'cpu_power_w': cpu_power_w,
+            'cpu_power_w': round(cpu_power_w, 1),
             'cpu_power_source': cpu_power_source,
             'cpu_utilization': round(cpu_percent, 3),
             'cpu_cores': cpu_cores,
             'gpu_power_w': round(gpu_power_w, 1),
-            'gpu_power_details': gpu_power_details,
             'other_power_w': other_power_w,
-            'total_dc_power_w': total_dc_power_w,
-            'total_ac_power_w': total_ac_power_w,
-            'psu_efficiency': psu_efficiency,
+            'total_power_w': total_power_w,
         }
     except Exception as e:
         logging.getLogger('power').warning('Power collection failed: %s', e)

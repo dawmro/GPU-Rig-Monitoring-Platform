@@ -53,10 +53,6 @@ class Rig(models.Model):
         max_digits=6, decimal_places=4, default=0.1200,
         help_text="Electricity cost per kWh"
     )
-    psu_efficiency = models.DecimalField(
-        max_digits=3, decimal_places=2, default=0.90,
-        help_text="PSU efficiency (0.85=Bronze, 0.90=Gold, 0.92=Platinum)"
-    )
 
     class Meta:
         db_table = 'rigs_rig'

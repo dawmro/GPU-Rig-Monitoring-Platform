@@ -77,9 +77,7 @@ COMPACT_TABLES = [
             'gpu_power_w': 'avg',
             'cpu_power_w': 'avg',
             'other_power_w': 'avg',
-            'total_dc_power_w': 'avg',
-            'total_ac_power_w': 'avg',
-            'psu_efficiency': 'last',
+            'total_power_w': 'avg',
         },
         'static_fields': ['cpu_power_source', 'cpu_cores'],
     },
@@ -94,6 +92,7 @@ COMPACT_TABLES = [
             'mem_free_bytes': 'avg', 'mem_cached_bytes': 'avg', 'mem_total_bytes': 'last',
             'swap_used_bytes': 'avg', 'swap_total_bytes': 'last',
             'uptime_s': 'max', 'status': 'last', 'error_count': 'sum',
+            'cpu_power_w': 'avg', 'total_system_power_w': 'avg',
         },
         'static_fields': [
             'schema_version',

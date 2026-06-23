@@ -81,6 +81,9 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                 'swap_total_bytes': memory.get('swap_total_bytes'),
                 'uptime_s': software_data.get('uptime_s'),
                 'error_count': len(real_errors),
+                # Power data from agent (PSU efficiency already factored in)
+                'cpu_power_w': power_data.get('cpu_power_w') if power_data else None,
+                'total_system_power_w': power_data.get('total_power_w') if power_data else None,
             }
             snapshot, created = MetricSnapshot.objects.update_or_create(
                 rig_uuid=rig_uuid,
@@ -449,22 +452,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                 'top_cpu_processes_json': top_processes.get('by_cpu', []) if top_processes else [],
                 'top_mem_processes_json': top_processes.get('by_mem', []) if top_processes else [],
                 'process_count': top_processes.get('total_count', 0) if top_processes else 0,
-                # Power consumption (latest values)
-                'power_gpu_w': power_data.get('gpu_power_w') if power_data else None,
-                'power_cpu_w': power_data.get('cpu_power_w') if power_data else None,
-                'power_cpu_source': power_data.get('cpu_power_source', '') if power_data else '',
-                'power_other_w': power_data.get('other_power_w', 50) if power_data else None,
-                'power_total_dc_w': power_data.get('total_dc_power_w') if power_data else None,
-                'power_total_ac_w': power_data.get('total_ac_power_w') if power_data else None,
             }
-            # Calculate cost per hour if we have AC power and rig has rate
-            if rig and power_data and power_data.get('total_ac_power_w'):
-                try:
-                    rate = float(rig.electricity_rate_kwh) if rig.electricity_rate_kwh else 0.12
-                    ac_power_kw = float(power_data['total_ac_power_w']) / 1000
-                    ls_defaults['power_cost_per_hour'] = round(ac_power_kw * rate, 4)
-                except (TypeError, ValueError):
-                    pass
             LatestSnapshot.objects.update_or_create(
                 rig_uuid=rig_uuid,
                 defaults=ls_defaults,
@@ -493,6 +481,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                 rig.latest_errors_json = []
 
             # ── Process power data ──────────────────────────────────────────
+            # Agent sends pre-calculated power values (PSU efficiency already factored in)
             power_data = data.get('power', {})
             if power_data and rig:
                 try:
@@ -504,13 +493,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     cpu_utilization = float(power_data.get('cpu_utilization', 0) or 0)
                     cpu_cores = int(power_data.get('cpu_cores', 0) or 0)
                     other_power_w = float(power_data.get('other_power_w', 50) or 50)
-
-                    # Calculate totals
-                    total_dc = gpu_power_w + cpu_power_w + other_power_w
-
-                    # Get PSU efficiency from rig config, default to 90%
-                    psu_efficiency = float(rig.psu_efficiency) if rig.psu_efficiency else 0.90
-                    total_ac = total_dc / psu_efficiency if psu_efficiency > 0 else total_dc
+                    total_power_w = float(power_data.get('total_power_w', 0) or 0)
 
                     # Store at most once per minute to reduce DB growth
                     last_reading = PowerReading.objects.filter(rig=rig).first()
@@ -529,10 +512,20 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                             cpu_utilization=round(cpu_utilization, 3),
                             cpu_cores=cpu_cores,
                             other_power_w=other_power_w,
-                            total_dc_power_w=round(total_dc, 1),
-                            total_ac_power_w=round(total_ac, 1),
-                            psu_efficiency=psu_efficiency,
+                            total_power_w=round(total_power_w, 1),
                         )
+
+                    # Update LatestSnapshot with latest power values
+                    ls_defaults['power_total_w'] = round(total_power_w, 1)
+                    ls_defaults['power_gpu_w'] = round(gpu_power_w, 1)
+                    ls_defaults['power_cpu_w'] = round(cpu_power_w, 1)
+                    ls_defaults['power_other_w'] = other_power_w
+                    # Calculate cost per hour
+                    try:
+                        rate = float(rig.electricity_rate_kwh) if rig.electricity_rate_kwh else 0.12
+                        ls_defaults['power_cost_per_hour'] = round((total_power_w / 1000) * rate, 4)
+                    except (TypeError, ValueError):
+                        pass
                 except Exception as e:
                     logger.warning("Power processing failed for rig %s: %s", rig_uuid, str(e))
 

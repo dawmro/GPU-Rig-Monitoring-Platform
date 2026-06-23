@@ -23,6 +23,12 @@ class MetricSnapshot(models.Model):
     cpu_freq_min_mhz = models.FloatField(null=True, blank=True)
     cpu_freq_max_mhz = models.FloatField(null=True, blank=True)
 
+    # CPU power (estimated or measured via RAPL, AC watts)
+    cpu_power_w = models.FloatField(null=True, blank=True)
+
+    # Total system power (AC watts, PSU efficiency already factored in)
+    total_system_power_w = models.FloatField(null=True, blank=True)
+
     # Memory metrics (dynamic — used for charts)
     mem_total_bytes = models.BigIntegerField(null=True)
     mem_used_bytes = models.BigIntegerField(null=True)
@@ -289,13 +295,11 @@ class LatestSnapshot(models.Model):
     process_count = models.PositiveIntegerField(default=0)                   # Total running processes
 
     # Power consumption (latest values — for Live Metrics display)
-    power_gpu_w = models.FloatField(null=True, blank=True)      # Sum of all GPU power draws
-    power_cpu_w = models.FloatField(null=True, blank=True)      # CPU power (RAPL or estimated)
-    power_cpu_source = models.CharField(max_length=10, blank=True, default='')  # 'rapl' or 'estimate'
-    power_other_w = models.FloatField(null=True, blank=True)    # Flat 50W for RAM+disks+MB+fans
-    power_total_dc_w = models.FloatField(null=True, blank=True) # Total DC power
-    power_total_ac_w = models.FloatField(null=True, blank=True) # Total AC power (after PSU efficiency)
-    power_cost_per_hour = models.DecimalField(max_digits=8, decimal_places=4, null=True, blank=True)  # $/hr
+    # All values are AC (wall) — PSU efficiency already factored in by agent
+    power_total_w = models.FloatField(null=True, blank=True)     # Total system power (AC)
+    power_gpu_w = models.FloatField(null=True, blank=True)       # Sum of all GPU power (AC)
+    power_cpu_w = models.FloatField(null=True, blank=True)       # CPU power (AC)
+    power_other_w = models.FloatField(null=True, blank=True)     # Flat 50W for RAM+disks+MB+fans
 
     class Meta:
         db_table = 'metrics_latest_snapshot'
@@ -361,16 +365,17 @@ class PowerReading(models.Model):
 
     Stores measured (GPU via nvidia-smi, CPU via RAPL) and estimated
     (CPU fallback, other components) power consumption data.
+    All power values are AC (wall) — PSU efficiency already factored in by agent.
     Used for power charts and cost estimation.
     """
     id = models.BigAutoField(primary_key=True)
     rig = models.ForeignKey('rigs.Rig', on_delete=models.CASCADE, related_name='power_readings')
     timestamp = models.DateTimeField(default=timezone.now, db_index=True)
 
-    # GPU power (measured via nvidia-smi, sum of all GPUs)
+    # GPU power (measured via nvidia-smi, sum of all GPUs, AC)
     gpu_power_w = models.FloatField(default=0)
 
-    # CPU power (measured via RAPL or estimated from utilization)
+    # CPU power (measured via RAPL or estimated from utilization, AC)
     cpu_power_w = models.FloatField(default=0)
     cpu_power_source = models.CharField(max_length=10, default='rapl', choices=[
         ('rapl', 'RAPL (measured)'),
@@ -379,13 +384,11 @@ class PowerReading(models.Model):
     cpu_utilization = models.FloatField(default=0)
     cpu_cores = models.PositiveSmallIntegerField(default=0)
 
-    # Other components (flat estimate: RAM + disks + MB + fans)
+    # Other components (flat estimate: RAM + disks + MB + fans, AC)
     other_power_w = models.FloatField(default=50)
 
-    # Totals
-    total_dc_power_w = models.FloatField(default=0)  # Sum of all components (DC)
-    total_ac_power_w = models.FloatField(default=0)  # After PSU efficiency (AC)
-    psu_efficiency = models.FloatField(default=0.9)  # Applied PSU efficiency
+    # Total system power (AC, PSU efficiency already factored in by agent)
+    total_power_w = models.FloatField(default=0)
 
     class Meta:
         db_table = 'metrics_power_reading'

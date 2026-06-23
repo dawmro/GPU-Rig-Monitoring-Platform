@@ -13,6 +13,7 @@
                 <th class="text-left px-2 py-2 font-medium">GPU Fan [%]</th>
                 <th class="text-left px-2 py-2 font-medium">CPU Temp [°C]</th>
                 <th class="text-left px-2 py-2 font-medium">CPU [%]</th>
+                <th class="text-left px-2 py-2 font-medium">Power [W]</th>
                 <th class="text-left px-2 py-2 font-medium">Disk Util [%]</th>
             </tr>
         </thead>
@@ -101,6 +102,14 @@
                 <td class="px-2 py-2 text-gray-400 whitespace-nowrap">
                     {% if item.snapshot and item.snapshot.cpu_utilization_pct != None %}
                         {{ item.snapshot.cpu_utilization_pct|floatformat:1 }}
+                    {% else %}—{% endif %}
+                </td>
+                {# Power column: total AC power with color coding #}
+                <td class="px-2 py-2 whitespace-nowrap">
+                    {% if item.snapshot and item.snapshot.power_total_ac_w != None %}
+                        <span class="{% if item.snapshot.power_total_ac_w > 500 %}text-red-400{% elif item.snapshot.power_total_ac_w > 300 %}text-yellow-400{% else %}text-green-400{% endif %}">
+                            {{ item.snapshot.power_total_ac_w|floatformat:0 }}W
+                        </span>
                     {% else %}—{% endif %}
                 </td>
                 {# Disk Util column: max utilization across all disks #}

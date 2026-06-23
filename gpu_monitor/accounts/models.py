@@ -9,6 +9,10 @@ from argon2.exceptions import VerifyMismatchError
 class User(AbstractUser):
     email = models.EmailField(unique=True)
     is_admin = models.BooleanField(default=False)
+    electricity_rate_kwh = models.DecimalField(
+        max_digits=6, decimal_places=4, default=0.1200,
+        help_text="Electricity cost per kWh"
+    )
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['username']

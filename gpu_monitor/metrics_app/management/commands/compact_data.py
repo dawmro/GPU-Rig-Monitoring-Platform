@@ -79,7 +79,7 @@ COMPACT_TABLES = [
             'other_power_w': 'avg',
             'total_power_w': 'avg',
         },
-        'static_fields': ['cpu_power_source', 'cpu_cores'],
+        'static_fields': ['cpu_power_source'],
     },
     # Parent table LAST — FK-safe with NOT EXISTS
     {

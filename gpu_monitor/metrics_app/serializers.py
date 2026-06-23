@@ -464,8 +464,6 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     gpu_power_w = float(power_data.get('gpu_power_w', 0) or 0)
                     cpu_power_w = float(power_data.get('cpu_power_w', 0) or 0)
                     cpu_power_source = power_data.get('cpu_power_source', 'estimate')
-                    cpu_utilization = float(power_data.get('cpu_utilization', 0) or 0)
-                    cpu_cores = int(power_data.get('cpu_cores', 0) or 0)
                     other_power_w = float(power_data.get('other_power_w', 50) or 50)
                     total_power_w = float(power_data.get('total_power_w', 0) or 0)
 
@@ -483,8 +481,6 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                             gpu_power_w=round(gpu_power_w, 1),
                             cpu_power_w=round(cpu_power_w, 1),
                             cpu_power_source=cpu_power_source,
-                            cpu_utilization=round(cpu_utilization, 3),
-                            cpu_cores=cpu_cores,
                             other_power_w=other_power_w,
                             total_power_w=round(total_power_w, 1),
                         )

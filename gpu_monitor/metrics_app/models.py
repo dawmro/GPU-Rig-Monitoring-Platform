@@ -381,8 +381,6 @@ class PowerReading(models.Model):
         ('rapl', 'RAPL (measured)'),
         ('estimate', 'Estimated from utilization'),
     ])
-    cpu_utilization = models.FloatField(default=0)
-    cpu_cores = models.PositiveSmallIntegerField(default=0)
 
     # Other components (flat estimate: RAM + disks + MB + fans, AC)
     other_power_w = models.FloatField(default=50)

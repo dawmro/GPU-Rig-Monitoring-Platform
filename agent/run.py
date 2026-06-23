@@ -351,8 +351,6 @@ def collect_power(cpu_metrics):
         return {
             'cpu_power_w': round(cpu_power_w, 1),
             'cpu_power_source': cpu_power_source,
-            'cpu_utilization': round(cpu_percent, 3),
-            'cpu_cores': cpu_cores,
             'gpu_power_w': round(gpu_power_w, 1),
             'other_power_w': other_power_w,
             'total_power_w': total_power_w,

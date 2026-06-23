@@ -322,11 +322,15 @@ def profile_view(request):
                     else:
                         request.user.electricity_rate_kwh = rate_val
                         request.user.save(update_fields=['electricity_rate_kwh'])
+                        log_audit_event(request, 'user.power_settings_changed', 'User', request.user.id, {'rate': rate_val})
                         messages.success(request, 'Power settings updated successfully')
                 else:
-                    messages.error(request, 'Please enter a valid electricity rate')
-            except ValueError:
-                messages.error(request, 'Invalid electricity rate format')
+                    request.user.electricity_rate_kwh = 0.1200
+                    request.user.save(update_fields=['electricity_rate_kwh'])
+                    log_audit_event(request, 'user.power_settings_changed', 'User', request.user.id, {'rate': 0.1200})
+                    messages.success(request, 'Power settings reset to default (0.1200 $/kWh)')
+            except (ValueError, TypeError):
+                messages.error(request, 'Invalid electricity rate format — please enter a number (e.g. 0.12)')
 
     return render(request, 'accounts/profile.html')
 

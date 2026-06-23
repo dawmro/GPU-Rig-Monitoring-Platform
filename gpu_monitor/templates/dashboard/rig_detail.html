@@ -123,7 +123,7 @@
                 <canvas id="chartGpuMem"></canvas>
             </div>
 
-            <!-- GPU Power Chart (multi-GPU) -->
+            <!-- GPU Power Draw Chart (multi-GPU) -->
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
                 <h3 class="text-sm font-medium text-gray-300 mb-3">GPU Power Draw (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartGpuPower"></canvas>
@@ -165,10 +165,10 @@
                 <canvas id="chartCpuFreq"></canvas>
             </div>
 
-            <!-- Memory & Swap Combined Chart -->
+            <!-- CPU Power Chart -->
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Memory & Swap (<span class="chart-timeframe-label">24h</span>)</h3>
-                <canvas id="chartMemSwap"></canvas>
+                <h3 class="text-sm font-medium text-gray-300 mb-3">CPU Power (<span class="chart-timeframe-label">24h</span>)</h3>
+                <canvas id="chartCpuPower"></canvas>
             </div>
 
             <!-- CPU Load Average Chart -->
@@ -199,6 +199,18 @@
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
                 <h3 class="text-sm font-medium text-gray-300 mb-3">Disk Utilization (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartDiskUtilization"></canvas>
+            </div>
+
+            <!-- Total System Power Chart -->
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
+                <h3 class="text-sm font-medium text-gray-300 mb-3">Total System Power (<span class="chart-timeframe-label">24h</span>)</h3>
+                <canvas id="chartTotalPower"></canvas>
+            </div>
+
+            <!-- Memory & Swap Combined Chart -->
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
+                <h3 class="text-sm font-medium text-gray-300 mb-3">Memory & Swap (<span class="chart-timeframe-label">24h</span>)</h3>
+                <canvas id="chartMemSwap"></canvas>
             </div>
 
             <!-- Network Traffic Chart (multi-interface, combined RX/TX/Errors) -->
@@ -409,6 +421,7 @@ async function loadCharts() {
     // order in the page. To reorder charts on the page, reorder both the HTML
     // canvas elements AND this array. Each entry returns a Promise.
     var chartLoaders = [
+        // GPU charts
         function() { return loadChartMultiGpu('chartGpuTemp',      'gpu_temp_c',        uuid, range, '°C'); },
         function() { return loadChartMultiGpu('chartGpuUtil',      'gpu_util_pct',      uuid, range, '%'); },
         function() { return loadChartMultiGpu('chartGpuMem',       'gpu_mem_used_mb',   uuid, range, ' MB'); },
@@ -416,15 +429,20 @@ async function loadCharts() {
         function() { return loadChartMultiGpu('chartGpuFan',       'gpu_fan_pct',       uuid, range, '%'); },
         function() { return loadChartMultiGpu('chartGpuCoreClock', 'gpu_core_clock_mhz', uuid, range, ' MHz'); },
         function() { return loadChartMultiGpu('chartGpuMemClock',  'gpu_mem_clock_mhz',  uuid, range, ' MHz'); },
+        // CPU charts
         function() { return loadChart('chartCpuUtil',    'cpu_utilization_pct',  uuid, range, '%',   'rgba(16, 185, 129, 0.8)', 'rgba(16, 185, 129, 0.15)'); },
         function() { return loadChart('chartCpuTemp',    'cpu_temp_c',           uuid, range, '°C',  'rgba(245, 158, 11, 0.8)', 'rgba(245, 158, 11, 0.15)'); },
         function() { return loadChart('chartCpuFreq',    'cpu_freq_current_mhz', uuid, range, ' MHz', 'rgba(59, 130, 246, 0.8)', 'rgba(59, 130, 246, 0.15)'); },
-        function() { return loadChartMemSwap('chartMemSwap', uuid, range); },
+        function() { return loadChart('chartCpuPower',   'cpu_power_w',          uuid, range, 'W', 'rgba(168, 85, 247, 0.8)', 'rgba(168, 85, 247, 0.15)'); },
         function() { return loadChartLoadAvg('chartCpuLoad', uuid, range); },
+        // Disk charts
         function() { return loadChartMultiKey('chartDiskUsage', 'disk_usage_pct', uuid, range, '%', 'multi_disk'); },
         function() { return loadChartMultiKeyDual('chartDiskReadWriteThroughput', 'disk_read_bytes_delta', 'disk_write_bytes_delta', uuid, range, ' MB', 'multi_disk', 'rgba(59, 130, 246, 0.8)', 'rgba(16, 185, 129, 0.8)'); },
         function() { return loadChartMultiKeyDual('chartDiskReadWriteIops', 'disk_read_iops_delta', 'disk_write_iops_delta', uuid, range, ' IOPS', 'multi_disk', 'rgba(59, 130, 246, 0.8)', 'rgba(16, 185, 129, 0.8)'); },
         function() { return loadChartMultiKey('chartDiskUtilization', 'disk_utilization_pct', uuid, range, '%', 'multi_disk'); },
+        // Rest
+        function() { return loadChart('chartTotalPower', 'total_system_power_w', uuid, range, 'W', 'rgba(59, 130, 246, 0.8)', 'rgba(59, 130, 246, 0.15)'); },
+        function() { return loadChartMemSwap('chartMemSwap', uuid, range); },
         function() { return loadChartNetworkCombined('chartNetCombined', uuid, range); },
         function() { return loadChart('chartUptime', 'uptime_s', uuid, range, ' days', 'rgba(168, 85, 247, 0.8)', 'rgba(168, 85, 247, 0.15)'); },
         function() { return loadChart('chartErrorFreq', 'error_frequency', uuid, range, ' err/min', 'rgba(239, 68, 68, 0.8)', 'rgba(239, 68, 68, 0.5)', 'bar'); },

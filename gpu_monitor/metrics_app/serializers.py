@@ -19,9 +19,10 @@ class IngestSerializer(serializers.Serializer):
     motherboard = serializers.JSONField(required=False, default=dict)
     software = serializers.JSONField(required=False, default=dict)
     errors = serializers.ListField(required=False, default=list)
+    power = serializers.JSONField(required=False, default=dict)
 
     def validate_schema_version(self, value):
-        if value not in ('1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8', '1.9'):
+        if value not in ('1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8', '1.9', '1.10'):
             raise serializers.ValidationError(f"Unsupported schema_version: {value}")
         return value
 
@@ -40,6 +41,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
     motherboard_data = validated.get('motherboard', {})
     software_data = validated.get('software', {})
     errors_data = validated.get('errors', [])
+    power_data = validated.get('power', {})
 
     # Filter out "no errors" placeholder entries from agents
     # Some agents send [{"source": "kernel", "message": "-- No entries --", "timestamp": ""}]
@@ -79,6 +81,9 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                 'swap_total_bytes': memory.get('swap_total_bytes'),
                 'uptime_s': software_data.get('uptime_s'),
                 'error_count': len(real_errors),
+                # Power data from agent (PSU efficiency already factored in)
+                'cpu_power_w': power_data.get('cpu_power_w') if power_data else None,
+                'total_system_power_w': power_data.get('total_power_w') if power_data else None,
             }
             snapshot, created = MetricSnapshot.objects.update_or_create(
                 rig_uuid=rig_uuid,
@@ -448,6 +453,46 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                 'top_mem_processes_json': top_processes.get('by_mem', []) if top_processes else [],
                 'process_count': top_processes.get('total_count', 0) if top_processes else 0,
             }
+
+            # ── Process power data ──────────────────────────────────────────
+            # Agent sends pre-calculated power values (PSU efficiency already factored in)
+            power_data = data.get('power', {})
+            if power_data and rig:
+                try:
+                    from metrics_app.models import PowerReading
+
+                    gpu_power_w = float(power_data.get('gpu_power_w', 0) or 0)
+                    cpu_power_w = float(power_data.get('cpu_power_w', 0) or 0)
+                    cpu_power_source = power_data.get('cpu_power_source', 'estimate')
+                    other_power_w = float(power_data.get('other_power_w', 50) or 50)
+                    total_power_w = float(power_data.get('total_power_w', 0) or 0)
+
+                    # Store at most once per minute to reduce DB growth
+                    last_reading = PowerReading.objects.filter(rig=rig).first()
+                    store_reading = True
+                    if last_reading:
+                        time_diff = (timezone.now() - last_reading.timestamp).total_seconds()
+                        if time_diff < 60:
+                            store_reading = False
+
+                    if store_reading:
+                        PowerReading.objects.create(
+                            rig=rig,
+                            gpu_power_w=round(gpu_power_w, 1),
+                            cpu_power_w=round(cpu_power_w, 1),
+                            cpu_power_source=cpu_power_source,
+                            other_power_w=other_power_w,
+                            total_power_w=round(total_power_w, 1),
+                        )
+
+                    # Update LatestSnapshot power fields
+                    ls_defaults['power_total_w'] = round(total_power_w, 1)
+                    ls_defaults['power_gpu_w'] = round(gpu_power_w, 1)
+                    ls_defaults['power_cpu_w'] = round(cpu_power_w, 1)
+                    ls_defaults['power_other_w'] = other_power_w
+                except Exception as e:
+                    logger.warning("Power processing failed for rig %s: %s", rig_uuid, str(e))
+
             LatestSnapshot.objects.update_or_create(
                 rig_uuid=rig_uuid,
                 defaults=ls_defaults,
@@ -458,7 +503,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
             # Track rig status transitions
             if rig:
                 previous_status = rig.status
-                current_status = Rig.Status.ONLINE  # Heartbeat always means online
+                current_status = Rig.Status.ONLINE  # Heartbeat always online
                 if previous_status != current_status:
                     RigStatusEvent.objects.create(
                         rig_uuid=rig_uuid,

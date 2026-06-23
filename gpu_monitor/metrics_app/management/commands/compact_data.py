@@ -50,12 +50,9 @@ COMPACT_TABLES = [
         'group_by': ['rig_uuid', 'device'],
         'agg_fields': {
             'usage_pct': 'avg', 'temp_c': 'avg', 'capacity_bytes': 'last',
-            # Disk I/O deltas — SUM for counters over the bucket
             'read_bytes_delta': 'sum', 'write_bytes_delta': 'sum',
             'read_iops_delta': 'sum', 'write_iops_delta': 'sum',
-            # Utilization — AVG for percentage
             'utilization_pct': 'avg',
-            # Raw cumulative counters — LAST (latest value)
             'read_bytes': 'last', 'write_bytes': 'last',
             'read_iops': 'last', 'write_iops': 'last',
             'busy_time_ms': 'last',
@@ -72,7 +69,19 @@ COMPACT_TABLES = [
         },
         'static_fields': ['snapshot_id'],
     },
-# Parent table LAST — FK-safe with NOT EXISTS
+    # Power readings — compact like other timeseries
+    {
+        'table': 'metrics_power_reading',
+        'group_by': ['rig_uuid'],
+        'agg_fields': {
+            'gpu_power_w': 'avg',
+            'cpu_power_w': 'avg',
+            'other_power_w': 'avg',
+            'total_power_w': 'avg',
+        },
+        'static_fields': ['cpu_power_source'],
+    },
+    # Parent table LAST — FK-safe with NOT EXISTS
     {
         'table': 'metrics_metricsnapshot',
         'group_by': ['rig_uuid'],
@@ -83,6 +92,7 @@ COMPACT_TABLES = [
             'mem_free_bytes': 'avg', 'mem_cached_bytes': 'avg', 'mem_total_bytes': 'last',
             'swap_used_bytes': 'avg', 'swap_total_bytes': 'last',
             'uptime_s': 'max', 'status': 'last', 'error_count': 'sum',
+            'cpu_power_w': 'avg', 'total_system_power_w': 'avg',
         },
         'static_fields': [
             'schema_version',

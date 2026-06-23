@@ -48,6 +48,12 @@ class Rig(models.Model):
     # Max 200 entries (~3 min window at 60s heartbeat interval)
     _seen_error_hashes_json = models.JSONField(default=list, blank=True, db_column='seen_error_hashes_json')
 
+    # Power configuration
+    electricity_rate_kwh = models.DecimalField(
+        max_digits=6, decimal_places=4, default=0.1200,
+        help_text="Electricity cost per kWh"
+    )
+
     class Meta:
         db_table = 'rigs_rig'
 
@@ -66,3 +72,8 @@ class Rig(models.Model):
         else:
             self.status = self.Status.ONLINE
         self.save(update_fields=['status'])
+
+    @property
+    def latest_power_reading(self):
+        """Get the most recent power reading for this rig."""
+        return self.power_readings.first()

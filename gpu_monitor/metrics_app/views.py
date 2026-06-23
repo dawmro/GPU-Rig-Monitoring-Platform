@@ -195,6 +195,7 @@ class ChartDataView(APIView):
         'cpu_utilization_pct', 'cpu_temp_c', 'cpu_freq_current_mhz',
         'mem_total_bytes', 'mem_used_bytes', 'mem_free_bytes', 'mem_cached_bytes',
         'swap_used_bytes', 'swap_total_bytes',
+        'cpu_power_w', 'total_system_power_w',
     }
     GPU_METRICS = {
         'gpu_temp_c': 'gpu_temp_c', 'gpu_util_pct': 'gpu_util_pct',

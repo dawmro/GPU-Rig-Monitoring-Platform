@@ -32,6 +32,7 @@ VACUUM_TABLES = [
     'metrics_storagemetric',
     'metrics_networkmetric',
     'metrics_gpu_process',
+    'metrics_power_reading',
     'metrics_metricsnapshot',
 ]
 

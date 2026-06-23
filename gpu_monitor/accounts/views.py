@@ -289,25 +289,44 @@ def reactivate_api_key(request, key_id):
 
 @login_required
 def profile_view(request):
-    """User profile page — view info and change password."""
+    """User profile page — view info, change password, configure power settings."""
     if request.method == 'POST':
-        current = request.POST.get('current_password', '')
-        new = request.POST.get('new_password', '')
-        confirm = request.POST.get('confirm_password', '')
+        action = request.POST.get('action')
 
-        if not request.user.check_password(current):
-            messages.error(request, 'Current password is incorrect')
-        elif new != confirm:
-            messages.error(request, 'New passwords do not match')
-        elif len(new) < 8:
-            messages.error(request, 'Password must be at least 8 characters')
-        else:
-            request.user.set_password(new)
-            request.user.save()
-            log_audit_event(request, 'user.password_changed', 'User', request.user.id, {})
-            messages.success(request, 'Password changed successfully')
-            from django.contrib.auth import update_session_auth_hash
-            update_session_auth_hash(request, request.user)
+        if action == 'change_password':
+            current = request.POST.get('current_password', '')
+            new = request.POST.get('new_password', '')
+            confirm = request.POST.get('confirm_password', '')
+
+            if not request.user.check_password(current):
+                messages.error(request, 'Current password is incorrect')
+            elif new != confirm:
+                messages.error(request, 'New passwords do not match')
+            elif len(new) < 8:
+                messages.error(request, 'Password must be at least 8 characters')
+            else:
+                request.user.set_password(new)
+                request.user.save()
+                log_audit_event(request, 'user.password_changed', 'User', request.user.id, {})
+                messages.success(request, 'Password changed successfully')
+                from django.contrib.auth import update_session_auth_hash
+                update_session_auth_hash(request, request.user)
+
+        elif action == 'update_power_settings':
+            try:
+                rate = request.POST.get('electricity_rate_kwh', '').strip()
+                if rate:
+                    rate_val = float(rate)
+                    if rate_val < 0 or rate_val > 10:
+                        messages.error(request, 'Electricity rate must be between 0 and 10 $/kWh')
+                    else:
+                        request.user.electricity_rate_kwh = rate_val
+                        request.user.save(update_fields=['electricity_rate_kwh'])
+                        messages.success(request, 'Power settings updated successfully')
+                else:
+                    messages.error(request, 'Please enter a valid electricity rate')
+            except ValueError:
+                messages.error(request, 'Invalid electricity rate format')
 
     return render(request, 'accounts/profile.html')
 

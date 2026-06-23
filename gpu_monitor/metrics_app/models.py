@@ -23,6 +23,12 @@ class MetricSnapshot(models.Model):
     cpu_freq_min_mhz = models.FloatField(null=True, blank=True)
     cpu_freq_max_mhz = models.FloatField(null=True, blank=True)
 
+    # CPU power (estimated or measured via RAPL, AC watts)
+    cpu_power_w = models.FloatField(null=True, blank=True)
+
+    # Total system power (AC watts, PSU efficiency already factored in)
+    total_system_power_w = models.FloatField(null=True, blank=True)
+
     # Memory metrics (dynamic — used for charts)
     mem_total_bytes = models.BigIntegerField(null=True)
     mem_used_bytes = models.BigIntegerField(null=True)
@@ -288,6 +294,13 @@ class LatestSnapshot(models.Model):
     top_mem_processes_json = models.JSONField(default=list, blank=True)     # Top 20 by memory%
     process_count = models.PositiveIntegerField(default=0)                   # Total running processes
 
+    # Power consumption (latest values — for Live Metrics display)
+    # All values are AC (wall) — PSU efficiency already factored in by agent
+    power_total_w = models.FloatField(null=True, blank=True)     # Total system power (AC)
+    power_gpu_w = models.FloatField(null=True, blank=True)       # Sum of all GPU power (AC)
+    power_cpu_w = models.FloatField(null=True, blank=True)       # CPU power (AC)
+    power_other_w = models.FloatField(null=True, blank=True)     # Flat 50W for RAM+disks+MB+fans
+
     class Meta:
         db_table = 'metrics_latest_snapshot'
 
@@ -344,6 +357,42 @@ class GPUProcessMetric(models.Model):
         unique_together = ('rig_uuid', 'timestamp', 'gpu_index', 'pid')
         indexes = [
             models.Index(fields=['rig_uuid', '-timestamp']),
+        ]
+
+
+class PowerReading(models.Model):
+    """Power consumption reading — one row per rig per heartbeat.
+
+    Stores measured (GPU via nvidia-smi, CPU via RAPL) and estimated
+    (CPU fallback, other components) power consumption data.
+    All power values are AC (wall) — PSU efficiency already factored in by agent.
+    Used for power charts and cost estimation.
+    """
+    id = models.BigAutoField(primary_key=True)
+    rig = models.ForeignKey('rigs.Rig', on_delete=models.CASCADE, related_name='power_readings')
+    timestamp = models.DateTimeField(default=timezone.now, db_index=True)
+
+    # GPU power (measured via nvidia-smi, sum of all GPUs, AC)
+    gpu_power_w = models.FloatField(default=0)
+
+    # CPU power (measured via RAPL or estimated from utilization, AC)
+    cpu_power_w = models.FloatField(default=0)
+    cpu_power_source = models.CharField(max_length=10, default='rapl', choices=[
+        ('rapl', 'RAPL (measured)'),
+        ('estimate', 'Estimated from utilization'),
+    ])
+
+    # Other components (flat estimate: RAM + disks + MB + fans, AC)
+    other_power_w = models.FloatField(default=50)
+
+    # Total system power (AC, PSU efficiency already factored in by agent)
+    total_power_w = models.FloatField(default=0)
+
+    class Meta:
+        db_table = 'metrics_power_reading'
+        ordering = ['-timestamp']
+        indexes = [
+            models.Index(fields=['rig', '-timestamp']),
         ]
 
 

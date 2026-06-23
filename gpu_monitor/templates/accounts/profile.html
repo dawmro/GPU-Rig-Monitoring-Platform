@@ -32,10 +32,30 @@
         </div>
     </div>
 
+    <div class="bg-gray-800 border border-gray-700 rounded-lg p-6 mb-6">
+        <h3 class="text-lg font-medium mb-4">Power Settings</h3>
+        <p class="text-sm text-gray-400 mb-4">Configure your electricity rate to estimate power consumption costs per rig.</p>
+        <form method="post" class="space-y-4">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="update_power_settings">
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">Electricity Rate ($/kWh)</label>
+                <input type="number" name="electricity_rate_kwh" step="0.0001" min="0" max="10"
+                       value="{{ user.electricity_rate_kwh|default:'0.1200' }}"
+                       class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-500">
+                <p class="text-xs text-gray-500 mt-1">Your local electricity cost per kilowatt-hour. Used to estimate running costs.</p>
+            </div>
+            <button type="submit" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-white font-medium">
+                Save Power Settings
+            </button>
+        </form>
+    </div>
+
     <div class="bg-gray-800 border border-gray-700 rounded-lg p-6">
         <h3 class="text-lg font-medium mb-4">Change Password</h3>
-        <form method="post" action="{% url 'accounts:change-password' %}" class="space-y-4">
+        <form method="post" class="space-y-4">
             {% csrf_token %}
+            <input type="hidden" name="action" value="change_password">
             <div>
                 <label class="block text-sm text-gray-400 mb-1">Current Password</label>
                 <input type="password" name="current_password" required

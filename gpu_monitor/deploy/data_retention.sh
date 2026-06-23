@@ -44,6 +44,7 @@ sudo -u postgres psql -d gpu_monitor -c "
   VACUUM ANALYZE metrics_storagemetric;
   VACUUM ANALYZE metrics_networkmetric;
   VACUUM ANALYZE metrics_gpu_process;
+  VACUUM ANALYZE metrics_power_reading;
   VACUUM ANALYZE metrics_metricsnapshot;
 " >> "$LOG_DIR/cleanup.log" 2>&1 || true
 

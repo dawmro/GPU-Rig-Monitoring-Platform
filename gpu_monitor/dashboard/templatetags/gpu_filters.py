@@ -361,3 +361,24 @@ def format_bytes_total(value):
     elif value >= 1_000:
         return f'{value / 1_000:.1f} KB'
     return f'{value:.0f} B'
+
+
+@register.filter
+def multiply(value, arg):
+    """Multiply value by arg. Usage: {{ value|multiply:arg }}"""
+    try:
+        return float(value) * float(arg)
+    except (ValueError, TypeError):
+        return 0
+
+
+@register.filter
+def divide(value, arg):
+    """Divide value by arg. Usage: {{ value|divide:arg }}"""
+    try:
+        divisor = float(arg)
+        if divisor == 0:
+            return 0
+        return float(value) / divisor
+    except (ValueError, TypeError):
+        return 0

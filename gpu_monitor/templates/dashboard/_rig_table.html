@@ -14,6 +14,7 @@
                 <th class="text-left px-2 py-2 font-medium">CPU Temp [°C]</th>
                 <th class="text-left px-2 py-2 font-medium">CPU [%]</th>
                 <th class="text-left px-2 py-2 font-medium">Power [W]</th>
+                <th class="text-left px-2 py-2 font-medium">Agent</th>
                 <th class="text-left px-2 py-2 font-medium">Disk Util [%]</th>
             </tr>
         </thead>
@@ -110,6 +111,12 @@
                         <span class="text-blue-400">{{ item.snapshot.power_total_w|floatformat:0 }}W</span>
                     {% else %}—{% endif %}
                 </td>
+                {# Agent version column #}
+                <td class="px-2 py-2 text-gray-500 whitespace-nowrap">
+                    {% if item.snapshot and item.snapshot.agent_version %}
+                        {{ item.snapshot.agent_version }}
+                    {% else %}—{% endif %}
+                </td>
                 {# Disk Util column: max utilization across all disks #}
                 <td class="px-2 py-2 whitespace-nowrap">
                     {% if item.snapshot.storage_utilization_pcts_json %}
@@ -123,7 +130,7 @@
             </tr>
             {% empty %}
             <tr>
-                <td colspan="11" class="px-4 py-8 text-center text-gray-500">
+                <td colspan="12" class="px-4 py-8 text-center text-gray-500">
                     No rigs found. Deploy the monitoring agent to enroll your first rig.
                 </td>
             </tr>

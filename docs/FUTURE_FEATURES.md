@@ -53,27 +53,32 @@
 
 ---
 
-## 3. ⚡ Power Consumption Tracking & Cost Estimation
+## 3. ⚡ Power Consumption & Cost Estimation
 **Priority:** HIGH | **Complexity:** LOW | **Enhancement to:** `metrics_app` + `dashboard`
 
-**What:** Track power consumption per rig over time and estimate electricity costs. Show power draw trends, total kWh consumed, and estimated cost based on user-provided electricity rate.
+**What:** Track power consumption per rig and estimate electricity costs. GPU power is already measured via nvidia-smi. CPU power is measured via RAPL (Intel/AMD built-in energy counters). RAM+disks+motherboard bundled as flat 50W.
 
-**Why:** GPU rigs consume significant electricity. Users need to track power costs for profitability analysis, especially for mining or AI training workloads. The agent already collects GPU power draw (power_draw_w) — we just need to aggregate and display it.
+**Why:** GPU rigs consume significant electricity. Users need cost tracking for profitability analysis. Most data already collected — just needs aggregation and display.
 
 **Architecture:**
-- Add `electricity_rate` field to User model (cost per kWh, default 0.12 USD)
-- New "Power" card in Live Metrics showing current total power draw (sum of all GPUs + CPU estimate)
-- New "Power Consumption" chart in Historical Charts tab showing kWh over time
-- Dashboard summary: total kWh consumed (current month), estimated cost
-- Per-rig power breakdown in rig detail page
-- Export power/cost data to CSV
+- CPU power: RAPL sysfs interface (`/sys/class/powercap/intel-rapl:0/energy_uj`) — accurate, no extra hardware
+- GPU power: Already collected via pynvml (nvidia-smi)
+- Other (RAM+disks+MB+fans): Flat 50W estimate
+- PSU efficiency: 90% (80 Plus Gold default, user-configurable)
+- Cost: kWh × user's electricity rate (trapezoidal integration)
+- Fallback: If RAPL unavailable, estimate CPU from utilization × TDP
+
+**Formula:**
+```
+total_dc = gpu_sum + cpu_rapl + 50W
+total_ac = total_dc / 0.90
+cost_per_hour = total_ac / 1000 × rate_kwh
+```
 
 **Edge cases:**
-- CPU power not directly measured — estimate based on CPU utilization and TDP
-- Multiple GPUs per rig — sum all GPU power draws
-- Missing power data — some GPUs don't report power_draw_w, show "N/A"
-- Different electricity rates per user — stored in User profile
-- Timezone handling — use user's timezone for "current month" calculation
+- RAPL not available (old CPU, VM) → estimate from CPU utilization × TDP
+- GPU power not reported → show "N/A", still show CPU + other
+- Multi-GPU → sum all GPU power_draw_w
 
 ---
 

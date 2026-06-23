@@ -320,13 +320,11 @@ def profile_view(request):
                     if rate_val < 0 or rate_val > 10:
                         messages.error(request, 'Electricity rate must be between 0 and 10 $/kWh')
                     else:
-                        request.user.electricity_rate_kwh = rate_val
-                        request.user.save(update_fields=['electricity_rate_kwh'])
+                        Rig.objects.filter(owner=request.user).update(electricity_rate_kwh=rate_val)
                         log_audit_event(request, 'user.power_settings_changed', 'User', request.user.id, {'rate': rate_val})
                         messages.success(request, 'Power settings updated successfully')
                 else:
-                    request.user.electricity_rate_kwh = 0.1200
-                    request.user.save(update_fields=['electricity_rate_kwh'])
+                    Rig.objects.filter(owner=request.user).update(electricity_rate_kwh=0.1200)
                     log_audit_event(request, 'user.power_settings_changed', 'User', request.user.id, {'rate': 0.1200})
                     messages.success(request, 'Power settings reset to default (0.1200 $/kWh)')
             except (ValueError, TypeError):

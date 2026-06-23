@@ -813,7 +813,7 @@ def collect_gpus():
                 fan = None
             try:
                 power = pynvml.nvmlDeviceGetPowerUsage(handle) / 1000.0
-                power_limit = pynvml.nvmlDeviceGetPowerManagementDefaultLimit(handle) / 1000.0
+                power_limit = pynvml.nvmlDeviceGetPowerManagementCurrentLimit(handle) / 1000.0
             except Exception:
                 power = None
                 power_limit = None

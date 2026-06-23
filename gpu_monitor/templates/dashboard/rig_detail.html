@@ -171,12 +171,6 @@
                 <canvas id="chartCpuPower"></canvas>
             </div>
 
-            <!-- Total System Power Chart -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Total System Power (<span class="chart-timeframe-label">24h</span>)</h3>
-                <canvas id="chartTotalPower"></canvas>
-            </div>
-
             <!-- CPU Load Average Chart -->
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
                 <h3 class="text-sm font-medium text-gray-300 mb-3">CPU Load Average (<span class="chart-timeframe-label">24h</span>)</h3>
@@ -205,6 +199,12 @@
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
                 <h3 class="text-sm font-medium text-gray-300 mb-3">Disk Utilization (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartDiskUtilization"></canvas>
+            </div>
+
+            <!-- Total System Power Chart -->
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
+                <h3 class="text-sm font-medium text-gray-300 mb-3">Total System Power (<span class="chart-timeframe-label">24h</span>)</h3>
+                <canvas id="chartTotalPower"></canvas>
             </div>
 
             <!-- Memory & Swap Combined Chart -->
@@ -434,7 +434,6 @@ async function loadCharts() {
         function() { return loadChart('chartCpuTemp',    'cpu_temp_c',           uuid, range, '°C',  'rgba(245, 158, 11, 0.8)', 'rgba(245, 158, 11, 0.15)'); },
         function() { return loadChart('chartCpuFreq',    'cpu_freq_current_mhz', uuid, range, ' MHz', 'rgba(59, 130, 246, 0.8)', 'rgba(59, 130, 246, 0.15)'); },
         function() { return loadChart('chartCpuPower',   'cpu_power_w',          uuid, range, 'W', 'rgba(168, 85, 247, 0.8)', 'rgba(168, 85, 247, 0.15)'); },
-        function() { return loadChart('chartTotalPower', 'total_system_power_w', uuid, range, 'W', 'rgba(59, 130, 246, 0.8)', 'rgba(59, 130, 246, 0.15)'); },
         function() { return loadChartLoadAvg('chartCpuLoad', uuid, range); },
         // Disk charts
         function() { return loadChartMultiKey('chartDiskUsage', 'disk_usage_pct', uuid, range, '%', 'multi_disk'); },
@@ -442,6 +441,7 @@ async function loadCharts() {
         function() { return loadChartMultiKeyDual('chartDiskReadWriteIops', 'disk_read_iops_delta', 'disk_write_iops_delta', uuid, range, ' IOPS', 'multi_disk', 'rgba(59, 130, 246, 0.8)', 'rgba(16, 185, 129, 0.8)'); },
         function() { return loadChartMultiKey('chartDiskUtilization', 'disk_utilization_pct', uuid, range, '%', 'multi_disk'); },
         // Rest
+        function() { return loadChart('chartTotalPower', 'total_system_power_w', uuid, range, 'W', 'rgba(59, 130, 246, 0.8)', 'rgba(59, 130, 246, 0.15)'); },
         function() { return loadChartMemSwap('chartMemSwap', uuid, range); },
         function() { return loadChartNetworkCombined('chartNetCombined', uuid, range); },
         function() { return loadChart('chartUptime', 'uptime_s', uuid, range, ' days', 'rgba(168, 85, 247, 0.8)', 'rgba(168, 85, 247, 0.15)'); },

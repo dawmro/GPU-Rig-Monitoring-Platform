@@ -475,6 +475,50 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
             elif rig:
                 rig.latest_errors_json = []
 
+            # ── Process power data ──────────────────────────────────────────
+            power_data = data.get('power', {})
+            if power_data and rig:
+                try:
+                    from metrics_app.models import PowerReading
+
+                    gpu_power_w = float(power_data.get('gpu_power_w', 0) or 0)
+                    cpu_power_w = float(power_data.get('cpu_power_w', 0) or 0)
+                    cpu_power_source = power_data.get('cpu_power_source', 'estimate')
+                    cpu_utilization = float(power_data.get('cpu_utilization', 0) or 0)
+                    cpu_cores = int(power_data.get('cpu_cores', 0) or 0)
+                    other_power_w = float(power_data.get('other_power_w', 50) or 50)
+
+                    # Calculate totals
+                    total_dc = gpu_power_w + cpu_power_w + other_power_w
+
+                    # Get PSU efficiency from rig config, default to 90%
+                    psu_efficiency = float(rig.psu_efficiency) if rig.psu_efficiency else 0.90
+                    total_ac = total_dc / psu_efficiency if psu_efficiency > 0 else total_dc
+
+                    # Store at most once per minute to reduce DB growth
+                    last_reading = PowerReading.objects.filter(rig=rig).first()
+                    store_reading = True
+                    if last_reading:
+                        time_diff = (timezone.now() - last_reading.timestamp).total_seconds()
+                        if time_diff < 60:
+                            store_reading = False
+
+                    if store_reading:
+                        PowerReading.objects.create(
+                            rig=rig,
+                            gpu_power_w=round(gpu_power_w, 1),
+                            cpu_power_w=round(cpu_power_w, 1),
+                            cpu_power_source=cpu_power_source,
+                            cpu_utilization=round(cpu_utilization, 3),
+                            cpu_cores=cpu_cores,
+                            other_power_w=other_power_w,
+                            total_dc_power_w=round(total_dc, 1),
+                            total_ac_power_w=round(total_ac, 1),
+                            psu_efficiency=psu_efficiency,
+                        )
+                except Exception as e:
+                    logger.warning("Power processing failed for rig %s: %s", rig_uuid, str(e))
+
             # Append to rolling error history with deduplication
             if rig:
                 import hashlib

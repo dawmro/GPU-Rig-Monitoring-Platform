@@ -347,6 +347,45 @@ class GPUProcessMetric(models.Model):
         ]
 
 
+class PowerReading(models.Model):
+    """Power consumption reading — one row per rig per heartbeat.
+
+    Stores measured (GPU via nvidia-smi, CPU via RAPL) and estimated
+    (CPU fallback, other components) power consumption data.
+    Used for power charts and cost estimation.
+    """
+    id = models.BigAutoField(primary_key=True)
+    rig = models.ForeignKey('rigs.Rig', on_delete=models.CASCADE, related_name='power_readings')
+    timestamp = models.DateTimeField(default=timezone.now, db_index=True)
+
+    # GPU power (measured via nvidia-smi, sum of all GPUs)
+    gpu_power_w = models.FloatField(default=0)
+
+    # CPU power (measured via RAPL or estimated from utilization)
+    cpu_power_w = models.FloatField(default=0)
+    cpu_power_source = models.CharField(max_length=10, default='rapl', choices=[
+        ('rapl', 'RAPL (measured)'),
+        ('estimate', 'Estimated from utilization'),
+    ])
+    cpu_utilization = models.FloatField(default=0)
+    cpu_cores = models.PositiveSmallIntegerField(default=0)
+
+    # Other components (flat estimate: RAM + disks + MB + fans)
+    other_power_w = models.FloatField(default=50)
+
+    # Totals
+    total_dc_power_w = models.FloatField(default=0)  # Sum of all components (DC)
+    total_ac_power_w = models.FloatField(default=0)  # After PSU efficiency (AC)
+    psu_efficiency = models.FloatField(default=0.9)  # Applied PSU efficiency
+
+    class Meta:
+        db_table = 'metrics_power_reading'
+        ordering = ['-timestamp']
+        indexes = [
+            models.Index(fields=['rig', '-timestamp']),
+        ]
+
+
 
 
 

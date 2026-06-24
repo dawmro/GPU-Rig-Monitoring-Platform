@@ -48,6 +48,13 @@ class Rig(models.Model):
     # Max 200 entries (~3 min window at 60s heartbeat interval)
     _seen_error_hashes_json = models.JSONField(default=list, blank=True, db_column='seen_error_hashes_json')
 
+    # Rolling container history — last 1000 unique container states with deduplication
+    # Each entry: {container_id, name, image, status, status_text, created, received_at}
+    container_history_json = models.JSONField(default=list, blank=True)
+
+    # Rolling set of container fingerprints for deduplication (hash of container_id + status + status_text)
+    _seen_container_hashes_json = models.JSONField(default=list, blank=True, db_column='seen_container_hashes_json')
+
     class Meta:
         db_table = 'rigs_rig'
 

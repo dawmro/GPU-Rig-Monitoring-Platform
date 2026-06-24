@@ -80,6 +80,10 @@
                 <button onclick="setChartRange(720, 60)" id="btn-range-30d"
                         class="chart-range-btn px-2 py-0.5 rounded text-xs bg-gray-700 text-gray-400 hover:bg-gray-600">30d</button>
             </div>
+            <button onclick="switchTab('containers')" id="tab-containers"
+                    class="tab-btn pb-3 px-1 border-b-2 border-transparent text-gray-400 hover:text-gray-200">
+                Containers
+            </button>
             <button onclick="switchTab('errors')" id="tab-errors"
                     class="tab-btn pb-3 px-1 border-b-2 border-transparent text-gray-400 hover:text-gray-200">
                 Errors
@@ -231,6 +235,44 @@
                 <canvas id="chartErrorFreq"></canvas>
             </div>
 
+        </div>
+    </div>
+
+    <!-- Tab: Containers -->
+    <div id="tab-content-containers" class="tab-content hidden">
+        <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-sm font-medium text-gray-300">Container History</h3>
+                {% if container_history %}
+                <span class="text-xs text-gray-500">{{ container_history|length }} state changes</span>
+                {% endif %}
+            </div>
+            {% if container_history %}
+            <div class="space-y-2 overflow-y-auto" style="max-height: calc(100vh - 250px);">
+                {% for c in container_history reversed %}
+                <div class="py-2 border-b border-gray-700/50 last:border-0">
+                    <div class="flex items-center gap-2 mb-1">
+                        {% if c.status == 'running' %}
+                        <span class="text-xs px-2 py-0.5 rounded bg-green-900/50 text-green-300">{{ c.status }}</span>
+                        {% elif c.status == 'exited' %}
+                        <span class="text-xs px-2 py-0.5 rounded bg-red-900/50 text-red-300">{{ c.status }}</span>
+                        {% elif c.status == 'restarting' %}
+                        <span class="text-xs px-2 py-0.5 rounded bg-yellow-900/50 text-yellow-300">{{ c.status }}</span>
+                        {% else %}
+                        <span class="text-xs px-2 py-0.5 rounded bg-gray-700 text-gray-300">{{ c.status }}</span>
+                        {% endif %}
+                        <span class="text-sm text-gray-200 font-medium">{{ c.name|default:"unnamed" }}</span>
+                    </div>
+                    <div class="flex items-center gap-2 text-xs text-gray-500">
+                        <span class="font-mono">{{ c.image|default:"N/A"|truncatechars:40 }}</span>
+                        <span title="{{ c.received_at|default:'' }}">{{ c.received_at|default:c.created|default:"unknown"|truncatechars:30 }}</span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-green-400 text-sm">✓ No container history recorded.</p>
+            {% endif %}
         </div>
     </div>
 

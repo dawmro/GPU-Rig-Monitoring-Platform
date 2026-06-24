@@ -203,8 +203,8 @@ debug_mode: false         # Verbose logging
 {
   "rig_uuid": "UUIDv4",
   "rig_name": "my-server",
-  "schema_version": "1.9",
-  "agent_version": "1.5.13",
+  "schema_version": "1.10",
+  "agent_version": "1.5.15",
   "timestamp": "2026-06-07T19:54:06Z",
   "metrics": {
     "cpu": {
@@ -372,13 +372,13 @@ debug_mode: false         # Verbose logging
 
 | Agent | File | Version | Schema | Platform | Scheduling |
 |-------|------|---------|--------|----------|------------|
-|| Linux | `agent/run.py` | 1.5.13 | 1.9 | Any Linux, VMware NAT | `cron` every 60s with `flock` |
-||| Windows | `agent_windows/run.py` | 1.6.14-win | 1.9 | Windows 10/11 | Task Scheduler (1 min) with `pythonw.exe` (hidden window) |
+|| Linux | `agent/run.py` | 1.5.15 | 1.10 | Any Linux, VMware NAT | `cron` every 60s with `flock` |
+||| Windows | `agent_windows/run.py` | 1.6.15-win | 1.10 | Windows 10/11 | Task Scheduler (1 min) with `pythonw.exe` (hidden window) |
 
 **Versioning rules:**
 - `agent_version` (e.g. `1.1.0`): incremented for agent-side changes (collectors, payload format, bug fixes). Format: `MAJOR.MINOR.PATCH`.
 - `schema_version` (e.g. `1.1`): incremented only when the payload structure changes in a way that affects the server's serialization/storage. Format: `MAJOR.MINOR`.
-- Schema versions 1.0 through 1.9 are supported (backward compatible via `validate_schema_version` in `IngestSerializer`).
+- Schema versions 1.0 through 1.10 are supported (backward compatible via `validate_schema_version` in `IngestSerializer`).
 - When schema versions change, the `validate_schema_version` method in `IngestSerializer` is updated to accept the new version. The same serializer handles all supported versions.
 - See §11.5 for the contract testing strategy.
 
@@ -529,13 +529,16 @@ HTMX polls use `hx-swap="innerHTML"` (not `outerHTML`). This is critical: `inner
 | Last Seen | Rig.last_seen | Short relative time via `last_seen_short` filter (e.g., '5d, 21h', '45m', '20s') |
 | Tags | RigTag M2M | Colored pills |
 | GPU | LatestSnapshot.gpu_models_json | Compact summary via `gpu_compact_summary_json` filter (e.g., "RTX 3060 ×8", "5080×4 + ...") |
-| GPU Temp [°C] | LatestSnapshot.gpu_temps_json | Space-separated color-coded values via `gpu_temp_cell_json` |
-| GPU Util [%] | LatestSnapshot.gpu_utils_json | Space-separated color-coded values via `gpu_util_cell_json` |
-| GPU Fan [%] | LatestSnapshot.gpu_fans_json | Space-separated color-coded values via `gpu_fan_cell_json` |
+|| GPU Temp [°C] | LatestSnapshot.gpu_temps_json | Space-separated color-coded values via `gpu_temp_cell_json` |
+|| GPU Fan [%] | LatestSnapshot.gpu_fans_json | Space-separated color-coded values via `gpu_fan_cell_json` |
+|| GPU Util [%] | LatestSnapshot.gpu_utils_json | Space-separated color-coded values via `gpu_util_cell_json` |
+|| CPU Temp [°C] | LatestSnapshot.cpu_temp_c | Color-coded (green/yellow/red) |
 || CPU [%] | LatestSnapshot.cpu_utilization_pct | Percentage |
 || CPU Freq [MHz] | LatestSnapshot.cpu_freq_current_mhz | Current / Min-Max range |
 || Memory [%] | LatestSnapshot.mem_used_bytes, mem_total_bytes | Used / Total (GB) |
 || Disk Util [%] | LatestSnapshot.storage_utilization_pcts_json | Color-coded max utilization |
+|| Power [W] | LatestSnapshot.power_total_watts_json | Total system power (GPU + CPU + other) |
+|| Agent | LatestSnapshot.agent_version | Agent version string |
 
 ### 5.3 Rig Detail Page (`/dashboard/rigs/<uuid>/`)
 

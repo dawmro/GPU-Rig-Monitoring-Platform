@@ -26,7 +26,7 @@ Historical charts are NOT polled automatically — they load on demand.
 || CPU Freq 24h | 1-minute | ~1,440 | ~30ms |
 || CPU Freq 30d | 1-hour | ~720 | ~120ms |
 
-**CPU Frequency chart** (new in schema 1.9): Single-line chart showing `cpu_freq_current_mhz` over time. Same SQL aggregation pattern as CPU temp/utilization. Reads from `MetricSnapshot.cpu_freq_current_mhz` (FloatField). Null values handled gracefully (gaps in line for platforms without frequency support).
+**CPU Frequency chart** (added in schema 1.9, active in 1.10): Single-line chart showing `cpu_freq_current_mhz` over time. Same SQL aggregation pattern as CPU temp/utilization. Reads from `MetricSnapshot.cpu_freq_current_mhz` (FloatField). Null values handled gracefully (gaps in line for platforms without frequency support).
 
 **Disk I/O charts**
 

@@ -54,31 +54,21 @@
 ---
 
 ## 3. ⚡ Power Consumption & Cost Estimation
-**Priority:** HIGH | **Complexity:** LOW | **Enhancement to:** `metrics_app` + `dashboard`
+**Status:** ✅ IMPLEMENTED | **Priority:** — | **Deployed:** 2026-06
 
-**What:** Track power consumption per rig and estimate electricity costs. GPU power is already measured via nvidia-smi. CPU power is measured via RAPL (Intel/AMD built-in energy counters). RAM+disks+motherboard bundled as flat 50W.
+**What was implemented:**
+- Agent collects GPU power draw (nvidia-smi via pynvml) and enforced power limit
+- CPU power estimated from utilization × TDP (`8W × cores + 25W` formula)
+- Other components (RAM+disks+MB+fans) = flat 50W
+- PSU efficiency: 90% (user-configurable)
+- `electricity_rate_kwh` on User model (default 0.33)
+- Dashboard shows "Power: {draw}W / {limit}W" on live GPU cards
+- Cost formula: `(gpu + cpu + 50) / 0.90 × rate_kwh = $/hr`
 
-**Why:** GPU rigs consume significant electricity. Users need cost tracking for profitability analysis. Most data already collected — just needs aggregation and display.
-
-**Architecture:**
-- CPU power: RAPL sysfs interface (`/sys/class/powercap/intel-rapl:0/energy_uj`) — accurate, no extra hardware
-- GPU power: Already collected via pynvml (nvidia-smi)
-- Other (RAM+disks+MB+fans): Flat 50W estimate
-- PSU efficiency: 90% (80 Plus Gold default, user-configurable)
-- Cost: kWh × user's electricity rate (trapezoidal integration)
-- Fallback: If RAPL unavailable, estimate CPU from utilization × TDP
-
-**Formula:**
-```
-total_dc = gpu_sum + cpu_rapl + 50W
-total_ac = total_dc / 0.90
-cost_per_hour = total_ac / 1000 × rate_kwh
-```
-
-**Edge cases:**
-- RAPL not available (old CPU, VM) → estimate from CPU utilization × TDP
-- GPU power not reported → show "N/A", still show CPU + other
-- Multi-GPU → sum all GPU power_draw_w
+**Remaining (optional):**
+- PowerReading model (historical power data per rig, separate from LatestSnapshot)
+- Historical power charts (total system power over time, cost per hour/day/month)
+- Dedicated Power Cost dashboard widget with cost summaries
 
 ---
 
@@ -246,7 +236,7 @@ cost_per_hour = total_ac / 1000 × rate_kwh
 |---|---------|----------|------------|---------|--------|
 | 1 | Alerting & Notifications | HIGH | MEDIUM | `alerts` | 2-3 days |
 | 2 | Multi-Rig Comparison | HIGH | MEDIUM | enhancement | 1-2 days |
-|| 3 | Power Consumption & Cost Tracking | HIGH | LOW | enhancement | 1 day |
+|| 3 | Power Consumption & Cost Tracking | ✅ IMPLEMENTED | — | — | — |
 | 4 | Agent Auto-Update | MEDIUM | MEDIUM | enhancement | 1-2 days |
 | 5 | Custom Dashboards | MEDIUM | HIGH | `dashboards` | 3-5 days |
 | 6 | Public Status Page | MEDIUM | LOW | `statuspage` | 1 day |
@@ -266,3 +256,5 @@ cost_per_hour = total_ac / 1000 × rate_kwh
 - ✅ Chart Aggregation Fixes
 - ✅ Name Collision Handling for Transfers
 - ✅ Tag-based rig grouping (covers Rig Groups & Folders use case)
+- ✅ Power Consumption Tracking (agent collects power draw, user electricity rate, dashboard display)
+- ✅ PCIe Link Monitoring (agent collects, server stores, dashboard displays)

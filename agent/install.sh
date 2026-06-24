@@ -31,6 +31,7 @@ fi
 
 # Create directories
 mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$LOG_DIR"
+chown "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
 chown "$SERVICE_USER:$SERVICE_USER" "$LOG_DIR"
 chmod 755 "$LOG_DIR"
 
@@ -89,6 +90,7 @@ cp check_update.py "$INSTALL_DIR/check_update.py"
 chmod +x "$INSTALL_DIR/check_update.py"
 chown "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/check_update.py"
 echo "Auto-update: daily check scheduled at $(printf '%02d:%02d' $HOUR $MINUTE)"
+
 
 echo ""
 echo "=== Installation Complete ==="

@@ -72,7 +72,7 @@ chmod 440 /etc/sudoers.d/monitoring-agent
 # Cron job
 cat > "$CRON_FILE" << EOF
 # GPU Rig Monitoring Agent - runs every 60 seconds
-* * * * * $SERVICE_USER flock -n $LOCK_DIR/monitoring-agent.lock $INSTALL_DIR/venv/bin/python $INSTALL_DIR/run.py >> $LOG_DIR/cron.log 2>&1
+* * * * * $SERVICE_USER flock -n $LOCK_DIR/monitoring-agent.lock $INSTALL_DIR/venv/bin/python $INSTALL_DIR/run.py > $LOG_DIR/cron.log 2>&1
 EOF
 chmod 644 "$CRON_FILE"
 
@@ -82,7 +82,7 @@ MINUTE=$((RANDOM % 60))
 UPDATE_CRON_FILE="/etc/cron.d/monitoring-agent-update"
 cat > "$UPDATE_CRON_FILE" << EOF
 # GPU Rig Monitoring Agent — Auto-update check (daily at ${HOUR}:${MINUTE})
-${MINUTE} ${HOUR} * * * $SERVICE_USER $INSTALL_DIR/venv/bin/python $INSTALL_DIR/check_update.py >> $LOG_DIR/update.log 2>&1
+${MINUTE} ${HOUR} * * * $SERVICE_USER $INSTALL_DIR/venv/bin/python $INSTALL_DIR/check_update.py > $LOG_DIR/update.log 2>&1
 EOF
 chmod 644 "$UPDATE_CRON_FILE"
 # Also copy check_update.py

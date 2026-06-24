@@ -1,3 +1,4 @@
+import hashlib
 import logging
 from rest_framework import serializers, status
 from django.db import transaction
@@ -522,7 +523,6 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
 
             # Append to rolling error history with deduplication
             if rig:
-                import hashlib
                 history = list(rig.error_history_json) if rig.error_history_json else []
                 seen_hashes = list(rig._seen_error_hashes_json) if rig._seen_error_hashes_json else []
                 seen_set = set(seen_hashes)
@@ -552,7 +552,6 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
 
             # Append to rolling container history with deduplication
             if rig:
-                import hashlib
                 container_history = list(rig.container_history_json) if rig.container_history_json else []
                 seen_container_hashes = list(rig._seen_container_hashes_json) if rig._seen_container_hashes_json else []
                 seen_container_set = set(seen_container_hashes)

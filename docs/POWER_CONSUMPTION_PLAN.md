@@ -106,20 +106,18 @@ Cost/hr: 3.656 × $0.12 = $0.439/hr
 
 ## Data Model
 
-### Rig Model Additions
+### User Model Additions
 ```python
-class Rig(models.Model):
+class User(AbstractUser):
     # ... existing fields ...
     
-    # Power configuration
+    # Power configuration (global per user)
     electricity_rate_kwh = models.DecimalField(
-        max_digits=6, decimal_places=4, 
-        default=0.1200,
+        max_digits=6, decimal_places=4, default=0.3300,
         help_text="Electricity cost per kWh"
     )
     psu_efficiency = models.DecimalField(
-        max_digits=3, decimal_places=2,
-        default=0.90,
+        max_digits=3, decimal_places=2, default=0.90,
         help_text="PSU efficiency (0.85= Bronze, 0.90= Gold, 0.92= Platinum)"
     )
 ```
@@ -202,7 +200,7 @@ def process_power(rig, power_data):
     
     # Totals
     total_dc = gpu_power + cpu_power + other_power
-    psu_efficiency = float(rig.psu_efficiency or 0.90)
+    psu_efficiency = float(user.psu_efficiency or 0.90)
     total_ac = total_dc / psu_efficiency
     
     PowerReading.objects.create(

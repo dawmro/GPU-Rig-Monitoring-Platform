@@ -19,6 +19,7 @@ CONFIG_DIR="/etc/monitoring-agent"
 LOG_DIR="/var/log/monitoring-agent"
 LOCK_DIR="/var/lock"
 CRON_FILE="/etc/cron.d/monitoring-agent"
+UPDATE_CRON_FILE="/etc/cron.d/monitoring-agent-update"
 SERVICE_USER="monitoring-agent"
 
 echo "=== GPU Rig Monitoring Agent Installer ==="
@@ -79,7 +80,6 @@ chmod 644 "$CRON_FILE"
 # Auto-update check — random time once per day to prevent thundering herd
 HOUR=$((RANDOM % 24))
 MINUTE=$((RANDOM % 60))
-UPDATE_CRON_FILE="/etc/cron.d/monitoring-agent-update"
 cat > "$UPDATE_CRON_FILE" << EOF
 # GPU Rig Monitoring Agent — Auto-update check (daily at ${HOUR}:${MINUTE})
 ${MINUTE} ${HOUR} * * * $SERVICE_USER $INSTALL_DIR/venv/bin/python $INSTALL_DIR/check_update.py > $LOG_DIR/update.log 2>&1

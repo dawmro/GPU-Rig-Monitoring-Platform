@@ -181,6 +181,9 @@ def _fetch_rig_metrics(uuid, rig=None):
     error_history = rig.error_history_json if rig else []
     recent_errors = list(reversed(error_history[-10:])) if error_history else []
 
+    # Rolling container history (for rig detail page)
+    container_history = rig.container_history_json if rig else []
+
     # GPU processes (latest per GPU per pid)
     gpu_processes = list(
         GPUProcessMetric.objects.filter(rig_uuid=str(uuid))
@@ -220,6 +223,7 @@ def _fetch_rig_metrics(uuid, rig=None):
         'docker_metrics': docker_metrics,
         'recent_errors': recent_errors,
         'error_history': error_history,
+        'container_history': container_history,
         'primary_ip': primary_ip,
         'top_cpu_processes': snapshot.top_cpu_processes_json if snapshot else [],
         'top_mem_processes': snapshot.top_mem_processes_json if snapshot else [],

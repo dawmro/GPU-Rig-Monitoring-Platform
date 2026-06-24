@@ -549,7 +549,49 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
 
                 rig.error_history_json = history
                 rig._seen_error_hashes_json = seen_hashes
-                rig.save(update_fields=['latest_errors_json', 'error_history_json', '_seen_error_hashes_json'])
+
+            # Append to rolling container history with deduplication
+            if rig:
+                import hashlib
+                container_history = list(rig.container_history_json) if rig.container_history_json else []
+                seen_container_hashes = list(rig._seen_container_hashes_json) if rig._seen_container_hashes_json else []
+                seen_container_set = set(seen_container_hashes)
+
+                for container in docker_containers:
+                    container_id = container.get('container_id', '')
+                    if not container_id:
+                        continue
+
+                    status_str = container.get('status', '')
+                    status_text = container.get('status_text', '')
+                    fingerprint = hashlib.sha256(
+                        (container_id + status_str + status_text).encode('utf-8')
+                    ).hexdigest()[:16]
+
+                    if fingerprint not in seen_container_set:
+                        container_history.append({
+                            'container_id': container_id,
+                            'name': container.get('name', ''),
+                            'image': container.get('image', ''),
+                            'status': status_str,
+                            'status_text': status_text,
+                            'created': container.get('created', ''),
+                            'received_at': timezone.now().isoformat(),
+                        })
+                        seen_container_set.add(fingerprint)
+                        seen_container_hashes.append(fingerprint)
+
+                if len(container_history) > 1000:
+                    container_history = container_history[-1000:]
+                if len(seen_container_hashes) > 200:
+                    seen_container_hashes = seen_container_hashes[-200:]
+
+                rig.container_history_json = container_history
+                rig._seen_container_hashes_json = seen_container_hashes
+            rig.save(update_fields=[
+                'latest_errors_json', 'error_history_json', '_seen_error_hashes_json',
+                'container_history_json', '_seen_container_hashes_json',
+            ])
 
             http_status = status.HTTP_200_OK if created else status.HTTP_202_ACCEPTED
             status_label = 'new' if created else 'duplicate'

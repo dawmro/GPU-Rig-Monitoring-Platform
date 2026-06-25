@@ -537,8 +537,39 @@ HTMX polls use `hx-swap="innerHTML"` (not `outerHTML`). This is critical: `inner
 || CPU Freq [MHz] | LatestSnapshot.cpu_freq_current_mhz | Current / Min-Max range |
 || Memory [%] | LatestSnapshot.mem_used_bytes, mem_total_bytes | Used / Total (GB) |
 || Disk Util [%] | LatestSnapshot.storage_utilization_pcts_json | Color-coded max utilization |
-|| Power [W] | LatestSnapshot.power_total_watts_json | Total system power (GPU + CPU + other) |
+|| Power [W] | LatestSnapshot.power_total_w | Total system power (AC watts, PSU efficiency factored in by agent) |
 || Agent | LatestSnapshot.agent_version | Agent version string |
+
+### 5.2b Power Consumption
+
+The agent calculates total system power and stores it in two places:
+
+**Real-time (LatestSnapshot):** `power_total_w`, `power_gpu_w`, `power_cpu_w`, `power_other_w` — latest values for Live Metrics display and Fleet Overview column.
+
+**Historical (PowerReading):** One row per minute per rig (throttled to avoid duplicate writes within 60s). Used for power charts and cost estimation.
+
+| Model | Field | Description |
+|-------|-------|-------------|
+| LatestSnapshot | `power_total_w` | Total system power (AC, PSU efficiency factored in) |
+| LatestSnapshot | `power_gpu_w` | Sum of all GPU power draw (AC) |
+| LatestSnapshot | `power_cpu_w` | CPU power (AC, RAPL-measured or estimated) |
+| LatestSnapshot | `power_other_w` | Flat 50W for RAM+disks+MB+fans |
+| PowerReading | `total_power_w` | Same as above, historical timeseries |
+| PowerReading | `gpu_power_w` | GPU power, historical |
+| PowerReading | `cpu_power_w` | CPU power, historical |
+| PowerReading | `cpu_power_source` | 'rapl' or 'estimate' |
+| PowerReading | `other_power_w` | Flat 50W |
+
+**Power calculation (agent-side):**
+```
+gpu_power_w = sum(nvmlDeviceGetPowerUsage(gpu) for each gpu) / 1000  (AC)
+cpu_power_w = read_cpu_power_w() via RAPL sysfs, or estimate from utilization
+other_power_w = 50  (flat estimate: RAM + disks + motherboard + fans)
+total_dc = gpu_power_w + cpu_power_w + other_power_w
+total_power_w = total_dc / 0.90  (PSU efficiency: 80 Plus Gold)
+```
+
+**CPU power source:** RAPL (Running Average Power Limit) provides accurate CPU energy counters via Linux sysfs (`/sys/class/powercap/intel-rapl:0/energy_uj`). Falls back to estimation (`8W × cores + 25W` scaled by utilization) when RAPL is unavailable (VMs, old CPUs, Windows without driver).
 
 ### 5.3 Rig Detail Page (`/dashboard/rigs/<uuid>/`)
 

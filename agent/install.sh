@@ -91,6 +91,9 @@ chmod +x "$INSTALL_DIR/check_update.py"
 chown "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/check_update.py"
 echo "Auto-update: daily check scheduled at $(printf '%02d:%02d' $HOUR $MINUTE)"
 
+# set ownership to all files in dir
+chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
+chown -R "$SERVICE_USER:$SERVICE_USER" "$LOG_DIR"
 
 echo ""
 echo "=== Installation Complete ==="

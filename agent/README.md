@@ -1,6 +1,6 @@
 # GPU Rig Monitoring Agent — Linux
 
-**Version:** 1.5.15 | **Schema:** 1.10
+**Version:** 1.5.16 | **Schema:** 1.10
 
 Linux agent for the GPU Rig Monitoring Platform. Collects hardware/software metrics via `psutil`, `pynvml`, and system interfaces, then POSTs them to the monitoring server every 60 seconds via cron.
 
@@ -38,7 +38,7 @@ The installer performs these operations:
 | 2 | Creates directories: `/opt/monitoring-agent/`, `/etc/monitoring-agent/`, `/var/log/monitoring-agent/` |
 | 3 | Creates Python virtualenv and installs dependencies (`psutil`, `py-cpuinfo`, `requests`, `pyyaml`, `nvidia-ml-py3`). Docker container monitoring uses the `docker` CLI via sudo — no Python SDK needed. |
 | 4 | Copies `run.py` and creates config template at `/etc/monitoring-agent/config.yaml` |
-| 5 | Configures sudoers for SMART disk queries, NVMe logs, journalctl, and docker (read-only, passwordless) |
+| 5 | Configures sudoers (`/etc/sudoers.d/monitoring-agent`) for SMART disk queries, NVMe logs, journalctl, and docker (read-only, passwordless). Includes `Defaults:monitoring-agent !authenticate` (required for nologin shell users). |
 | 6 | Creates cron job — runs every 60 seconds with `flock` to prevent overlaps |
 | 7 | Schedules daily auto-update check (random time to avoid thundering herd) |
 

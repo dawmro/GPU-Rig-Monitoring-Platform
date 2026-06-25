@@ -9,24 +9,40 @@ Linux agent for the GPU Rig Monitoring Platform. Collects hardware/software metr
 - Linux (Ubuntu 20.04+, Debian 11+, or similar)
 - Python 3.10+
 - Network access to the monitoring server
-- Root/sudo access for installation
+- User with sudo permissions for installation
 
 ## Quick Start
 
 ### 1. Transfer Agent Files to the Rig
 
 ```bash
-# From your local machine or the server:
-rsync -avz /path/to/agent/ root@RIG_IP:/tmp/agent/
+# check for sudo permissons
+sudo su vastai
+sudo ls
+```
+
+```bash
+# go home, create dir and clone repo, go to dir
+mkdir workspace
+git clone https://github.com/dawmro/GPU-Rig-Monitoring-Platform.git
+cd GPU-Rig-Monitoring-Platform
+cd agent
 ```
 
 ### 2. Run the Installer
-
-```bash
-ssh root@RIG_IP
-chmod +x /tmp/agent/install.sh
-bash /tmp/agent/install.sh
 ```
+sudo apt update
+sudo apt install python3.10-venv -y
+sudo chmod +x install.sh
+sudo ./install.sh
+```
+
+# if above not working, then fix for older python versions:
+```
+# if above not working, then fix for older python versions:
+sudo apt update && sudo apt install python3.8-venv -y && sudo apt install -y python3-venv && sudo rm -rf /opt/monitoring-agent/venv && sudo chmod +x install.sh && sudo ./install.sh
+```
+
 
 > **Note:** Must be run with `bash`, not `sh`. The script uses bash-specific features like `set -o pipefail`.
 

@@ -250,53 +250,54 @@ Note: `psu_efficiency` is stored on User but currently NOT used in server-side c
 
 ## Charts
 
-### Implemented: GPU Power Draw Chart (multi-GPU)
-- **Location:** Historical Charts tab (rig detail page)
-- **Type:** Line chart
-- **Y-axis:** Power (W)
-- **Series:** Per-GPU `power_draw_w` (the raw GPU power draw, NOT total system power)
-- **Time range:** 24h, 7d, 30d
-
-### Not Yet Implemented
-The following charts described in the original plan are NOT yet built:
-- Total System Power (total_ac_power_w) — needs UI chart addition
-- CPU Power (cpu_power_w) — needs UI chart addition
-- Power Breakdown (stacked area: GPU / CPU / Other) — needs UI chart addition
-
-These require only frontend additions (new Chart.js chart definitions) since the data is already collected and stored in PowerReading.
+### Implemented
+- ✅ Power Consumption card in Live Metrics (GPU/CPU/Other breakdown + cost/hr + est. daily)
+- ✅ GPU Power Draw Chart (multi-GPU, line chart)
+- ✅ CPU Power Chart (line chart)
+- ✅ Total System Power Chart (line chart)
+- ✅ Power [W] column in Fleet Overview (total system AC power, color-coded)
 
 ## Dashboard UI
 
 ### Live Metrics Card (implemented)
 ```
-GPU Card:
-  Power: {power_draw_w}W / {power_limit_w}W
+┌─────────────────────────────────────┐
+│ ⚡ Power Consumption                │
+│                                     │
+│ Total: 483W                         │
+│ ├─ GPU: 340W                        │
+│ ├─ CPU: 45W                         │
+│ └─ Other: 50W (est.)               │
+│                                     │
+│ Cost: $0.159/hr | $3.82/day        │
+└─────────────────────────────────────┘
 ```
-Per-GPU power draw and enforced limit. Shown on each GPU card in Live Metrics.
 
 ### Fleet Overview Table (implemented)
 - Column: **Power [W]**
 - Source: `LatestSnapshot.power_total_w` (total system AC power)
 - Color-coded: 🟢 <200W, 🟡 200-400W, 🔴 >400W
 
-### Not Yet Implemented
-- Dedicated Power Cost dashboard widget with cost summaries
-- Power breakdown bar chart (GPU / CPU / Other) on rig detail page
-- Historical power charts (see "Not Yet Implemented" above)
+### Implemented
+- ✅ Power Consumption card in Live Metrics (GPU/CPU/Other breakdown + cost/hr + est. daily)
+- ✅ GPU Power Draw Chart (multi-GPU, line chart)
+- ✅ CPU Power Chart (line chart)
+- ✅ Total System Power Chart (line chart)
+- ✅ Power [W] column in Fleet Overview (total system AC power, color-coded)
 
 ## Implementation Plan
 
-### Status: PARTIALLY IMPLEMENTED
+### Status: MOSTLY IMPLEMENTED
 
 | Phase | Status | Notes |
 |-------|--------|-------|
 | Phase 1: Agent Changes | ✅ DONE | Agent collects GPU power (pynvml), CPU power (RAPL/estimate), calculates total with PSU efficiency |
 | Phase 2: Server Processing | ✅ DONE | PowerReading model + LatestSnapshot fields, serializer stores agent-pre-calculated values |
-| Phase 3: Dashboard UI | ⚠️ PARTIAL | GPU power shown in Live Metrics card, Power column in Fleet Overview. Missing: dedicated power card, power charts, cost display |
-| Phase 4: Cost Tracking | ❌ NOT STARTED | kWh calculation, cost display, user electricity rate usage |
+| Phase 3: Dashboard UI | ✅ DONE | Power Consumption card, GPU/CPU/Total Power charts, Fleet Overview column, cost display |
+| Phase 4: Cost Tracking | ✅ DONE | Cost/hr and est. daily displayed in Live Metrics using `user.electricity_rate_kwh` |
 
-### Remaining Work (estimated ~2 days)
+### Remaining Work (optional enhancements)
 
-1. **Power charts** — Add 3 Chart.js charts to rig detail page (Total System Power, CPU Power, Power Breakdown stacked area). Data already in PowerReading table.
-2. **Cost widget** — Dashboard widget showing $/hr, $/day, $/month using `electricity_rate_kwh` from User.
-3. **Power breakdown bar** — Visual GPU/CPU/Other breakdown on rig detail page.
+1. **Power Breakdown stacked area chart** — GPU/CPU/Other over time (data in PowerReading, just needs Chart.js definition)
+2. **Cost summary widget** — dedicated dashboard widget with weekly/monthly cost totals
+3. **kWh trapezoidal integration** — more accurate cost calculation from PowerReading timeseries (currently uses instantaneous power × rate)

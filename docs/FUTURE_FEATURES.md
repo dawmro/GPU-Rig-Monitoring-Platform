@@ -161,17 +161,21 @@ The platform's target users (GPU farmers, AI researchers, small data centers) al
 
 **What was implemented:**
 - Agent collects GPU power draw (nvidia-smi via pynvml) and enforced power limit
-- CPU power estimated from utilization × TDP (`8W × cores + 25W` formula)
+- CPU power measured via RAPL sysfs (`/sys/class/powercap/intel-rapl:0/energy_uj`) or estimated from utilization × TDP (`8W × cores + 25W`)
 - Other components (RAM+disks+MB+fans) = flat 50W
-- PSU efficiency: 90% (user-configurable)
+- PSU efficiency: 90% (user-configurable on User model)
+- Total power calculation: `(gpu + cpu + 50) / 0.90 = total AC watts`
 - `electricity_rate_kwh` on User model (default 0.33)
-- Dashboard shows "Power: {draw}W / {limit}W" on live GPU cards
-- Cost formula: `(gpu + cpu + 50) / 0.90 × rate_kwh = $/hr`
+- `PowerReading` model stores historical power data (one row per minute, throttled)
+- `LatestSnapshot` stores latest values: `power_total_w`, `power_gpu_w`, `power_cpu_w`, `power_other_w`
+- **Live Metrics**: Power Consumption card with GPU/CPU/Other breakdown + cost/hr + est. daily
+- **Charts**: GPU Power Draw (multi-GPU), CPU Power, Total System Power — all in Historical Charts tab
+- **Fleet Overview**: Power [W] column (total system AC power, color-coded)
 
 **Remaining (optional):**
-- PowerReading model (historical power data per rig, separate from LatestSnapshot)
-- Historical power charts (total system power over time, cost per hour/day/month)
-- Dedicated Power Cost dashboard widget with cost summaries
+- Power Breakdown stacked area chart (GPU/CPU/Other over time)
+- Dedicated cost summary widget with weekly/monthly totals
+- kWh trapezoidal integration for more accurate cost calculation
 
 ---
 

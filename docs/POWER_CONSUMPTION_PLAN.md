@@ -91,7 +91,7 @@ CPU: (8×8 + 25) × (0.1 + 0.9×0.45) = 89W × 0.505 = 45W
 Other: 50W
 Total DC: 435W
 Total AC: 435 / 0.90 = 483W
-Cost/hr: 0.483 × $0.12 = $0.058/hr
+Cost/hr: 0.483 × $0.33 = $0.159/hr
 ```
 
 **Rig: 8× RTX 3090 + AMD EPYC 7763 (64 cores)**
@@ -101,7 +101,7 @@ CPU: (64×8 + 25) × (0.1 + 0.9×0.80) = 537W × 0.82 = 440W
 Other: 50W
 Total DC: 3290W
 Total AC: 3290 / 0.90 = 3656W
-Cost/hr: 3.656 × $0.12 = $0.439/hr
+Cost/hr: 3.656 × $0.33 = $1.206/hr
 ```
 
 ## Data Model
@@ -125,24 +125,33 @@ class User(AbstractUser):
 ### PowerReading Model
 ```python
 class PowerReading(models.Model):
-    rig = models.ForeignKey(Rig, on_delete=models.CASCADE, related_name='power_readings')
+    """Power consumption reading — one row per rig per minute (throttled).
+
+    Stores measured (GPU via nvidia-smi, CPU via RAPL) and estimated
+    (CPU fallback, other components) power consumption data.
+    All power values are AC (wall) — PSU efficiency already factored in by agent.
+    Used for power charts and cost estimation.
+    """
+    id = models.BigAutoField(primary_key=True)
+    rig = models.ForeignKey('rigs.Rig', on_delete=models.CASCADE, related_name='power_readings')
     timestamp = models.DateTimeField(default=timezone.now, db_index=True)
-    
-    # GPU (measured via nvidia-smi)
+
+    # GPU power (measured via nvidia-smi, sum of all GPUs, AC)
     gpu_power_w = models.FloatField(default=0)
-    
-    # CPU (estimated from utilization)
+
+    # CPU power (measured via RAPL or estimated from utilization, AC)
     cpu_power_w = models.FloatField(default=0)
-    cpu_utilization = models.FloatField(default=0)  # Store for charting
-    cpu_cores = models.PositiveSmallIntegerField(default=0)
-    
-    # Other components (flat estimate)
+    cpu_power_source = models.CharField(max_length=10, default='rapl', choices=[
+        ('rapl', 'RAPL (measured)'),
+        ('estimate', 'Estimated from utilization'),
+    ])
+
+    # Other components (flat estimate: RAM + disks + MB + fans, AC)
     other_power_w = models.FloatField(default=50)
-    
-    # Totals
-    total_dc_power_w = models.FloatField(default=0)
-    total_ac_power_w = models.FloatField(default=0)
-    
+
+    # Total system power (AC, PSU efficiency already factored in by agent)
+    total_power_w = models.FloatField(default=0)
+
     class Meta:
         db_table = 'metrics_power_reading'
         ordering = ['-timestamp']
@@ -183,117 +192,111 @@ def collect_metrics():
 
 ## Server-Side Processing
 
-### IngestView Addition
+### IngestSerializer (actual implementation)
+
+The server does NOT recalculate power — the agent sends pre-calculated AC values.
+The serializer simply stores them:
+
 ```python
-def process_power(rig, power_data):
-    """Process power data from agent payload."""
-    gpu_power = power_data.get('gpu_power_w', 0)
-    cpu_util = power_data.get('cpu_utilization', 0)
-    cpu_cores = power_data.get('cpu_cores', psutil.cpu_count(logical=False))
-    
-    # Estimate CPU power
-    estimated_tdp = 8 * cpu_cores + 25
-    cpu_power = estimated_tdp * (0.1 + 0.9 * cpu_util)
-    
-    # Flat estimate for other components
-    other_power = 50
-    
-    # Totals
-    total_dc = gpu_power + cpu_power + other_power
-    psu_efficiency = float(user.psu_efficiency or 0.90)
-    total_ac = total_dc / psu_efficiency
-    
-    PowerReading.objects.create(
-        rig=rig,
-        gpu_power_w=gpu_power,
-        cpu_power_w=cpu_power,
-        cpu_utilization=cpu_util,
-        cpu_cores=cpu_cores,
-        other_power_w=other_power,
-        total_dc_power_w=total_dc,
-        total_ac_power_w=total_ac,
+# In process_ingest() — power section
+power_data = data.get('power', {})
+if power_data and rig:
+    gpu_power_w = float(power_data.get('gpu_power_w', 0) or 0)
+    cpu_power_w = float(power_data.get('cpu_power_w', 0) or 0)
+    cpu_power_source = power_data.get('cpu_power_source', 'estimate')
+    other_power_w = float(power_data.get('other_power_w', 50) or 50)
+    total_power_w = float(power_data.get('total_power_w', 0) or 0)
+
+    # Store at most once per minute to reduce DB growth
+    last_reading = PowerReading.objects.filter(rig=rig).first()
+    store_reading = True
+    if last_reading:
+        time_diff = (timezone.now() - last_reading.timestamp).total_seconds()
+        if time_diff < 60:
+            store_reading = False
+
+    if store_reading:
+        PowerReading.objects.create(
+            rig=rig,
+            gpu_power_w=round(gpu_power_w, 1),
+            cpu_power_w=round(cpu_power_w, 1),
+            cpu_power_source=cpu_power_source,
+            other_power_w=other_power_w,
+            total_power_w=round(total_power_w, 1),
+        )
+
+    # Update LatestSnapshot power fields
+    ls_defaults['power_total_w'] = round(total_power_w, 1)
+    ls_defaults['power_gpu_w'] = round(gpu_power_w, 1)
+    ls_defaults['power_cpu_w'] = round(cpu_power_w, 1)
+    ls_defaults['power_other_w'] = other_power_w
+```
+
+### User Model (electricity rate + PSU efficiency)
+
+```python
+class User(AbstractUser):
+    electricity_rate_kwh = models.DecimalField(
+        max_digits=6, decimal_places=4, default=0.3300,
+        help_text="Electricity cost per kWh"
+    )
+    psu_efficiency = models.DecimalField(
+        max_digits=3, decimal_places=2, default=0.90,
+        help_text="PSU efficiency (0.85= Bronze, 0.90= Gold, 0.92= Platinum)"
     )
 ```
 
+Note: `psu_efficiency` is stored on User but currently NOT used in server-side calculations — the agent applies PSU efficiency before sending data. The field exists for future server-side recalculation and cost estimation.
+
 ## Charts
 
-### New Chart: Total System Power
+### Implemented: GPU Power Draw Chart (multi-GPU)
 - **Location:** Historical Charts tab (rig detail page)
 - **Type:** Line chart
 - **Y-axis:** Power (W)
-- **Series:**
-  - Total AC Power (total_ac_power_w)
-  - Total DC Power (total_dc_power_w)
-- **Time range:** 24h, 7d, 30d (same as other charts)
+- **Series:** Per-GPU `power_draw_w` (the raw GPU power draw, NOT total system power)
+- **Time range:** 24h, 7d, 30d
 
-### New Chart: CPU Power
-- **Location:** Historical Charts tab (rig detail page)
-- **Type:** Line chart
-- **Y-axis:** Power (W)
-- **Series:**
-  - CPU Power (cpu_power_w)
-  - CPU Utilization (cpu_utilization × 100) — secondary Y-axis
-- **Purpose:** Show correlation between CPU load and power draw
+### Not Yet Implemented
+The following charts described in the original plan are NOT yet built:
+- Total System Power (total_ac_power_w) — needs UI chart addition
+- CPU Power (cpu_power_w) — needs UI chart addition
+- Power Breakdown (stacked area: GPU / CPU / Other) — needs UI chart addition
 
-### New Chart: Power Breakdown (Stacked Area)
-- **Location:** Historical Charts tab (rig detail page)
-- **Type:** Stacked area chart
-- **Y-axis:** Power (W)
-- **Series:**
-  - GPU Power (gpu_power_w)
-  - CPU Power (cpu_power_w)
-  - Other Power (other_power_w, flat 50W)
-- **Purpose:** Show contribution of each component to total power
+These require only frontend additions (new Chart.js chart definitions) since the data is already collected and stored in PowerReading.
 
 ## Dashboard UI
 
-### Live Metrics Card
+### Live Metrics Card (implemented)
 ```
-┌─────────────────────────────────────┐
-│ ⚡ Power Consumption                │
-│                                     │
-│ Total: 483W (AC) / 435W (DC)       │
-│ ├─ GPU: 340W (2× RTX 3060)         │
-│ ├─ CPU: 45W (Ryzen 7 5700X, 45%)   │
-│ └─ Other: 50W (est.)               │
-│                                     │
-│ Cost: $0.058/hr | $1.39/day        │
-│ This month: 312 kWh ($37.44)        │
-└─────────────────────────────────────┘
+GPU Card:
+  Power: {power_draw_w}W / {power_limit_w}W
 ```
+Per-GPU power draw and enforced limit. Shown on each GPU card in Live Metrics.
 
-### Fleet Overview Table
-- New column: **Power [W]**
-- Shows total_ac_power_w
+### Fleet Overview Table (implemented)
+- Column: **Power [W]**
+- Source: `LatestSnapshot.power_total_w` (total system AC power)
 - Color-coded: 🟢 <200W, 🟡 200-400W, 🔴 >400W
-- Sortable
 
-### Rig Detail Page
-- Power breakdown bar chart (GPU / CPU / Other)
-- 3 new historical charts (described above)
-- Cost summary (today, this month)
-- Configuration: electricity rate, PSU efficiency
+### Not Yet Implemented
+- Dedicated Power Cost dashboard widget with cost summaries
+- Power breakdown bar chart (GPU / CPU / Other) on rig detail page
+- Historical power charts (see "Not Yet Implemented" above)
 
 ## Implementation Plan
 
-### Phase 1: Agent Changes (0.5 days)
-- Add power data to payload (gpu_power_w, cpu_utilization, cpu_cores)
-- All data already available via psutil + pynvml
+### Status: PARTIALLY IMPLEMENTED
 
-### Phase 2: Server Processing (1 day)
-- Create PowerReading model + migration
-- Add process_power() to IngestView
-- Calculate totals and store
+| Phase | Status | Notes |
+|-------|--------|-------|
+| Phase 1: Agent Changes | ✅ DONE | Agent collects GPU power (pynvml), CPU power (RAPL/estimate), calculates total with PSU efficiency |
+| Phase 2: Server Processing | ✅ DONE | PowerReading model + LatestSnapshot fields, serializer stores agent-pre-calculated values |
+| Phase 3: Dashboard UI | ⚠️ PARTIAL | GPU power shown in Live Metrics card, Power column in Fleet Overview. Missing: dedicated power card, power charts, cost display |
+| Phase 4: Cost Tracking | ❌ NOT STARTED | kWh calculation, cost display, user electricity rate usage |
 
-### Phase 3: Dashboard UI (1.5 days)
-- Power card in Live Metrics
-- Power column in Fleet Overview
-- Power breakdown in Rig Detail
-- 3 new historical charts
+### Remaining Work (estimated ~2 days)
 
-### Phase 4: Cost Tracking (1 day)
-- kWh calculation (trapezoidal integration)
-- Cost display (hourly, daily, monthly)
-- User configuration (electricity rate, PSU efficiency)
-
-**Total: ~4 days**
+1. **Power charts** — Add 3 Chart.js charts to rig detail page (Total System Power, CPU Power, Power Breakdown stacked area). Data already in PowerReading table.
+2. **Cost widget** — Dashboard widget showing $/hr, $/day, $/month using `electricity_rate_kwh` from User.
+3. **Power breakdown bar** — Visual GPU/CPU/Other breakdown on rig detail page.

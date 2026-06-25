@@ -1,6 +1,6 @@
 # GPU Rig Monitoring Agent — Linux
 
-**Version:** 1.5.14 | **Schema:** 1.10
+**Version:** 1.5.16 | **Schema:** 1.10
 
 Linux agent for the GPU Rig Monitoring Platform. Collects hardware/software metrics via `psutil`, `pynvml`, and system interfaces, then POSTs them to the monitoring server every 60 seconds via cron.
 
@@ -38,7 +38,7 @@ The installer performs these operations:
 | 2 | Creates directories: `/opt/monitoring-agent/`, `/etc/monitoring-agent/`, `/var/log/monitoring-agent/` |
 | 3 | Creates Python virtualenv and installs dependencies (`psutil`, `py-cpuinfo`, `requests`, `pyyaml`, `nvidia-ml-py3`). Docker container monitoring uses the `docker` CLI via sudo — no Python SDK needed. |
 | 4 | Copies `run.py` and creates config template at `/etc/monitoring-agent/config.yaml` |
-| 5 | Configures sudoers for SMART disk queries, NVMe logs, journalctl, and docker (read-only, passwordless) |
+| 5 | Configures sudoers (`/etc/sudoers.d/monitoring-agent`) for SMART disk queries, NVMe logs, journalctl, and docker (read-only, passwordless). Includes `Defaults:monitoring-agent !authenticate` (required for nologin shell users). |
 | 6 | Creates cron job — runs every 60 seconds with `flock` to prevent overlaps |
 | 7 | Schedules daily auto-update check (random time to avoid thundering herd) |
 
@@ -132,9 +132,48 @@ The cron job will start automatically within 1 minute.
 | OS info (hostname, OS, kernel, uptime) | `platform` + psutil | ✅ | ✅ |
 | NVIDIA driver version | `nvidia-smi` subprocess | ✅* | ✅* |
 | System errors (with dedup, up to 1000 entries) | `journalctl` | ✅ | ✅ |
+| Power consumption (CPU, GPU, total system) | RAPL sysfs + `pynvml` + calculation | ✅ | ✅ |
 
 \* Requires NVIDIA GPU with drivers and `nvidia-ml-py3` installed.
 † Requires Docker daemon running.
+
+## Power Collection Details
+
+The agent collects power consumption data from multiple sources and calculates total system power. All power values sent to the server are **AC (wall) watts** — PSU efficiency is already factored in.
+
+### Collection Steps
+
+1. **GPU Power** — Reads from `pynvml.nvmlDeviceGetPowerUsage(handle)` for each NVIDIA GPU. Returns power in milliwatts, converted to watts. Summed across all GPUs.
+
+2. **CPU Power (RAPL)** — On Linux, reads energy counters from `/sys/class/powercap/intel-rapl:0/energy_uj` (Intel) or `/sys/class/powercap/amd-rapl:0/energy_uj` (AMD). Takes two readings 100ms apart, computes: `energy_joules / 0.1s = watts`. Validates range (0–1000W). Falls back to estimation if RAPL unavailable.
+
+3. **CPU Power (Estimate)** — When RAPL is unavailable (VMs, old CPUs, containers), estimates using: `cpu_power = 10 + (8 × cores + 25) × (0.1 + 0.9 × utilization)`. Validated against Ryzen 3, 5, 7.
+
+4. **Other Components** — Flat 40W estimate for RAM, disks, motherboard, and fans. This is conservative — actual draw is typically 30–45W for a GPU rig.
+
+5. **Total Calculation** — `total_dc = gpu_power + cpu_power + 40`, then `total_ac = total_dc / 0.90` (PSU efficiency: 80 Plus Gold default).
+
+### Payload Format
+
+```json
+{
+  "power": {
+    "cpu_power_w": 45.2,
+    "cpu_power_source": "rapl",
+    "gpu_power_w": 338.8,
+    "other_power_w": 40,
+    "total_power_w": 471.1
+  }
+}
+```
+
+`cpu_power_source` is either `"rapl"` (hardware measurement) or `"estimate"` (calculated from utilization).
+
+### Server Storage
+
+The server stores power data in two places:
+- **LatestSnapshot** — latest values for Live Metrics display (`power_total_w`, `power_gpu_w`, `power_cpu_w`, `power_other_w`)
+- **PowerReading** — historical timeseries, one row per minute (throttled), used for charts and cost estimation
 
 ## Agent Permissions
 

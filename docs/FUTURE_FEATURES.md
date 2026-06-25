@@ -162,9 +162,9 @@ The platform's target users (GPU farmers, AI researchers, small data centers) al
 **What was implemented:**
 - Agent collects GPU power draw (nvidia-smi via pynvml) and enforced power limit
 - CPU power measured via RAPL sysfs (`/sys/class/powercap/intel-rapl:0/energy_uj`) or estimated from utilization × TDP (`8W × cores + 25W`)
-- Other components (RAM+disks+MB+fans) = flat 50W
+- Other components (RAM+disks+MB+fans) = flat 40W
 - PSU efficiency: 90% (user-configurable on User model)
-- Total power calculation: `(gpu + cpu + 50) / 0.90 = total AC watts`
+- Total power calculation: `(gpu + cpu + 40) / 0.90 = total AC watts`
 - `electricity_rate_kwh` on User model (default 0.33)
 - `PowerReading` model stores historical power data (one row per minute, throttled)
 - `LatestSnapshot` stores latest values: `power_total_w`, `power_gpu_w`, `power_cpu_w`, `power_other_w`

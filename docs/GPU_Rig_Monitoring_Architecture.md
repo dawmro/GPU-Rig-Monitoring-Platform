@@ -553,18 +553,18 @@ The agent calculates total system power and stores it in two places:
 | LatestSnapshot | `power_total_w` | Total system power (AC, PSU efficiency factored in) |
 | LatestSnapshot | `power_gpu_w` | Sum of all GPU power draw (AC) |
 | LatestSnapshot | `power_cpu_w` | CPU power (AC, RAPL-measured or estimated) |
-| LatestSnapshot | `power_other_w` | Flat 50W for RAM+disks+MB+fans |
-| PowerReading | `total_power_w` | Same as above, historical timeseries |
-| PowerReading | `gpu_power_w` | GPU power, historical |
-| PowerReading | `cpu_power_w` | CPU power, historical |
-| PowerReading | `cpu_power_source` | 'rapl' or 'estimate' |
-| PowerReading | `other_power_w` | Flat 50W |
+|| LatestSnapshot | `power_other_w` | Flat 40W for RAM+disks+MB+fans |
+|| PowerReading | `total_power_w` | Same as above, historical timeseries |
+|| PowerReading | `gpu_power_w` | GPU power, historical |
+|| PowerReading | `cpu_power_w` | CPU power, historical |
+|| PowerReading | `cpu_power_source` | 'rapl' or 'estimate' |
+|| PowerReading | `other_power_w` | Flat 40W |
 
 **Power calculation (agent-side):**
 ```
 gpu_power_w = sum(nvmlDeviceGetPowerUsage(gpu) for each gpu) / 1000  (AC)
 cpu_power_w = read_cpu_power_w() via RAPL sysfs, or estimate from utilization
-other_power_w = 50  (flat estimate: RAM + disks + motherboard + fans)
+other_power_w = 40  (flat estimate: RAM + disks + motherboard + fans)
 total_dc = gpu_power_w + cpu_power_w + other_power_w
 total_power_w = total_dc / 0.90  (PSU efficiency: 80 Plus Gold)
 ```

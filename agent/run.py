@@ -43,7 +43,7 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.5.15'
+__version__ = '1.5.16'
 __schema_version__ = '1.10'
 
 # ── Config ──────────────────────────────────────────────────────────────────
@@ -281,9 +281,13 @@ def read_cpu_power_w():
 def estimate_cpu_power_w(cpu_utilization, cpu_cores):
     """Estimate CPU power from utilization when RAPL is unavailable.
 
-    Uses linear model: P = TDP * (0.1 + 0.9 * util)
-    TDP estimated as: 8 watts per core + 25 watts base
-    (calibrated against 16 real CPUs, avg error 18%)
+    Uses: cpu_power = 10 + TDP × (0.1 + 0.9 × util)
+    - TDP = 8W per core + 25W base (calibrated against 16 real CPUs)
+    - 10W constant base (VRM losses, chipset, platform overhead)
+    - TDP × 0.1 = proportional idle power (leakage, uncore — scales with core count)
+    - TDP × 0.9 × util = dynamic load power
+
+    Validated against Ryzen 3, 5, 7 at various utilizations.
 
     Args:
         cpu_utilization: CPU utilization as float 0.0-1.0
@@ -293,7 +297,7 @@ def estimate_cpu_power_w(cpu_utilization, cpu_cores):
         Estimated CPU power in watts
     """
     estimated_tdp = 8 * cpu_cores + 25
-    cpu_power = estimated_tdp * (0.1 + 0.9 * cpu_utilization)
+    cpu_power = 10 + estimated_tdp * (0.1 + 0.9 * cpu_utilization)
     return round(cpu_power, 1)
 
 
@@ -341,7 +345,7 @@ def collect_power(cpu_metrics):
             pass  # GPU power collection failure is non-fatal
 
         # Flat estimate for other components (RAM + disks + MB + fans)
-        other_power_w = 50
+        other_power_w = 40
 
         # Calculate total DC power, then apply PSU efficiency to get AC
         PSU_EFFICIENCY = 0.90  # 80 Plus Gold

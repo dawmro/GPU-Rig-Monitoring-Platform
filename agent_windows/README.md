@@ -1,6 +1,6 @@
 # GPU Rig Monitoring Agent — Windows
 
-**Version:** 1.6.14-win | **Schema:** 1.10
+**Version:** 1.6.16-win | **Schema:** 1.10
 
 Windows-compatible agent for the GPU Rig Monitoring Platform. Collects hardware/software metrics and sends them to the monitoring server via HTTPS.
 
@@ -186,9 +186,46 @@ agent_windows/
 | OS info (hostname, OS, kernel, uptime) | `platform` + psutil | ✅ | ✅ |
 | NVIDIA driver version | `nvidia-smi` subprocess | ✅* | ✅* |
 | System errors (with dedup, up to 1000 entries) | PowerShell `Get-WinEvent` | ✅ | ✅ |
+| Power consumption (CPU, GPU, total system) | `pynvml` + estimation | ✅ | ✅ |
 
 \* Requires NVIDIA GPU with drivers and `nvidia-ml-py3` installed.
 † Requires Docker Desktop running.
+
+## Power Collection Details
+
+The agent collects power consumption data and calculates total system power. All power values sent to the server are **AC (wall) watts** — PSU efficiency is already factored in.
+
+### Collection Steps
+
+1. **GPU Power** — Reads from `pynvml.nvmlDeviceGetPowerUsage(handle)` for each NVIDIA GPU. Returns power in milliwatts, converted to watts. Summed across all GPUs.
+
+2. **CPU Power (Estimate)** — On Windows, RAPL is not available, so CPU power is always estimated: `cpu_power = 10 + (8 × cores + 25) × (0.1 + 0.9 × utilization)`. Validated against Ryzen 3, 5, 7.
+
+3. **Other Components** — Flat 40W estimate for RAM, disks, motherboard, and fans.
+
+4. **Total Calculation** — `total_dc = gpu_power + cpu_power + 40`, then `total_ac = total_dc / 0.90` (PSU efficiency: 80 Plus Gold default).
+
+### Payload Format
+
+```json
+{
+  "power": {
+    "cpu_power_w": 45.2,
+    "cpu_power_source": "estimate",
+    "gpu_power_w": 338.8,
+    "other_power_w": 40,
+    "total_power_w": 471.1
+  }
+}
+```
+
+`cpu_power_source` is `"estimate"` on Windows (RAPL is Linux-only). It would be `"rapl"` on Linux.
+
+### Server Storage
+
+The server stores power data in two places:
+- **LatestSnapshot** — latest values for Live Metrics display (`power_total_w`, `power_gpu_w`, `power_cpu_w`, `power_other_w`)
+- **PowerReading** — historical timeseries, one row per minute (throttled), used for charts and cost estimation
 
 ## Permissions
 

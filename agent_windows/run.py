@@ -53,7 +53,7 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.6.15-win'
+__version__ = '1.6.16-win'
 __schema_version__ = '1.10'
 
 # ── Config ──────────────────────────────────────────────────────────────────
@@ -265,12 +265,23 @@ def read_cpu_power_w():
 def estimate_cpu_power_w(cpu_utilization, cpu_cores):
     """Estimate CPU power from utilization when RAPL is unavailable.
 
-    Uses linear model: P = TDP * (0.1 + 0.9 * util)
-    TDP estimated as: 8 watts per core + 25 watts base
-    (calibrated against 16 real CPUs, avg error 18%)
+    Uses: cpu_power = 10 + TDP × (0.1 + 0.9 × util)
+    - TDP = 8W per core + 25W base (calibrated against 16 real CPUs)
+    - 10W constant base (VRM losses, chipset, platform overhead)
+    - TDP × 0.1 = proportional idle power (leakage, uncore — scales with core count)
+    - TDP × 0.9 × util = dynamic load power
+
+    Validated against Ryzen 3, 5, 7 at various utilizations.
+
+    Args:
+        cpu_utilization: CPU utilization as float 0.0-1.0
+        cpu_cores: Number of physical CPU cores
+
+    Returns:
+        Estimated CPU power in watts
     """
     estimated_tdp = 8 * cpu_cores + 25
-    cpu_power = estimated_tdp * (0.1 + 0.9 * cpu_utilization)
+    cpu_power = 10 + estimated_tdp * (0.1 + 0.9 * cpu_utilization)
     return round(cpu_power, 1)
 
 
@@ -313,7 +324,7 @@ def collect_power(cpu_metrics):
         except Exception:
             pass
 
-        other_power_w = 50
+        other_power_w = 40
         PSU_EFFICIENCY = 0.90
         total_dc = gpu_power_w + cpu_power_w + other_power_w
         total_power_w = round(total_dc / PSU_EFFICIENCY, 1)

@@ -2,7 +2,7 @@
 
 ## Design Decisions
 
-### 1. RAM + Disks + Motherboard = Flat 50W
+### 1. RAM + Disks + Motherboard = Flat 40W
 **Rationale:** These components draw ~30-50W combined — negligible vs GPUs (150-350W each). No need for per-component tracking.
 
 ### 2. GPU Power = Direct Sum (Already Collected)
@@ -67,7 +67,7 @@ def estimate_cpu_power_w(cpu_utilization, cpu_cores):
 def calculate_total_power(gpu_power_w, cpu_utilization, cpu_cores):
     """Calculate total system power consumption."""
     cpu_power = estimate_cpu_power_w(cpu_utilization, cpu_cores)
-    other_power = 50  # RAM + disks + motherboard + fans
+    other_power = 40  # RAM + disks + motherboard + fans
     
     total_dc = gpu_power_w + cpu_power + other_power
     psu_efficiency = 0.90  # 80 Plus Gold
@@ -98,10 +98,10 @@ Cost/hr: 0.483 × $0.33 = $0.159/hr
 ```
 GPU: 8 × 350W = 2800W
 CPU: (64×8 + 25) × (0.1 + 0.9×0.80) = 537W × 0.82 = 440W
-Other: 50W
-Total DC: 3290W
-Total AC: 3290 / 0.90 = 3656W
-Cost/hr: 3.656 × $0.33 = $1.206/hr
+Other: 40W
+Total DC: 3280W
+Total AC: 3280 / 0.90 = 3644W
+Cost/hr: 3.644 × $0.33 = $1.203/hr
 ```
 
 ## Data Model
@@ -147,7 +147,7 @@ class PowerReading(models.Model):
     ])
 
     # Other components (flat estimate: RAM + disks + MB + fans, AC)
-    other_power_w = models.FloatField(default=50)
+    other_power_w = models.FloatField(default=40)
 
     # Total system power (AC, PSU efficiency already factored in by agent)
     total_power_w = models.FloatField(default=0)
@@ -204,7 +204,7 @@ if power_data and rig:
     gpu_power_w = float(power_data.get('gpu_power_w', 0) or 0)
     cpu_power_w = float(power_data.get('cpu_power_w', 0) or 0)
     cpu_power_source = power_data.get('cpu_power_source', 'estimate')
-    other_power_w = float(power_data.get('other_power_w', 50) or 50)
+    other_power_w = float(power_data.get('other_power_w', 40) or 40)
     total_power_w = float(power_data.get('total_power_w', 0) or 0)
 
     # Store at most once per minute to reduce DB growth

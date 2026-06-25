@@ -465,7 +465,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                     gpu_power_w = float(power_data.get('gpu_power_w', 0) or 0)
                     cpu_power_w = float(power_data.get('cpu_power_w', 0) or 0)
                     cpu_power_source = power_data.get('cpu_power_source', 'estimate')
-                    other_power_w = float(power_data.get('other_power_w', 50) or 50)
+                    other_power_w = float(power_data.get('other_power_w', 40) or 40)
                     total_power_w = float(power_data.get('total_power_w', 0) or 0)
 
                     # Store at most once per minute to reduce DB growth

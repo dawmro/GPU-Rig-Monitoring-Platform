@@ -299,7 +299,7 @@ class LatestSnapshot(models.Model):
     power_total_w = models.FloatField(null=True, blank=True)     # Total system power (AC)
     power_gpu_w = models.FloatField(null=True, blank=True)       # Sum of all GPU power (AC)
     power_cpu_w = models.FloatField(null=True, blank=True)       # CPU power (AC)
-    power_other_w = models.FloatField(null=True, blank=True)     # Flat 50W for RAM+disks+MB+fans
+    power_other_w = models.FloatField(null=True, blank=True)     # Flat 40W for RAM+disks+MB+fans
 
     class Meta:
         db_table = 'metrics_latest_snapshot'
@@ -383,7 +383,7 @@ class PowerReading(models.Model):
     ])
 
     # Other components (flat estimate: RAM + disks + MB + fans, AC)
-    other_power_w = models.FloatField(default=50)
+    other_power_w = models.FloatField(default=40)
 
     # Total system power (AC, PSU efficiency already factored in by agent)
     total_power_w = models.FloatField(default=0)

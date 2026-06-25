@@ -23,7 +23,9 @@ sudo ls
 
 ```bash
 # go home, create dir and clone repo, go to dir
+cd ~
 mkdir workspace
+cd workspace
 git clone https://github.com/dawmro/GPU-Rig-Monitoring-Platform.git
 cd GPU-Rig-Monitoring-Platform
 cd agent
@@ -37,7 +39,6 @@ sudo chmod +x install.sh
 sudo ./install.sh
 ```
 
-# if above not working, then fix for older python versions:
 ```
 # if above not working, then fix for older python versions:
 sudo apt update && sudo apt install python3.8-venv -y && sudo apt install -y python3-venv && sudo rm -rf /opt/monitoring-agent/venv && sudo chmod +x install.sh && sudo ./install.sh

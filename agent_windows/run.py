@@ -1031,7 +1031,7 @@ Note: Per-container CPU/memory usage is NOT collected because:
             if len(parts) < 5:
                 continue
             cid, name, image, status_str, created_str = parts
-            container_id = cid[:12]
+            container_id = cid  # Full 64-char container ID
 
             # Parse status
             status = 'running' if status_str.startswith('Up') else 'exited'

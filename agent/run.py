@@ -823,7 +823,7 @@ def collect_docker():
             if len(parts) < 5:
                 continue
             cid, name, image, status_str, created_str = parts
-            container_id = cid[:12]
+            container_id = cid  # Full 64-char container ID
 
             # Parse status: "Up 2 hours" or "Exited (0) 3 hours ago" or "Restarting (1) 5 seconds ago"
             status = 'running' if status_str.startswith('Up') else 'exited'

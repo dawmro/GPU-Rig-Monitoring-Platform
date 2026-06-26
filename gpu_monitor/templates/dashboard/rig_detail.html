@@ -262,10 +262,10 @@
                         <span class="text-xs px-2 py-0.5 rounded bg-gray-700 text-gray-300">{{ c.status }}</span>
                         {% endif %}
                         <span class="text-sm text-gray-200 font-medium">{{ c.name|default:"unnamed" }}</span>
-                        <span class="text-xs text-gray-600 font-mono break-all">{{ c.container_id|default:"" }}</span>
+                        <span class="text-xs text-gray-600 font-mono">{{ c.container_id|default:""|truncatechars:12 }}</span>
                     </div>
                     <div class="flex items-center gap-2 text-xs text-gray-500">
-                        <span class="font-mono">{{ c.image|default:"N/A"|truncatechars:40 }}</span>
+                        <span class="font-mono break-all">{{ c.image|default:"N/A" }}</span>
                         {% if c.status_text %}<span>{{ c.status_text }}</span>{% endif %}
                         <span title="{{ c.received_at|default:'' }}">{{ c.received_at|default:c.created|default:"unknown"|truncatechars:30 }}</span>
                     </div>

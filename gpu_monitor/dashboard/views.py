@@ -456,3 +456,34 @@ def rig_rename(request, uuid):
         return render(request, 'dashboard/_rig_name.html', {'rig': rig})
 
     return redirect('dashboard:rig-detail', uuid=uuid)
+
+
+def htmx_report_data(request, uuid):
+    """HTMX endpoint: renders report table partial for a rig.
+
+    Fetches aggregated report data from metrics_app.ReportDataView
+    and passes it to _report_table.html template.
+    """
+    from metrics_app.views import ReportDataView
+    from django.test import RequestFactory
+
+    rig = get_object_or_404(Rig, uuid=uuid)
+    if rig.owner_id != request.user.id and not request.user.is_staff:
+        raise Http404
+
+    range_hours = int(request.GET.get('range_hours', 24))
+
+    # Reuse ReportDataView to get aggregated data
+    view = ReportDataView.as_view()
+    factory = RequestFactory()
+    api_request = factory.get(
+        f'/api/v1/rigs/{uuid}/report-data/',
+        {'range_hours': range_hours}
+    )
+    api_request.user = request.user
+    response = view(api_request, uuid=str(uuid))
+
+    if response.status_code != 200:
+        return HttpResponse("Error loading report data", status=response.status_code)
+
+    return render(request, 'dashboard/_report_table.html', response.data)

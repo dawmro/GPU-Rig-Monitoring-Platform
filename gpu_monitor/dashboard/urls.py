@@ -11,5 +11,6 @@ urlpatterns = [
     path('dashboard/rigs/<str:uuid>/delete/', views.rig_delete, name='rig-delete'),
     path('dashboard/rigs/<str:uuid>/htmx-metrics/', views.htmx_metrics, name='htmx-metrics'),
     path('dashboard/rigs/<str:uuid>/htmx-status/', views.htmx_rig_status, name='htmx-rig-status'),
+    path('dashboard/rigs/<str:uuid>/htmx-report/', views.htmx_report_data, name='htmx-report'),
     path('dashboard/rigs/<str:uuid>/tags/<str:tag_id>/toggle/', views.rig_toggle_tag, name='rig-toggle-tag'),
 ]

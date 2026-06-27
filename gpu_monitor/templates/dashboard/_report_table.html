@@ -1,0 +1,228 @@
+{% load gpu_filters %}
+{% load humanize %}
+
+<!-- GPU Section -->
+<h3 class="text-sm font-medium text-gray-300 mt-4 mb-2">GPU</h3>
+<div class="overflow-x-auto mb-4">
+    <table class="w-full text-xs">
+        <thead class="text-gray-400 border-b border-gray-700">
+            <tr>
+                <th class="text-left py-1.5 pr-3 font-medium">Metric</th>
+                <th class="text-right py-1.5 px-2 font-medium">Average</th>
+                <th class="text-right py-1.5 px-2 font-medium">Max</th>
+            </tr>
+        </thead>
+        <tbody class="text-gray-300">
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">Temperature</td>
+                <td class="text-right py-1.5 px-2">{{ gpu_temp_c_avg|floatformat:1 }}°C</td>
+                <td class="text-right py-1.5 px-2">{{ gpu_temp_c_max|floatformat:1 }}°C</td>
+            </tr>
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">Utilization</td>
+                <td class="text-right py-1.5 px-2">{{ gpu_util_pct_avg|floatformat:1 }}%</td>
+                <td class="text-right py-1.5 px-2">{{ gpu_util_pct_max|floatformat:1 }}%</td>
+            </tr>
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">Power Draw</td>
+                <td class="text-right py-1.5 px-2">{{ power_draw_w_avg|floatformat:1 }}W</td>
+                <td class="text-right py-1.5 px-2">{{ power_draw_w_max|floatformat:1 }}W</td>
+            </tr>
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">VRAM Used</td>
+                <td class="text-right py-1.5 px-2">{{ mem_used_mb_avg|default:"—" }} MB</td>
+                <td class="text-right py-1.5 px-2">{{ mem_used_mb_max|default:"—" }} MB</td>
+            </tr>
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">Fan Speed</td>
+                <td class="text-right py-1.5 px-2">{{ fan_speed_pct_avg|floatformat:0 }}%</td>
+                <td class="text-right py-1.5 px-2">{{ fan_speed_pct_max|floatformat:0 }}%</td>
+            </tr>
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">Core Clock</td>
+                <td class="text-right py-1.5 px-2">{{ gpu_core_clock_mhz_avg|floatformat:0 }} MHz</td>
+                <td class="py-1.5 px-2">—</td>
+            </tr>
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">Memory Clock</td>
+                <td class="text-right py-1.5 px-2">{{ gpu_mem_clock_mhz_avg|floatformat:0 }} MHz</td>
+                <td class="py-1.5 px-2">—</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- CPU Section -->
+<h3 class="text-sm font-medium text-gray-300 mt-4 mb-2">CPU</h3>
+<div class="overflow-x-auto mb-4">
+    <table class="w-full text-xs">
+        <thead class="text-gray-400 border-b border-gray-700">
+            <tr>
+                <th class="text-left py-1.5 pr-3 font-medium">Metric</th>
+                <th class="text-right py-1.5 px-2 font-medium">Average</th>
+                <th class="text-right py-1.5 px-2 font-medium">Max</th>
+            </tr>
+        </thead>
+        <tbody class="text-gray-300">
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">Utilization</td>
+                <td class="text-right py-1.5 px-2">{{ cpu_utilization_pct_avg|floatformat:1 }}%</td>
+                <td class="text-right py-1.5 px-2">{{ cpu_utilization_pct_max|floatformat:1 }}%</td>
+            </tr>
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">Temperature</td>
+                <td class="text-right py-1.5 px-2">{{ cpu_temp_c_avg|floatformat:1 }}°C</td>
+                <td class="text-right py-1.5 px-2">{{ cpu_temp_c_max|floatformat:1 }}°C</td>
+            </tr>
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">Power</td>
+                <td class="text-right py-1.5 px-2">{{ cpu_power_w_avg|floatformat:1 }}W</td>
+                <td class="text-right py-1.5 px-2">{{ cpu_power_w_max|floatformat:1 }}W</td>
+            </tr>
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">Frequency</td>
+                <td class="text-right py-1.5 px-2">{{ cpu_freq_current_mhz_avg|floatformat:0 }} MHz</td>
+                <td class="py-1.5 px-2">—</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- Memory Section -->
+<h3 class="text-sm font-medium text-gray-300 mt-4 mb-2">Memory</h3>
+<div class="overflow-x-auto mb-4">
+    <table class="w-full text-xs">
+        <thead class="text-gray-400 border-b border-gray-700">
+            <tr>
+                <th class="text-left py-1.5 pr-3 font-medium">Metric</th>
+                <th class="text-right py-1.5 px-2 font-medium">Average</th>
+                <th class="text-right py-1.5 px-2 font-medium">Max</th>
+            </tr>
+        </thead>
+        <tbody class="text-gray-300">
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">Used</td>
+                <td class="text-right py-1.5 px-2">
+                    {% if mem_used_bytes_avg %}{{ mem_used_bytes_avg|naturalsize }}{% else %}—{% endif %}
+                </td>
+                <td class="text-right py-1.5 px-2">
+                    {% if mem_used_bytes_max %}{{ mem_used_bytes_max|naturalsize }}{% else %}—{% endif %}
+                </td>
+            </tr>
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">Swap Used</td>
+                <td class="text-right py-1.5 px-2">
+                    {% if swap_used_bytes_avg %}{{ swap_used_bytes_avg|naturalsize }}{% else %}—{% endif %}
+                </td>
+                <td class="py-1.5 px-2">—</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- Disk Section -->
+<h3 class="text-sm font-medium text-gray-300 mt-4 mb-2">Disk</h3>
+<div class="overflow-x-auto mb-4">
+    <table class="w-full text-xs">
+        <thead class="text-gray-400 border-b border-gray-700">
+            <tr>
+                <th class="text-left py-1.5 pr-3 font-medium">Metric</th>
+                <th class="text-right py-1.5 px-2 font-medium">Total / Peak</th>
+            </tr>
+        </thead>
+        <tbody class="text-gray-300">
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">Max Usage</td>
+                <td class="text-right py-1.5 px-2">{{ disk_usage_pct_max|floatformat:1 }}%</td>
+            </tr>
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">Read</td>
+                <td class="text-right py-1.5 px-2">
+                    {% if disk_read_bytes_sum %}{{ disk_read_bytes_sum|naturalsize }}{% else %}—{% endif %}
+                </td>
+            </tr>
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">Write</td>
+                <td class="text-right py-1.5 px-2">
+                    {% if disk_write_bytes_sum %}{{ disk_write_bytes_sum|naturalsize }}{% else %}—{% endif %}
+                </td>
+            </tr>
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">Peak Read IOPS</td>
+                <td class="text-right py-1.5 px-2">{{ disk_read_iops_max|default:"—" }}</td>
+            </tr>
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">Peak Write IOPS</td>
+                <td class="text-right py-1.5 px-2">{{ disk_write_iops_max|default:"—" }}</td>
+            </tr>
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">Peak Utilization</td>
+                <td class="text-right py-1.5 px-2">{{ disk_utilization_pct_max|floatformat:1 }}%</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- Network Section -->
+<h3 class="text-sm font-medium text-gray-300 mt-4 mb-2">Network</h3>
+<div class="overflow-x-auto mb-4">
+    <table class="w-full text-xs">
+        <thead class="text-gray-400 border-b border-gray-700">
+            <tr>
+                <th class="text-left py-1.5 pr-3 font-medium">Metric</th>
+                <th class="text-right py-1.5 px-2 font-medium">Total</th>
+            </tr>
+        </thead>
+        <tbody class="text-gray-300">
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">Received</td>
+                <td class="text-right py-1.5 px-2">
+                    {% if net_rx_bytes_sum %}{{ net_rx_bytes_sum|naturalsize }}{% else %}—{% endif %}
+                </td>
+            </tr>
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">Transmitted</td>
+                <td class="text-right py-1.5 px-2">
+                    {% if net_tx_bytes_sum %}{{ net_tx_bytes_sum|naturalsize }}{% else %}—{% endif %}
+                </td>
+            </tr>
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">Errors</td>
+                <td class="text-right py-1.5 px-2">{{ net_rx_errors_sum|add:net_tx_errors_sum }}</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- System Section -->
+<h3 class="text-sm font-medium text-gray-300 mt-4 mb-2">System</h3>
+<div class="overflow-x-auto mb-4">
+    <table class="w-full text-xs">
+        <thead class="text-gray-400 border-b border-gray-700">
+            <tr>
+                <th class="text-left py-1.5 pr-3 font-medium">Metric</th>
+                <th class="text-right py-1.5 px-2 font-medium">Value</th>
+            </tr>
+        </thead>
+        <tbody class="text-gray-300">
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">Avg Power</td>
+                <td class="text-right py-1.5 px-2">{{ total_system_power_w_avg|floatformat:1 }}W</td>
+            </tr>
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">Max Power</td>
+                <td class="text-right py-1.5 px-2">{{ total_system_power_w_max|floatformat:1 }}W</td>
+            </tr>
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">Uptime</td>
+                <td class="text-right py-1.5 px-2">
+                    {% if uptime_days_max %}{{ uptime_days_max }} days{% else %}—{% endif %}
+                </td>
+            </tr>
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">Total Errors</td>
+                <td class="text-right py-1.5 px-2">{{ error_count_sum|default:"0" }}</td>
+            </tr>
+        </tbody>
+    </table>
+</div>

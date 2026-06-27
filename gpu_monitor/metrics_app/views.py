@@ -380,3 +380,103 @@ class ChartDataView(APIView):
             return Response({'status': 'error', 'message': f'Unknown metric: {metric}'}, status=400)
 
         return Response({'labels': labels, 'datasets': datasets})
+
+
+class ReportDataView(APIView):
+    """GET /api/v1/rigs/<uuid>/report-data/ — Aggregated report data.
+
+    Returns scalar aggregates (AVG, MAX, SUM) for all metrics over a time range.
+    Used by the Report tab in rig_detail to display summary tables.
+    """
+    authentication_classes = [SessionAuthentication]
+
+    def get(self, request, uuid):
+        from django.db.models import Avg, Max, Sum, F
+        from django.db.models.functions import Cast
+        from django.db.models import FloatField
+
+        user = request.user
+        rig = get_object_or_404(Rig, uuid=uuid)
+        if rig.owner_id != user.id and not request.user.is_staff:
+            return Response({'status': 'error', 'message': 'Forbidden'}, status=403)
+
+        range_hours = int(request.query_params.get('range_hours', 24))
+        if range_hours not in (24, 168, 720):
+            return Response({'status': 'error', 'message': 'Invalid range. Use 24, 168, or 720.'}, status=400)
+
+        now = timezone.now()
+        start = now - timedelta(hours=range_hours)
+        base_filter = dict(rig_uuid=str(uuid), timestamp__gte=start, timestamp__lte=now)
+
+        result = {'range_hours': range_hours}
+
+        # -- GPU metrics (GPUMetric) --
+        gpu_qs = GPUMetric.objects.filter(**base_filter)
+        gpu_agg = gpu_qs.aggregate(
+            gpu_temp_c_avg=Avg('gpu_temp_c'),
+            gpu_temp_c_max=Max('gpu_temp_c'),
+            gpu_util_pct_avg=Avg('gpu_util_pct'),
+            gpu_util_pct_max=Max('gpu_util_pct'),
+            power_draw_w_avg=Avg('power_draw_w'),
+            power_draw_w_max=Max('power_draw_w'),
+            mem_used_mb_avg=Avg('mem_used_mb'),
+            mem_used_mb_max=Max('mem_used_mb'),
+            fan_speed_pct_avg=Avg('fan_speed_pct'),
+            fan_speed_pct_max=Max('fan_speed_pct'),
+            gpu_core_clock_mhz_avg=Avg('gpu_core_clock_mhz'),
+            gpu_mem_clock_mhz_avg=Avg('gpu_mem_clock_mhz'),
+        )
+        result.update(gpu_agg)
+
+        # -- CPU / Memory / Power / System metrics (MetricSnapshot) --
+        snap_qs = MetricSnapshot.objects.filter(**base_filter)
+        snap_agg = snap_qs.aggregate(
+            cpu_utilization_pct_avg=Avg('cpu_utilization_pct'),
+            cpu_utilization_pct_max=Max('cpu_utilization_pct'),
+            cpu_temp_c_avg=Avg('cpu_temp_c'),
+            cpu_temp_c_max=Max('cpu_temp_c'),
+            cpu_power_w_avg=Avg('cpu_power_w'),
+            cpu_power_w_max=Max('cpu_power_w'),
+            cpu_freq_current_mhz_avg=Avg('cpu_freq_current_mhz'),
+            mem_used_bytes_avg=Avg('mem_used_bytes'),
+            mem_used_bytes_max=Max('mem_used_bytes'),
+            swap_used_bytes_avg=Avg('swap_used_bytes'),
+            total_system_power_w_avg=Avg('total_system_power_w'),
+            total_system_power_w_max=Max('total_system_power_w'),
+            error_count_sum=Sum('error_count'),
+            uptime_s_max=Max('uptime_s'),
+        )
+        result.update(snap_agg)
+
+        # -- Disk metrics (StorageMetric) --
+        disk_qs = StorageMetric.objects.filter(**base_filter)
+        disk_agg = disk_qs.aggregate(
+            disk_usage_pct_max=Max('usage_pct'),
+            disk_read_bytes_sum=Sum('read_bytes_delta'),
+            disk_write_bytes_sum=Sum('write_bytes_delta'),
+            disk_read_iops_max=Max('read_iops_delta'),
+            disk_write_iops_max=Max('write_iops_delta'),
+            disk_utilization_pct_max=Max('utilization_pct'),
+        )
+        result.update(disk_agg)
+
+        # -- Network metrics (NetworkMetric) --
+        net_qs = NetworkMetric.objects.filter(**base_filter)
+        net_agg = net_qs.aggregate(
+            net_rx_bytes_sum=Sum('rx_bytes_delta'),
+            net_tx_bytes_sum=Sum('tx_bytes_delta'),
+            net_rx_errors_sum=Sum('rx_errors'),
+            net_tx_errors_sum=Sum('tx_errors'),
+        )
+        result.update(net_agg)
+
+        # Convert None to 0 for cleaner display
+        for key, val in result.items():
+            if val is None and key != 'range_hours':
+                result[key] = 0
+
+        # Derive uptime in days from seconds
+        if result.get('uptime_s_max'):
+            result['uptime_days_max'] = round(result['uptime_s_max'] / 86400, 1)
+
+        return Response(result)

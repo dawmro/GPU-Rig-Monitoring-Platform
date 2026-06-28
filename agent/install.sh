@@ -4,6 +4,12 @@
 #
 # Usage: bash install.sh
 # Note: Must be run with bash, not sh (uses bash-specific features like pipefail)
+#
+# Path layout note:
+# This agent stores mutable state under /opt/monitoring-agent/var instead of /var.
+# This is intentional for environments such as HiveOS where /var/log and /var/lock
+# may be cleared on reboot. Code stays in /opt, config stays in /etc, and logs/locks
+# are kept in a persistent state directory under the install root.
 
 # Ensure we're running under bash
 if [ -z "$BASH_VERSION" ]; then
@@ -16,8 +22,9 @@ set -euo pipefail
 
 INSTALL_DIR="/opt/monitoring-agent"
 CONFIG_DIR="/etc/monitoring-agent"
-LOG_DIR="/var/log/monitoring-agent"
-LOCK_DIR="/var/lock"
+STATE_DIR="/opt/monitoring-agent/var"
+LOG_DIR="$STATE_DIR/log"
+LOCK_DIR="$STATE_DIR/lock"
 CRON_FILE="/etc/cron.d/monitoring-agent"
 UPDATE_CRON_FILE="/etc/cron.d/monitoring-agent-update"
 SERVICE_USER="monitoring-agent"
@@ -31,10 +38,12 @@ if ! id "$SERVICE_USER" &>/dev/null; then
 fi
 
 # Create directories
-mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$LOG_DIR"
+mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$STATE_DIR" "$LOG_DIR" "$LOCK_DIR"
 chown "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
+chown "$SERVICE_USER:$SERVICE_USER" "$STATE_DIR"
 chown "$SERVICE_USER:$SERVICE_USER" "$LOG_DIR"
-chmod 755 "$LOG_DIR"
+chown "$SERVICE_USER:$SERVICE_USER" "$LOCK_DIR"
+chmod 755 "$STATE_DIR" "$LOG_DIR" "$LOCK_DIR"
 
 # Set up Python virtual environment
 if [ ! -d "$INSTALL_DIR/venv" ]; then
@@ -69,6 +78,7 @@ Defaults:monitoring-agent !authenticate
 monitoring-agent ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/bin/smartctl, /bin/journalctl, /usr/bin/journalctl, /usr/sbin/nvme, /usr/bin/nvme, /usr/bin/docker, /usr/local/bin/docker
 EOF
 chmod 440 /etc/sudoers.d/monitoring-agent
+visudo -c -f /etc/sudoers.d/monitoring-agent
 
 # Cron job
 cat > "$CRON_FILE" << EOF
@@ -93,7 +103,7 @@ echo "Auto-update: daily check scheduled at $(printf '%02d:%02d' $HOUR $MINUTE)"
 
 # set ownership to all files in dir
 chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
-chown -R "$SERVICE_USER:$SERVICE_USER" "$LOG_DIR"
+chown -R "$SERVICE_USER:$SERVICE_USER" "$STATE_DIR"
 
 echo ""
 echo "=== Installation Complete ==="
@@ -101,6 +111,7 @@ echo "Config:    $CONFIG_DIR/config.yaml"
 echo "Logs:      $LOG_DIR/agent.log"
 echo "Agent:     $INSTALL_DIR/run.py"
 echo "Update log: $LOG_DIR/update.log"
+echo "State:     $STATE_DIR"
 echo ""
 echo "Next steps:"
 echo "  1. Edit $CONFIG_DIR/config.yaml with your API key"

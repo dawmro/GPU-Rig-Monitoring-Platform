@@ -8,5 +8,4 @@ urlpatterns = [
     path('api/v1/health/', views.HealthView.as_view(), name='health'),
     path('api/v1/rigs/<str:uuid>/metrics/', views.RigMetricsView.as_view(), name='rig-metrics'),
     path('api/v1/rigs/<str:uuid>/chart-data/', views.ChartDataView.as_view(), name='chart-data'),
-    path('api/v1/rigs/<str:uuid>/report-data/', views.ReportDataView.as_view(), name='report-data'),
 ]

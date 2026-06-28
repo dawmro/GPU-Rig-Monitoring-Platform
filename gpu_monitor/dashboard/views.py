@@ -461,29 +461,121 @@ def rig_rename(request, uuid):
 def htmx_report_data(request, uuid):
     """HTMX endpoint: renders report table partial for a rig.
 
-    Fetches aggregated report data from metrics_app.ReportDataView
-    and passes it to _report_table.html template.
+    Fetches aggregated report data and passes it to _report_table.html.
     """
-    from metrics_app.views import ReportDataView
-    from django.test import RequestFactory
-
     rig = get_object_or_404(Rig, uuid=uuid)
     if rig.owner_id != request.user.id and not request.user.is_staff:
         raise Http404
 
     range_hours = int(request.GET.get('range_hours', 24))
+    if range_hours not in (24, 168, 720):
+        range_hours = 24
 
-    # Reuse ReportDataView to get aggregated data
-    view = ReportDataView.as_view()
-    factory = RequestFactory()
-    api_request = factory.get(
-        f'/api/v1/rigs/{uuid}/report-data/',
-        {'range_hours': range_hours}
+    now = timezone.now()
+    start = now - timedelta(hours=range_hours)
+    base_filter = dict(rig_uuid=str(uuid), timestamp__gte=start, timestamp__lte=now)
+
+    from django.db.models import Avg, Max, Sum
+
+    # GPU metrics
+    gpu_devices = list(
+        GPUMetric.objects.filter(**base_filter)
+        .values('gpu_index', 'model')
+        .annotate(
+            gpu_temp_c_avg=Avg('gpu_temp_c'),
+            gpu_temp_c_max=Max('gpu_temp_c'),
+            gpu_util_pct_avg=Avg('gpu_util_pct'),
+            gpu_util_pct_max=Max('gpu_util_pct'),
+            power_draw_w_avg=Avg('power_draw_w'),
+            power_draw_w_max=Max('power_draw_w'),
+            mem_used_mb_avg=Avg('mem_used_mb'),
+            mem_used_mb_max=Max('mem_used_mb'),
+            fan_speed_pct_avg=Avg('fan_speed_pct'),
+            fan_speed_pct_max=Max('fan_speed_pct'),
+            gpu_core_clock_mhz_avg=Avg('gpu_core_clock_mhz'),
+            gpu_core_clock_mhz_max=Max('gpu_core_clock_mhz'),
+            gpu_mem_clock_mhz_avg=Avg('gpu_mem_clock_mhz'),
+            gpu_mem_clock_mhz_max=Max('gpu_mem_clock_mhz'),
+        ).order_by('gpu_index')
     )
-    api_request.user = request.user
-    response = view(api_request, uuid=str(uuid))
 
-    if response.status_code != 200:
-        return HttpResponse("Error loading report data", status=response.status_code)
+    # CPU / Memory / Power
+    snap_agg = MetricSnapshot.objects.filter(**base_filter).aggregate(
+        cpu_utilization_pct_avg=Avg('cpu_utilization_pct'),
+        cpu_utilization_pct_max=Max('cpu_utilization_pct'),
+        cpu_temp_c_avg=Avg('cpu_temp_c'),
+        cpu_temp_c_max=Max('cpu_temp_c'),
+        cpu_power_w_avg=Avg('cpu_power_w'),
+        cpu_power_w_max=Max('cpu_power_w'),
+        cpu_freq_current_mhz_avg=Avg('cpu_freq_current_mhz'),
+        cpu_freq_current_mhz_max=Max('cpu_freq_current_mhz'),
+        mem_used_bytes_avg=Avg('mem_used_bytes'),
+        mem_used_bytes_max=Max('mem_used_bytes'),
+        swap_used_bytes_avg=Avg('swap_used_bytes'),
+        swap_used_bytes_max=Max('swap_used_bytes'),
+        total_system_power_w_avg=Avg('total_system_power_w'),
+        total_system_power_w_max=Max('total_system_power_w'),
+        error_count_sum=Sum('error_count'),
+    )
 
-    return render(request, 'dashboard/_report_table.html', response.data)
+    # Disk metrics
+    disk_devices = list(
+        StorageMetric.objects.filter(**base_filter)
+        .values('device', 'mountpoint')
+        .annotate(
+            disk_usage_pct_max=Max('usage_pct'),
+            disk_read_bytes_sum=Sum('read_bytes_delta'),
+            disk_write_bytes_sum=Sum('write_bytes_delta'),
+            disk_read_iops_max=Max('read_iops_delta'),
+            disk_write_iops_max=Max('write_iops_delta'),
+            disk_utilization_pct_max=Max('utilization_pct'),
+        ).order_by('device')
+    )
+
+    # Network metrics
+    net_interfaces = list(
+        NetworkMetric.objects.filter(**base_filter)
+        .values('interface')
+        .annotate(
+            net_rx_bytes_sum=Sum('rx_bytes_delta'),
+            net_tx_bytes_sum=Sum('tx_bytes_delta'),
+            net_rx_errors_sum=Sum('rx_errors'),
+            net_tx_errors_sum=Sum('tx_errors'),
+        ).order_by('interface')
+    )
+
+    # Energy (kWh) from per-bucket power
+    from django.db.models.functions import TruncMinute, TruncHour
+    if range_hours <= 24:
+        trunc_fn, bucket_hours = TruncMinute, 1.0 / 60.0
+    else:
+        trunc_fn, bucket_hours = TruncHour, 1.0
+
+    power_buckets = list(
+        MetricSnapshot.objects.filter(**base_filter)
+        .annotate(bucket=trunc_fn('timestamp'))
+        .values('bucket')
+        .annotate(avg_power=Avg('total_system_power_w'))
+        .order_by('bucket')
+    )
+    total_wh = sum((b['avg_power'] or 0) * bucket_hours for b in power_buckets)
+    power_total_kwh = round(total_wh / 1000, 3)
+
+    # Cost estimate
+    power_cost_estimate = None
+    try:
+        rate = float(request.user.electricity_rate_kwh)
+        power_cost_estimate = round(power_total_kwh * rate, 2)
+    except Exception:
+        rate = None
+
+    context = {
+        'range_hours': range_hours,
+        'gpu_devices': gpu_devices,
+        'disk_devices': disk_devices,
+        'net_interfaces': net_interfaces,
+        'power_total_kwh': power_total_kwh,
+        'power_cost_estimate': power_cost_estimate,
+        **snap_agg,
+    }
+    return render(request, 'dashboard/_report_table.html', context)

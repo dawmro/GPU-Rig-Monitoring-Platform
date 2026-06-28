@@ -20,6 +20,7 @@ Linux agent for the GPU Rig Monitoring Platform. Collects hardware/software metr
 sudo su vastai
 sudo ls
 ```
+Suggested path for repo clone is home/current_user/workspace
 
 ```bash
 # go home, create dir and clone repo, go to dir

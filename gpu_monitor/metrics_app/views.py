@@ -447,7 +447,6 @@ class ReportDataView(APIView):
             total_system_power_w_avg=_Avg('total_system_power_w'),
             total_system_power_w_max=_Max('total_system_power_w'),
             error_count_sum=Sum('error_count'),
-            uptime_s_max=_Max('uptime_s'),
         )
         result.update(snap_agg)
 
@@ -519,9 +518,5 @@ class ReportDataView(APIView):
         for key, val in result.items():
             if val is None and key not in ('range_hours', 'power_cost_estimate', 'electricity_rate_kwh'):
                 result[key] = 0
-
-        # Derive uptime in days from seconds
-        if result.get('uptime_s_max'):
-            result['uptime_days_max'] = round(result['uptime_s_max'] / 86400, 1)
 
         return Response(result)

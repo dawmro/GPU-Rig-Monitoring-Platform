@@ -1,5 +1,4 @@
 {% load gpu_filters %}
-{% load humanize %}
 
 <!-- GPU Section -->
 <h3 class="text-sm font-medium text-gray-300 mt-4 mb-2">GPU</h3>
@@ -103,16 +102,16 @@
             <tr class="border-b border-gray-700/50">
                 <td class="py-1.5 pr-3">Used</td>
                 <td class="text-right py-1.5 px-2">
-                    {% if mem_used_bytes_avg %}{{ mem_used_bytes_avg|naturalsize }}{% else %}—{% endif %}
+                    {% if mem_used_bytes_avg %}{{ mem_used_bytes_avg|filesizeformat }}{% else %}—{% endif %}
                 </td>
                 <td class="text-right py-1.5 px-2">
-                    {% if mem_used_bytes_max %}{{ mem_used_bytes_max|naturalsize }}{% else %}—{% endif %}
+                    {% if mem_used_bytes_max %}{{ mem_used_bytes_max|filesizeformat }}{% else %}—{% endif %}
                 </td>
             </tr>
             <tr class="border-b border-gray-700/50">
                 <td class="py-1.5 pr-3">Swap Used</td>
                 <td class="text-right py-1.5 px-2">
-                    {% if swap_used_bytes_avg %}{{ swap_used_bytes_avg|naturalsize }}{% else %}—{% endif %}
+                    {% if swap_used_bytes_avg %}{{ swap_used_bytes_avg|filesizeformat }}{% else %}—{% endif %}
                 </td>
                 <td class="py-1.5 px-2">—</td>
             </tr>
@@ -138,13 +137,13 @@
             <tr class="border-b border-gray-700/50">
                 <td class="py-1.5 pr-3">Read</td>
                 <td class="text-right py-1.5 px-2">
-                    {% if disk_read_bytes_sum %}{{ disk_read_bytes_sum|naturalsize }}{% else %}—{% endif %}
+                    {% if disk_read_bytes_sum %}{{ disk_read_bytes_sum|filesizeformat }}{% else %}—{% endif %}
                 </td>
             </tr>
             <tr class="border-b border-gray-700/50">
                 <td class="py-1.5 pr-3">Write</td>
                 <td class="text-right py-1.5 px-2">
-                    {% if disk_write_bytes_sum %}{{ disk_write_bytes_sum|naturalsize }}{% else %}—{% endif %}
+                    {% if disk_write_bytes_sum %}{{ disk_write_bytes_sum|filesizeformat }}{% else %}—{% endif %}
                 </td>
             </tr>
             <tr class="border-b border-gray-700/50">
@@ -177,13 +176,13 @@
             <tr class="border-b border-gray-700/50">
                 <td class="py-1.5 pr-3">Received</td>
                 <td class="text-right py-1.5 px-2">
-                    {% if net_rx_bytes_sum %}{{ net_rx_bytes_sum|naturalsize }}{% else %}—{% endif %}
+                    {% if net_rx_bytes_sum %}{{ net_rx_bytes_sum|filesizeformat }}{% else %}—{% endif %}
                 </td>
             </tr>
             <tr class="border-b border-gray-700/50">
                 <td class="py-1.5 pr-3">Transmitted</td>
                 <td class="text-right py-1.5 px-2">
-                    {% if net_tx_bytes_sum %}{{ net_tx_bytes_sum|naturalsize }}{% else %}—{% endif %}
+                    {% if net_tx_bytes_sum %}{{ net_tx_bytes_sum|filesizeformat }}{% else %}—{% endif %}
                 </td>
             </tr>
             <tr class="border-b border-gray-700/50">

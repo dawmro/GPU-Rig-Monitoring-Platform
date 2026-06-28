@@ -480,7 +480,7 @@ class ReportDataView(APIView):
         result['net_interfaces'] = net_per_iface
 
         # -- Total energy (kWh) from per-bucket power averages --
-        # Correct calculation: sum(avg_power_per_bucket × bucket_duration_hours)
+        # Correct: Energy(kWh) = Power(W) / 1000 × Duration(hours)
         # For 24h: 1-minute buckets → each bucket = 1/60 hour
         # For 7d/30d: 1-hour buckets → each bucket = 1 hour
         if range_hours <= 24:
@@ -497,8 +497,9 @@ class ReportDataView(APIView):
             .annotate(avg_power=_Avg('total_system_power_w'))
             .order_by('bucket')
         )
+        # Sum: watts × hours = watt-hours, then divide by 1000 for kWh
         total_wh = sum(
-            (b['avg_power'] or 0) * bucket_hours * 1000
+            (b['avg_power'] or 0) * bucket_hours
             for b in power_buckets
         )
         result['power_total_kwh'] = round(total_wh / 1000, 3)

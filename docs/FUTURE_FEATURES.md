@@ -175,7 +175,23 @@ The platform's target users (GPU farmers, AI researchers, small data centers) al
 **Remaining (optional):**
 - Power Breakdown stacked area chart (GPU/CPU/Other over time)
 - Dedicated cost summary widget with weekly/monthly totals
-- kWh trapezoidal integration for more accurate cost calculation
+
+---
+
+## 3b. 📊 Report Tab (Rig Detail)
+**Status:** ✅ IMPLEMENTED | **Priority:** — | **Deployed:** 2026-06
+
+**What was implemented:**
+- New "Report" tab in rig detail page, placed after Errors tab
+- 24h/7d/30d time range selector with HTMX loading (no page reload)
+- Per-GPU breakdown: temperature, utilization, power, VRAM, fan speed, core/memory clocks (avg + max)
+- CPU: utilization, temperature, power, frequency (avg + max)
+- Memory: used avg/max, swap avg/max
+- Disk: per-device breakdown (usage, read/write bytes, peak IOPS, utilization)
+- Network: per-interface breakdown (RX/TX/errors)
+- System: avg/max power, total kWh from per-bucket energy calculation, cost estimate, total errors
+- Energy calculation: `sum(avg_power_per_bucket × bucket_duration_hours) / 1000 = kWh`
+- Cost: `kWh × user.electricity_rate_kwh`
 
 ---
 
@@ -716,3 +732,5 @@ Security is a "you only need it when you need it" feature. A compromised account
 - ✅ Tag-based rig grouping (covers Rig Groups & Folders use case)
 - ✅ Power Consumption Tracking (agent collects power draw, user electricity rate, dashboard display)
 - ✅ PCIe Link Monitoring (agent collects, server stores, dashboard displays)
+- ✅ Report Tab (aggregated metrics table with per-GPU/disk/network breakdown, energy kWh, cost estimate)
+- ✅ Container History (1000 unique states with dedup, per-container tracking)

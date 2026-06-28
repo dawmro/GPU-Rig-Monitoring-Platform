@@ -88,6 +88,10 @@
                     class="tab-btn pb-3 px-1 border-b-2 border-transparent text-gray-400 hover:text-gray-200">
                 Errors
             </button>
+            <button onclick="switchTab('report')" id="tab-report"
+                    class="tab-btn pb-3 px-1 border-b-2 border-transparent text-gray-400 hover:text-gray-200">
+                Report
+            </button>
         </nav>
     </div>
 
@@ -308,6 +312,48 @@
             {% endif %}
         </div>
     </div>
+
+    <!-- Tab: Report -->
+    <div id="tab-content-report" class="tab-content hidden">
+        <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+            <!-- Time range selector -->
+            <div class="flex items-center gap-2 mb-4">
+                <span class="text-xs text-gray-400">Range:</span>
+                <button hx-get="{% url 'dashboard:htmx-report' rig.uuid %}?range_hours=24"
+                        hx-target="#report-table-container"
+                        hx-swap="innerHTML"
+                        onclick="selectReportRange(24)"
+                        id="report-range-24"
+                        class="report-range-btn px-3 py-1 rounded text-xs bg-blue-600 text-white">24h</button>
+                <button hx-get="{% url 'dashboard:htmx-report' rig.uuid %}?range_hours=168"
+                        hx-target="#report-table-container"
+                        hx-swap="innerHTML"
+                        onclick="selectReportRange(168)"
+                        id="report-range-168"
+                        class="report-range-btn px-3 py-1 rounded text-xs bg-gray-700 text-gray-400 hover:bg-gray-600">7d</button>
+                <button hx-get="{% url 'dashboard:htmx-report' rig.uuid %}?range_hours=720"
+                        hx-target="#report-table-container"
+                        hx-swap="innerHTML"
+                        onclick="selectReportRange(720)"
+                        id="report-range-720"
+                        class="report-range-btn px-3 py-1 rounded text-xs bg-gray-700 text-gray-400 hover:bg-gray-600">30d</button>
+            </div>
+
+            <!-- Report table container with HTMX loading -->
+            <div id="report-table-container"
+                 hx-get="{% url 'dashboard:htmx-report' rig.uuid %}?range_hours=24"
+                 hx-trigger="load"
+                 hx-swap="innerHTML">
+                <div class="animate-pulse space-y-3">
+                    <div class="h-5 bg-gray-700 rounded w-3/4"></div>
+                    <div class="h-5 bg-gray-700 rounded w-1/2"></div>
+                    <div class="h-5 bg-gray-700 rounded w-2/3"></div>
+                    <div class="h-5 bg-gray-700 rounded w-1/2"></div>
+                    <div class="h-5 bg-gray-700 rounded w-3/4"></div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -328,6 +374,10 @@ function switchTab(tabName) {
         chartsLoaded = true;
         loadCharts();
     }
+    // Reset report range buttons when switching tabs
+    if (tabName === 'report') {
+        selectReportRange(24);
+    }
     // Show/hide timeframe buttons
     var tf = document.getElementById('chart-timeframe');
     if (tf) {
@@ -335,6 +385,22 @@ function switchTab(tabName) {
             tf.classList.remove('hidden');
         } else {
             tf.classList.add('hidden');
+        }
+    }
+}
+
+// Report range selection
+function selectReportRange(hours) {
+    var ranges = [24, 168, 720];
+    for (var i = 0; i < ranges.length; i++) {
+        var btn = document.getElementById('report-range-' + ranges[i]);
+        if (!btn) continue;
+        if (ranges[i] === hours) {
+            btn.classList.remove('bg-gray-700', 'text-gray-400', 'hover:bg-gray-600');
+            btn.classList.add('bg-blue-600', 'text-white');
+        } else {
+            btn.classList.remove('bg-blue-600', 'text-white');
+            btn.classList.add('bg-gray-700', 'text-gray-400', 'hover:bg-gray-600');
         }
     }
 }

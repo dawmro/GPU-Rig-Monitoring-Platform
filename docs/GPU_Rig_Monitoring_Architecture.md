@@ -593,11 +593,13 @@ Plus one manual-refresh region:
 
 ### 5.4 Tab Layout
 
-The rig detail page has three tabs:
+The rig detail page has five tabs:
 
 1. **Live Metrics** — cards with CPU%, memory bar, GPU model/index/temp/util/fan/power/PCIe/vRAM/clocks (all from LatestSnapshot), GPU Processes (per-process: name, type badge C/G/C+G, memory), Docker container count with container_id/image/status/created/status_text, storage disks with Total Read/Write (cumulative), Since last update (delta), IOPS, Utilization%, top processes by CPU and memory (PID, name, CPU%, mem%, user), recent errors
 2. **Historical Charts** — Combined chart suite: GPU (Temperature, Utilization, Memory, Power, Fan Speed — multi-GPU), CPU (Utilization, Temperature, Load Average), Memory & Swap (combined single chart, 3 datasets), Disk Usage (multi-disk), Network Traffic (combined RX/TX/Errors, dual Y-axes), Container CPU/Memory (multi-container), Uptime, Error Frequency — all implemented as Chart.js charts with multi-series support. Timeframe toggle buttons (24h, 7d, 30d) in the tab header with a ↻ Refresh button.
-3. **Errors** — latest system errors from journalctl/Windows Event Log (stored on Rig model, updated in place)
+3. **Containers** — Rolling 1000 unique container state changes with deduplication (container_id + status + status_text fingerprint). Shows status badge, name, image, and timestamp.
+4. **Errors** — latest system errors from journalctl/Windows Event Log (stored on Rig model, updated in place)
+5. **Report** — Aggregated metrics table with 24h/7d/30d time range selector. Per-GPU breakdown (temp, util, power, VRAM, fan, clocks), CPU (util, temp, power, freq), Memory (used, avg/max swap), Disk (per-device: usage, read/write bytes, IOPS), Network (per-interface: RX/TX/errors), System (avg/max power, total kWh, cost estimate, total errors). Energy calculated from per-bucket power averages: sum(avg_power × bucket_duration) / 1000 = kWh.
 
 ### 5.5 Snapshot-Timeseries Decoupling
 

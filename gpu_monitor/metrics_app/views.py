@@ -13,7 +13,7 @@ from django.shortcuts import get_object_or_404
 from accounts.authentication import APIKeyAuthentication
 from accounts.models import ApiKey
 from .serializers import process_ingest
-from .models import LatestSnapshot, MetricSnapshot
+from .models import LatestSnapshot, MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric
 from rigs.models import Rig
 from audit.middleware import log_audit_event
 

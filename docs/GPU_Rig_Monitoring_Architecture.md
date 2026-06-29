@@ -118,7 +118,8 @@ Cron → Agent collects metrics → JSON payload → POST /api/v1/ingest/
 
 All other endpoints (dashboard, login, static):
   → Nginx general rate limit: 30r/s per IP (burst=20 for pages, burst=50 for static)
-  → Django per-user rate limit: 60 req/min (rig_list, rig_detail), 120 req/min (htmx polling)
+  → Django per-user rate limit: 60 req/min (rig_list, rig_detail), 120 req/min (htmx polling), 30 req/min (htmx-report)
+  → DRF throttle: 60 req/min (ChartDataView)
   → Anonymous: IP-based rate limit via Django decorator
 
 Rate limiting design:
@@ -659,6 +660,25 @@ Storage metrics are deduplicated by device: the view queries the latest `Storage
 GPU process metrics use a **delete-before-insert** pattern: all existing `GPUProcessMetric` rows for the rig are deleted before inserting the latest snapshot. This ensures only the current process list is stored — no historical process data is needed. The `unique_together` constraint on `(rig_uuid, timestamp, gpu_index, pid)` provides a safety net but is rarely triggered since old rows are deleted first.
 
 Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the agent misses a heartbeat.
+
+### 5.6 Caching Strategy
+
+**Cache backend:** Django's `LocMemCache` (in-memory, per-process). For multi-worker deployments, switch to Redis.
+
+| What | Key Pattern | TTL | Invalidation |
+|------|------------|-----|--------------|
+| LatestSnapshot | `lsnap_{uuid}` | 50s | On every ingest (serializer writes new data) |
+| Chart data | `chart_{uuid}_{metric}_{range}_{bucket}` | 55s | On ingest + TTL expiry |
+| Report context | `report_{uuid}_{range_hours}` | 55s | On ingest + TTL expiry |
+| Rate limit counters | `rl_user_{id}` / `rl_ip_{ip}` | 60s | Automatic TTL |
+
+**Design rules:**
+- Cache TTL (55s) is just under the agent heartbeat interval (60s). Data is at most 1 heartbeat stale.
+- Ingest invalidates cache immediately so next read gets fresh data.
+- Report cost estimate is computed post-cache (user-specific, not cached).
+- Chart cache includes metric name + range + bucket size in key to prevent collisions.
+
+**Report lazy-loading:** The report container does NOT use `hx-trigger="load"`. Instead, data is fetched via `htmx.ajax()` only when the user first opens the Report tab (tracked by `reportLoaded` flag). This prevents wasted DB queries when user never opens the tab.
 
 ---
 

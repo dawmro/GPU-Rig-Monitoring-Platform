@@ -460,11 +460,14 @@ def rig_rename(request, uuid):
     return redirect('dashboard:rig-detail', uuid=uuid)
 
 
+@login_required
+@rate_limit(max_requests=30, window_s=60)
 def htmx_report_data(request, uuid):
     """HTMX endpoint: renders report table partial for a rig.
 
     Fetches aggregated report data and passes it to _report_table.html.
     """
+
     rig = get_object_or_404(Rig, uuid=uuid)
     if rig.owner_id != request.user.id and not request.user.is_staff:
         raise Http404
@@ -473,9 +476,28 @@ def htmx_report_data(request, uuid):
     if range_hours not in (24, 168, 720):
         range_hours = 24
 
+    # Cache report data per rig+range (55s TTL — under heartbeat interval)
+    cache_key = f'report_{uuid}_{range_hours}'
+    context = cache.get(cache_key)
+    if context is None:
+        context = _build_report_context(uuid, str(uuid), range_hours)
+        cache.set(cache_key, context, 55)
+
+    # Add user-specific cost estimate (not cached — depends on user settings)
+    try:
+        rate = float(request.user.electricity_rate_kwh)
+        context['power_cost_estimate'] = round(context['power_total_kwh'] * rate, 2)
+    except Exception:
+        context['power_cost_estimate'] = None
+
+    return render(request, 'dashboard/_report_table.html', context)
+
+
+def _build_report_context(uuid, uuid_str, range_hours):
+    """Build the report context dict (separated for caching)."""
     now = timezone.now()
     start = now - timedelta(hours=range_hours)
-    base_filter = dict(rig_uuid=str(uuid), timestamp__gte=start, timestamp__lte=now)
+    base_filter = dict(rig_uuid=uuid_str, timestamp__gte=start, timestamp__lte=now)
 
     from django.db.models import Avg, Max, Sum
 
@@ -563,21 +585,12 @@ def htmx_report_data(request, uuid):
     total_wh = sum((b['avg_power'] or 0) * bucket_hours for b in power_buckets)
     power_total_kwh = round(total_wh / 1000, 3)
 
-    # Cost estimate
-    power_cost_estimate = None
-    try:
-        rate = float(request.user.electricity_rate_kwh)
-        power_cost_estimate = round(power_total_kwh * rate, 2)
-    except Exception:
-        rate = None
-
-    context = {
+    return {
         'range_hours': range_hours,
         'gpu_devices': gpu_devices,
         'disk_devices': disk_devices,
         'net_interfaces': net_interfaces,
         'power_total_kwh': power_total_kwh,
-        'power_cost_estimate': power_cost_estimate,
+        'power_cost_estimate': None,
         **snap_agg,
     }
-    return render(request, 'dashboard/_report_table.html', context)

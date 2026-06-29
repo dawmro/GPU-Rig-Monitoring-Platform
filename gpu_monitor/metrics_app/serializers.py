@@ -62,6 +62,34 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
     docker_containers = metrics_data.get('docker_containers', [])
     top_processes = metrics_data.get('top_processes')
 
+    # Fetch previous LatestSnapshot for delta calculation baseline.
+    # This avoids per-device queries on the timeseries tables during ingest.
+    prev_storage_read_bytes_total = []
+    prev_storage_write_bytes_total = []
+    prev_storage_read_iops_total = []
+    prev_storage_write_iops_total = []
+    prev_storage_busy_time_ms_total = []
+    prev_storage_timestamp = None
+    prev_network_rx_bytes = []
+    prev_network_tx_bytes = []
+    storage_devices_prev = []
+    network_interfaces_prev = []
+    try:
+        prev_ls = LatestSnapshot.objects.filter(rig_uuid=rig_uuid).first()
+        if prev_ls:
+            storage_devices_prev = list(prev_ls.storage_devices_json or [])
+            network_interfaces_prev = list(prev_ls.network_interfaces_json or [])
+            prev_storage_read_bytes_total = list(prev_ls.storage_read_bytes_total_json or [])
+            prev_storage_write_bytes_total = list(prev_ls.storage_write_bytes_total_json or [])
+            prev_storage_read_iops_total = list(prev_ls.storage_read_iops_total_json or [])
+            prev_storage_write_iops_total = list(prev_ls.storage_write_iops_total_json or [])
+            prev_storage_busy_time_ms_total = list(prev_ls.storage_busy_time_ms_total_json or [])
+            prev_storage_timestamp = prev_ls.timestamp
+            prev_network_rx_bytes = list(prev_ls.network_rx_bytes_json or [])
+            prev_network_tx_bytes = list(prev_ls.network_tx_bytes_json or [])
+    except Exception:
+        pass
+
     try:
         with transaction.atomic():
             # Upsert metric snapshot with idempotency
@@ -137,7 +165,8 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                 )
 
             # Store per-disk metrics with I/O delta calculation
-            # First pass: compute deltas and upsert; store delta values for LatestSnapshot
+            # Previous values come from LatestSnapshot (fetched before transaction)
+            # to avoid expensive per-device queries on the timeseries table
             disk_deltas = {}  # device_name -> {read_bytes_delta, write_bytes_delta, ...}
             for disk in storage_list:
                 device_name = disk.get('device', '')
@@ -154,40 +183,44 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                 write_iops_delta = None
                 utilization_pct = None
                 try:
-                    prev = StorageMetric.objects.filter(
-                        rig_uuid=rig_uuid,
-                        device=device_name,
-                    ).order_by('-timestamp').first()
-                    if prev:
-                        # Byte deltas
-                        if new_read_bytes is not None and prev.read_bytes is not None:
-                            read_bytes_delta = new_read_bytes - prev.read_bytes
-                            if read_bytes_delta < 0:
-                                read_bytes_delta = new_read_bytes  # counter wraparound
-                        if new_write_bytes is not None and prev.write_bytes is not None:
-                            write_bytes_delta = new_write_bytes - prev.write_bytes
-                            if write_bytes_delta < 0:
-                                write_bytes_delta = new_write_bytes
-                        # IOPS deltas
-                        if new_read_iops is not None and prev.read_iops is not None:
-                            read_iops_delta = new_read_iops - prev.read_iops
-                            if read_iops_delta < 0:
-                                read_iops_delta = new_read_iops
-                        if new_write_iops is not None and prev.write_iops is not None:
-                            write_iops_delta = new_write_iops - prev.write_iops
-                            if write_iops_delta < 0:
-                                write_iops_delta = new_write_iops
-                        # Busy time delta → utilization %
-                        if new_busy_time_ms is not None and prev.busy_time_ms is not None:
-                            busy_time_delta_ms = new_busy_time_ms - prev.busy_time_ms
-                            if busy_time_delta_ms < 0:
-                                busy_time_delta_ms = new_busy_time_ms
-                            time_elapsed_s = (ts - prev.timestamp).total_seconds()
-                            if time_elapsed_s > 0:
-                                utilization_pct = round(
-                                    busy_time_delta_ms / (time_elapsed_s * 1000) * 100, 2
-                                )
-                                utilization_pct = max(0.0, min(100.0, utilization_pct))
+                    # Look up previous values from LatestSnapshot JSON arrays
+                    dev_idx = storage_devices_prev.index(device_name) if device_name in storage_devices_prev else -1
+                    prev_read = _json_get(prev_storage_read_bytes_total, dev_idx) if dev_idx >= 0 else None
+                    prev_write = _json_get(prev_storage_write_bytes_total, dev_idx) if dev_idx >= 0 else None
+                    prev_r_iops = _json_get(prev_storage_read_iops_total, dev_idx) if dev_idx >= 0 else None
+                    prev_w_iops = _json_get(prev_storage_write_iops_total, dev_idx) if dev_idx >= 0 else None
+                    prev_busy = _json_get(prev_storage_busy_time_ms_total, dev_idx) if dev_idx >= 0 else None
+                    prev_ts = prev_storage_timestamp if prev_storage_timestamp else None
+
+                    # Byte deltas
+                    if new_read_bytes is not None and prev_read is not None:
+                        read_bytes_delta = new_read_bytes - prev_read
+                        if read_bytes_delta < 0:
+                            read_bytes_delta = new_read_bytes  # counter wraparound
+                    if new_write_bytes is not None and prev_write is not None:
+                        write_bytes_delta = new_write_bytes - prev_write
+                        if write_bytes_delta < 0:
+                            write_bytes_delta = new_write_bytes
+                    # IOPS deltas
+                    if new_read_iops is not None and prev_r_iops is not None:
+                        read_iops_delta = new_read_iops - prev_r_iops
+                        if read_iops_delta < 0:
+                            read_iops_delta = new_read_iops
+                    if new_write_iops is not None and prev_w_iops is not None:
+                        write_iops_delta = new_write_iops - prev_w_iops
+                        if write_iops_delta < 0:
+                            write_iops_delta = new_write_iops
+                    # Busy time delta → utilization %
+                    if new_busy_time_ms is not None and prev_busy is not None:
+                        busy_time_delta_ms = new_busy_time_ms - prev_busy
+                        if busy_time_delta_ms < 0:
+                            busy_time_delta_ms = new_busy_time_ms
+                        time_elapsed_s = (ts - prev_ts).total_seconds() if prev_ts else None
+                        if time_elapsed_s and time_elapsed_s > 0:
+                            utilization_pct = round(
+                                busy_time_delta_ms / (time_elapsed_s * 1000) * 100, 2
+                            )
+                            utilization_pct = max(0.0, min(100.0, utilization_pct))
                 except Exception:
                     pass
 
@@ -226,6 +259,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                 )
 
             # Store per-interface metrics with traffic delta calculation
+            # Previous values come from LatestSnapshot (fetched before transaction)
             for iface in network_list:
                 iface_name = iface.get('interface', '')
                 new_rx = iface.get('rx_bytes')
@@ -235,17 +269,18 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                 rx_delta = None
                 tx_delta = None
                 try:
-                    prev = NetworkMetric.objects.filter(
-                        rig_uuid=rig_uuid,
-                        interface=iface_name,
-                    ).order_by('-timestamp').first()
-                    if prev and new_rx is not None and new_tx is not None:
-                        rx_delta = new_rx - prev.rx_bytes if prev.rx_bytes else None
-                        tx_delta = new_tx - prev.tx_bytes if prev.tx_bytes else None
-                        # Handle counter wraparound (shouldn't happen with 64-bit counters, but be safe)
-                        if rx_delta is not None and rx_delta < 0:
+                    # Look up previous values from LatestSnapshot JSON arrays
+                    iface_idx = network_interfaces_prev.index(iface_name) if iface_name in network_interfaces_prev else -1
+                    prev_rx = _json_get(prev_network_rx_bytes, iface_idx) if iface_idx >= 0 else None
+                    prev_tx = _json_get(prev_network_tx_bytes, iface_idx) if iface_idx >= 0 else None
+
+                    if prev_rx is not None and new_rx is not None:
+                        rx_delta = new_rx - prev_rx
+                        if rx_delta < 0:
                             rx_delta = new_rx
-                        if tx_delta is not None and tx_delta < 0:
+                    if prev_tx is not None and new_tx is not None:
+                        tx_delta = new_tx - prev_tx
+                        if tx_delta < 0:
                             tx_delta = new_tx
                 except Exception:
                     pass
@@ -339,6 +374,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
             storage_write_bytes_total = []
             storage_read_iops_total = []
             storage_write_iops_total = []
+            storage_busy_time_ms_total = []
             for disk in storage_list:
                 device_name = disk.get('device', '')
                 storage_devices.append(device_name)
@@ -360,6 +396,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                 storage_write_bytes_total.append(disk.get('write_bytes'))
                 storage_read_iops_total.append(disk.get('read_iops'))
                 storage_write_iops_total.append(disk.get('write_iops'))
+                storage_busy_time_ms_total.append(disk.get('busy_time_ms'))
 
             # Build network summary data for LatestSnapshot
             network_interfaces = []
@@ -442,6 +479,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
                 'storage_write_bytes_total_json': storage_write_bytes_total,
                 'storage_read_iops_total_json': storage_read_iops_total,
                 'storage_write_iops_total_json': storage_write_iops_total,
+                'storage_busy_time_ms_total_json': storage_busy_time_ms_total,
                 'network_count': len(network_list),
                 'network_interfaces_json': network_interfaces,
                 'network_ipv4s_json': network_ipv4s,

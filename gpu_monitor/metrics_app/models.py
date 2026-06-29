@@ -276,6 +276,7 @@ class LatestSnapshot(models.Model):
     storage_write_bytes_total_json = models.JSONField(default=list, blank=True)  # [156538570752, 1016877289472] bytes
     storage_read_iops_total_json = models.JSONField(default=list, blank=True)    # [3309393, 43692476] operations
     storage_write_iops_total_json = models.JSONField(default=list, blank=True)   # [6397960, 15305417] operations
+    storage_busy_time_ms_total_json = models.JSONField(default=list, blank=True)  # [12345, 67890] milliseconds
 
     # Network data stored as JSON arrays for fast dashboard access
     # Each array has one entry per network interface, ordered by interface name

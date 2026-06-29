@@ -480,7 +480,6 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
 
             # ── Process power data ──────────────────────────────────────────
             # Agent sends pre-calculated power values (PSU efficiency already factored in)
-            power_data = data.get('power', {})
             if power_data and rig:
                 try:
                     from metrics_app.models import PowerReading

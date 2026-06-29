@@ -175,7 +175,11 @@ class RigMetricsView(APIView):
 
 
 class ChartRateThrottle(SimpleRateThrottle):
-    """Rate limit for chart data endpoint — 60 requests per minute per user."""
+    """Rate limit for chart data endpoint — 120 requests per minute per user.
+
+    A page load fires ~18 chart requests. We allow burst to avoid throttling
+    legitimate page loads while still preventing abuse.
+    """
     scope = 'chart_data'
 
     def get_cache_key(self, request, view):

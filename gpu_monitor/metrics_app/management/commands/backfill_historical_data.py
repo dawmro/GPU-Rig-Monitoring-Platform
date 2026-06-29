@@ -166,9 +166,11 @@ class Command(BaseCommand):
         with connection.cursor() as c:
             c.execute("SELECT id, rig_uuid, schema_version, timestamp, "
                       "cpu_utilization_pct, cpu_temp_c, cpu_load_avg_json, "
+                      "cpu_freq_current_mhz, cpu_freq_min_mhz, cpu_freq_max_mhz, "
                       "mem_used_bytes, mem_free_bytes, mem_cached_bytes, "
                       "swap_used_bytes, swap_total_bytes, status, "
-                      "uptime_s, error_count "
+                      "uptime_s, error_count, "
+                      "cpu_power_w, total_system_power_w "
                       "FROM metrics_metricsnapshot "
                       "WHERE timestamp >= %s AND timestamp < %s ORDER BY timestamp", [start, end])
             cols = [col[0] for col in c.description]
@@ -216,9 +218,11 @@ class Command(BaseCommand):
 
         cols = ('rig_uuid, schema_version, timestamp, '
                 'cpu_utilization_pct, cpu_temp_c, cpu_load_avg_json, '
+                'cpu_freq_current_mhz, cpu_freq_min_mhz, cpu_freq_max_mhz, '
                 'mem_used_bytes, mem_free_bytes, mem_cached_bytes, '
                 'swap_used_bytes, swap_total_bytes, status, '
-                'uptime_s, error_count')
+                'uptime_s, error_count, '
+                'cpu_power_w, total_system_power_w')
 
         all_vals = []
         for s in snapshots:
@@ -226,11 +230,12 @@ class Command(BaseCommand):
                 s['rig_uuid'], s['schema_version'],
                 s['timestamp'] - offset,
                 s['cpu_utilization_pct'], s['cpu_temp_c'],
-                s['cpu_load_avg_json'], s['mem_used_bytes'],
-                s['mem_free_bytes'], s['mem_cached_bytes'],
-                s['swap_used_bytes'], s['swap_total_bytes'],
-                s['status'], s['uptime_s'],
-                err_per_snap,
+                s['cpu_load_avg_json'],
+                s.get('cpu_freq_current_mhz'), s.get('cpu_freq_min_mhz'), s.get('cpu_freq_max_mhz'),
+                s['mem_used_bytes'], s['mem_free_bytes'], s['mem_cached_bytes'],
+                s['swap_used_bytes'], s['swap_total_bytes'], s['status'],
+                s['uptime_s'], s['error_count'],
+                s.get('cpu_power_w'), s.get('total_system_power_w'),
                 s['id'],
             ))
 

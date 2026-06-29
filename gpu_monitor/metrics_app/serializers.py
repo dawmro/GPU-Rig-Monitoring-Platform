@@ -641,27 +641,34 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                 rig.container_history_json = container_history
                 rig._seen_container_hashes_json = seen_container_hashes
 
-            # Update rig metadata in a single save (merges with IngestView's
-            # last_seen/status update to avoid two separate UPDATE statements)
+            # Small fields saved inside transaction (fast, short lock)
             rig.last_seen = timezone.now()
             rig.status = Rig.Status.ONLINE
-            update_fields = [
-                'latest_errors_json', 'error_history_json', '_seen_error_hashes_json',
-                'container_history_json', '_seen_container_hashes_json',
-                'last_seen', 'status',
-            ]
+            update_fields = ['last_seen', 'status']
             if enrolled_by_key_changed:
                 update_fields.append('enrolled_by_api_key')
             rig.save(update_fields=update_fields)
 
             http_status = status.HTTP_200_OK if created else status.HTTP_202_ACCEPTED
             status_label = 'new' if created else 'duplicate'
-
-            return {
+            result = {
                 'status': status_label,
                 'message': f'Payload {status_label}',
                 'next_expected': '',
-            }, http_status
+            }
+
+        # Large JSON fields saved OUTSIDE transaction to minimize lock duration.
+        # Uses QuerySet.update() to avoid loading the full object.
+        if rig:
+            Rig.objects.filter(pk=rig.pk).update(
+                latest_errors_json=rig.latest_errors_json,
+                error_history_json=rig.error_history_json,
+                _seen_error_hashes_json=rig._seen_error_hashes_json,
+                container_history_json=rig.container_history_json,
+                _seen_container_hashes_json=rig._seen_container_hashes_json,
+            )
+
+        return result, http_status
 
     except Exception as e:
         logger.exception("Ingestion failed for rig %s", rig_uuid)

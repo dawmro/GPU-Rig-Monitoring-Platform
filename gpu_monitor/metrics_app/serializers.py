@@ -332,6 +332,13 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
 
             # Store per-interface metrics with traffic delta calculation
             # Previous values come from LatestSnapshot (fetched before transaction)
+            network_interfaces = []
+            network_ipv4s = []
+            network_speeds = []
+            network_rx_bytes = []
+            network_tx_bytes = []
+            network_rx_errors = []
+            network_tx_errors = []
             for iface in network_list:
                 iface_name = iface.get('interface', '')
                 new_rx = iface.get('rx_bytes')

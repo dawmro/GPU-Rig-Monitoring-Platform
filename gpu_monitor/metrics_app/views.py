@@ -104,21 +104,12 @@ class IngestView(APIView):
                 return Response({'status': 'error', 'message': 'UUID already claimed by another user'}, status=409)
 
         # Update enrolled_by_api_key to the current key (handles key rotation on the agent)
-        # Combine with the last_seen/status update below to minimize DB writes
         enrolled_by_key_changed = rig.enrolled_by_api_key_id != api_key.id
         if enrolled_by_key_changed:
             rig.enrolled_by_api_key = api_key
 
         # Process the payload
-        result, http_status = process_ingest(rig_uuid, data, user.id, rig=rig)
-
-        # Update rig last_seen, status, and optionally enrolled_by_api_key
-        rig.last_seen = timezone.now()
-        rig.status = Rig.Status.ONLINE
-        update_fields = ['last_seen', 'status']
-        if enrolled_by_key_changed:
-            update_fields.append('enrolled_by_api_key')
-        rig.save(update_fields=update_fields)
+        result, http_status = process_ingest(rig_uuid, data, user.id, rig=rig, enrolled_by_key_changed=enrolled_by_key_changed)
 
         return Response(result, status=http_status)
 
@@ -184,7 +175,11 @@ class RigMetricsView(APIView):
 
 
 class ChartRateThrottle(SimpleRateThrottle):
-    """Rate limit for chart data endpoint — 60 requests per minute per user."""
+    """Rate limit for chart data endpoint — 120 requests per minute per user.
+
+    A page load fires ~18 chart requests. We allow burst to avoid throttling
+    legitimate page loads while still preventing abuse.
+    """
     scope = 'chart_data'
 
     def get_cache_key(self, request, view):

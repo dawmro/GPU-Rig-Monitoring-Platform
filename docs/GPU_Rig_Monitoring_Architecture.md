@@ -668,8 +668,8 @@ Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the age
 | What | Key Pattern | TTL | Invalidation |
 |------|------------|-----|--------------|
 | LatestSnapshot | `lsnap_{uuid}` | 50s | On every ingest (serializer writes new data) |
-| Chart data | `chart_{uuid}_{metric}_{range}_{bucket}` | 55s | On ingest + TTL expiry |
-| Report context | `report_{uuid}_{range_hours}` | 55s | On ingest + TTL expiry |
+|| Chart data | `chart_{uuid}_{metric}_{range}_{bucket}` | 55s | TTL expiry only (no explicit invalidation) |
+|| Report context | `report_{uuid}_{range_hours}` | 55s | TTL expiry only (no explicit invalidation) |
 | Rate limit counters | `rl_user_{id}` / `rl_ip_{ip}` | 60s | Automatic TTL |
 
 **Design rules:**

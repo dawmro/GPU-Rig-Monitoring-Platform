@@ -128,6 +128,7 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'anon': '10/min',
         'ingest': '2/min',
+        'chart_data': '60/min',
     },
 }
 

@@ -183,6 +183,16 @@ class RigMetricsView(APIView):
         return Response(data)
 
 
+class ChartRateThrottle(SimpleRateThrottle):
+    """Rate limit for chart data endpoint — 60 requests per minute per user."""
+    scope = 'chart_data'
+
+    def get_cache_key(self, request, view):
+        if request.user.is_authenticated:
+            return f'chart_rl_user_{request.user.id}'
+        return f'chart_rl_ip_{request.META.get("REMOTE_ADDR", "unknown")}'
+
+
 class ChartDataView(APIView):
     """GET /api/v1/rigs/<uuid>/chart-data/ — Historical chart data.
 
@@ -190,6 +200,7 @@ class ChartDataView(APIView):
     No Python-side bucket filling — the database does all the work.
     """
     authentication_classes = [SessionAuthentication]
+    throttle_classes = [ChartRateThrottle]
 
     SNAPSHOT_METRICS = {
         'cpu_utilization_pct', 'cpu_temp_c', 'cpu_freq_current_mhz',
@@ -231,6 +242,7 @@ class ChartDataView(APIView):
     def get(self, request, uuid):
         from django.db.models import Avg, Sum, Count
         from django.db.models.functions import TruncMinute, TruncHour
+        from django.core.cache import cache
 
         user = request.user
         rig = get_object_or_404(Rig, uuid=uuid)
@@ -239,6 +251,15 @@ class ChartDataView(APIView):
 
         metric = request.query_params.get('metric', 'cpu_utilization_pct')
         range_hours = int(request.query_params.get('range', 24))
+        bucket_minutes = 1 if range_hours <= 24 else 60
+
+        # Cache key: chart_data_{uuid}_{metric}_{range}_{bucket}
+        # TTL: 55s (just under the 60s heartbeat interval)
+        cache_key = f'chart_{uuid}_{metric}_{range_hours}_{bucket_minutes}'
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return Response(cached)
+
         gpu_index = int(request.query_params.get('gpu_index', 0))
         multi_gpu = request.query_params.get('multi_gpu', 'false').lower() == 'true'
         multi_disk = request.query_params.get('multi_disk', 'false').lower() == 'true'
@@ -247,7 +268,6 @@ class ChartDataView(APIView):
         multi_mem = request.query_params.get('multi_mem', 'false').lower() == 'true'
 
         # Bucket size: 1-min for 24h, 1-hour for 7d/30d
-        bucket_minutes = 1 if range_hours <= 24 else 60
         labels, start_bucket, end_bucket = self._build_buckets(range_hours, bucket_minutes)
         total_buckets = len(labels)
         trunc = TruncMinute if bucket_minutes == 1 else TruncHour
@@ -379,4 +399,7 @@ class ChartDataView(APIView):
         else:
             return Response({'status': 'error', 'message': f'Unknown metric: {metric}'}, status=400)
 
-        return Response({'labels': labels, 'datasets': datasets})
+        response_data = {'labels': labels, 'datasets': datasets}
+        # Cache for 55s — just under the 60s agent heartbeat interval
+        cache.set(cache_key, response_data, 55)
+        return Response(response_data)

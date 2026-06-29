@@ -500,7 +500,22 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
             )
             # Invalidate cached snapshot so next read gets fresh data
             cache.delete(f'lsnap_{rig_uuid}')
-
+            # Invalidate report caches for all ranges
+            for hours in (24, 168, 720):
+                cache.delete(f'report_{rig_uuid}_{hours}')
+            # Invalidate chart caches for common metrics
+            # (17 metrics x 3 ranges x 2 bucket sizes = ~102 keys)
+            for metric in ('cpu_utilization_pct', 'cpu_temp_c', 'cpu_power_w',
+                          'total_system_power_w', 'cpu_freq_current_mhz',
+                          'gpu_temp_c', 'gpu_util_pct', 'gpu_power_w',
+                          'gpu_fan_pct', 'gpu_core_clock_mhz', 'gpu_mem_clock_mhz',
+                          'gpu_mem_used_mb', 'disk_usage_pct',
+                          'disk_read_bytes_delta', 'disk_write_bytes_delta',
+                          'error_frequency', 'uptime_s', 'net_rx_bytes_delta',
+                          'net_tx_bytes_delta', 'net_rx_errors', 'net_tx_errors'):
+                for hours in (24, 168, 720):
+                    bucket = 1 if hours <= 24 else 60
+                    cache.delete(f'chart_{rig_uuid}_{metric}_{hours}_{bucket}')
             # Track rig status transitions
             if rig:
                 previous_status = rig.status

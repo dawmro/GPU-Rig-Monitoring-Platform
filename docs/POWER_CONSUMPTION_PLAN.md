@@ -7,16 +7,19 @@
 
 ### 2. GPU Power = Direct Sum (Already Collected)
 **Rationale:** Agent already collects `power_draw_w` from nvidia-smi via pynvml. Just sum all GPUs.
+### 3. CPU Power = RAPL (with Estimation Fallback)
 
-### 3. CPU Power = Estimation from Utilization (No RAPL)
-**Rationale:** psutil does NOT provide power consumption data. It only provides:
-- `cpu_percent()` — CPU utilization (0-100%)
-- `cpu_freq()` — Current frequency in MHz
-- `cpu_count()` — Number of cores/threads
+**Current implementation (2026-06):**
+- **Primary:** RAPL via sysfs (`/sys/class/powercap/intel-rapl:0/energy_uj`) — accurate, reads actual power
+- **Fallback:** Estimation from utilization when RAPL unavailable (Windows, non-Intel CPUs)
 
-RAPL requires reading Linux sysfs files directly (`/sys/class/powercap/intel-rapl:0/energy_uj`), which is inconsistent with the psutil-based collection approach.
-
-**Solution:** Estimate CPU power using utilization + core count.
+**Estimation formula (validated on Ryzen 3/5/7):**
+```python
+estimated_tdp = 8 * cpu_cores + 25
+cpu_power = 10 + estimated_tdp * (0.1 + 0.9 * cpu_utilization)
+```
+- 10W constant base for platform overhead (VRM, chipset, leakage)
+- `0.1 + 0.9 * util` scales linearly from 10% (idle) to 100% (full load) of TDP
 
 ## CPU Power Estimation Formula
 

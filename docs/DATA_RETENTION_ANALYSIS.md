@@ -88,8 +88,8 @@ Three scripts handle data retention:
 | `cpu_utilization_pct` | AVG |
 | `cpu_temp_c` | AVG |
 | `cpu_freq_current_mhz` | AVG |
-| `cpu_freq_min_mhz` | LAST |
-| `cpu_freq_max_mhz` | LAST |
+| `cpu_freq_min_mhz` | MIN |
+| `cpu_freq_max_mhz` | MAX |
 | `cpu_load_avg_json` | LAST |
 | `mem_used_bytes` | AVG |
 | `mem_free_bytes` | AVG |
@@ -171,8 +171,8 @@ VACUUM ANALYZE metrics_metricsnapshot;
 
 **All CPU frequency fields are properly handled:**
 - `cpu_freq_current_mhz` — AVG in compact_data ✅
-- `cpu_freq_min_mhz` — LAST in compact_data ✅
-- `cpu_freq_max_mhz` — LAST in compact_data ✅
+- `cpu_freq_min_mhz` — MIN in compact_data ✅
+- `cpu_freq_max_mhz` — MAX in compact_data ✅
 - All 3 fields stored in both `MetricSnapshot` and `LatestSnapshot` ✅
 
 **No missing fields, no missing tables.**

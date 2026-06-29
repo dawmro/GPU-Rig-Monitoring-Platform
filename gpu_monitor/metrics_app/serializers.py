@@ -28,7 +28,7 @@ class IngestSerializer(serializers.Serializer):
         return value
 
 
-def process_ingest(rig_uuid, data, owner_id, rig=None):
+def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=False):
     """Process an ingestion payload. Returns (response_data, status_code)."""
     serializer = IngestSerializer(data=data)
     if not serializer.is_valid():
@@ -640,10 +640,19 @@ def process_ingest(rig_uuid, data, owner_id, rig=None):
 
                 rig.container_history_json = container_history
                 rig._seen_container_hashes_json = seen_container_hashes
-            rig.save(update_fields=[
+
+            # Update rig metadata in a single save (merges with IngestView's
+            # last_seen/status update to avoid two separate UPDATE statements)
+            rig.last_seen = timezone.now()
+            rig.status = Rig.Status.ONLINE
+            update_fields = [
                 'latest_errors_json', 'error_history_json', '_seen_error_hashes_json',
                 'container_history_json', '_seen_container_hashes_json',
-            ])
+                'last_seen', 'status',
+            ]
+            if enrolled_by_key_changed:
+                update_fields.append('enrolled_by_api_key')
+            rig.save(update_fields=update_fields)
 
             http_status = status.HTTP_200_OK if created else status.HTTP_202_ACCEPTED
             status_label = 'new' if created else 'duplicate'

@@ -734,3 +734,4 @@ Security is a "you only need it when you need it" feature. A compromised account
 - ✅ PCIe Link Monitoring (agent collects, server stores, dashboard displays)
 - ✅ Report Tab (aggregated metrics table with per-GPU/disk/network breakdown, energy kWh, cost estimate)
 - ✅ Container History (1000 unique states with dedup, per-container tracking)
+- ✅ Chart & Report Caching (55s TTL, invalidated on ingest, rate limiting on chart/report endpoints)

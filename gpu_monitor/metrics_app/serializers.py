@@ -6,6 +6,7 @@ from django.utils import timezone
 from django.core.cache import cache
 from .models import MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, LatestDockerContainer, LatestSnapshot, RigStatusEvent
 from rigs.models import Rig
+from dashboard.views import _json_get
 
 logger = logging.getLogger(__name__)
 

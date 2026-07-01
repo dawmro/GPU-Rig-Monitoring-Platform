@@ -58,15 +58,42 @@ tx_delta = new_tx_bytes - prev_tx_bytes
 }
 ```
 
-## Benefits of Agent-side Calculation
+## Critical Assessment: Benefits vs Risks
 
-1. **Reduced database queries**: No need to fetch `LatestSnapshot` for delta calculation
-2. **Reduced payload size**: Send deltas instead of large cumulative counters
-3. **More accurate timing**: Agent knows exact time between collections
-4. **Lower server CPU**: No delta math during ingest
+### Actual Database Overhead
+- **1 query per ingest**: Fetches single `LatestSnapshot` row for the rig
+- **LatestSnapshot is ONE row per rig** - minimal query overhead
+- **Django likely caches this row anyway** - subsequent queries hit cache
 
-## Implementation Notes
+### Actual CPU Overhead in Serializer
+- **22 delta calculations**: All simple arithmetic (`+`, `-`, `/`)
+- **Per-calculation cost**: <1 microsecond
+- **Total CPU per ingest**: ~50 microseconds (negligible)
 
-- Agent would need to track state across collection cycles
-- Risk: Agent restart loses state → delta would be wrong on first cycle
-- Mitigation: Server handles negative deltas gracefully (wraparound detection)
+### Actual Network Payload Size Impact
+- **Each counter**: ~8 bytes (integer)
+- **Example**: 10 disks × 6 counters = 60 integers = ~500 bytes
+- **Minimal impact**: Already sending full metrics payload
+
+### Risk Assessment: Agent Restart
+- **First cycle after restart**: Delta equals raw value (no subtraction)
+- **Utilization % calculation**: Would be wrong without previous busy_time
+- **Server handling**: Current wraparound detection only works for negative deltas, not zero-division issues
+
+### CONCLUSION: Benefits < Risks
+
+| Factor | Assessment |
+|--------|------------|
+| Server performance gain | Negligible (<50μs/ingest) |
+| Network savings | Minimal (~500 bytes) |
+| Risk of wrong data | Real (agent restart edge case) |
+| Code complexity | Increases (agent state management) |
+
+### RECOMMENDATION: **Keep as-is**
+
+Server-side calculations are correct because:
+- ✅ LatestSnapshot query is minimal overhead (single row fetch)
+- ✅ Delta math is trivial CPU load
+- ✅ No risk of incorrect data on agent restart
+- ✅ Simpler agent code (stateless)
+- ✅ Server has complete data for historical tracking

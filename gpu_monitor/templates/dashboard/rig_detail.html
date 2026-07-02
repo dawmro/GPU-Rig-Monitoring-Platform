@@ -540,10 +540,10 @@ async function loadCharts() {
     var chartLoaders = [
         // GPU charts
         function() { return loadChartMultiGpu('chartGpuTemp',      'gpu_temp_c',        uuid, range, '°C'); },
-        function() { return loadChartMultiGpu('chartGpuUtil',      'gpu_util_pct',      uuid, range, '%'); },
-        function() { return loadChartMultiGpu('chartGpuMem',       'gpu_mem_used_mb',   uuid, range, ' MB'); },
-        function() { return loadChartMultiGpu('chartGpuPower',     'gpu_power_w',       uuid, range, 'W'); },
         function() { return loadChartMultiGpu('chartGpuFan',       'gpu_fan_pct',       uuid, range, '%'); },
+        function() { return loadChartMultiGpu('chartGpuUtil',      'gpu_util_pct',      uuid, range, '%'); },
+        function() { return loadChartMultiGpu('chartGpuPower',     'gpu_power_w',       uuid, range, 'W'); },
+        function() { return loadChartMultiGpu('chartGpuMem',       'gpu_mem_used_mb',   uuid, range, ' MB'); },
         function() { return loadChartMultiGpu('chartGpuCoreClock', 'gpu_core_clock_mhz', uuid, range, ' MHz'); },
         function() { return loadChartMultiGpu('chartGpuMemClock',  'gpu_mem_clock_mhz',  uuid, range, ' MHz'); },
         // CPU charts

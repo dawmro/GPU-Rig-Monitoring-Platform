@@ -478,13 +478,7 @@ var reportLoaded = false;
 var chartRange = 24;        // hours
 var chartBucketMinutes = 1;  // bucket size in minutes
 
-// Load charts on page load
-document.addEventListener('DOMContentLoaded', function() {
-    if (!chartsLoaded) {
-        loadCharts();
-        chartsLoaded = true;
-    }
-});
+
 
 function setChartRange(rangeHours, bucketMinutes) {
     chartRange = rangeHours;

@@ -55,11 +55,11 @@ Problem: Server receives incomplete payload, no indication of failure.
     'agent_version': str,
     'timestamp': iso8601,
     'metrics': {
-        'cpu': dict,           # Required: model, physical_cores, logical_cores, load_avg, utilization_pct, temp_c, freq
-        'memory': dict,        # Required: total_bytes, used_bytes, free_bytes, cached_bytes, swap_*
-        'storage': list,       # Each: device, mountpoint, usage_pct, temp_c, etc.
-        'network': list,       # Each: interface, rx_bytes, tx_bytes, etc.
-        'gpus': list,          # Each: model, temp_c, gpu_util_pct, etc.
+        'cpu': dict,
+        'memory': dict,
+        'storage': list,
+        'network': list,
+        'gpus': list,
         'gpu_processes': list,
         'docker_containers': list,
         'top_processes': dict,
@@ -72,10 +72,11 @@ Problem: Server receives incomplete payload, no indication of failure.
 ```
 
 ### Server Serializer Handling (serializers.py)
-- Uses `.get()` with fallback defaults throughout (lines 100-116)
-- Handles `None` gracefully: `top_processes.get('by_cpu', []) if top_processes else []` (lines 484-486)
+- Uses `.get()` with fallback defaults (lines 100-116)
+- Handles `None` gracefully with `if var else []` pattern (lines 484-486)
 - Missing fields → `None`/`[]` stored in database (no crash)
-- **Key insight**: Serializer is resilient to missing/None values
+
+**Key insight**: Serializer is resilient to missing/None values - safe for agent changes that remove/add optional fields.
 
 ### Safe Changes (No Breaking Impact)
 
@@ -83,26 +84,36 @@ Problem: Server receives incomplete payload, no indication of failure.
 |--------|-------|-------|
 | Add new optional field | ✅ | `.get()` returns None |
 | Return `{}` on failure | ✅ | Serializer uses `.get()` defaults |
-| Return `None` instead of dict | ✅ | Serializer checks `if var else []` |
-| Remove field from payload | ⚠️ | Ensure serializer `.get()` handles missing |
+| Return `None` instead of dict | ✅ | `if var else []` handles it |
+| Remove field from payload | ⚠️ | Only if serializer doesn't use it |
 | Change field value type | ❌ | Serializer may crash/truncate |
 
-## Code Structure Opportunities
+## Shared Module Challenges
 
-**1. Collector Pattern**
-Current pattern per collector returns `None` or `{}` on failure. Safe because serializer uses `.get()`.
+A shared module would significantly complicate deployments:
 
-**2. Shared Code Extraction**
-Both agents have ~70% duplicated code. Opportunities:
-- Shared base module: Common collectors (memory, network, processes, software)
-- Platform-specific hooks: GPU, storage, power as separate modules
+### Installation Differences
 
-**3. Async Collection**
-Current: Sequential collection with blocking `time.sleep(0.5)` for process CPU%.
-Could use: Single-pass collection with proper baseline calls.
+| Aspect | Linux | Windows | Shared Module Problem |
+|--------|-------|---------|----------------------|
+| Install script | `agent/install.sh` (bash) | Manual copy | Cross-platform installer needed |
+| Install location | `/opt/monitoring-agent/` | User-chosen dir | Different paths, imports break |
+| Dependencies | psutil, py-cpuinfo, nvidia-ml-py3 | psutil, py-cpuinfo, wmi, pynvml | Different optional deps |
+| Scheduling | `/etc/cron.d/` | `schtasks` CLI | Separate logic |
+| Permissions | sudoers + system user | Administrator | Different privilege model |
 
-**4. Config Validation**
-Current uses inline validation with `sys.exit(2)`. Could use: Pydantic validation.
+### Import Complexity
+If `agent_common/` created:
+- Linux agent would need `sys.path.append('../agent_common')`
+- Windows agent same, but install path varies
+- Both install scripts must copy the shared module
+- Version drift risk between platforms
+
+### Recommendation: Keep Separate
+1. Simple installs per platform (no path resolution)
+2. Isolated troubleshooting (platform-specific files)
+3. No shared dependency management
+4. Use `sync_agents.py` script for intentional code sync when needed
 
 ## Key Differences (Linux vs Windows)
 
@@ -117,9 +128,8 @@ Current uses inline validation with `sys.exit(2)`. Could use: Pydantic validatio
 
 ## Recommendations
 
-1. **Add structured error reporting**: Include `collection_errors: {...}` in payload for debugging
+1. **Add structured error reporting**: Include `collection_errors` in payload
 2. **Log specific exceptions**: Replace bare `except Exception: pass` with logged warnings
-3. **Distinguish empty vs error**: Return `{'error': 'message'}` for debugging visibility
-4. **Extract common code**: Create shared module for ~70% duplicated logic
-5. **Add health metrics**: Agent uptime, collection success rate
-6. **Current changes are safe**: Existing error handling patterns won't break serializer
+3. **Distinguish empty vs error**: Return `{'error': 'message'}` for debugging
+4. **Keep agents separate**: Avoid shared module complexity
+5. **Current changes are safe**: Existing error handling won't break serializer

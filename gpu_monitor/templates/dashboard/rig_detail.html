@@ -371,7 +371,7 @@ function switchTab(tabName) {
     btn.classList.remove('border-transparent', 'text-gray-400');
     btn.classList.add('border-blue-400', 'text-blue-400');
 
-    // Lazy-load charts when tab is first opened (if not already loaded via DOMContentLoaded)
+    // Lazy-load charts when tab is first opened
     if (tabName === 'charts' && !chartsLoaded) {
         chartsLoaded = true;
         loadCharts();

@@ -1,190 +1,292 @@
 # Monetization System Design
 
-## Overview
+## Executive Summary
 
-Implement daily billing at **$0.01 per rig** for any rig that was online ≥1 time during that day.
+Implement a usage-based billing system charging **$0.01 per rig per day** when a rig reports at least one heartbeat during that calendar day. This document outlines the architecture, database changes, edge cases, and implementation phases.
 
-Track:
-- Daily active rig count per user
-- Monthly billing cycles
-- Credit balance and charges
+---
+
+## Pricing Model
+
+| Plan | Cost Per Rig Per Day | Notes |\n|------|---------------------|-------|\n| Pay-as-you-go | $0.01 | No minimum commitment |\n| Monthly estimate | ~$30/rig/month | If online every day |\n| Minimum billing | 1 day | Charged even if rig online 1 second |
+
+---
 
 ## Current System Analysis
 
 ### Rig Status Tracking (Already Exists)
 
-**Rig model (lines 20-80):**
-- `last_seen`: DateTime - most recent heartbeat
-- `status`: 'online'/'stale'/'offline' - computed from last_seen
-- Status updates: ONLINE ≤2min, STALE >2min & ≤10min, OFFLINE >10min
+**Rig model (`gpu_monitor/rigs/models.py`, lines 20-80):**
+- `last_seen`: DateTime - most recent heartbeat timestamp
+- `status`: CharField with 'online'/'stale'/'offline' choices
+- Status logic: Online (≤2min), Stale (>2min & ≤10min), Offline (>10min)
 
-**RigStatusEvent (lines 309-329):**
-- Tracks every status change
-- Includes timestamp, rig_uuid, status, previous_status
-- Already enables uptime analysis
+**RigStatusEvent model (`gpu_monitor/metrics_app/models.py`, lines 309-329):**
+- Tracks every status transition
+- Fields: `rig_uuid`, `timestamp`, `status`, `previous_status`
+- Enables uptime charts and downtime analysis
 
-**Problem**: RigStatusEvent only created on status changes, not daily summaries.
+### Problem Statement
 
-### What We Need to Add
+Current system tracks status changes but lacks:
+1. **Daily aggregation** - Cannot query "how many rigs were online on 2026-07-01"
+2. **Billing ledger** - No record of charges or balance tracking
+3. **User-facing billing view** - No way for users to see costs
 
-| Component | Purpose |\n|-----------|---------|\n| DailyRigUsage model | Track "rig was online on date X" |\n| BillingRecord model | Monthly charges, payment tracking |\n| User.balance field | Current credit balance (decimal) |\n| Management command | Daily aggregation of active rigs |\n| Dashboard view | Usage/Billing history |\n| Stripe integration | Payment processing (optional) |
+---
 
 ## Monetization Approaches (Industry Patterns)
 
-### Approach 1: Daily Active Rig Count (Recommended)
+### Approach 1: Heartbeat Count Method
 
-**Logic:**
-- Daily: `COUNT(DISTINCT rig_uuid WHERE status='online' AND date=today)`
-- Charge: `online_rigs × $0.01`
-- Track in DailyRigUsage model
+Count all heartbeats per day, divide by minutes.
 
-**Pros:** Simple, aligns with "$0.01 per day per rig online" requirement
-**Cons:** Must preserve online events (can't just use last_seen)
+```
+Per-day cost = (heartbeats / 1440) × $0.01 × rigs
+```
 
-### Approach 2: Heartbeat Count
+**Pros:** Precise fractional billing
+**Cons:** Expensive query, fractional cents require rounding logic
 
-**Logic:**
-- Count heartbeats per day, divide by 1440 (minutes)
-- If count > 0, rig was online that day
-- Charge: same as above
+### Approach 2: Last Seen Date Window (Inaccurate)
 
-**Pros:** More accurate uptime percentage
-**Cons:** Requires parsing all heartbeats (expensive)
+Check if `last_seen >= start_of_day`.
 
-### Approach 3: Last Seen Date Window
+**Pros:** Simple query
+**Cons:** Misses rigs offline at midnight but online earlier
 
-**Logic:**
-- Check if `last_seen >= start_of_day` for each rig
-- If yes, rig was online today
+### Approach 3: Daily Active Rig Count (Recommended)
 
-**Pros:** Simple query, uses existing data
-**Cons:** Missed if rig offline at midnight but was online earlier
+Create DailyRigUsage record on each ONLINE heartbeat.
 
-### Recommendation: DailyRigUsage Model
+```
+IF rig.status = 'online' THEN create DailyRigUsage(date=today, rig=rig)
+Billing = COUNT(DISTINCT rigs) × $0.01
+```
 
-Best approach combines approaches 1 and 3:
-- Create DailyRigUsage at every ONLINE heartbeat
-- Query: `COUNT(DISTINCT rig_uuid WHERE date=X AND status='online')`
+**Pros:** Accurate per-day tracking, simple queries
+**Cons:** Must handle duplicates
+
+---
 
 ## Database Schema Changes
 
 ### 1. User Model Addition
 
 ```python
-# accounts/models.py
+# File: gpu_monitor/accounts/models.py
 class User(AbstractUser):
-    # ... existing fields ...
+    email = models.EmailField(unique=True)
+    is_admin = models.BooleanField(default=False)
+    electricity_rate_kwh = models.DecimalField(
+        max_digits=6, decimal_places=4, default=0.3300
+    )
     
-    # Current credit balance in USD (for billing)
-    balance_cents = models.PositiveIntegerField(default=0, help_text="Credit balance in cents")
+    # NEW FIELD - Track credit balance for billing
+    balance_cents = models.PositiveIntegerField(
+        default=0,
+        help_text="User credit balance in cents (USD)"
+    )
 ```
 
 ### 2. DailyRigUsage Model (NEW)
 
 ```python
-# rigs/models.py
+# File: gpu_monitor/rigs/models.py
 class DailyRigUsage(models.Model):
-    """One row per rig per day when rig was online at least once."""
+    """Tracks daily rig activity for billing purposes.
+    
+    One row per rig per day when rig was online at least once.
+    Used for daily active rig counting and billing calculations.
+    """
     rig = models.ForeignKey('rigs.Rig', on_delete=models.CASCADE)
-    date = models.DateField(db_index=True)  # The day being tracked
-    online_count = models.PositiveIntegerField(default=1)  # How many times came online
+    date = models.DateField(db_index=True)
+    online_count = models.PositiveIntegerField(
+        default=1,
+        help_text="Number of times rig came online this day (typically 1)"
+    )
     
     class Meta:
         db_table = 'rigs_daily_usage'
-        unique_together = ('rig', 'date')  # One row per rig per day
+        verbose_name = 'Daily Rig Usage'
+        verbose_name_plural = 'Daily Rig Usage'
+        unique_together = ('rig', 'date')
         indexes = [
             models.Index(fields=['rig', '-date']),
-            models.Index(fields=['date']),  # For daily aggregation
+            models.Index(fields=['date']),  # Critical for daily aggregation
         ]
+    
+    def __str__(self):
+        return f"{self.rig.name} - {self.date}"
 ```
 
 ### 3. BillingRecord Model (NEW)
 
 ```python
-# accounts/models.py
+# File: gpu_monitor/accounts/models.py
 class BillingRecord(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
-    period_start = models.DateField()  # Month start (2026-07-01)
-    period_end = models.DateField()    # Month end (2026-07-31)
-    rig_days_used = models.PositiveIntegerField()  # Sum of days
+    """Monthly billing record for rig monitoring costs.
+    
+    Created once per month per user summarizing the cost of
+    monitoring their rigs during that period.
+    """
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='billing_records'
+    )
+    period_start = models.DateField()  # Month start: 2026-07-01
+    period_end = models.DateField()    # Month end: 2026-07-31
+    rig_days_used = models.PositiveIntegerField()  # Total rig-days
     amount_cents = models.IntegerField()  # USD cents (negative = charge)
     created_at = models.DateTimeField(auto_now_add=True)
     paid_at = models.DateTimeField(null=True, blank=True)
     
     class Meta:
         db_table = 'accounts_billing_record'
+        ordering = ['-period_start']
         unique_together = ('user', 'period_start')
+    
+    @property
+    def amount_usd(self):
+        return self.amount_cents / 100.0
 ```
+
+---
 
 ## Edge Cases & Solutions
 
-| Edge Case | Solution |\n|-----------|----------|\n| Rig goes offline before midnight | DailyRigUsage created on first ONLINE heartbeat |\n| User has >1000 rigs | Query with date index, pagination |\n| Timezone handling | Use UTC date, user timezone for display only |\n| Midnight boundary | Check `last_seen >= date_midnight_utc` |\n| Missing heartbeats | Still counts if at least one ONLINE event |\n| Rig transferred between users | New owner pays from transfer date onward |\n| User deletes rig mid-day | DailyRigUsage still counted for that day |\n| Refunds/credits | Add CreditAdjustment model with positive amounts |\n| Failed billing | Retry logic, email notification after 3 failures |\n| Concurrent heartbeat processing | Use `select_for_update()` on DailyRigUsage |\n| Duplicate heartbeats | Unique constraint prevents duplicates |\n| System clock drift | Rely on server timestamp, not rig timestamp |\n| Free tier (if introduced) | Track in user.plan field (future) |
+### Critical Edge Cases
+
+| Edge Case | Solution |\n|-----------|----------|\n| Rig offline at midnight scan | Still billed if ONLINE heartbeat occurred (DailyRigUsage exists) |\n| Rig online at midnight boundary | Date determined by UTC date of heartbeat, not local |\n| Multiple heartbeats same day | Unique constraint ensures one DailyRigUsage record per rig/day |\n| Rig transferred between users | New owner pays from transfer date onward (update owner_id on rig) |\n| Rig deleted mid-day | Still billed if DailyRigUsage exists for that day |\n| User deleted | Cascade delete preserves billing history (change to SET_NULL?) |\n| Timezone handling | All dates in UTC. User timezone only for display. |\n| Concurrent heartbeat writes | `get_or_create()` is atomic in PostgreSQL |\n| System clock drift | Server timestamp overrides rig timestamp |\n| Lost heartbeat data | Still billed if at least one ONLINE event recorded |\n| Refunds/credits | CreditAdjustment model with positive amounts |\n| Failed billing attempts | Retry logic in management command, admin notification |\n| >1000 rigs per user | Indexed queries, tested at production scale |
+
+### Data Integrity Considerations
+
+1. **Immutable billing records** - Once created, never modified
+2. **Audit trail** - DailyRigUsage links to specific heartbeats
+3. **Consistency** - Balance deduction happens after billing record creation
+
+---
 
 ## Implementation Plan
 
-### Phase 1: Data Collection (DailyRigUsage)
+### Phase 1: Data Collection Foundation
 
-1. **Create model** `DailyRigUsage` with migration
-2. **Update IngestView** to create DailyRigUsage on ONLINE status
-3. **Add index** for efficient daily queries
-4. **Create management command** `backfill_daily_usage.py` for historical data
+**Goal**: Create DailyRigUsage records for each online rig
+
+**Tasks:**
+1. Create `DailyRigUsage` model with migration
+2. Update `IngestView` (`gpu_monitor/metrics_app/views.py`) to create DailyRigUsage on ONLINE status
+3. Create `backfill_daily_usage.py` management command for historical data
+4. Add index on `date` field for efficient daily queries
 
 ### Phase 2: Billing Logic
 
-1. **Create model** `BillingRecord` with migration
-2. **Add User.balance_cents** field with migration
-3. **Create management command** `calculate_daily_billing.py`
-   - Run at 02:00 UTC daily
-   - For each user: `SUM(online_count)` across all rigs for yesterday
-   - Create BillingRecord if amount > 0
-   - Subtract from User.balance_cents
+**Goal**: Calculate and apply daily charges
 
-### Phase 3: Dashboard
+**Tasks:**
+1. Create `BillingRecord` model with migration
+2. Add `User.balance_cents` field with migration
+3. Create `calculate_daily_billing.py` management command
+   - Run daily at 02:00 UTC (after all heartbeats processed)
+   - For each user: count distinct rigs with DailyRigUsage for yesterday
+   - Create BillingRecord with charge amount
+   - Subtract from User.balance_cents (TODO: negative balance handling)
 
-1. **Create API endpoint** `/api/v1/billing/history/`
-2. **Create view** `BillingHistoryView` with monthly totals
-3. **Add dashboard tab** "Billing" showing:
-   - Current balance
+### Phase 3: Dashboard & API
+
+**Goal**: User-facing billing information
+
+**Tasks:**
+1. Create API endpoint `/api/v1/billing/history/`
+2. Create `BillingHistoryView` with monthly totals
+3. Add dashboard tab "Billing" showing:
+   - Current balance ($12.34)
    - This month's estimated charge
-   - Historical records
+   - Previous billing records
+4. Add Django URL routing
 
-### Phase 4: Payment Integration (Optional)
+### Phase 4: Payment Processing (Future)
 
-1. **Add Stripe customer ID** to User model
-2. **Create webhook endpoint** for payment events
-3. **Add "Add Credit" button** in dashboard
+**Goal**: Allow users to add funds
+
+**Tasks:**
+1. Add `stripe_customer_id` to User model
+2. Create payment session endpoint
+3. Add webhook handler for payment events
+4. Add "Add Credit" button in dashboard
+
+---
 
 ## Query Examples
 
-### Daily Active Rigs per User (for billing)
+### Daily Active Rigs Count
+
 ```python
-from datetime import date
+from datetime import date, timedelta
 
-yesterday = date.today() - timedelta(days=1)
-
-DailyRigUsage.objects.filter(
-    rig__owner=user,
-    date=yesterday
-).values('rig').distinct().count()
+def get_daily_active_rigs(user, date_obj=None):
+    """Count rigs that were online on the given date."""
+    if date_obj is None:
+        date_obj = date.today() - timedelta(days=1)
+    
+    return DailyRigUsage.objects.filter(
+        rig__owner=user,
+        date=date_obj
+    ).values('rig').distinct().count()
 ```
 
 ### Monthly Total Rig-Days
-```python
-month_start = date(today.year, today.month, 1)
 
-BillingRecord.objects.filter(
-    user=user,
-    period_start__gte=month_start
-).aggregate(total_days=Sum('rig_days_used'))
+```python
+def get_monthly_rig_days(user, year, month):
+    """Get total rig-days used for a month."""
+    from django.db.models import Sum
+    
+    period_start = date(year, month, 1)
+    # Calculate period_end as last day of month
+    
+    return DailyRigUsage.objects.filter(
+        rig__owner=user,
+        date__month=month,
+        date__year=year
+    ).aggregate(
+        total_days=Sum('online_count')
+    )['total_days'] or 0
 ```
 
-## Pricing Model Notes
+### User Balance Check
 
-- **$0.01 per rig per day** = $30/month per rig
-- Example: 5 rigs online all month = $150
-- Balance deducted daily or monthly (recommend monthly for simplicity)
-- Minimum charge period: 1 day (even if rig offline 1 second)
+```python
+def check_sufficient_balance(user, estimated_cost_cents):
+    """Check if user can be charged for estimated period."""
+    return user.balance_cents >= estimated_cost_cents
+```
 
-## Files to Modify/Create
+---
 
-| File | Change |\n|------|--------|\n| `rigs/models.py` | Add DailyRigUsage model |\n| `accounts/models.py` | Add balance_cents to User, add BillingRecord model |\n| `metrics_app/views.py` | Update IngestView to create DailyRigUsage |\n| `dashboard/views.py` | Add BillingHistoryView |\n| `management/commands/` | Create `calculate_daily_billing.py` |\n| `dashboard/urls.py` | Add billing endpoint |\n| `templates/dashboard/` | Add billing tab template |
+## Timing Considerations
+
+| Event | When | Details |\n|-------|------|---------|\n| Heartbeat | Every 60s | Agent sends data to `/api/v1/ingest/` |\n| DailyRigUsage creation | On heartbeat | If status='online', create/get DailyRigUsage for today |\n| Billing calculation | 02:00 UTC daily | Count yesterday's DailyRigUsage, create BillingRecord |\n| Balance deduction | After billing | Subtract amount from user.balance_cents |\n| Dashboard refresh | On page load | Show current balance and pending charges |
+
+---
+
+## Files to Create/Modify
+
+| Action | File | Description |\n|--------|------|-------------|\n| Create | `gpu_monitor/rigs/models.py` | Add DailyRigUsage model |\n| Modify | `gpu_monitor/accounts/models.py` | Add balance_cents, BillingRecord |\n| Modify | `gpu_monitor/metrics_app/views.py` | Update IngestView |\n| Create | `gpu_monitor/dashboard/views.py` | Add BillingHistoryView |\n| Create | `gpu_monitor/dashboard/urls.py` | Add billing endpoints |\n| Create | `gpu_monitor/templates/dashboard/` | Add billing tab |\n| Create | `management/commands/calculate_daily_billing.py` | Daily billing job |\n| Create | `management/commands/backfill_daily_usage.py` | Historical data backfill |
+
+---
+
+## Risk Assessment
+
+| Risk | Impact | Mitigation |\n|------|--------|------------|\n| Duplicate DailyRigUsage | Data corruption | Unique constraint + get_or_create() |\n| Race conditions | Lost data | Atomic database operations |\n| Missing heartbeats | Under-billing | Still charge if any ONLINE event |\n| Negative balances | Revenue loss | Set minimum threshold (future) |\n| Timezone confusion | Wrong billing date | Always use UTC dates |\n| Performance with scale | Slow queries | Proper indexing, tested at production scale |
+
+---
+
+## Future Extensions
+
+1. **Free tier**: X rigs free for Y days
+2. **Usage alerts**: Email when daily cost exceeds threshold
+3. **Usage tiers**: Volume discounts for >100 rigs
+4. **Prepaid credits**: Buy $100 credit, get 10% bonus
+5. **API limits**: Rate limit on heartbeats based on balance

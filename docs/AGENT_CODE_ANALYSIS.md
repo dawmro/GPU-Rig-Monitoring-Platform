@@ -6,6 +6,9 @@ Both agents share similar structure but have platform-specific collectors:
 - **Linux agent** (`agent/run.py`): Uses `/sys` filesystem for GPU, CPU power via RAPL
 - **Windows agent** (`agent_windows/run.py`): Uses WMI for GPU, no RAPL support
 
+**Schedule**: Both agents run every 60 seconds via cron/Task Scheduler.
+**Note**: User mentioned "hour" but code/architecture indicates 60s interval.
+
 ## Error Handling Analysis
 
 ### Silent Failures Found

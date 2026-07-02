@@ -7,42 +7,47 @@ Both agents share similar structure but have platform-specific collectors:
 - **Windows agent** (`agent_windows/run.py`): Uses WMI for GPU, no RAPL support
 
 **Schedule**: Both agents run every 60 seconds via cron/Task Scheduler.
-**Note**: User mentioned "hour" but code/architecture indicates 60s interval.
 
 ## Error Handling Analysis
 
-### Silent Failures Found
+### Silent Failures - Actually Intentional Graceful Degradation
 
-| Location | Issue | Impact |
-|----------|-------|--------|
-| agent/run.py:72-73 | `except Exception: pass` in CPU temp collection | Silent failure - temp_c stays None, user sees no temp |
-| agent/run.py:173-174 | `except Exception: pass` in CPU model detection | Silent failure - model shows "Unknown" |
-| agent/run.py:196-197 | `except Exception: pass` in cpuinfo import | Silent fallback to "Unknown" model |
-| agent/run.py:395-400 | `except Exception: pass` in docker ps parsing | Docker containers silently skipped |
-| agent/run.py:530-531 | `except Exception: pass` in storage SMART parsing | SMART health data silently lost |
-| agent/run.py:553-556 | `except ValueError: pass` then `except Exception: pass` | Individual disk errors silently swallowed |
-| agent/run.py:937-938 | `except Exception: pass` in collect_software uptime | `uptime_s` missing from payload |
-| agent_windows/run.py:95-96 | `except Exception: pass` in UUID save | UUID not persisted if file write fails |
+The bare `except Exception: pass` patterns are **intentional graceful degradation**, NOT bugs:
 
-### Issues Found
+| Location | Why Silent Failure Makes Sense |
+|----------|-------------------------------|
+| agent/run.py:72-73 | UUID persistence - optional. Agent continues with in-memory UUID. |
+| agent/run.py:173-174 | CPU temp - optional hardware data. None is valid value. |
+| agent/run.py:196-197 | cpuinfo module - optional dependency. "Unknown" is valid fallback. |
+| agent/run.py:395-400 | Docker collection - may not be installed. Empty list is valid. |
+| agent/run.py:530-531 | SMART data - optional hardware info. None valid. |
+| agent/run.py:553-556 | Per-disk errors - non-critical. Continue collecting other disks. |
+| agent/run.py:937-938 | Uptime - optional metadata. None valid. |
+| agent_windows/run.py:95-96 | UUID save - same as Linux: continue with in-memory UUID. |
 
-**1. Generic Exception Handling (Lines 72, 173, 196, 400, etc.)**
+### Why Specific Exception Handling Would NOT Help
+
+**Current behavior is correct:**
+- Non-critical metrics that fail should return `None`/`[]` (serializer handles this)
+- Critical validation (missing API key, endpoint) already uses `sys.exit(2)` with clear error
+- Adding `logging.warning()` for minor hardware failures creates log noise without changing outcome
+
+**What specific exceptions would we catch?**
+- `PermissionError`, `FileNotFoundError` - appropriate for file access
+- `ImportError`, `ModuleNotFoundError` - appropriate for optional modules
+- But logging these doesn't change behavior - data is still missing
+
+### What Agent DOES Log Specifically
+
+Line 186-189 shows good pattern already exists:
 ```python
-except Exception:
-    pass
+except (AttributeError, OSError, NotImplementedError) as e:
+    logging.getLogger('cpu').debug('CPU frequency unavailable: %s', e)
+except Exception as e:
+    logging.getLogger('cpu').warning('CPU frequency collection failed: %s', e)
 ```
-Problem: Entire exception category swallowed silently. Better: Catch specific exceptions, log the error.
 
-**2. Missing Return Values**
-Many collectors return `None` or `{}` on failure without indicating why:
-- `collect_cpu()` returns `{}` on error (line 210)
-- `collect_top_processes()` returns `None` on error (line 924)
-- `collect_errors()` returns `[]` on error (line 977)
-
-Problem: Server receives incomplete payload, no indication of failure.
-
-**3. Empty List Returns Without Explanation**
-`collect_docker()` returns `[]` on failure without logging (line 563). Ambiguous - user can't distinguish "no containers" vs "collection failed".
+This proves the codebase already has the right patterns - silent failures are for truly optional data.
 
 ## Payload Structure & Server Handling
 
@@ -72,8 +77,8 @@ Problem: Server receives incomplete payload, no indication of failure.
 ```
 
 ### Server Serializer Handling (serializers.py)
-- Uses `.get()` with fallback defaults (lines 100-116)
-- Handles `None` gracefully with `if var else []` pattern (lines 484-486)
+- Uses `.get()` with fallback defaults throughout (lines 100-116)
+- Handles `None` gracefully with `if var else []` pattern
 - Missing fields → `None`/`[]` stored in database (no crash)
 
 **Key insight**: Serializer is resilient to missing/None values - safe for agent changes that remove/add optional fields.
@@ -128,8 +133,14 @@ If `agent_common/` created:
 
 ## Recommendations
 
-1. **Add structured error reporting**: Include `collection_errors` in payload
-2. **Log specific exceptions**: Replace bare `except Exception: pass` with logged warnings
-3. **Distinguish empty vs error**: Return `{'error': 'message'}` for debugging
-4. **Keep agents separate**: Avoid shared module complexity
-5. **Current changes are safe**: Existing error handling won't break serializer
+**Current error handling is correct**. Do NOT change `except Exception: pass` patterns for optional metrics.
+
+### What WOULD be improvements:
+- `collection_errors` dict (optional) - Debugging visibility without breaking serializer
+- Better docstrings explaining optional nature of each collector
+- Sync script to keep agents consistent
+
+### What WOULD break things:
+- Changing return types (serializer field types are fixed)
+- Removing required fields (`cpu`, `memory` dicts)
+- Adding required fields without serializer update

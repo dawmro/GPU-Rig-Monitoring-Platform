@@ -77,7 +77,7 @@ This proves the codebase already has the right patterns - silent failures are fo
 ```
 
 ### Server Serializer Handling (serializers.py)
-- Uses `.get()` with fallback defaults throughout (lines 100-116)
+- Uses `.get()` with fallback defaults throughout
 - Handles `None` gracefully with `if var else []` pattern
 - Missing fields → `None`/`[]` stored in database (no crash)
 
@@ -92,6 +92,55 @@ This proves the codebase already has the right patterns - silent failures are fo
 | Return `None` instead of dict | ✅ | `if var else []` handles it |
 | Remove field from payload | ⚠️ | Only if serializer doesn't use it |
 | Change field value type | ❌ | Serializer may crash/truncate |
+
+## CPU% Measurement Analysis
+
+**Current approach (lines 132, 899, 913):**
+```python
+# Line 132 - Overall CPU
+cpu_percent = psutil.cpu_percent(interval=1)  # BLOCKS for 1 second
+
+# Lines 899, 913 - Per-process CPU (two-pass)
+proc_obj.cpu_percent(interval=None)  # baseline (non-blocking)
+time.sleep(0.5)                      # BLOCKS for 0.5 seconds
+proc_obj.cpu_percent(interval=None)  # actual measurement
+```
+
+**Timing breakdown:**
+- Overall CPU: **1 second blocking** - gives accurate system-wide utilization
+- Per-process CPU: **0.5 seconds blocking sleep** + process object creation time
+- Total CPU-related time: **~1.5 seconds minimum**
+
+### Problems with Async/Threading Improvement
+
+| Edge Case | Problem |
+|-----------|---------|
+| Process exits during measurement | PID might not exist for second pass |
+| Process list changes | New/missed processes between passes |
+| Short-lived processes | Two-pass misses processes alive only briefly |
+| Zombie processes | cpu_percent() may behave unexpectedly |
+| Permission changes | Process might become inaccessible |
+| psutil version differences | Behavior varies across versions |
+| Threading in embedded Python | Some environments restrict threading |
+| Windows WSL compatibility | WSL2 has different process model |
+
+### Why Current Approach IS Optimal
+
+1. **Accurate**: Two-pass gives real CPU% (not instant snapshots)
+2. **Bounded**: 0.5s sleep is predictable, won't exceed 30s timeout
+3. **Simple**: No threading/process pool complexity
+4. **Reliable**: Works on both Linux/Windows with same code
+5. **No race conditions**: Process objects held in memory between passes
+
+### Alternative Considered - Single-Pass Per Process
+```python
+# Would be faster but less accurate and actually worse:
+for p in psutil.process_iter():
+    p.info['cpu_pct'] = p.cpu_percent(interval=0.1)  # 100ms per process
+```
+This would take **2 seconds per process** for 20 processes = 40 seconds! Worse than blocking 0.5s once.
+
+**Recommendation**: Keep two-pass blocking approach. It's the right trade-off between accuracy and performance.
 
 ## Shared Module Challenges
 

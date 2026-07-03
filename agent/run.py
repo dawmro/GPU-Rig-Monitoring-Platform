@@ -43,7 +43,7 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.5.16'
+__version__ = '1.5.17'
 __schema_version__ = '1.10'
 
 # ── Config ──────────────────────────────────────────────────────────────────
@@ -82,7 +82,7 @@ def load_config(path=DEFAULT_CONFIG_PATH):
 # ── Logging ─────────────────────────────────────────────────────────────────
 
 def setup_logging(debug=False):
-    log_dir = Path('/var/log/monitoring-agent')
+    log_dir = Path('/opt/monitoring-agent/var/log')
     try:
         log_dir.mkdir(parents=True, exist_ok=True)
     except PermissionError:
@@ -114,7 +114,7 @@ def setup_logging(debug=False):
 
 def log_payload(payload):
     """Save the latest full JSON payload to payload.json for local analysis."""
-    log_dir = Path('/var/log/monitoring-agent')
+    log_dir = Path('/opt/monitoring-agent/var/log')
     try:
         log_dir.mkdir(parents=True, exist_ok=True)
         payload_path = log_dir / 'payload.json'

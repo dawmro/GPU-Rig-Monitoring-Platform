@@ -4,9 +4,10 @@
         <thead class="bg-gray-750 text-gray-400 border-b border-gray-700">
             <tr>
                 <th class="text-left px-3 py-2 font-medium">Rig Name</th>
+                <th class="text-left px-3 py-2 font-medium">Tags</th>
                 <th class="text-left px-3 py-2 font-medium">Status</th>
                 <th class="text-left px-3 py-2 font-medium">Last Seen</th>
-                <th class="text-left px-3 py-2 font-medium">Tags</th>
+                <th class="text-left px-3 py-2 font-medium">Uptime</th>
                 <th class="text-left px-2 py-2 font-medium">GPU</th>
                 <th class="text-left px-2 py-2 font-medium">GPU Temp [°C]</th>
                 <th class="text-left px-2 py-2 font-medium">GPU Fan [%]</th>
@@ -39,6 +40,11 @@
                     {% endif %}
                 </td>
                 <td class="px-3 py-2">
+                    {% for tag in item.rig.tags.all %}
+                    <span class="px-1.5 py-0.5 rounded text-xs" style="background: {{ tag.color }}22; color: {{ tag.color }}">{{ tag.name }}</span>
+                    {% endfor %}
+                </td>
+                <td class="px-3 py-2">
                     {% if item.rig.status == 'online' %}
                     <span class="badge-online px-1.5 py-0.5 rounded text-xs">Online</span>
                     {% elif item.rig.status == 'stale' %}
@@ -54,10 +60,14 @@
                         Never
                     {% endif %}
                 </td>
-                <td class="px-3 py-2">
-                    {% for tag in item.rig.tags.all %}
-                    <span class="px-1.5 py-0.5 rounded text-xs" style="background: {{ tag.color }}22; color: {{ tag.color }}">{{ tag.name }}</span>
-                    {% endfor %}
+                <td class="px-3 py-2 whitespace-nowrap">
+                    {% if item.snapshot and item.snapshot.software_json.uptime_s %}
+                        <span class="text-gray-300 font-medium">
+                            {{ item.snapshot.software_json.uptime_s|time_since }}
+                        </span>
+                    {% else %}
+                        <span class="text-gray-500">—</span>
+                    {% endif %}
                 </td>
                 {# GPU Model column: compact multi-GPU display with count #}
                 <td class="px-2 py-2 whitespace-nowrap">
@@ -130,7 +140,7 @@
             </tr>
             {% empty %}
             <tr>
-                <td colspan="12" class="px-4 py-8 text-center text-gray-500">
+                <td colspan="14" class="px-4 py-8 text-center text-gray-500">
                     No rigs found. Deploy the monitoring agent to enroll your first rig.
                 </td>
             </tr>

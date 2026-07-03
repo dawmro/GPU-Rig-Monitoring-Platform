@@ -279,8 +279,7 @@ def rig_list(request):
     # Build rig_data dicts consumed by _rig_table.html.
     # Each key maps directly to a template variable in the table cells:
     #   rig_data[]['rig']      -> Rig model (name, status, last_seen, tags, uuid)
-    #   rig_data[]['snapshot'] -> LatestSnapshot (cpu_utilization_pct, cpu_temp_c, mem_*)
-    #   rig_data[]['gpus']     -> list of latest GPUMetric per unique GPU (by gpu_uuid)
+    #   rig_data[]['snapshot'] -> LatestSnapshot (cpu_utilization_pct, cpu_temp_c, mem_*, software_json.uptime_s)
 
     # Batch-fetch all LatestSnapshot rows in ONE query (avoids N+1)
     rig_uuids = [str(r.uuid) for r in rigs]
@@ -289,18 +288,14 @@ def rig_list(request):
         for s in LatestSnapshot.objects.filter(rig_uuid__in=rig_uuids)
     }
 
-    # GPU data is now stored directly in LatestSnapshot as JSON arrays.
-    # No need to query the GPUMetric timeseries table for fleet overview.
-    # Each snapshot has: gpu_count, gpu_models_json, gpu_temps_json,
-    # gpu_utils_json, gpu_fans_json — one entry per GPU, ordered by gpu_index.
-
     # Build rig_data using snapshot data (no GPUMetric queries needed)
     rig_data = []
     for rig in rigs:
         rig_uuid_str = str(rig.uuid)
+        snapshot = latest_snapshots.get(rig_uuid_str)
         rig_data.append({
             'rig': rig,
-            'snapshot': latest_snapshots.get(rig_uuid_str),
+            'snapshot': snapshot,
         })
 
     if request.headers.get('HX-Request'):

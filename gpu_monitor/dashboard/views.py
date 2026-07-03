@@ -279,8 +279,7 @@ def rig_list(request):
     # Build rig_data dicts consumed by _rig_table.html.
     # Each key maps directly to a template variable in the table cells:
     #   rig_data[]['rig']      -> Rig model (name, status, last_seen, tags, uuid)
-    #   rig_data[]['snapshot'] -> LatestSnapshot (cpu_utilization_pct, cpu_temp_c, mem_*)
-    #   rig_data[]['uptime_pct'] -> Uptime percentage (last 24h)
+    #   rig_data[]['snapshot'] -> LatestSnapshot (cpu_utilization_pct, cpu_temp_c, mem_*, software_json.uptime_s)
 
     # Batch-fetch all LatestSnapshot rows in ONE query (avoids N+1)
     rig_uuids = [str(r.uuid) for r in rigs]
@@ -289,65 +288,14 @@ def rig_list(request):
         for s in LatestSnapshot.objects.filter(rig_uuid__in=rig_uuids)
     }
 
-    # Batch-calculate uptime percentage for all rigs (last 24 hours)
-    from django.utils import timezone
-    from datetime import timedelta
-    from gpu_monitor.metrics_app.models import RigStatusEvent
-
-    uptime_window = timezone.now() - timedelta(hours=24)
-    # Get status events for all rigs in the window
-    status_events = RigStatusEvent.objects.filter(
-        rig_uuid__in=rig_uuids,
-        timestamp__gte=uptime_window
-    ).order_by('rig_uuid', 'timestamp')
-
-    # Group events by rig and calculate uptime percentage
-    from collections import defaultdict
-    events_by_rig = defaultdict(list)
-    for event in status_events:
-        events_by_rig[str(event.rig_uuid)].append(event)
-
-    uptime_by_rig = {}
-    window_seconds = 24 * 3600  # 24 hours in seconds
-
-    for rig_uuid_str, events in events_by_rig.items():
-        online_seconds = 0
-        current_status = None
-        period_start = uptime_window
-
-        for event in events:
-            if current_status == 'online':
-                # Add time from period_start to this event
-                online_seconds += (event.timestamp - period_start).total_seconds()
-            current_status = event.status
-            period_start = event.timestamp
-
-        # Handle time from last event to now
-        if current_status == 'online':
-            online_seconds += (timezone.now() - period_start).total_seconds()
-
-        uptime_pct = min(100.0, max(0.0, (online_seconds / window_seconds) * 100))
-        uptime_by_rig[rig_uuid_str] = round(uptime_pct, 1)
-
-    # Handle rigs with no events in window (assume 0% if never seen, or based on created_at)
-    for rig in rigs:
-        rig_uuid_str = str(rig.uuid)
-        if rig_uuid_str not in uptime_by_rig:
-            if rig.created_at and rig.created_at < uptime_window:
-                # Rig existed but had no status events = 0% uptime
-                uptime_by_rig[rig_uuid_str] = 0.0
-            else:
-                # New rig, no data yet
-                uptime_by_rig[rig_uuid_str] = None
-
     # Build rig_data using snapshot data (no GPUMetric queries needed)
     rig_data = []
     for rig in rigs:
         rig_uuid_str = str(rig.uuid)
+        snapshot = latest_snapshots.get(rig_uuid_str)
         rig_data.append({
             'rig': rig,
-            'snapshot': latest_snapshots.get(rig_uuid_str),
-            'uptime_pct': uptime_by_rig.get(rig_uuid_str),
+            'snapshot': snapshot,
         })
 
     if request.headers.get('HX-Request'):

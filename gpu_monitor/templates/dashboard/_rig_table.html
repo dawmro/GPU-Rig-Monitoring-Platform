@@ -6,6 +6,7 @@
                 <th class="text-left px-3 py-2 font-medium">Rig Name</th>
                 <th class="text-left px-3 py-2 font-medium">Status</th>
                 <th class="text-left px-3 py-2 font-medium">Last Seen</th>
+                <th class="text-left px-3 py-2 font-medium">Uptime (24h)</th>
                 <th class="text-left px-3 py-2 font-medium">Tags</th>
                 <th class="text-left px-2 py-2 font-medium">GPU</th>
                 <th class="text-left px-2 py-2 font-medium">GPU Temp [°C]</th>
@@ -52,6 +53,15 @@
                         {{ item.rig.last_seen|last_seen_short }}
                     {% else %}
                         Never
+                    {% endif %}
+                </td>
+                <td class="px-3 py-2 whitespace-nowrap">
+                    {% if item.uptime_pct != None %}
+                        <span class="{% if item.uptime_pct >= 95 %}text-green-400{% elif item.uptime_pct >= 80 %}text-yellow-400{% elif item.uptime_pct >= 50 %}text-orange-400{% else %}text-red-400{% endif %} font-medium">
+                            {{ item.uptime_pct }}%
+                        </span>
+                    {% else %}
+                        <span class="text-gray-500">—</span>
                     {% endif %}
                 </td>
                 <td class="px-3 py-2">
@@ -130,7 +140,7 @@
             </tr>
             {% empty %}
             <tr>
-                <td colspan="12" class="px-4 py-8 text-center text-gray-500">
+                <td colspan="14" class="px-4 py-8 text-center text-gray-500">
                     No rigs found. Deploy the monitoring agent to enroll your first rig.
                 </td>
             </tr>

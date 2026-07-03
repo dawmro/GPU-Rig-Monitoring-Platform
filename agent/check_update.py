@@ -30,7 +30,7 @@ from urllib.error import URLError, HTTPError
 AGENT_DIR = Path(__file__).resolve().parent
 RUN_PY = AGENT_DIR / "run.py"
 BACKUP_PY = AGENT_DIR / "run.py.bak"
-LOG_DIR = Path("/var/log/monitoring-agent")
+LOG_DIR = Path("/opt/monitoring-agent/var/log")
 LOG_FILE = LOG_DIR / "update.log"
 
 GITHUB_RAW_URL = (

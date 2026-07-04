@@ -473,3 +473,42 @@ server {
 }
 ```
 
+---
+
+## 7. Server-Side ASGI Process Orchestration
+
+To run the WebSocket infrastructure alongside your existing sync Gunicorn process, you must deploy a dedicated systemd supervisor script on your central server. This service ensures Uvicorn binds to port 8001 and remains active.
+
+### 7.1 Creating the Server Asynchronous Worker Service
+Create a new configuration file at `/etc/systemd/system/gpu-monitor-asgi.service`:
+
+```ini
+[Unit]
+Description=GPU Monitoring Platform Uvicorn ASGI Application Service Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/GPU-Rig-Monitoring-Platform/gpu_monitor
+ExecStart=/var/www/GPU-Rig-Monitoring-Platform/venv/bin/uvicorn gpu_monitor.asgi:application --host 127.0.0.1 --port 8001 --workers 4 --log-level info
+Restart=always
+RestartSec=3s
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### 7.2 Activating the Server Process Pipeline
+Run these commands to start the background worker:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable gpu-monitor-asgi.service
+sudo systemctl start gpu-monitor-asgi.service
+```
+
+
+

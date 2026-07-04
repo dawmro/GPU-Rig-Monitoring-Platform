@@ -2,11 +2,13 @@
 
 This document provides a highly detailed, line-by-line implementation blueprint to embed an interactive, zero-port-configuration web SSH terminal directly into the `GPU-Rig-Monitoring-Platform`.
 
-## 1. Network Topology & Message Broker Architecture
+## 1. Network Topology & Point-to-Point Architecture
 
-Because target rigs run telemetry scripts inside stateless, 60-second cron tasks (`agent/run.py`), they cannot serve as a reliable anchor for terminal sockets. This plan implements a lightweight, persistent systemd worker (`agent/terminal_daemon.py`) that sits idle on the rig and communicates with an ASGI server layered on top of the existing Django WSGI stack.
+Because target rigs run telemetry scripts inside stateless, 60-second cron tasks (`agent/run.py`), they cannot serve as a reliable anchor for terminal sockets. This plan implements a lightweight, persistent systemd worker (`agent/terminal_daemon.py`) that sits idle on the rig and communicates with an ASGI server layered on top of the existing Django WSGI stack. 
 
+Connections are bridged directly in the Django application memory space using an active routing dictionary matrix, bypassing the need for an external Redis channel broker.
 
+```text
 ┌─────────────────────────┐           ┌────────────────────────┐           ┌────────────────────────┐
 │   Dashboard UI Layout   │           │ Central Django Server  │           │   Target Remote Rig    │
 │  (xterm.js + WebSockets)│           │ (Uvicorn Async Worker) │           │ (Persistent Py Daemon) │
@@ -25,6 +27,7 @@ Because target rigs run telemetry scripts inside stateless, 60-second cron tasks
              │        4. Symmetric Full-Duplex Data Pipelines Interleaved              │
              │◄───────────────────────────────────┼───────────────────────────────────►│
              │         (Keystrokes Data Out ◄───► Terminal Render Frames In)           │
+```
 
 ```mermaid
 sequenceDiagram
@@ -35,28 +38,27 @@ sequenceDiagram
 
     User->>Server: Initial WS Handshake Request<br/>(ws/ssh/user/rig_uuid/)
     activate Server
-    Note over Server: Validates Dashboard User Session
+    Note over Server: Validates Dashboard User Session &<br/>Registers Instance in Routing Matrix
     
-    Server->>Rig: Route Signal Event Over Control WS<br/>(spawn_worker_channel)
+    Server->>Rig: Route Wakeup Signal directly to Control Instance<br/>(spawn_worker_channel)
     activate Rig
     
-    Note over Rig: Wakes up & connects loopback<br/>to local SSH server (127.0.0.1:22)<br/>Allocates PTY (xterm)
+    Note over Rig: Wakes up, connects loopback<br/>to local SSH server (127.0.0.1:22)<br/>& Allocates PTY (xterm)
     
     Rig->>Server: Dynamic Channel Aggregation<br/>(ws/ssh/rig/rig_uuid/)
     
-    Note over Server,Rig: Bridge established via Redis Channel Layers
+    Note over Server: Cross-links active User and Rig<br/>object memory structures directly
     
-    loop Symmetric Full-Duplex Data Pipe
+    loop Symmetric Full-Duplex Data Pipe (In-Memory Sockets)
         User->>Server: Keystrokes Data Out (JSON String)
-        Server->>Rig: Forward to Rig Terminal Input
+        Server->>Rig: Forward to Rig Terminal Input Instance
         Rig->>Server: Terminal Render Streams Out (Ansi Escape Frames)
-        Server->>User: Forward Raw Bytes to Browser Viewport
+        Server->>User: Forward Raw Bytes to Browser Viewport Instance
     end
     
     deactivate Rig
     deactivate Server
 ```
-
 ---
 
 ## 2. Server Infrastructure Configuration

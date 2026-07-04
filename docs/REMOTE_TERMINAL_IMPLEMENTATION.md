@@ -74,15 +74,6 @@ INSTALLED_APPS = [
 # Swap out the traditional WSGI declaration for the new ASGI interface entrypoint
 ASGI_APPLICATION = 'gpu_monitor.asgi.application'
 
-# Configure Redis configuration matrix to broker events between consumer channels
-CHANNEL_LAYERS = {
-    'default': {
-        'BACKEND': 'channels_redis.core.RedisChannelLayer',
-        'CONFIG': {
-            "hosts": [('127.0.0.1', 6379)],
-        },
-    },
-}
 ```
 
 ### 2.2 Constructing the ASGI Application Routing Table (`gpu_monitor/gpu_monitor/asgi.py`)
@@ -126,81 +117,74 @@ import json
 from channels.generic.websocket import AsyncWebsocketConsumer
 
 class SSHTerminalConsumer(AsyncWebsocketConsumer):
+    # Core global router mapping active socket instances by rig_uuid
+    # Structure: { "rig_uuid_string": { "user": UserSocketInstance, "rig": RigSocketInstance, "control": ControlSocketInstance } }
+    active_routing_matrix = {}
+
     async def connect(self):
         self.client_type = self.scope['url_route']['kwargs']['client_type']
         self.rig_uuid = str(self.scope['url_route']['kwargs']['rig_uuid'])
-        self.group_name = f"ssh_tunnel_{self.rig_uuid}"
 
-        # Bind this socket instance channel to the rig cluster group
-        await self.channel_layer.group_add(self.group_name, self.channel_name)
+        # Initialize the nested node dictionaries safely if not present
+        if self.rig_uuid not in SSHTerminalConsumer.active_routing_matrix:
+            SSHTerminalConsumer.active_routing_matrix[self.rig_uuid] = {"user": None, "rig": None, "control": None}
+
         await self.accept()
 
+        # Explicit direct instance caching
         if self.client_type == 'user':
-            # Security: Deny unauthenticated access to the shell
             if not self.scope["user"].is_authenticated:
                 await self.close(code=4401)
                 return
+            SSHTerminalConsumer.active_routing_matrix[self.rig_uuid]["user"] = self
             
-            # Ping the target rig daemon control layer to establish a data tunnel
-            await self.channel_layer.group_send(
-                self.group_name,
-                {"type": "signal.rig.bootstrap"}
-            )
+            # Wake up the control daemon on the rig directly if it's connected
+            control_socket = SSHTerminalConsumer.active_routing_matrix[self.rig_uuid]["control"]
+            if control_socket:
+                await control_socket.send(text_data=json.dumps({"event": "spawn_worker_channel"}))
+
+        elif self.client_type == 'rig':
+            SSHTerminalConsumer.active_routing_matrix[self.rig_uuid]["rig"] = self
+
+        elif self.client_type == 'rig_control':
+            SSHTerminalConsumer.active_routing_matrix[self.rig_uuid]["control"] = self
 
     async def disconnect(self, close_code):
-        await self.channel_layer.group_discard(self.group_name, self.channel_name)
+        # Gracefully clear references on disconnect to prevent leaks
+        if self.rig_uuid in SSHTerminalConsumer.active_routing_matrix:
+            if self.client_type in SSHTerminalConsumer.active_routing_matrix[self.rig_uuid]:
+                SSHTerminalConsumer.active_routing_matrix[self.rig_uuid][self.client_type] = None
 
     async def receive(self, text_data=None, bytes_data=None):
         if not text_data:
             return
         
         payload = json.loads(text_data)
+        session_cluster = SSHTerminalConsumer.active_routing_matrix.get(self.rig_uuid, {})
 
         if self.client_type == 'user':
-            # Handle terminal resize requests from the browser
-            if payload.get("event") == "resize":
-                await self.channel_layer.group_send(
-                    self.group_name,
-                    {
-                        "type": "forward.resize.rig",
-                        "cols": payload.get("cols"),
+            rig_socket = session_cluster.get("rig")
+            if rig_socket:
+                if payload.get("event") == "resize":
+                    # Directly pipe size frames to the rig socket object
+                    await rig_socket.send(text_data=json.dumps({
+                        "event": "resize", 
+                        "cols": payload.get("cols"), 
                         "rows": payload.get("rows")
-                    }
-                )
-            else:
-                # Forward standard user keystrokes to the target rig's shell input
-                await self.channel_layer.group_send(
-                    self.group_name,
-                    {"type": "forward.to.rig", "data": payload.get("data")}
-                )
+                    }))
+                else:
+                    # Directly pipe input characters to the rig socket object
+                    await rig_socket.send(text_data=json.dumps({
+                        "event": "stdin", 
+                        "data": payload.get("data")
+                    }))
                 
         elif self.client_type == 'rig':
-            # Pipe standard terminal outputs from the rig back up to the browser window
-            await self.channel_layer.group_send(
-                self.group_name,
-                {"type": "forward.to.user", "data": payload.get("data")}
-            )
+            user_socket = session_cluster.get("user")
+            if user_socket:
+                # Directly pipe outbound text back to the browser window
+                await user_socket.send(text_data=json.dumps({"data": payload.get("data")}))
 
-    # Broadcast Event Interceptors
-    async def signal_rig_bootstrap(self, event):
-        if self.client_type == 'rig_control':
-            await self.send(text_data=json.dumps({"event": "spawn_worker_channel"}))
-
-    async def forward_to_rig(self, event):
-        if self.client_type == 'rig':
-            await self.send(text_data=json.dumps({"event": "stdin", "data": event["data"]}))
-
-    async def forward_resize_rig(self, event):
-        if self.client_type == 'rig':
-            await self.send(text_data=json.dumps({
-                "event": "resize", 
-                "cols": event["cols"], 
-                "rows": event["rows"]
-            }))
-
-    async def forward_to_user(self, event):
-        if self.client_type == 'user':
-            await self.send(text_data=json.dumps({"data": event["data"]}))
 ```
 
 ---

@@ -830,6 +830,68 @@ const socketUrl = `${wsProtocol}${window.location.host}/ws/ssh/user/{{ rig.uuid 
 const socket = new WebSocket(socketUrl);
 ```
 
+---
+
+## 10. Operational Synchronization & Lifecycle Architecture
+
+A critical architectural distinction must be maintained between the platform's standard performance telemetry loop and the remote shell system. Because metrics collection operates via short-lived 60-second cron executions, it is entirely decoupled from the interactive terminal connection pipelines.
+
+### 10.1 Independence of Component Channels
+
+The strict 30-second timestamp check applied to user connection tickets does **not** conflict with the 60-second rig tracking cycles. The lifecycle matrix below illustrates how these processes run on independent pathways:
+
+| Subsystem Component | Process Execution Lifecycle | Authentication Profile | Operational Bounds & Constraints |
+| :--- | :--- | :--- | :--- |
+| **Telemetry Agent (`agent/run.py`)** | Short-lived cron task executing once every 60 seconds. | Standard HTTP Header API Key authentication. | Stateless HTTP request; terminates immediately after payload transit. |
+| **Terminal Daemon (`agent/terminal_daemon.py`)** | Persistent systemd service initialized once on system boot. | Standard HTTP Header API Key authentication. | Long-lived WebSocket connection; remains completely idle until signaled. |
+| **Browser Web Terminal (`xterm.js`)** | On-demand allocation triggered when a user opens the web tab. | Signed Cryptographic Session Token. | Must complete the initial server connection handshake within 30 seconds. |
+
+---
+
+### 10.2 Handshake Sequence and Signaling Timeline
+
+Because the rig's background daemon maintains a permanent control socket connection back to the central server, connection initialization happens instantly without needing to wait for a cron cycle.
+
+```text
+ Rig Daemon Core            Central Django Server        Browser Terminal View
+ (Persistent Client)         (Uvicorn ASGI Layer)         (Dashboard Interface)
+        │                              │                            │
+        │─── [ System Boot ] ──────────┼────────────────────────────┤
+        │                              │                            │
+        │ 1. Connects Outbound Control │                            │
+        ├─────────────────────────────►│                            │
+        │    (Held Open Permanently)   │                            │
+        │                              │                            │
+        │─── [ Sometime Later: User Requests Terminal Tab ] ────────│
+        │                              │                            │
+        │                              │ 2. Generates signed ticket │
+        │                              │    stamped with current time
+        │                              │◄───────────────────────────┤
+        │                              │                            │
+        │                              │ 3. Instantly opens socket  │
+        │                              │    using transient ticket  │
+        │                              │◄───────────────────────────┤
+        │                              │ (Must occur within 30s)    │
+        │                              │                            │
+        │ 4. Dispatches Wakeup Signal  │                            │
+        │◄─────────────────────────────┤                            │
+        │  (spawn_worker_channel)      │                            │
+        │                              │                            │
+        │ 5. Spins up dynamic worker   │                            │
+        │    & loops back to SSH (22)  │                            │
+        ├─────────────────────────────►│                            │
+        │                              │                            │
+        │                              │ 6. Cross-links memory nodes│
+        │◄─────────────────────────────┼───────────────────────────►│
+        │                              │  Full Duplex Bridge Active │
+```
+
+### 10.3 Key Architectural Assertions
+
+* **Browser-to-Server Isolation**: The 30-second security window applies strictly to the network path between your web browser and the central Django server. Because both endpoints are on high-speed networks, this transaction typically concludes in under 500 milliseconds, leaving a wide buffer for latency.
+* **Zero Rig Overhead**: The rig daemon consumes zero CPU or network bandwidth while sitting in its permanent idle control state. It does not pull data, run loops, or touch the local SSH interface until the server sends an explicit `spawn_worker_channel` instruction.
+* **Persistent Sessions**: The token timeout restrictions apply **only** to the initial handshake request phase. Once Django validates the signature and accepts the WebSocket request, the ticket is discarded, and the session remains active indefinitely until the user or rig closes the tab.
+
 
 
 

@@ -496,5 +496,171 @@ sudo systemctl enable gpu-monitor-asgi.service
 sudo systemctl start gpu-monitor-asgi.service
 ```
 
+---
+
+## 8. Server-Side Deployment Automation Script (`deploy/server_terminal_setup.sh`)
+
+To simplify deployment on your central production VPS, create this standalone automation script. It automatically installs required dependencies, creates systemd service descriptors, updates Nginx proxy paths, and includes an automated rollback failure sequence if configuration tests fail.
+
+Create a new file at `gpu_monitor/deploy/server_terminal_setup.sh`:
+
+```bash
+#!/bin/bash
+
+# Target Project Roots
+PROJECT_ROOT="/var/www/GPU-Rig-Monitoring-Platform"
+APP_ROOT="\${PROJECT_ROOT}/gpu_monitor"
+VENV_PYTHON="\${PROJECT_ROOT}/venv/bin/python3"
+
+# System User Constraints
+WWW_USER="www-data"
+WWW_GROUP="www-data"
+
+NGINX_CONF_PATH="/etc/nginx/sites-available/gpu_monitor"
+BACKUP_SUFFIX=".terminal_setup_bak"
+
+echo "=========================================================="
+echo " Starting GPU-Monitor ASGI Infrastructure Deployment Script "
+echo "=========================================================="
+
+# 1. Enforce Root execution policies
+if [ "\$EUID" -ne 0 ]; then
+  echo "Error: Please run this installation script using sudo privileges."
+  exit 1
+fi
+
+# Define comprehensive rollback function to reverse system mutations on error
+rollback_deployment() {
+    echo "=========================================================="
+    echo " CRITICAL FAILURE ENCOUNTERED. ROLLING BACK SYSTEM CHANGELOG... "
+    echo "=========================================================="
+    
+    # Restoring original Nginx template config file state
+    if [ -f "\({NGINX_CONF_PATH}\){BACKUP_SUFFIX}" ]; then
+        echo "Restoring original Nginx configuration state..."
+        mv "\${NGINX_CONF_PATH}\({BACKUP_SUFFIX}" "\){NGINX_CONF_PATH}"
+    fi
+    
+    # Tear down newly configured systemd unit file bindings
+    if [ -f "/etc/systemd/system/gpu-monitor-asgi.service" ]; then
+        echo "Deactivating and removing ASGI application unit blocks..."
+        systemctl stop gpu-monitor-asgi.service 2>/dev/null
+        systemctl disable gpu-monitor-asgi.service 2>/dev/null
+        rm -f /etc/systemd/system/gpu-monitor-asgi.service
+        systemctl daemon-reload
+    fi
+    
+    # Double-check proxy engine health status before exit
+    nginx -t &>/dev/null
+    if [ \$? -eq 0 ]; then
+        systemctl reload nginx
+        echo "Nginx proxy successfully restored to stable state."
+    else
+        echo "WARNING: Nginx routing profile remains unstable. Core troubleshooting required."
+    fi
+    
+    echo "System rollback execution completed. Application exit code 1."
+    exit 1
+}
+
+# 2. Synchronize dependency runtimes within virtual environments
+echo "[Step 1/5] Updating server environment packages..."
+if [ -f "\${VENV_PYTHON}" ]; then
+    \({VENV_PYTHON} -m pip install --upgrade pip \vert{}\vert{} rollback_deployment\){VENV_PYTHON} -m pip install channels channels-redis paramiko uvicorn || rollback_deployment
+else
+    echo "Error: Virtual environment python executable not found at \${VENV_PYTHON}"
+    exit 1
+fi
+
+# 3. Create Server-Side Asynchronous Worker Systemd Profile
+echo "[Step 2/5] Deploying Asynchronous Uvicorn systemd service configurations..."
+cat << EOF > /etc/systemd/system/gpu-monitor-asgi.service || rollback_deployment
+[Unit]
+Description=GPU Monitoring Platform Uvicorn ASGI Application Service Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=\${WWW_USER}
+Group=\${WWW_GROUP}
+WorkingDirectory=\${APP_ROOT}
+ExecStart=\${PROJECT_ROOT}/venv/bin/uvicorn gpu_monitor.asgi:application --host 127.0.0.1 --port 8001 --workers 4 --log-level info
+Restart=always
+RestartSec=3s
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# 4. Inject WebSocket support directly into production Nginx config files
+echo "[Step 3/5] Updating production Nginx upstream routing proxy configs..."
+if [ -f "\${NGINX_CONF_PATH}" ]; then
+    if grep -q "location /ws/" "\${NGINX_CONF_PATH}"; then
+        echo "WebSocket configuration segment already configured inside Nginx configuration block."
+    else
+        # Back up original profile setup prior to inline edits
+        cp "\${NGINX_CONF_PATH}" "\({NGINX_CONF_PATH}\){BACKUP_SUFFIX}" || rollback_deployment
+        
+        # Inject WebSocket location proxy handler directly above the root block location line
+        sed -i '/location \/ {/i \
+    # WebSockets transport reverse proxy handling block \
+    location /ws/ { \
+        proxy_pass http://127.0.0.1:8001; \
+        proxy_http_version 1.1; \
+        proxy_set_header Upgrade \$http_upgrade; \
+        proxy_set_header Connection "Upgrade"; \
+        proxy_set_header Host \$host; \
+        proxy_set_header X-Real-IP \$remote_addr; \
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for; \
+        proxy_set_header X-Forwarded-Proto \$scheme; \
+        proxy_read_timeout 86400s; \
+        proxy_send_timeout 86400s; \
+    }\n' "\${NGINX_CONF_PATH}" || rollback_deployment
+        echo "Successfully injected WebSocket tracking rules into \${NGINX_CONF_PATH}"
+    fi
+else
+    echo "Warning: Target Nginx server config block file not detected at \${NGINX_CONF_PATH}"
+    echo "Please ensure you paste your location /ws/ rules inside your custom configurations manually."
+fi
+
+# 5. Flush Systemd Daemon States & Initialize Run Pipelines
+echo "[Step 4/5] Activating and starting systemd ASGI runtime workers..."
+systemctl daemon-reload || rollback_deployment
+systemctl enable gpu-monitor-asgi.service || rollback_deployment
+systemctl restart gpu-monitor-asgi.service || rollback_deployment
+
+# 6. Validate Nginx Integrity Schemes & Reload Server Engine Contexts
+echo "[Step 5/5] Re-validating server configurations and cycling proxy engines..."
+nginx -t
+if [ \$? -eq 0 ]; then
+    systemctl reload nginx
+    
+    # Cleanup backup templates on explicit deployment success
+    if [ -f "\({NGINX_CONF_PATH}\){BACKUP_SUFFIX}" ]; then
+        rm -f "\({NGINX_CONF_PATH}\){BACKUP_SUFFIX}"
+    fi
+    
+    echo "=========================================================="
+    echo " Production deployment succeeded! ASGI server is online on port 8001. "
+    echo "=========================================================="
+else
+    # Trigger deployment rollback due to configuration check failure
+    rollback_deployment
+fi
+```
+
+### 8.1 Post-Installation Verification Routine
+Once executed, you can confirm all background services are performing as expected across standard loopback listening interfaces by running the following commands:
+
+```bash
+# Verify Uvicorn handles socket threads successfully across port 8001
+sudo systemctl status gpu-monitor-asgi.service
+
+# Monitor live output log updates directly from your terminal streams
+sudo journalctl -u gpu-monitor-asgi.service -f -n 50
+```
+
+
 
 

@@ -1326,3 +1326,71 @@ visudo -c -f /etc/sudoers.d/monitoring-agent
 
 This precise mapping allows the updater to successfully re-secure your project configuration and file states on every single update deployment, without opening any backdoors for general system administration privileges.
 
+---
+
+## 14. Consolidated Platform System Path Reference Blueprint
+
+To ensure absolute clarity during cross-network production deployment, this section provides an explicit tracking matrix of where every software asset, execution environment, configuration profile, and tracking log lives. Use this as a checklist to verify your server and rig environments are correctly configured.
+
+---
+
+### 14.1 Server-Side Infrastructure Blueprint (The Central VPS)
+The central server runs your Django web presentation layer, handles browser frontend connections, and terminates inbound reverse connections entirely over an ASGI pipeline on localhost loopback ports.
+
+*   **Primary Application Repository Root:** 
+    `/opt/gpu_monitor`
+*   **Django Project Target Execution App Root:** 
+    `/opt/gpu_monitor/gpu_monitor` *(Location of `manage.py`, `settings.py`, and `asgi.py`)*
+*   **Asynchronous Web Server Runtime Binary:** 
+    `/opt/gpu_monitor/venv/bin/uvicorn`
+*   **Server Virtual Environment Interpreter:** 
+    `/opt/gpu_monitor/venv/bin/python3`
+*   **Production Process Orchestration supervisor Unit:** 
+    `/etc/systemd/system/gpu-monitor-asgi.service` *(Configured to bind on `127.0.0.1:8001` with `--workers 1`)*
+*   **External Gatekeeper Reverse Proxy Configuration:** 
+    `/etc/nginx/sites-available/gpu_monitor` *(Linked to `/etc/nginx/sites-enabled/`)*
+*   **Server Process Runtime Ownership Constraint:** 
+    All web presentation and routing logic executes strictly under the unprivileged standard system user `www-data:www-data`.
+
+---
+
+### 14.2 Rig-Side Infrastructure Blueprint (Remote GPU Workers)
+The client nodes run a background daemon that monitors hardware states and maintains an idle loopback tunnel connection back to your central server over standard outbound port 443 web connections.
+
+*   **Integrated Agent Root Installation Workspace:** 
+    `/opt/monitoring-agent`
+*   **Telemetry Metrics Collection Module:** 
+    `/opt/monitoring-agent/run.py` *(Invoked once every 60 seconds via short-lived cron tasks)*
+*   **Persistent Reverse Console Bridge Module:** 
+    `/opt/monitoring-agent/terminal_daemon.py` *(Long-running persistent socket supervisor process)*
+*   **Self-Updating Lifecycle Worker Engine:** 
+    `/opt/monitoring-agent/check_update.py` *(Invoked daily via automated cron sequences)*
+*   **Rig Virtual Environment Execution Interpreter:** 
+    `/opt/monitoring-agent/venv/bin/python3`
+*   **Isolated Cryptographic Private Identity Files (HiveOS Safe):** 
+    `/opt/monitoring-agent/keys/terminal_id_rsa` *(Maintains a persistent state separate from volatile memory storage roots)*
+*   **Platform Runtime Log File Storage Targets:** 
+    `/opt/monitoring-agent/var/log/` *(Isolates `cron.log`, `update.log`, and daemon process tracking scripts)*
+*   **Rig Terminal Service Background Supervisor Unit:** 
+    `/etc/systemd/system/gpu-rig-terminal.service` *(Executes the permanent `terminal_daemon.py` connection track)*
+*   **System Cron Configuration Schedules:** 
+    `/etc/cron.d/monitoring-agent` & `/etc/cron.d/monitoring-agent-update`
+*   **Granular Sudo Privilege Overrides Profile:** 
+    `/etc/sudoers.d/monitoring-agent`
+*   **Sandboxed Remote Console Operator Home Directory:** 
+    `/home/rigshell` *(Jailed natively via `/bin/rbash` constraints)*
+
+---
+
+### 14.3 Core File Ownership & Security Verification Matrix
+
+| Target Machine Environment | Target Path / Subsystem | Runtime Executing User | File System Owner Security Rules | Purpose & Isolation Context |
+| :--- | :--- | :--- | :--- | :--- |
+| **Central VPS Server** | `/opt/gpu_monitor/` | `www-data` | `www-data:www-data` | Contains core dashboard code and template files. |
+| **Central VPS Server** | `/etc/systemd/system/gpu-monitor-asgi.service` | `root` | `root:root` | Supervisor descriptor block mapping port 8001. |
+| **Remote GPU Rig Node**| `/opt/monitoring-agent/run.py` | `monitoring-agent` | `root:root` | Telemetry module protected against console user injection. |
+| **Remote GPU Rig Node**| `/opt/monitoring-agent/terminal_daemon.py` | `root` | `root:root` | Background socket listener running with loopback control privileges. |
+| **Remote GPU Rig Node**| `/opt/monitoring-agent/check_update.py` | `monitoring-agent` | `root:root` | Automated lifecycle worker utilizing whitelisted sudo `chown` commands. |
+| **Remote GPU Rig Node**| `/opt/monitoring-agent/keys/` | `root` | `root:root` (Mode 0700) | Isolated storage jailing backend loopback Private RSA tokens. |
+| **Remote GPU Rig Node**| `/home/rigshell/` | `rigshell` | `rigshell:rigshell` | Jailed user home space where diagnostic CLI scripts are safely run. |
+

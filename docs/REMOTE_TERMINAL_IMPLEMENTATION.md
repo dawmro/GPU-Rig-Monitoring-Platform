@@ -1,4 +1,4 @@
-# Implementation Specification: Reverse SSH Terminal Emulation Over HTTPS
+markdown# Implementation Specification: Reverse SSH Terminal Emulation Over HTTPS (Redis-Free)
 
 This document provides a highly detailed, line-by-line implementation blueprint to embed an interactive, zero-port-configuration web SSH terminal directly into the `GPU-Rig-Monitoring-Platform`.
 
@@ -59,12 +59,13 @@ sequenceDiagram
     deactivate Rig
     deactivate Server
 ```
+
 ---
 
 ## 2. Server Infrastructure Configuration
 
 ### 2.1 Layering ASGI into Settings (`gpu_monitor/gpu_monitor/settings.py`)
-Modify your server configuration file to register the `channels` routing runtime and declare a distributed Redis backend for event multiplexing.
+Modify your server configuration file to register the `channels` routing runtime. The traditional `CHANNEL_LAYERS` block is entirely omitted to avoid Redis requirements.
 
 ```python
 # Insert at the end of your existing INSTALLED_APPS array
@@ -75,7 +76,6 @@ INSTALLED_APPS = [
 
 # Swap out the traditional WSGI declaration for the new ASGI interface entrypoint
 ASGI_APPLICATION = 'gpu_monitor.asgi.application'
-
 ```
 
 ### 2.2 Constructing the ASGI Application Routing Table (`gpu_monitor/gpu_monitor/asgi.py`)
@@ -112,7 +112,7 @@ application = ProtocolTypeRouter({
 ## 3. Backend Core Logic Implementation
 
 ### 3.1 Asynchronous WebSocket Consumer (`gpu_monitor/dashboard/consumers.py`)
-Create this file to intercept connections, validate session tokens, and proxy streams between users and client nodes.
+Create this file to intercept connections, validate session tokens, and directly route proxy streams between consumers and client nodes via local system runtime memory.
 
 ```python
 import json
@@ -186,7 +186,6 @@ class SSHTerminalConsumer(AsyncWebsocketConsumer):
             if user_socket:
                 # Directly pipe outbound text back to the browser window
                 await user_socket.send(text_data=json.dumps({"data": payload.get("data")}))
-
 ```
 
 ---
@@ -203,6 +202,7 @@ import paramiko
 import json
 import yaml
 import sys
+import os
 
 CONFIG_PATH = "/etc/monitoring-agent/config.yaml"
 if not os.path.exists(CONFIG_PATH):

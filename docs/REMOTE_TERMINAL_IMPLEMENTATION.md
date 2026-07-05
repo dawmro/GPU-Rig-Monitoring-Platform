@@ -1114,7 +1114,7 @@ LOG_DIR = AGENT_DIR / "var" / "log"
 LOG_FILE = LOG_DIR / "update.log"
 
 GITHUB_BASE_URL = (
-    "https://githubusercontent.com"
+    "https://raw.githubusercontent.com/dawmro/GPU-Rig-Monitoring-Platform/main/agent"
 )
 GITHUB_RUN_URL = f"{GITHUB_BASE_URL}/run.py"
 GITHUB_TERMINAL_URL = f"{GITHUB_BASE_URL}/terminal_daemon.py"

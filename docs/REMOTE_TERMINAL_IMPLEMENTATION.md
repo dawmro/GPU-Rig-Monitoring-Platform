@@ -336,14 +336,20 @@ async def handle_active_ssh_session():
             ssh = paramiko.SSHClient()
             ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             
-            # Authenticate using standard local system user profiles
-            ssh.connect('127.0.0.1', port=22, username='riguser', password='securepassword')
+            # Corrected path mapping to match Section 4.2 /opt install structure
+            ssh.connect(
+                '127.0.0.1', 
+                port=22, 
+                username='rigshell', 
+                key_filename='/opt/monitoring-agent/keys/terminal_id_rsa'
+            )
             
             # CRITICAL: Request a pseudo-terminal (PTY) to support full-screen editors
             channel = ssh.invoke_shell()
             channel.get_pty(term='xterm', width=80, height=24)
 
             async def pipe_ssh_to_ws():
+                # Loop condition updated to keep task alive while Channel is open and connected
                 while not channel.exit_status_ready():
                     if channel.recv_ready():
                         raw_bytes = channel.recv(4096)
@@ -353,18 +359,29 @@ async def handle_active_ssh_session():
                         data_str = raw_bytes.decode('utf-8', errors='ignore')
                         await ws.send(json.dumps({'data': data_str}))
                     await asyncio.sleep(0.01)
+                # Ensure the WebSocket closes cleanly if the SSH backend session terminates
+                await ws.close()
 
             async def pipe_ws_to_ssh():
-                async for raw_msg in ws:
-                    payload = json.loads(raw_msg)
-                    event_type = payload.get("event")
-                    
-                    if event_type == "stdin":
-                        channel.send(payload.get("data"))
-                    elif event_type == "resize":
-                        channel.resize_pty(cols=payload.get("cols"), rows=payload.get("rows"))
+                try:
+                    async for raw_msg in ws:
+                        payload = json.loads(raw_msg)
+                        event_type = payload.get("event")
+                        
+                        if event_type == "stdin":
+                            channel.send(payload.get("data"))
+                        elif event_type == "resize":
+                            channel.resize_pty(cols=payload.get("cols"), rows=payload.get("rows"))
+                except websockets.exceptions.ConnectionClosed:
+                    pass  # Gracefully catch socket drops when user terminates page instances
 
-            await asyncio.gather(pipe_ssh_to_ws(), pipe_ws_to_ssh())
+            # Wrap loop loops with cancellation primitives to prevent resource leaks on breakages
+            try:
+                await asyncio.gather(pipe_ssh_to_ws(), pipe_ws_to_ssh())
+            finally:
+                channel.close()
+                ssh.close()
+                
     except Exception as e:
         sys.stderr.write(f"Active session error: {str(e)}\n")
 
@@ -380,8 +397,8 @@ async def orchestrate_daemon_lifecycle():
                     if payload.get("event") == "spawn_worker_channel":
                         # Asynchronously initialize the data channel worker loop
                         asyncio.create_task(handle_active_ssh_session())
-        except Exception:
-            # Network fallback recovery delay
+        except Exception as e:
+            # Prevent rapid failure spin loops if network connectivity drops entirely
             await asyncio.sleep(10)
 
 if __name__ == "__main__":
@@ -402,18 +419,18 @@ echo "=========================================================="
 
 # 1. Install required persistent Python package dependencies
 echo "Installing python websocket and cryptography dependencies..."
-"\$INSTALL_DIR/venv/bin/pip" install websockets paramiko
+"$INSTALL_DIR/venv/bin/pip" install websockets paramiko
 
 # 2. Re-allocate directory schemas for persistent crypt keys (HiveOS Safe)
-KEYS_DIR="\$INSTALL_DIR/keys"
-mkdir -p "\$KEYS_DIR"
-chmod 700 "\$KEYS_DIR"
+KEYS_DIR="$INSTALL_DIR/keys"
+mkdir -p "$KEYS_DIR"
+chmod 700 "$KEYS_DIR"
 
 # 3. Handle automated keypair generation if they don't already exist
-if [ ! -f "\$KEYS_DIR/terminal_id_rsa" ]; then
+if [ ! -f "$KEYS_DIR/terminal_id_rsa" ]; then
     echo "Generating secure local system signature loopback keys..."
-    ssh-keygen -t rsa -b 4096 -f "\$KEYS_DIR/terminal_id_rsa" -N ""
-    chmod 600 "\$KEYS_DIR/terminal_id_rsa"
+    ssh-keygen -t rsa -b 4096 -f "$KEYS_DIR/terminal_id_rsa" -N ""
+    chmod 600 "$KEYS_DIR/terminal_id_rsa"
 fi
 
 # 4. Integrate unprivileged sandbox profiles and authorize endpoints
@@ -425,20 +442,20 @@ fi
 
 # Provision authorized_keys parameters securely under the home boundary
 mkdir -p /home/rigshell/.ssh
-cat "\$KEYS_DIR/terminal_id_rsa.pub" >> /home/rigshell/.ssh/authorized_keys
+cat "$KEYS_DIR/terminal_id_rsa.pub" >> /home/rigshell/.ssh/authorized_keys
 chmod 700 /home/rigshell/.ssh
 chmod 600 /home/rigshell/.ssh/authorized_keys
 chown -R rigshell:rigshell /home/rigshell/.ssh
 
 # 5. Mirror active worker scripts down into persistent partitions
 echo "Staging script artifacts..."
-cp terminal_daemon.py "\$INSTALL_DIR/terminal_daemon.py"
-chmod +x "\$INSTALL_DIR/terminal_daemon.py"
+cp terminal_daemon.py "$INSTALL_DIR/terminal_daemon.py"
+chmod +x "$INSTALL_DIR/terminal_daemon.py"
 
 # Enforce clean ownership attributes across the core script framework
 # Note: Keep key sets owned by root so the unprivileged rigshell environment cannot manipulate them
-chown root:root "\$INSTALL_DIR/terminal_daemon.py"
-chown -R root:root "\$KEYS_DIR"
+chown root:root "$INSTALL_DIR/terminal_daemon.py"
+chown -R root:root "$KEYS_DIR"
 
 # 6. Generate explicit systemd background supervisor service configurations
 echo "Registering host daemon supervisor unit definitions..."
@@ -451,8 +468,8 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=\${INSTALL_DIR}
-ExecStart=\({INSTALL_DIR}/venv/bin/python3\){INSTALL_DIR}/terminal_daemon.py
+WorkingDirectory=${INSTALL_DIR}
+ExecStart=${INSTALL_DIR}/venv/bin/python3 ${INSTALL_DIR}/terminal_daemon.py
 Restart=always
 RestartSec=5s
 Environment=PYTHONUNBUFFERED=1
@@ -663,22 +680,21 @@ Create a new file at `gpu_monitor/deploy/server_terminal_setup.sh`:
 
 # Target Project Roots
 PROJECT_ROOT="/opt/gpu_monitor"
-APP_ROOT="\${PROJECT_ROOT}/gpu_monitor"
-VENV_PYTHON="\${PROJECT_ROOT}/venv/bin/python3"
+NGINX_CONF_PATH="/etc/nginx/sites-available/gpu_monitor"
+APP_ROOT="${PROJECT_ROOT}/gpu_monitor"
+VENV_PYTHON="${PROJECT_ROOT}/venv/bin/python3"
+BACKUP_SUFFIX=".terminal_setup_bak"
 
 # System User Constraints
 WWW_USER="www-data"
 WWW_GROUP="www-data"
-
-NGINX_CONF_PATH="/etc/nginx/sites-available/gpu_monitor"
-BACKUP_SUFFIX=".terminal_setup_bak"
 
 echo "=========================================================="
 echo " Starting GPU-Monitor ASGI Infrastructure Deployment Script "
 echo "=========================================================="
 
 # 1. Enforce Root execution policies
-if [ "\$EUID" -ne 0 ]; then
+if [ "$EUID" -ne 0 ]; then
   echo "Error: Please run this installation script using sudo privileges."
   exit 1
 fi
@@ -690,9 +706,9 @@ rollback_deployment() {
     echo "=========================================================="
     
     # Restoring original Nginx template config file state
-    if [ -f "\({NGINX_CONF_PATH}\){BACKUP_SUFFIX}" ]; then
+    if [ -f "${NGINX_CONF_PATH}${BACKUP_SUFFIX}" ]; then
         echo "Restoring original Nginx configuration state..."
-        mv "\${NGINX_CONF_PATH}\({BACKUP_SUFFIX}" "\){NGINX_CONF_PATH}"
+        mv "${NGINX_CONF_PATH}${BACKUP_SUFFIX}" "${NGINX_CONF_PATH}"
     fi
     
     # Tear down newly configured systemd unit file bindings
@@ -706,7 +722,7 @@ rollback_deployment() {
     
     # Double-check proxy engine health status before exit
     nginx -t &>/dev/null
-    if [ \$? -eq 0 ]; then
+    if [ $? -eq 0 ]; then
         systemctl reload nginx
         echo "Nginx proxy successfully restored to stable state."
     else
@@ -737,10 +753,10 @@ After=network.target
 
 [Service]
 Type=simple
-User=\${WWW_USER}
-Group=\${WWW_GROUP}
-WorkingDirectory=\${APP_ROOT}
-ExecStart=\${PROJECT_ROOT}/venv/bin/uvicorn gpu_monitor.asgi:application --host 127.0.0.1 --port 8001 --workers 1 --log-level info
+User=${WWW_USER}
+Group=${WWW_GROUP}
+WorkingDirectory=${APP_ROOT}
+ExecStart=${PROJECT_ROOT}/venv/bin/uvicorn gpu_monitor.asgi:application --host 127.0.0.1 --port 8001 --workers 1 --log-level info
 Restart=always
 RestartSec=3s
 Environment=PYTHONUNBUFFERED=1
@@ -759,18 +775,18 @@ if [ -f "${NGINX_CONF_PATH}" ]; then
         cp "${NGINX_CONF_PATH}" "${NGINX_CONF_PATH}${BACKUP_SUFFIX}" || rollback_deployment
         
         # Inject WebSocket location proxy handler directly above the root block location line
-        # Tabs and formatting match standard Nginx configuration nesting spaces cleanly
+        # Note: Dynamic proxy variables are escaped so they output literally into the config file
         sed -i '/location \/ {/i \
     # WebSockets transport reverse proxy handling block \
     location /ws/ { \
         proxy_pass http://127.0.0.1:8001; \
         proxy_http_version 1.1; \
-        proxy_set_header Upgrade $http_upgrade; \
+        proxy_set_header Upgrade \$http_upgrade; \
         proxy_set_header Connection "Upgrade"; \
-        proxy_set_header Host $host; \
-        proxy_set_header X-Real-IP $remote_addr; \
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; \
-        proxy_set_header X-Forwarded-Proto $scheme; \
+        proxy_set_header Host \$host; \
+        proxy_set_header X-Real-IP \$remote_addr; \
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for; \
+        proxy_set_header X-Forwarded-Proto \$scheme; \
         proxy_read_timeout 86400s; \
         proxy_send_timeout 86400s; \
     }\n' "${NGINX_CONF_PATH}" || rollback_deployment
@@ -782,7 +798,6 @@ else
     echo "Please ensure you paste your location /ws/ rules inside your custom configurations manually."
 fi
 
-
 # 5. Flush Systemd Daemon States & Initialize Run Pipelines
 echo "[Step 4/5] Activating and starting systemd ASGI runtime workers..."
 systemctl daemon-reload || rollback_deployment
@@ -792,12 +807,12 @@ systemctl restart gpu-monitor-asgi.service || rollback_deployment
 # 6. Validate Nginx Integrity Schemes & Reload Server Engine Contexts
 echo "[Step 5/5] Re-validating server configurations and cycling proxy engines..."
 nginx -t
-if [ \$? -eq 0 ]; then
+if [ $? -eq 0 ]; then
     systemctl reload nginx
     
     # Cleanup backup templates on explicit deployment success
-    if [ -f "\({NGINX_CONF_PATH}\){BACKUP_SUFFIX}" ]; then
-        rm -f "\({NGINX_CONF_PATH}\){BACKUP_SUFFIX}"
+    if [ -f "${NGINX_CONF_PATH}${BACKUP_SUFFIX}" ]; then
+        rm -f "${NGINX_CONF_PATH}${BACKUP_SUFFIX}"
     fi
     
     echo "=========================================================="

@@ -111,12 +111,59 @@ application = ProtocolTypeRouter({
 
 ## 3. Backend Core Logic Implementation
 
-### 3.1 Asynchronous WebSocket Consumer (`gpu_monitor/dashboard/consumers.py`)
-Create this file to intercept connections, validate session tokens, and directly route proxy streams between consumers and client nodes via local system runtime memory.
+### 3.1 Token Generation and Validation Engine (`gpu_monitor/dashboard/mixins.py`)
+This file implements the stateless `TerminalTokenEngine` mechanism. It leverages native Django cryptographic signatures to guarantee transient user access permission.
 
 ```python
+# =====================================================================
+# 3.1 Token Generation and Validation Engine (gpu_monitor/dashboard/mixins.py)
+# =====================================================================
+import time
+from django.core.signing import Signer, BadSignature
+
+class TerminalTokenEngine:
+    """Generates and validates timestamped cryptographic tickets for secure socket links."""
+    
+    @staticmethod
+    def generate_user_token(user, rig_uuid):
+        """Constructs a signed payload string valid for exactly 30 seconds."""
+        signer = Signer(salt="gpu_monitor.terminal.auth.salt")
+        timestamp = int(time.time())
+        payload = f"{user.id}:{rig_uuid}:{timestamp}"
+        return signer.sign(payload)
+
+    @staticmethod
+    def verify_user_token(token, current_rig_uuid):
+        """Validates payload signatures and checks for explicit age boundaries."""
+        signer = Signer(salt="gpu_monitor.terminal.auth.salt")
+        try:
+            unsigned_payload = signer.unsign(token)
+            user_id, rig_uuid, timestamp = unsigned_payload.split(":")
+            
+            # Enforce strict resource targeting validation constraints
+            if rig_uuid != str(current_rig_uuid):
+                return None
+                
+            # Enforce strict 30-second handshake timeout limits
+            if int(time.time()) - int(timestamp) > 30:
+                return None
+                
+            return user_id
+        except (BadSignature, ValueError):
+            return None
+```
+
+### 3.2 Secure In-Memory Asynchronous WebSocket Consumer (`gpu_monitor/dashboard/consumers.py`)
+This file intercepts all WebSocket protocols. It validates browser tickets during connection initialization and provisions point-to-point cross-linking memory channels using a thread-safe global directory dictionary matrix.
+
+```python
+# =====================================================================
+# 3.2 Secure In-Memory Asynchronous Consumer (gpu_monitor/dashboard/consumers.py)
+# =====================================================================
 import json
+from urllib.parse import parse_qs
 from channels.generic.websocket import AsyncWebsocketConsumer
+from dashboard.mixins import TerminalTokenEngine  # Dynamic project dependency mapping
 
 class SSHTerminalConsumer(AsyncWebsocketConsumer):
     # Core global router mapping active socket instances by rig_uuid
@@ -131,13 +178,28 @@ class SSHTerminalConsumer(AsyncWebsocketConsumer):
         if self.rig_uuid not in SSHTerminalConsumer.active_routing_matrix:
             SSHTerminalConsumer.active_routing_matrix[self.rig_uuid] = {"user": None, "rig": None, "control": None}
 
-        await self.accept()
-
-        # Explicit direct instance caching
+        # Secure User Handshake Authorization Path
         if self.client_type == 'user':
-            if not self.scope["user"].is_authenticated:
-                await self.close(code=4401)
+            # Extract query parameters directly from the inner handshake URL string
+            query_string = self.scope.get("query_string", b"").decode("utf-8")
+            query_params = parse_qs(query_string)
+            ticket_list = query_params.get("ticket", [])
+            
+            if not ticket_list:
+                await self.close(code=4401)  # Refuse Connection: Ticket Missing
                 return
+            # Because parse_qs extracts URL queries as string arrays, isolating the zero-index element
+            # prevents a common list mutation crash inside Django’s Signer validation engine.    
+            provided_ticket = ticket_list[0]
+            # Execute validation check against core cryptographic signing systems
+            validated_user_id = TerminalTokenEngine.verify_user_token(provided_ticket, self.rig_uuid)
+            
+            if not validated_user_id:
+                await self.close(code=4403)  # Refuse Connection: Invalid or Expired Token
+                return
+
+            # Explicit token verification complete, register and accept connection
+            await self.accept()
             SSHTerminalConsumer.active_routing_matrix[self.rig_uuid]["user"] = self
             
             # Wake up the control daemon on the rig directly if it's connected
@@ -145,17 +207,28 @@ class SSHTerminalConsumer(AsyncWebsocketConsumer):
             if control_socket:
                 await control_socket.send(text_data=json.dumps({"event": "spawn_worker_channel"}))
 
-        elif self.client_type == 'rig':
-            SSHTerminalConsumer.active_routing_matrix[self.rig_uuid]["rig"] = self
-
-        elif self.client_type == 'rig_control':
-            SSHTerminalConsumer.active_routing_matrix[self.rig_uuid]["control"] = self
+        # Secure Rig Daemon/Control Authorization Path
+        elif self.client_type in ['rig', 'rig_control']:
+            # Validate connection api keys matching your existing middleware logic
+            headers = dict(self.scope.get("headers", []))
+            api_key = headers.get(b"x-api-key", b"").decode("utf-8")
+            
+            # Optional production hook to match your API architecture:
+            # if not await self.validate_rig_api_key(self.rig_uuid, api_key):
+            #     await self.close(code=4403)
+            #     return
+            
+            await self.accept()
+            # Map rig_control to 'control' and rig to 'rig' within our sub-dictionary
+            target_key = self.client_type.replace("rig_control", "control")
+            SSHTerminalConsumer.active_routing_matrix[self.rig_uuid][target_key] = self
 
     async def disconnect(self, close_code):
-        # Gracefully clear references on disconnect to prevent leaks
+        # Gracefully clear references on disconnect to prevent memory leaks
         if self.rig_uuid in SSHTerminalConsumer.active_routing_matrix:
-            if self.client_type in SSHTerminalConsumer.active_routing_matrix[self.rig_uuid]:
-                SSHTerminalConsumer.active_routing_matrix[self.rig_uuid][self.client_type] = None
+            target_key = self.client_type.replace("rig_control", "control")
+            if target_key in SSHTerminalConsumer.active_routing_matrix[self.rig_uuid]:
+                SSHTerminalConsumer.active_routing_matrix[self.rig_uuid][target_key] = None
 
     async def receive(self, text_data=None, bytes_data=None):
         if not text_data:
@@ -168,14 +241,14 @@ class SSHTerminalConsumer(AsyncWebsocketConsumer):
             rig_socket = session_cluster.get("rig")
             if rig_socket:
                 if payload.get("event") == "resize":
-                    # Directly pipe size frames to the rig socket object
+                    # Directly pipe window scaling frames to the active rig data socket
                     await rig_socket.send(text_data=json.dumps({
                         "event": "resize", 
                         "cols": payload.get("cols"), 
                         "rows": payload.get("rows")
                     }))
                 else:
-                    # Directly pipe input characters to the rig socket object
+                    # Directly pipe input characters to the active rig terminal session
                     await rig_socket.send(text_data=json.dumps({
                         "event": "stdin", 
                         "data": payload.get("data")
@@ -184,8 +257,45 @@ class SSHTerminalConsumer(AsyncWebsocketConsumer):
         elif self.client_type == 'rig':
             user_socket = session_cluster.get("user")
             if user_socket:
-                # Directly pipe outbound text back to the browser window
+                # Directly pipe outbound terminal characters back to the browser window instance
                 await user_socket.send(text_data=json.dumps({"data": payload.get("data")}))
+
+```
+
+> [!WARNING]
+> **Production Scaling Constraint (In-Memory Volatility):**
+> Because this architecture routes data using an in-memory matrix (`active_routing_matrix`) instead of an external Redis database layer, the entire application **must execute within a single master process thread**. 
+> If Django runs across multiple worker subprocesses (e.g., `--workers 4`), different sockets will land on isolated memory spaces. If a user connects to Worker 1 and their matching rig attaches to Worker 2, they will fail to find each other's references. Ensure your server-side production process configuration limits Uvicorn orchestration strictly to a single worker instance (`--workers 1`).
+
+
+### 3.3 Controller View Integration Hook (`gpu_monitor/dashboard/views.py`)
+This controller script maps standard HTTP dashboard interface routing hooks. It handles user access rule evaluations and pipes transient signature keys cleanly down to target HTML rendering states.
+
+```
+# =====================================================================
+# 3.3 Controller View Integration Hook (dashboard/views.py)
+# =====================================================================
+from django.shortcuts import render, get_object_or_404
+from django.contrib.auth.decorators import login_required
+from rigs.models import Rig  # Standard database object model reference bindings
+from dashboard.mixins import TerminalTokenEngine
+
+@login_required
+def rig_terminal_view(request, rig_uuid):
+    """Renders the xterm layout frame populated with transient access keys."""
+    rig = get_object_or_404(Rig, uuid=rig_uuid)
+    
+    # Check your existing platform permission validation here:
+    # if not request.user.has_rig_access(rig): raise PermissionDenied
+    
+    # Generate cryptographic connection session signature ticket
+    handshake_token = TerminalTokenEngine.generate_user_token(request.user, rig.uuid)
+    
+    context = {
+        "rig": rig,
+        "terminal_ticket": handshake_token
+    }
+    return render(request, "dashboard/rig_terminal.html", context)
 ```
 
 ---
@@ -477,8 +587,8 @@ After=network.target
 Type=simple
 User=www-data
 Group=www-data
-WorkingDirectory=/var/www/GPU-Rig-Monitoring-Platform/gpu_monitor
-ExecStart=/var/www/GPU-Rig-Monitoring-Platform/venv/bin/uvicorn gpu_monitor.asgi:application --host 127.0.0.1 --port 8001 --workers 4 --log-level info
+WorkingDirectory=/opt/gpu_monitor/gpu_monitor
+ExecStart=/opt/gpu_monitor/venv/bin/uvicorn gpu_monitor.asgi:application --host 127.0.0.1 --port 8001 --workers 1 --log-level info
 Restart=always
 RestartSec=3s
 Environment=PYTHONUNBUFFERED=1
@@ -508,7 +618,7 @@ Create a new file at `gpu_monitor/deploy/server_terminal_setup.sh`:
 #!/bin/bash
 
 # Target Project Roots
-PROJECT_ROOT="/var/www/GPU-Rig-Monitoring-Platform"
+PROJECT_ROOT="/opt/gpu_monitor"
 APP_ROOT="\${PROJECT_ROOT}/gpu_monitor"
 VENV_PYTHON="\${PROJECT_ROOT}/venv/bin/python3"
 
@@ -566,7 +676,7 @@ rollback_deployment() {
 # 2. Synchronize dependency runtimes within virtual environments
 echo "[Step 1/5] Updating server environment packages..."
 if [ -f "\${VENV_PYTHON}" ]; then
-    \({VENV_PYTHON} -m pip install --upgrade pip \vert{}\vert{} rollback_deployment\){VENV_PYTHON} -m pip install channels channels-redis paramiko uvicorn || rollback_deployment
+    \({VENV_PYTHON} -m pip install --upgrade pip \vert{}\vert{} rollback_deployment\){VENV_PYTHON} -m pip install channels paramiko uvicorn || rollback_deployment
 else
     echo "Error: Virtual environment python executable not found at \${VENV_PYTHON}"
     exit 1
@@ -584,7 +694,7 @@ Type=simple
 User=\${WWW_USER}
 Group=\${WWW_GROUP}
 WorkingDirectory=\${APP_ROOT}
-ExecStart=\${PROJECT_ROOT}/venv/bin/uvicorn gpu_monitor.asgi:application --host 127.0.0.1 --port 8001 --workers 4 --log-level info
+ExecStart=\${PROJECT_ROOT}/venv/bin/uvicorn gpu_monitor.asgi:application --host 127.0.0.1 --port 8001 --workers 1 --log-level info
 Restart=always
 RestartSec=3s
 Environment=PYTHONUNBUFFERED=1

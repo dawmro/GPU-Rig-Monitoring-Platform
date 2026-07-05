@@ -1394,3 +1394,103 @@ The client nodes run a background daemon that monitors hardware states and maint
 | **Remote GPU Rig Node**| `/opt/monitoring-agent/keys/` | `root` | `root:root` (Mode 0700) | Isolated storage jailing backend loopback Private RSA tokens. |
 | **Remote GPU Rig Node**| `/home/rigshell/` | `rigshell` | `rigshell:rigshell` | Jailed user home space where diagnostic CLI scripts are safely run. |
 
+---
+
+## 15. End-to-End System Integration Verification Protocol
+
+To verify that the reverse terminal infrastructure is functioning smoothly before deploying it to all live customer production rings, execute this structured checklist step-by-step.
+
+```text
+[Browser User]               [Django Central Server]               [Remote GPU Rig]
+      │                                │                                    │
+      │ ── Step 3: Check UI Log ──────►│                                    │
+      │                                │ ◄── Step 2: Control Skt Listening ─┤
+      │                                │                                    │
+      │ ── Step 4: Open Console Tab ──►│ ── Step 5: Verify Active Bridge ──►│
+```
+
+---
+
+### 15.1 Step 1: Server ASGI Backend Validation
+Verify that the Uvicorn worker process has initialized cleanly on the central server and is listening internally on port 8001 without firewall conflicts.
+
+Run these commands on your central server (VPS):
+```bash
+# 1. Inspect the systemd process status tracker
+sudo systemctl status gpu-monitor-asgi.service
+
+# 2. Verify that Uvicorn is bound strictly to the local loopback adapter
+sudo ss -tlnp | grep 8001
+# Expected output structure: LISTEN 0 128 127.0.0.1:8001
+
+# 3. Check for any initial startup syntax errors or missing app dependencies
+sudo journalctl -u gpu-monitor-asgi.service -f -n 50
+```
+
+---
+
+### 15.2 Step 2: Rig Background Daemon Verification
+Confirm that the persistent background worker on the remote rig is successfully connecting out over HTTPS/443 and holding open an active control path to the server.
+
+Run these commands on the remote GPU rig:
+```bash
+# 1. Inspect the runtime status of the client terminal service unit
+sudo systemctl status gpu-rig-terminal.service
+
+# 2. Check the update and execution logs to confirm connection success
+sudo tail -f /opt/monitoring-agent/var/log/update.log
+# Expected log line: "Starting automated platform integration update audit loop"
+
+# 3. Verify that the loopback key permissions conform to mandatory OpenSSH security strictmodes
+sudo ls -l /opt/monitoring-agent/keys/terminal_id_rsa
+# Expected permissions profile: -rw------- 1 root root ...
+```
+
+---
+
+### 15.3 Step 3: Central Server In-Memory Connection Audit
+Verify that the Django server runtime has correctly cached the rig's control channel reference inside its local memory array.
+
+Open an interactive Django shell on your central server to inspect the live routing state:
+```bash
+sudo /opt/gpu_monitor/venv/bin/python /opt/gpu_monitor/manage.py shell
+```
+```python
+# Execute inside the Django python shell environment
+from dashboard.consumers import SSHTerminalConsumer
+
+# Print out the memory routing dictionary matrix
+print(SSHTerminalConsumer.active_routing_matrix)
+# Expected verification layout mapping:
+# {
+#   'your-rig-uuid-string-here': {'user': None, 'rig': None, 'control': <dashboard.consumers.SSHTerminalConsumer object at 0x...>}
+# }
+```
+*If the `'control'` key holds an active consumer object identity and `'user'` and `'rig'` are `None`, your long-lived control signaling path is operating exactly as intended.*
+
+---
+
+### 15.4 Step 4: Web Browser Handshake & Token Verification
+Navigate to a target rig's console panel using your browser to check that transient authentication tickets are passing security checks.
+
+1. Load your platform dashboard, log in with an authorized user profile, and click the **Interactive System Console** tab.
+2. Open your web browser's Developer Tools network inspector pane (**F12** -> Navigate to **Network** tab -> Filter for **WS** or **WebSockets**).
+3. Look for the active network item named: `?ticket=...`.
+4. Verify that the server returns an HTTP Status Code **`101 Switching Protocols`**.
+
+*   **If the connection drops with a `4401` error**: Your dashboard template is failing to append the context variable `{{ terminal_ticket }}` to the query parameters string.
+*   **If the connection drops with a `4403` error**: The 30-second handshake verification window has expired, or there is an encryption salt mismatch between your view generator and your consumer validator.
+
+---
+
+### 15.5 Step 5: Full Duplex Terminal Pipeline Audit
+Verify that text styling, ANSI escape code rendering, window resizing, and process controls behave correctly inside an active xterm session.
+
+1. Once the console loads, type `whoami`. It should display **`rigshell`**.
+2. Run `pwd`. It should point to the sandboxed directory profile **`/home/rigshell`**.
+3. Launch a full-screen application by running `top`.
+4. Resize your desktop browser window layout frames mid-session. Verify that text columns redraw fluidly to fill up your dashboard layout container grid without wrapping awkwardly.
+5. Exit the active console session by typing `exit`. The xterm viewport terminal grid should cleanly output the closing tracking text: 
+   `[Secure Remote Connection Terminated: Session Closed]`.
+
+

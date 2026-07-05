@@ -446,9 +446,10 @@ Integrate the terminal view inside your HTMX layout tabs (`gpu_monitor/dashboard
     </div>
 </div>
 
-<link rel="stylesheet" href="https://jsdelivr.net" />
-<script src="https://jsdelivr.net"></script>
-<script src="https://jsdelivr.net"></script>
+<!-- Corrected production-grade package targets via CDN -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css" />
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
 
 <script>
     document.addEventListener("DOMContentLoaded", function () {
@@ -477,7 +478,7 @@ Integrate the terminal view inside your HTMX layout tabs (`gpu_monitor/dashboard
 
         // Connect user browser terminal session back to Django Channels routing path
         const wsProtocol = window.location.protocol === "https:" ? "wss://" : "ws://";
-        const socketUrl = `${wsProtocol}${window.location.host}/ws/ssh/user/{{ rig.uuid }}/`;
+        const socketUrl = `${wsProtocol}${window.location.host}/ws/ssh/user/{{ rig.uuid }}/?ticket={{ terminal_ticket }}`;
         const socket = new WebSocket(socketUrl);
 
         // Forward keystrokes to Django
@@ -675,10 +676,12 @@ rollback_deployment() {
 
 # 2. Synchronize dependency runtimes within virtual environments
 echo "[Step 1/5] Updating server environment packages..."
-if [ -f "\${VENV_PYTHON}" ]; then
-    \({VENV_PYTHON} -m pip install --upgrade pip \vert{}\vert{} rollback_deployment\){VENV_PYTHON} -m pip install channels paramiko uvicorn || rollback_deployment
+if [ -f "${VENV_PYTHON}" ]; then
+    # Upgrade pip and install standard async dependencies without channels-redis
+    ${VENV_PYTHON} -m pip install --upgrade pip || rollback_deployment
+    ${VENV_PYTHON} -m pip install channels paramiko uvicorn || rollback_deployment
 else
-    echo "Error: Virtual environment python executable not found at \${VENV_PYTHON}"
+    echo "Error: Virtual environment python executable not found at ${VENV_PYTHON}"
     exit 1
 fi
 
@@ -705,34 +708,37 @@ EOF
 
 # 4. Inject WebSocket support directly into production Nginx config files
 echo "[Step 3/5] Updating production Nginx upstream routing proxy configs..."
-if [ -f "\${NGINX_CONF_PATH}" ]; then
-    if grep -q "location /ws/" "\${NGINX_CONF_PATH}"; then
+if [ -f "${NGINX_CONF_PATH}" ]; then
+    if grep -q "location /ws/" "${NGINX_CONF_PATH}"; then
         echo "WebSocket configuration segment already configured inside Nginx configuration block."
     else
         # Back up original profile setup prior to inline edits
-        cp "\${NGINX_CONF_PATH}" "\({NGINX_CONF_PATH}\){BACKUP_SUFFIX}" || rollback_deployment
+        cp "${NGINX_CONF_PATH}" "${NGINX_CONF_PATH}${BACKUP_SUFFIX}" || rollback_deployment
         
         # Inject WebSocket location proxy handler directly above the root block location line
+        # Tabs and formatting match standard Nginx configuration nesting spaces cleanly
         sed -i '/location \/ {/i \
     # WebSockets transport reverse proxy handling block \
     location /ws/ { \
         proxy_pass http://127.0.0.1:8001; \
         proxy_http_version 1.1; \
-        proxy_set_header Upgrade \$http_upgrade; \
+        proxy_set_header Upgrade $http_upgrade; \
         proxy_set_header Connection "Upgrade"; \
-        proxy_set_header Host \$host; \
-        proxy_set_header X-Real-IP \$remote_addr; \
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for; \
-        proxy_set_header X-Forwarded-Proto \$scheme; \
+        proxy_set_header Host $host; \
+        proxy_set_header X-Real-IP $remote_addr; \
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; \
+        proxy_set_header X-Forwarded-Proto $scheme; \
         proxy_read_timeout 86400s; \
         proxy_send_timeout 86400s; \
-    }\n' "\${NGINX_CONF_PATH}" || rollback_deployment
-        echo "Successfully injected WebSocket tracking rules into \${NGINX_CONF_PATH}"
+    }\n' "${NGINX_CONF_PATH}" || rollback_deployment
+        
+        echo "Successfully injected WebSocket tracking rules into ${NGINX_CONF_PATH}"
     fi
 else
-    echo "Warning: Target Nginx server config block file not detected at \${NGINX_CONF_PATH}"
+    echo "Warning: Target Nginx server config block file not detected at ${NGINX_CONF_PATH}"
     echo "Please ensure you paste your location /ws/ rules inside your custom configurations manually."
 fi
+
 
 # 5. Flush Systemd Daemon States & Initialize Run Pipelines
 echo "[Step 4/5] Activating and starting systemd ASGI runtime workers..."
@@ -773,180 +779,11 @@ sudo journalctl -u gpu-monitor-asgi.service -f -n 50
 
 ---
 
-## 9. Secure WebSocket Session Authentication
-
-To prevent unauthorized users or external entities from hijacking terminal sessions, this project implements a short-lived **Cryptographic Token Handshake Pattern**. Because standard WebSockets cannot securely pass custom HTTP authorization headers, your backend views must generate a signed, timed connection token that is validated at the moment of the socket handshake.
-
-```text
-User Dashboard             Django View (HTTP)         ASGI Layer (WebSocket)
-      │                            │                           │
-      │ 1. GET Rig Page / Request  │                           │
-      ├───────────────────────────►│                           │
-      │                            │ 2. Generate Cryptographic │
-      │                            │    Session Ticket         │
-      │ 3. Return Page with Token  │                           │
-      │◄───────────────────────────┤                           │
-      │                                                        │
-      │ 4. Establish Secure WebSocket Handshake with Token      │
-      ├───────────────────────────────────────────────────────►│
-      │                                                        │ 5. Validate Integrity
-      │                                                        │    & Expiration Time
-      │                                                        │ 6. Grant PTY Access
-```
-
----
-
-### 9.1 Step 1: Token Generation Mixin (`gpu_monitor/dashboard/mixins.py`)
-Create a custom mixing helper to securely generate short-lived, encrypted terminal access strings for authorized users.
-
-```python
-import time
-from django.core.signing import Signer, BadSignature
-
-class TerminalTokenEngine:
-    """Generates and validates timestamped cryptographic tickets for secure socket links."""
-    
-    @staticmethod
-    def generate_user_token(user, rig_uuid):
-        """Constructs a signed payload string valid for exactly 30 seconds."""
-        signer = Signer(salt="gpu_monitor.terminal.auth.salt")
-        timestamp = int(time.time())
-        payload = f"{user.id}:{rig_uuid}:{timestamp}"
-        return signer.sign(payload)
-
-    @staticmethod
-    def verify_user_token(token, current_rig_uuid):
-        """Validates payload signatures and checks for explicit age boundaries."""
-        signer = Signer(salt="gpu_monitor.terminal.auth.salt")
-        try:
-            unsigned_payload = signer.unsign(token)
-            user_id, rig_uuid, timestamp = unsigned_payload.split(":")
-            
-            # 1. Enforce strict resource targeting validation constraints
-            if rig_uuid != str(current_rig_uuid):
-                return None
-                
-            # 2. Enforce strict 30-second handshake timeout limits
-            if int(time.time()) - int(timestamp) > 30:
-                return None
-                
-            return user_id
-        except (BadSignature, ValueError):
-            return None
-```
-
----
-
-### 9.2 Step 2: Injecting Tokens into Django Views (`gpu_monitor/dashboard/views.py`)
-Modify your dashboard view rendering method to pass a signed ticket to the frontend template environment.
-
-```python
-from django.shortcuts import render, get_object_or_worry
-from django.contrib.auth.decorators import login_required
-from rigs.models import Rig
-from dashboard.mixins import TerminalTokenEngine
-
-@login_required
-def rig_terminal_view(request, rig_uuid):
-    """Renders the xterm layout frame populated with transient access keys."""
-    rig = get_object_or_worry(Rig, uuid=rig_uuid)
-    
-    # Check your existing platform permissions logic matrix here
-    # if not request.user.has_rig_access(rig): raise PermissionDenied
-    
-    # Generate cryptographic connection session signature ticket
-    handshake_token = TerminalTokenEngine.generate_user_token(request.user, rig.uuid)
-    
-    context = {
-        "rig": rig,
-        "terminal_ticket": handshake_token
-    }
-    return render(request, "dashboard/rig_terminal.html", context)
-```
-
----
-
-### 9.3 Step 3: Upgrading the Async Consumer Handshake (`gpu_monitor/dashboard/consumers.py`)
-Update your existing `connect` routing structures within `consumers.py` to intercept URL token queries and validate them before granting full-duplex process streams.
-
-```python
-import json
-from urllib.parse import parse_qs
-from channels.generic.websocket import AsyncWebsocketConsumer
-from dashboard.mixins import TerminalTokenEngine
-
-class SSHTerminalConsumer(AsyncWebsocketConsumer):
-    active_routing_matrix = {}
-
-    async def connect(self):
-        self.client_type = self.scope['url_route']['kwargs']['client_type']
-        self.rig_uuid = str(self.scope['url_route']['kwargs']['rig_uuid'])
-
-        # Establish connection data tree references safely
-        if self.rig_uuid not in SSHTerminalConsumer.active_routing_matrix:
-            SSHTerminalConsumer.active_routing_matrix[self.rig_uuid] = {"user": None, "rig": None, "control": None}
-
-        # User Authentication Handshake Processing Pipeline
-        if self.client_type == 'user':
-            # Extract query parameters directly from the inner handshake URL string
-            query_string = self.scope.get("query_string", b"").decode("utf-8")
-            query_params = parse_qs(query_string)
-            ticket_list = query_params.get("ticket", [])
-            
-            if not ticket_list:
-                await self.close(code=4401) # Refuse Connection: Ticket Missing
-                return
-                
-            provided_ticket = ticket_list[0]
-            # Execute validation check against core cryptographic signing systems
-            validated_user_id = TerminalTokenEngine.verify_user_token(provided_ticket, self.rig_uuid)
-            
-            if not validated_user_id:
-                await self.close(code=4403) # Refuse Connection: Invalid or Expired Token
-                return
-
-            # Explicit token verification complete, populate cache structures
-            await self.accept()
-            SSHTerminalConsumer.active_routing_matrix[self.rig_uuid]["user"] = self
-            
-            control_socket = SSHTerminalConsumer.active_routing_matrix[self.rig_uuid]["control"]
-            if control_socket:
-                await control_socket.send(text_data=json.dumps({"event": "spawn_worker_channel"}))
-
-        # Rig Daemon Connection Validation
-        elif self.client_type in ['rig', 'rig_control']:
-            # Validate connection api keys matching your existing middleware logic
-            headers = dict(self.scope.get("headers", []))
-            api_key = headers.get(b"x-api-key", b"").decode("utf-8")
-            
-            # Connect verification against your actual platform data store layers
-            # if not await self.validate_rig_api_key(self.rig_uuid, api_key):
-            #     await self.close(code=4403)
-            #     return
-            
-            await self.accept()
-            SSHTerminalConsumer.active_routing_matrix[self.rig_uuid][self.client_type.replace("rig_control", "control")] = self
-```
-
----
-
-### 9.4 Step 4: Connecting via the Frontend UI (`dashboard/rig_terminal.html`)
-Update your frontend script block initialization statement to safely append the secure connection ticket string straight into your active WebSocket tracking routes.
-
-```javascript
-// Connect user browser terminal session with query parameter verification bindings
-const wsProtocol = window.location.protocol === "https:" ? "wss://" : "ws://";
-const socketUrl = `${wsProtocol}${window.location.host}/ws/ssh/user/{{ rig.uuid }}/?ticket={{ terminal_ticket }}`;
-const socket = new WebSocket(socketUrl);
-```
-
----
-
-## 10. Operational Synchronization & Lifecycle Architecture
+## 9. Operational Synchronization & Lifecycle Architecture
 
 A critical architectural distinction must be maintained between the platform's standard performance telemetry loop and the remote shell system. Because metrics collection operates via short-lived 60-second cron executions, it is entirely decoupled from the interactive terminal connection pipelines.
 
-### 10.1 Independence of Component Channels
+### 9.1 Independence of Component Channels
 
 The strict 30-second timestamp check applied to user connection tickets does **not** conflict with the 60-second rig tracking cycles. The lifecycle matrix below illustrates how these processes run on independent pathways:
 
@@ -958,7 +795,7 @@ The strict 30-second timestamp check applied to user connection tickets does **n
 
 ---
 
-### 10.2 Handshake Sequence and Signaling Timeline
+### 9.2 Handshake Sequence and Signaling Timeline
 
 Because the rig's background daemon maintains a permanent control socket connection back to the central server, connection initialization happens instantly without needing to wait for a cron cycle.
 
@@ -996,7 +833,7 @@ Because the rig's background daemon maintains a permanent control socket connect
         │                              │  Full Duplex Bridge Active │
 ```
 
-### 10.3 Key Architectural Assertions
+### 9.3 Key Architectural Assertions
 
 * **Browser-to-Server Isolation**: The 30-second security window applies strictly to the network path between your web browser and the central Django server. Because both endpoints are on high-speed networks, this transaction typically concludes in under 500 milliseconds, leaving a wide buffer for latency.
 * **Zero Rig Overhead**: The rig daemon consumes zero CPU or network bandwidth while sitting in its permanent idle control state. It does not pull data, run loops, or touch the local SSH interface until the server sends an explicit `spawn_worker_channel` instruction.

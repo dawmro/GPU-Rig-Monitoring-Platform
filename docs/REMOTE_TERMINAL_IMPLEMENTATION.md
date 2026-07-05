@@ -392,17 +392,57 @@ if __name__ == "__main__":
 ```
 
 ### 4.2 Updating the Installer Pipeline (`agent/install.sh`)
-Append the following systemd generation logic into the tail end of your production setup file (`agent/install.sh`) to initialize the process on boot:
+
+Append the following logic into the tail end of your production host installer file (`agent/install.sh`) directly before the final success text echo lines. This automatically deploys the terminal daemon dependencies, structures persistent permission storage layout keys under `/opt/monitoring-agent/keys`, and registers the long-running systemd unit script context.
 
 ```bash
-echo "Installing Persistent Remote Terminal Shell System Worker Daemon..."
+echo "=========================================================="
+echo " Deploying Persistent Remote Terminal Shell Infrastructure..."
+echo "=========================================================="
 
-# Copy script over to isolated run partition
-cp terminal_daemon.py /opt/monitoring-agent/terminal_daemon.py
-chmod +x /opt/monitoring-agent/terminal_daemon.py
+# 1. Install required persistent Python package dependencies
+echo "Installing python websocket and cryptography dependencies..."
+"\$INSTALL_DIR/venv/bin/pip" install websockets paramiko
 
-# Write clean systemd daemon infrastructure specification sheet
-cat << 'EOF' > /etc/systemd/system/gpu-rig-terminal.service
+# 2. Re-allocate directory schemas for persistent crypt keys (HiveOS Safe)
+KEYS_DIR="\$INSTALL_DIR/keys"
+mkdir -p "\$KEYS_DIR"
+chmod 700 "\$KEYS_DIR"
+
+# 3. Handle automated keypair generation if they don't already exist
+if [ ! -f "\$KEYS_DIR/terminal_id_rsa" ]; then
+    echo "Generating secure local system signature loopback keys..."
+    ssh-keygen -t rsa -b 4096 -f "\$KEYS_DIR/terminal_id_rsa" -N ""
+    chmod 600 "\$KEYS_DIR/terminal_id_rsa"
+fi
+
+# 4. Integrate unprivileged sandbox profiles and authorize endpoints
+if ! id "rigshell" &>/dev/null; then
+    echo "Configuring unprivileged sandboxed user profile (rigshell)..."
+    useradd --disabled-password --gecos "Terminal Proxy" --shell /bin/rbash rigshell
+    passwd -l rigshell
+fi
+
+# Provision authorized_keys parameters securely under the home boundary
+mkdir -p /home/rigshell/.ssh
+cat "\$KEYS_DIR/terminal_id_rsa.pub" >> /home/rigshell/.ssh/authorized_keys
+chmod 700 /home/rigshell/.ssh
+chmod 600 /home/rigshell/.ssh/authorized_keys
+chown -R rigshell:rigshell /home/rigshell/.ssh
+
+# 5. Mirror active worker scripts down into persistent partitions
+echo "Staging script artifacts..."
+cp terminal_daemon.py "\$INSTALL_DIR/terminal_daemon.py"
+chmod +x "\$INSTALL_DIR/terminal_daemon.py"
+
+# Enforce clean ownership attributes across the core script framework
+# Note: Keep key sets owned by root so the unprivileged rigshell environment cannot manipulate them
+chown root:root "\$INSTALL_DIR/terminal_daemon.py"
+chown -R root:root "\$KEYS_DIR"
+
+# 6. Generate explicit systemd background supervisor service configurations
+echo "Registering host daemon supervisor unit definitions..."
+cat << EOF > /etc/systemd/system/gpu-rig-terminal.service
 [Unit]
 Description=GPU Rig Monitoring Platform Secure Remote SSH Reverse Terminal Daemon
 After=network.target network-online.target
@@ -411,8 +451,8 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/opt/monitoring-agent
-ExecStart=/opt/monitoring-agent/venv/bin/python3 /opt/monitoring-agent/terminal_daemon.py
+WorkingDirectory=\${INSTALL_DIR}
+ExecStart=\({INSTALL_DIR}/venv/bin/python3\){INSTALL_DIR}/terminal_daemon.py
 Restart=always
 RestartSec=5s
 Environment=PYTHONUNBUFFERED=1
@@ -421,11 +461,14 @@ Environment=PYTHONUNBUFFERED=1
 WantedBy=multi-user.target
 EOF
 
-# Reload internal init states and trigger runtime start
+# 7. Reload operational tracking states and initialize execution
+echo "Activating terminal supervisor processes..."
+chmod 644 /etc/systemd/system/gpu-rig-terminal.service
 systemctl daemon-reload
 systemctl enable gpu-rig-terminal.service
-systemctl start gpu-rig-terminal.service
-echo "Terminal service successfully deployed and running in background."
+systemctl restart gpu-rig-terminal.service
+
+echo "Terminal worker service successfully deployed and running in background."
 ```
 
 ---
@@ -839,6 +882,115 @@ Because the rig's background daemon maintains a permanent control socket connect
 * **Zero Rig Overhead**: The rig daemon consumes zero CPU or network bandwidth while sitting in its permanent idle control state. It does not pull data, run loops, or touch the local SSH interface until the server sends an explicit `spawn_worker_channel` instruction.
 * **Persistent Sessions**: The token timeout restrictions apply **only** to the initial handshake request phase. Once Django validates the signature and accepts the WebSocket request, the ticket is discarded, and the session remains active indefinitely until the user or rig closes the tab.
 
+---
+
+## 11. Client Rig SSH Endpoint Hardening & Security Policies (HiveOS Optimized)
+
+Because volatile environments like HiveOS clear tracks inside `/var/log` and `/var/lock` on every reboot, all runtime scripts, lock assertions, configuration keys, and identities must reside exclusively within the persistent `/opt/` partition. Implementing these changes prevents an attacker from leveraging a web server compromise to escalate privileges or move laterally into hardware arrays.
+
+---
+
+### 11.1 Principle of Least Privilege: Dedicated Shell Profile
+Do not run loopback SSH operations under `root` or reuse existing application users. Create a dedicated system node account on the rig featuring no public password login matrices.
+
+Run the following commands on each remote GPU rig:
+
+```bash
+# 1. Initialize an unprivileged, isolated user group and home directory boundary
+sudo adduser --disabled-password --gecos "Terminal Proxy Account" rigshell
+
+# 2. Block the account from receiving direct public password challenge requests
+sudo passwd -l rigshell
+```
+
+---
+
+### 11.2 Environment Isolation: Restricted Shell Shell Boundaries
+To prevent the terminal tool from navigating freely across the rig's hardware directory architectures, force the user runtime into a Restricted Bash Shell (`rbash`). This prevents execution paths utilizing `/` characters, stops environmental `PATH` overrides, and locks execution options strictly to predetermined symlinks.
+
+```bash
+# Force the system login parameters to route through rbash
+sudo chsh -s /bin/rbash rigshell
+
+# Build an isolated execution folder inside the user's home profile
+sudo mkdir -p /home/rigshell/bin
+
+# Restrict the user's execution PATH strictly to this safe workspace folder
+sudo sed -i 's|PATH=\$PATH:\$HOME/bin|PATH=\$HOME/bin|g' /home/rigshell/.bashrc
+echo 'readonly PATH' >> /home/rigshell/.bash_profile
+
+# Symlink only safe, approved binaries that the dashboard terminal is allowed to run
+# Example: Allow checking GPU metrics and viewing system activity logs
+sudo ln -s /usr/bin/nvidia-smi /home/rigshell/bin/nvidia-smi
+sudo ln -s /usr/bin/top /home/rigshell/bin/top
+```
+
+---
+
+### 11.3 OpenSSH Daemon Sandboxing (`/etc/ssh/sshd_config`)
+Configure OpenSSH conditional overrides to isolate any connections referencing the `rigshell` system user on the local interface.
+
+Open `/etc/ssh/sshd_config` on the rig and append this block at the bottom:
+
+```ini
+# Isolate remote console operations at the network loopback boundary
+Match User rigshell Address 127.0.0.1
+    AllowTcpForwarding no
+    X11Forwarding no
+    AllowAgentForwarding no
+    PermitTTY yes
+    ForceCommand /bin/rbash
+    PasswordAuthentication no
+    PubkeyAuthentication yes
+```
+
+*   **`AllowTcpForwarding no`**: Blocks port forwarding to stop network pivot attacks into the local network.
+*   **`AllowAgentForwarding no`**: Prevents the rig from inheriting credential tokens from the server session.
+*   **`ForceCommand /bin/rbash`**: Locks the environment shell profile even if an application call overrides it.
+
+---
+
+### 11.4 Cryptographic Key Exchange & Volatility Mitigation
+To eliminate hardcoded plain-text passwords within the daemon code configuration profiles and protect files from disappearing on reboot in HiveOS environments, swap the authentication stack to a secure, passwordless local SSH Public/Private keypair saved entirely inside persistent `/opt/` storage structures.
+
+#### Phase A: Generate the Local Signature Tokens on the Rig
+```bash
+# Force explicit persistence bounds inside the isolated opt running container
+sudo mkdir -p /opt/monitoring-agent/keys
+
+# Generate a dedicated RSA keypair inside the persistent monitoring runtime folder
+sudo ssh-keygen -t rsa -b 4096 -f /opt/monitoring-agent/keys/terminal_id_rsa -N ""
+
+# Set strict file access permissions so only root/agent can read the private key
+sudo chmod 700 /opt/monitoring-agent/keys
+sudo chmod 600 /opt/monitoring-agent/keys/terminal_id_rsa
+sudo chown -R root:root /opt/monitoring-agent/keys
+```
+
+#### Phase B: Authorize Key Verification Entries
+```bash
+# Inject the matching public component key straight into user account profiles
+sudo mkdir -p /home/rigshell/.ssh
+sudo cat /opt/monitoring-agent/keys/terminal_id_rsa.pub >> /home/rigshell/.ssh/authorized_keys
+
+# Enforce system strictmode permissions over target paths
+sudo chmod 700 /home/rigshell/.ssh
+sudo chmod 600 /home/rigshell/.ssh/authorized_keys
+sudo chown -R rigshell:rigshell /home/rigshell/.ssh
+```
+
+#### Phase C: Update Agent Invocation Subroutines (`agent/terminal_daemon.py`)
+Replace the standard string password keyword mapping entries within your `terminal_daemon.py` connection block to call your newly minted persistent key files natively:
+
+```python
+# Updated loopback connection pipeline utilizing persistent key identities
+ssh.connect(
+    '127.0.0.1', 
+    port=22, 
+    username='rigshell', 
+    key_filename='/opt/monitoring-agent/keys/terminal_id_rsa'
+)
+```
 
 
 

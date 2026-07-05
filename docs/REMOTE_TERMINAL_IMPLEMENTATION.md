@@ -680,8 +680,8 @@ Create a new file at `gpu_monitor/deploy/server_terminal_setup.sh`:
 
 # Target Project Roots
 PROJECT_ROOT="/opt/gpu_monitor"
-NGINX_CONF_PATH="/etc/nginx/sites-available/gpu_monitor"
 APP_ROOT="${PROJECT_ROOT}/gpu_monitor"
+NGINX_CONF_PATH="/etc/nginx/sites-available/gpu_monitor"
 VENV_PYTHON="${PROJECT_ROOT}/venv/bin/python3"
 BACKUP_SUFFIX=".terminal_setup_bak"
 

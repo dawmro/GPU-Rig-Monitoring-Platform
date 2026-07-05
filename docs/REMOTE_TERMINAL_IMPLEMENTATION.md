@@ -1063,4 +1063,266 @@ The terminal console operator (`rigshell`) **never has file-system access or vis
 | **`.../var/`** | Owner (Read/Write/Exec) | No Access | No Access | **No Conflict**: Telemetry state directory isolation. |
 | **`/home/rigshell/`** | No Access | Read & Execute (Proxy Only) | Owner (Read/Write/Exec) | **No Conflict**: Sandboxed home path environment. |
 
+---
+
+## 13. Hardened, Self-Updating Lifecycle Pipeline (`agent/check_update.py`)
+
+To ensure that future platform features, API optimizations, or terminal component patches deploy cleanly across all remote nodes, the update checker script must watch and update your entire component core in parallel. 
+
+This tracking script updates your telemetry loop (`run.py`), your interactive terminal server listener (`terminal_daemon.py`), and **itself** simultaneously using an atomic transaction pattern that preserves the `root:root` security boundaries.
+
+### 13.1 Production Implementation Blueprint
+Create or replace your file at `/opt/monitoring-agent/check_update.py` with this clean tracking block:
+
+```
+#!/usr/bin/env python3
+"""
+GPU Rig Monitoring Agent - Self-Updating Lifecycle Worker
+
+Checks GitHub for newer versions of the telemetry agent, terminal daemon,
+and the update checker itself. Validates, updates, and hardens permissions.
+
+Usage:
+    python3 check_update.py
+"""
+
+import os
+import sys
+import re
+import shutil
+import logging
+import logging.handlers
+import tempfile
+import subprocess
+from pathlib import Path
+from urllib.request import urlopen
+from urllib.error import URLError, HTTPError
+
+# -- Configuration ------------------------------------------------------------
+
+# Corrected destination paths mapped strictly to your true /opt/monitoring-agent rig directory
+AGENT_DIR = Path("/opt/monitoring-agent")
+RUN_PY = AGENT_DIR / "run.py"
+TERMINAL_PY = AGENT_DIR / "terminal_daemon.py"
+UPDATER_PY = AGENT_DIR / "check_update.py"
+
+BACKUP_RUN_PY = AGENT_DIR / "run.py.bak"
+BACKUP_TERMINAL_PY = AGENT_DIR / "terminal_daemon.py.bak"
+BACKUP_UPDATER_PY = AGENT_DIR / "check_update.py.bak"
+
+LOG_DIR = AGENT_DIR / "var" / "log"
+LOG_FILE = LOG_DIR / "update.log"
+
+GITHUB_BASE_URL = (
+    "https://githubusercontent.com"
+)
+GITHUB_RUN_URL = f"{GITHUB_BASE_URL}/run.py"
+GITHUB_TERMINAL_URL = f"{GITHUB_BASE_URL}/terminal_daemon.py"
+GITHUB_UPDATER_URL = f"{GITHUB_BASE_URL}/check_update.py"
+
+MAX_MAJOR_VERSION = 1
+
+# -- Logging ------------------------------------------------------------------
+
+def setup_logging():
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    handler = logging.handlers.RotatingFileHandler(
+        LOG_FILE, maxBytes=1024 * 1024, backupCount=3
+    )
+    handler.setFormatter(logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(message)s"
+    ))
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    root.addHandler(handler)
+    root.addHandler(logging.StreamHandler(sys.stderr))
+
+log = logging.getLogger(__name__)
+
+# -- Parsing & Network Utilities ----------------------------------------------
+
+def parse_version(version_str):
+    clean = re.split(r'[-_]', version_str.strip())[0]
+    parts = clean.split(".")
+    try:
+        return tuple(int(p) for p in parts[:3])
+    except (ValueError, IndexError):
+        return None
+
+def get_local_version():
+    if not RUN_PY.exists():
+        return None, None
+    content = RUN_PY.read_text(encoding="utf-8")
+    match = re.search(r"__version__\s*=\s*['\"]([^'\"]+)['\"]", content)
+    if match:
+        ver_str = match.group(1)
+        return ver_str, parse_version(ver_str)
+    return None, None
+
+def fetch_remote_asset(url):
+    try:
+        with urlopen(url, timeout=30) as resp:
+            return resp.read().decode("utf-8")
+    except (URLError, HTTPError, OSError) as e:
+        log.warning("Network connection tracking failure for URL %s: %s", url, e)
+        return None
+
+# -- Script Validation --------------------------------------------------------
+
+def validate_python_file(path):
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "py_compile", str(path)],
+            capture_output=True, text=True, timeout=10
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.TimeoutExpired) as e:
+        log.error("Syntax compilation verification failure: %s", e)
+        return False
+
+def stage_and_validate_file(remote_content, target_filename):
+    """Writes content to an isolated tmp structure and verifies compiler states."""
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".py", dir=str(AGENT_DIR), delete=False, encoding="utf-8"
+        ) as tmp:
+            tmp.write(remote_content)
+            tmp_path = Path(tmp.name)
+            
+        if not validate_python_file(tmp_path):
+            log.error("Downloaded file syntax check failed for %s", target_filename)
+            tmp_path.unlink()
+            return None
+            
+        return tmp_path
+    except OSError as e:
+        log.error("Failed handling staging allocations for %s: %s", target_filename, e)
+        return None
+
+# -- Multi-File Secure Transaction Pipeline ------------------------------------
+
+def execute_complete_platform_update(run_content, terminal_content, updater_content, version_str):
+    """Executes a triple-file atomic swap while cleanly preserving root permissions."""
+    
+    # 1. Stage and compile-check all assets independently in memory/tmp space
+    tmp_run = stage_and_validate_file(run_content, "run.py")
+    tmp_term = stage_and_validate_file(terminal_content, "terminal_daemon.py")
+    tmp_upd = stage_and_validate_file(updater_content, "check_update.py")
+    
+    if not tmp_run or not tmp_term or not tmp_upd:
+        if tmp_run: tmp_run.unlink()
+        if tmp_term: tmp_term.unlink()
+        if tmp_upd: tmp_upd.unlink()
+        return False
+
+    try:
+        # 2. Build local disaster backups before overwriting active production profiles
+        if RUN_PY.exists(): shutil.copy2(RUN_PY, BACKUP_RUN_PY)
+        if TERMINAL_PY.exists(): shutil.copy2(TERMINAL_PY, BACKUP_TERMINAL_PY)
+        if UPDATER_PY.exists(): shutil.copy2(UPDATER_PY, BACKUP_UPDATER_PY)
+        
+        # 3. Swap the active references atomically across local filesystem tables
+        tmp_run.replace(RUN_PY)
+        tmp_term.replace(TERMINAL_PY)
+        tmp_upd.replace(UPDATER_PY) # Script updates its own physical file mapping safely here
+        
+        # 4. Enforce uniform permission tracking (Read/Execute for users)
+        os.chmod(str(RUN_PY), 0o755)
+        os.chmod(str(TERMINAL_PY), 0o755)
+        os.chmod(str(UPDATER_PY), 0o755)
+        
+        # 5. CRITICAL PRIVILEGE HARDENING PROTECTION
+        # Force root:root ownership via sudo to keep components safe from dashboard tampering.
+        subprocess.run(
+            ["sudo", "chown", "root:root", str(RUN_PY), str(TERMINAL_PY), str(UPDATER_PY)],
+            check=True, capture_output=True
+        )
+        
+        log.info("Full platform update applied successfully. System shifted to version %s", version_str)
+        return True
+
+    except Exception as e:
+        log.error("Deployment operation dropped. Entering error path recovery tracking: %s", e)
+        # Dynamic rollback to original structural signatures if processing fails midway
+        if BACKUP_RUN_PY.exists(): BACKUP_RUN_PY.replace(RUN_PY)
+        if BACKUP_TERMINAL_PY.exists(): BACKUP_TERMINAL_PY.replace(TERMINAL_PY)
+        if BACKUP_UPDATER_PY.exists(): BACKUP_UPDATER_PY.replace(UPDATER_PY)
+        return False
+    finally:
+        if tmp_run and tmp_run.exists(): tmp_run.unlink()
+        if tmp_term and tmp_term.exists(): tmp_term.unlink()
+        if tmp_upd and tmp_upd.exists(): tmp_upd.unlink()
+
+# -- Main Execution Flow ------------------------------------------------------
+
+def main():
+    setup_logging()
+    log.info("Starting automated platform integration update audit loop")
+    
+    local_ver_str, local_ver = get_local_version()
+    if local_ver is None:
+        log.error("Unable to verify active application versions. Halting update checks.")
+        return 1
+
+    # Fetch the remote telemetry track from GitHub repository channels
+    remote_run_content = fetch_remote_asset(GITHUB_RUN_URL)
+    if not remote_run_content:
+        return 1
+
+    # Isolate version variable patterns
+    match = re.search(r"__version__\s*=\s*['\"]([^'\"]+)['\"]", remote_run_content)
+    if not match:
+        log.warning("Remote release structure parsing format unverified. Aborting verification checks.")
+        return 1
+        
+    remote_ver_str = match.group(1)
+    remote_ver = parse_version(remote_ver_str)
+    
+    if remote_ver <= local_ver:
+        log.info("Core frameworks up to date. (Active version: %s)", local_ver_str)
+        return 0
+
+    if remote_ver[0] > MAX_MAJOR_VERSION:
+        log.info("Major update release track block hit (%s -> %s). Manual intervention required.", local_ver_str, remote_ver_str)
+        return 0
+
+    # Fetch secondary structural assets from GitHub to prepare parallel transaction pipeline
+    remote_terminal_content = fetch_remote_asset(GITHUB_TERMINAL_URL)
+    remote_updater_content = fetch_remote_asset(GITHUB_UPDATER_URL)
+    
+    if not remote_terminal_content or not remote_updater_content:
+        log.error("Unable to load parallel terminal or update subsystem components from remote sources.")
+        return 1
+
+    log.info("Initializing multi-file component update sequence: %s -> %s", local_ver_str, remote_ver_str)
+    
+    if execute_complete_platform_update(remote_run_content, remote_terminal_content, remote_updater_content, remote_ver_str):
+        return 0
+    
+    return 1
+
+if __name__ == "__main__":
+    sys.exit(main())
+```
+
+---
+
+### 13.3 Sudoers Verification Rule (Mandatory Integration Step)
+
+For the `monitoring-agent` user to successfully restore file ownership to `root` when running inside the cron workflow, you must update your sudoers profile specification rules.
+
+Inside your `agent/install.sh` file, find the line where you write `/etc/sudoers.d/monitoring-agent`. Modify the allowed path array definition to explicitly whitelist the `chown` binary call targeting your three main project code files exactly.
+
+Replace that block in your `install.sh` file with this code:
+
+```bash
+cat > /etc/sudoers.d/monitoring-agent << 'EOF'
+Defaults:monitoring-agent !authenticate
+monitoring-agent ALL=(root) NOPASSWD: /usr/sbin/smartctl, /usr/bin/smartctl, /bin/journalctl, /usr/bin/journalctl, /usr/sbin/nvme, /usr/bin/nvme, /usr/bin/docker, /usr/local/bin/docker, /usr/bin/chown root\:root /opt/monitoring-agent/run.py /opt/monitoring-agent/terminal_daemon.py /opt/monitoring-agent/check_update.py
+EOF
+chmod 440 /etc/sudoers.d/monitoring-agent
+visudo -c -f /etc/sudoers.d/monitoring-agent
+```
+
+This precise mapping allows the updater to successfully re-secure your project configuration and file states on every single update deployment, without opening any backdoors for general system administration privileges.
 

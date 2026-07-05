@@ -992,5 +992,60 @@ ssh.connect(
 )
 ```
 
+---
+
+## 12. Multi-User Directory Permissions & Execution Safety Matrix
+
+Because this platform simultaneously utilizes short-lived telemetry cron tasks, long-running terminal socket daemons, and unprivileged user shells, maintaining strict file-system isolation boundaries is necessary. This architecture implements a zero-conflict configuration matrix that prevents runtime permission deadlocks while securing critical system boundaries.
+
+---
+
+### 12.1 Privilege and Path Isolation Topology
+File-system security boundaries are completely isolated because only two system background accounts interact with the `/opt/monitoring-agent` space. The interactive browser shell operator (`rigshell`) is explicitly jailed outside this runtime directory hierarchy entirely.
+
+```text
+/opt/monitoring-agent/
+├── venv/                      [monitoring-agent: Read/Exec]  [root: Read/Exec]
+├── var/                       [monitoring-agent: Read/Write] [root: No Access]
+├── keys/                      [monitoring-agent: No Access]  [root: Read/Write]
+├── run.py                     [monitoring-agent: Owner Exec] [root: No Access]
+└── terminal_daemon.py         [monitoring-agent: No Access]  [root: Owner Exec]
+
+/home/rigshell/                [monitoring-agent: No Access]  [root: Handshake Proxy Only]
+└── bin/ (rbash Jail)          [rigshell: Isolated Command Scope]
+```
+
+---
+
+### 12.2 Structural Breakdown of Asset Safety
+
+#### 1. Shared Virtual Environment (`venv`) Execution Strategy
+The virtual environment directory is read-only for processing runtimes. 
+*   **The Telemetry Agent** (`monitoring-agent`) executes the telemetry interpreter binary (`venv/bin/python`).
+*   **The Terminal Worker** (`root`) executes the socket interpreter binary simultaneously.
+*   **Conflict Prevention**: Multiple Linux processes with varying privilege states can cleanly map, read, and execute shared binaries and third-party dependency libraries (like `requests` or `paramiko`) concurrently. Because neither user modifies or updates package files at runtime, file contention cannot occur.
+
+#### 2. Main Platform Folder State Division (`/opt/monitoring-agent`)
+The platform separates monitoring state logging from terminal cryptographic keys to prevent process friction:
+*   **The Telemetry Agent** owns, executes, and updates `run.py`. It reads and writes persistent states inside its own dedicated runtime directory (`var/log/` and `var/lock/`). It lacks file permissions to view or parse any terminal-bridge structures.
+*   **The Terminal Daemon** runs under a `root` daemon execution context. Because it executes with full kernel superpowers, it cleanly bypasses standard POSIX file-system locks. It reads `terminal_daemon.py` and accesses the private loopback tokens inside `keys/` without needing to modify parent folder ownership flags away from the `monitoring-agent` user.
+
+#### 3. Complete Jailing of the Console Operator (`rigshell`)
+The terminal console operator (`rigshell`) **never has file-system access or visibility** into `/opt/monitoring-agent`.
+*   The `root` daemon intercepts the browser's incoming secure network stream, loops back internally to `127.0.0.1:22`, and performs a standard cryptographic handshake *into* the `rigshell` login workspace.
+*   Once authorized, the Linux kernel instantiates an isolated console inside `/home/rigshell/`. The user's execution paths are strictly locked to `/home/rigshell/bin/` by the `rbash` shell environment, completely blocking them from accessing, viewing, or modifying configuration code inside the primary application folders.
+
+---
+
+### 12.3 Complete System Access Matrix
+
+| Targeted Target Path | Telemetry Agent (`monitoring-agent`) | Terminal Worker Service (`root`) | Interactive Terminal User (`rigshell`) | Security & Execution Verdict |
+| :--- | :--- | :--- | :--- | :--- |
+| **`.../venv/bin/python`** | Read & Execute | Read & Execute | No Access | **No Conflict**: Simultaneous execution allowed. |
+| **`.../run.py`** | Owner (Read/Write/Exec) | No Access | No Access | **No Conflict**: Single-user tracking script isolation. |
+| **`.../terminal_daemon.py`**| No Access | Read & Execute | No Access | **No Conflict**: Supervised under isolated root scopes. |
+| **`.../keys/`** | No Access | Owner (Read/Write/Exec) | No Access | **No Conflict**: Secured at the host kernel boundary. |
+| **`.../var/`** | Owner (Read/Write/Exec) | No Access | No Access | **No Conflict**: Telemetry state directory isolation. |
+| **`/home/rigshell/`** | No Access | Read & Execute (Proxy Only) | Owner (Read/Write/Exec) | **No Conflict**: Sandboxed home path environment. |
 
 

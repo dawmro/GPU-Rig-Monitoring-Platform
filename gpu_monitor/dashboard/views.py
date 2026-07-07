@@ -90,32 +90,33 @@ def _fetch_rig_metrics(uuid, rig=None):
                 cache.set(cache_key, snapshot, 50)
 
     # GPU data: read from LatestSnapshot JSON arrays instead of querying
-    # the GPUMetric timeseries table. This avoids the expensive DISTINCT ON
-    # query on 2.1M+ rows. Build a list of dicts matching the template's
-    # expected format (mimicking GPUMetric objects).
-    gpu_metrics = []
-    if snapshot and snapshot.gpu_count:
-        for i in range(snapshot.gpu_count):
-            gpu_metrics.append({
-                'gpu_index': i,
-                'gpu_uuid': _json_get(snapshot.gpu_uuids_json, i, ''),
-                'model': _json_get(snapshot.gpu_models_json, i, ''),
-                'gpu_temp_c': _json_get(snapshot.gpu_temps_json, i),
-                'gpu_util_pct': _json_get(snapshot.gpu_utils_json, i),
-                'fan_speed_pct': _json_get(snapshot.gpu_fans_json, i),
-                'gpu_core_clock_mhz': _json_get(snapshot.gpu_core_clocks_json, i),
-                'gpu_mem_clock_mhz': _json_get(snapshot.gpu_mem_clocks_json, i),
-                'mem_used_mb': _json_get(snapshot.gpu_mem_used_json, i),
-                'mem_total_mb': _json_get(snapshot.gpu_mem_total_json, i),
-                'mem_util_pct': _json_get(snapshot.gpu_mem_util_pcts_json, i),
-                'mem_free_mb': _json_get(snapshot.gpu_mem_free_json, i),
-                'power_draw_w': _json_get(snapshot.gpu_power_draws_json, i),
-                'power_limit_w': _json_get(snapshot.gpu_power_limits_json, i),
-                'pcie_current_gen': _json_get(snapshot.gpu_pcie_gen_json, i),
-                'pcie_max_gen': _json_get(snapshot.gpu_pcie_max_gen_json, i),
-                'pcie_current_width': _json_get(snapshot.gpu_pcie_width_json, i),
-                'pcie_max_width': _json_get(snapshot.gpu_pcie_max_width_json, i),
-            })
+        # the GPUMetric timeseries table. This avoids the expensive DISTINCT ON
+        # query on 2.1M+ rows. Build a list of dicts matching the template's
+        # expected format (mimicking GPUMetric objects).
+        gpu_metrics = []
+        if snapshot and snapshot.gpu_count:
+            for i in range(snapshot.gpu_count):
+                gpu_metrics.append({
+                    'gpu_index': i,
+                    'gpu_uuid': _json_get(snapshot.gpu_uuids_json, i, ''),
+                    'model': _json_get(snapshot.gpu_models_json, i, ''),
+                    'gpu_temp_c': _json_get(snapshot.gpu_temps_json, i),
+                    'gpu_util_pct': _json_get(snapshot.gpu_utils_json, i),
+                    'fan_speed_pct': _json_get(snapshot.gpu_fans_json, i),
+                    'gpu_core_clock_mhz': _json_get(snapshot.gpu_core_clocks_json, i),
+                    'gpu_mem_clock_mhz': _json_get(snapshot.gpu_mem_clocks_json, i),
+                    'mem_used_mb': _json_get(snapshot.gpu_mem_used_json, i),
+                    'mem_total_mb': _json_get(snapshot.gpu_mem_total_json, i),
+                    'mem_util_pct': _json_get(snapshot.gpu_mem_util_pcts_json, i),
+                    'mem_controller_util_pct': _json_get(snapshot.gpu_mem_controller_utils_json, i),
+                    'mem_free_mb': _json_get(snapshot.gpu_mem_free_json, i),
+                    'power_draw_w': _json_get(snapshot.gpu_power_draws_json, i),
+                    'power_limit_w': _json_get(snapshot.gpu_power_limits_json, i),
+                    'pcie_current_gen': _json_get(snapshot.gpu_pcie_gen_json, i),
+                    'pcie_max_gen': _json_get(snapshot.gpu_pcie_max_gen_json, i),
+                    'pcie_current_width': _json_get(snapshot.gpu_pcie_width_json, i),
+                    'pcie_max_width': _json_get(snapshot.gpu_pcie_max_width_json, i),
+                })
 
     # Storage: read from LatestSnapshot JSON arrays instead of querying
     # the StorageMetric timeseries table. Build list of dicts matching

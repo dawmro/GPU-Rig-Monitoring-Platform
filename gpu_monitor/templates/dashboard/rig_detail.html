@@ -136,6 +136,12 @@
                 <canvas id="chartGpuUtil"></canvas>
             </div>
 
+            <!-- GPU Memory Controller Util Chart (multi-GPU) -->
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
+                <h3 class="text-sm font-medium text-gray-300 mb-3">GPU Memory Controller Util (<span class="chart-timeframe-label">24h</span>)</h3>
+                <canvas id="chartGpuMemCtrlUtil"></canvas>
+            </div>
+
             <!-- GPU Power Draw Chart (multi-GPU) -->
             <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
                 <h3 class="text-sm font-medium text-gray-300 mb-3">GPU Power Draw (<span class="chart-timeframe-label">24h</span>)</h3>
@@ -534,8 +540,9 @@ async function loadCharts() {
     var chartLoaders = [
         // GPU charts
         function() { return loadChartMultiGpu('chartGpuTemp',      'gpu_temp_c',        uuid, range, '°C'); },
-        function() { return loadChartMultiGpu('chartGpuFan',       'gpu_fan_pct',       uuid, range, '%'); },
         function() { return loadChartMultiGpu('chartGpuUtil',      'gpu_util_pct',      uuid, range, '%'); },
+        function() { return loadChartMultiGpu('chartGpuMemCtrlUtil', 'gpu_mem_controller_util_pct', uuid, range, '%'); },
+        function() { return loadChartMultiGpu('chartGpuFan',       'gpu_fan_pct',       uuid, range, '%'); },
         function() { return loadChartMultiGpu('chartGpuPower',     'gpu_power_w',       uuid, range, 'W'); },
         function() { return loadChartMultiGpu('chartGpuMem',       'gpu_mem_used_mb',   uuid, range, ' MB'); },
         function() { return loadChartMultiGpu('chartGpuCoreClock', 'gpu_core_clock_mhz', uuid, range, ' MHz'); },

@@ -12,7 +12,6 @@
                 <th class="text-left px-2 py-2 font-medium">GPU Temp [°C]</th>
                 <th class="text-left px-2 py-2 font-medium">GPU Fan [%]</th>
                 <th class="text-left px-2 py-2 font-medium">GPU Util [%]</th>
-                <th class="text-left px-2 py-2 font-medium">Mem Ctrl [%]</th>
                 <th class="text-left px-2 py-2 font-medium">CPU Temp [°C]</th>
                 <th class="text-left px-2 py-2 font-medium">CPU [%]</th>
                 <th class="text-left px-2 py-2 font-medium">Disk Util [%]</th>
@@ -102,19 +101,6 @@
                         </span>
                     {% else %}—{% endif %}
                 </td>
-                {# GPU Memory Controller Util column #}
-                <td class="px-2 py-2 whitespace-nowrap">
-                    {% if item.snapshot.gpu_count %}
-                        <span title="{% for util in item.snapshot.gpu_mem_controller_utils_json %}GPU{{ forloop.counter }}: {% if util != None %}{{ util|floatformat:1 }}%{% else %}N/A{% endif %}{% if not forloop.last %} | {% endif %}{% endfor %}">
-                            {% for util in item.snapshot.gpu_mem_controller_utils_json %}
-                                {% if util != None %}
-                                    <span class="{% if util >= 90 %}text-red-400{% elif util >= 70 %}text-yellow-400{% elif util >= 40 %}text-orange-400{% else %}text-green-400{% endif %}">{{ util|floatformat:1 }}%</span>
-                                {% else %}N/A{% endif %}
-                                {% if not forloop.last %} {% endif %}
-                            {% endfor %}
-                        </span>
-                    {% else %}—{% endif %}
-                </td>
                 {# CPU Temp column #}
                 <td class="px-2 py-2 whitespace-nowrap">
                     {% if item.snapshot and item.snapshot.cpu_temp_c != None %}
@@ -154,7 +140,7 @@
             </tr>
             {% empty %}
             <tr>
-                <td colspan="15" class="px-4 py-8 text-center text-gray-500">
+                <td colspan="14" class="px-4 py-8 text-center text-gray-500">
                     No rigs found. Deploy the monitoring agent to enroll your first rig.
                 </td>
             </tr>

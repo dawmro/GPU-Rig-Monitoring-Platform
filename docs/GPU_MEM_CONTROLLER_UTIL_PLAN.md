@@ -2,22 +2,30 @@
 
 ## Overview
 
-Add GPU memory controller utilization tracking using `nvmlDeviceGetUtilizationRates(handle).memory` from pynvml. This is different from existing `mem_util_pct` which tracks memory capacity utilization (used/total).
+Add GPU memory controller utilization tracking using `nvmlDeviceGetUtilizationRates(handle).memory` from pynvml. This is **different** from existing `mem_util_pct` which tracks VRAM capacity utilization (used/total).
 
 ## Key Distinction
 
 | Metric | Source | Meaning |
 |--------|--------|---------|
-| `mem_util_pct` (EXISTING) | `info.used / info.total * 100` | Memory capacity utilization - how full VRAM is |
-| `mem_controller_util_pct` (NEW) | `nvmlDeviceGetUtilizationRates(handle).memory` | Memory controller utilization - how busy the memory bus is |
+| `mem_util_pct` (EXISTING) | `info.used / info.total * 100` | VRAM capacity utilization - how full VRAM is |
+| `mem_controller_util_pct` (NEW) | `nvmlDeviceGetUtilizationRates(handle).memory` | Memory controller/bus utilization - how busy the memory bus is |
 
-**Example:** GPU can have 90% VRAM full (mem_util_pct=90) but only 10% memory controller activity (mem_controller_util_pct=10) if workloads are memory-capacity-bound but not bandwidth-bound.
+**Example:** GPU can have 90% VRAM full (`mem_util_pct=90`) but only 10% memory controller activity (`mem_controller_util_pct=10`) if workloads are capacity-bound not bandwidth-bound.
+
+---
 
 ## Architecture Flow
 
 ```
-Agent (pynvml) → Ingest/Serializer → MetricSnapshot → LatestSnapshot → Charts/Dashboard
+Agent (pynvml) 
+    → Ingest/Serializer 
+        → MetricSnapshot/GPUMetric (timeseries)
+        → LatestSnapshot (current state)
+            → Charts/Dashboard
 ```
+
+---
 
 ## Implementation Steps
 
@@ -30,7 +38,6 @@ Agent (pynvml) → Ingest/Serializer → MetricSnapshot → LatestSnapshot → C
 util = pynvml.nvmlDeviceGetUtilizationRates(handle)
 # ...
 'gpu_util_pct': util.gpu,
-# mem_util_pct calculated as capacity utilization
 'mem_util_pct': round(info.used / info.total * 100, 1) if info.total else None,
 ```
 
@@ -40,8 +47,10 @@ util = pynvml.nvmlDeviceGetUtilizationRates(handle)
 # ...
 'gpu_util_pct': util.gpu,
 'mem_controller_util_pct': util.memory,  # NEW: Memory controller utilization %
-'mem_util_pct': round(info.used / info.total * 100, 1) if info.total else None,  # Keep existing
+'mem_util_pct': round(info.used / info.total * 100, 1) if info.total else None,
 ```
+
+---
 
 ### 2. Agent (Windows) - `agent_windows/run.py`
 
@@ -64,65 +73,68 @@ util = pynvml.nvmlDeviceGetUtilizationRates(handle)
 'mem_util_pct': round(info.used / info.total * 100, 1) if info.total else None,
 ```
 
-### 3. Serializer - `gpu_monitor/metrics_app/serializers.py`
+---
 
-**File:** `gpu_monitor/metrics_app/serializers.py`
+### 3. Database Model - `gpu_monitor/metrics_app/models.py`
 
-**Step 3a: Extract new field (around line 135, 151, 157)**
-```python
-# Line 135 - Add to list initialization
-gpu_mem_controller_utils = []
+**File:** `gpu_monitor/metrics_app/models.py`, class `GPUMetric` (line 57)
 
-# Line 151 - Extract in GPUMetric creation
-'mem_controller_util_pct': gpu.get('mem_controller_util_pct'),  # NEW
-
-# Line 157 - Keep existing
-'mem_util_pct': gpu.get('mem_util_pct'),
-
-# Line 172-178 - Build summary arrays for LatestSnapshot
-gpu_utils.append(gpu.get('gpu_util_pct'))
-gpu_mem_controller_utils.append(gpu.get('mem_controller_util_pct'))  # NEW
-gpu_mem_util_pcts.append(gpu.get('mem_util_pct'))
-```
-
-**Step 3b: Store in LatestSnapshot (around line 450)**
-```python
-'gpu_mem_controller_utils_json': gpu_mem_controller_utils,  # NEW
-'gpu_mem_util_pcts_json': gpu_mem_util_pcts,
-```
-
-### 4. Database Model - `gpu_monitor/metrics_app/models.py`
-
-**File:** `gpu_monitor/metrics_app/models.py`, class `GPUMetric` (around line 57)
-
+**Add new field:**
 ```python
 class GPUMetric(models.Model):
     # ... existing fields ...
     gpu_util_pct = models.FloatField(null=True)
     mem_controller_util_pct = models.FloatField(null=True)  # NEW
     gpu_temp_c = models.FloatField(null=True)
-    # ...
+    # ... existing ...
     mem_util_pct = models.FloatField(null=True)  # Keep existing
-```
-
-**Run migration:**
-```bash
-./manage.py makemigrations metrics_app
-./manage.py migrate
 ```
 
 **LatestSnapshot model (around line 199):**
 ```python
 class LatestSnapshot(models.Model):
     # ... existing fields ...
-    gpu_utils_json = models.JSONField(default=list, blank=True)         # [98.0, 100.0]
+    gpu_utils_json = models.JSONField(default=list, blank=True)          # [98.0, 100.0]
     gpu_mem_controller_utils_json = models.JSONField(default=list, blank=True)  # NEW
     gpu_mem_util_pcts_json = models.JSONField(default=list, blank=True)  # [66.7, 66.7]
 ```
 
-### 5. Charts - Update Ingest Logic - `gpu_monitor/metrics_app/serializers.py`
+**Run migrations:**
+```bash
+./manage.py makemigrations metrics_app
+./manage.py migrate
+```
 
-**Update LatestSnapshot creation (around line 527):**
+---
+
+### 4. Serializer - `gpu_monitor/metrics_app/serializers.py`
+
+**File:** `gpu_monitor/metrics_app/serializers.py`
+
+**Step 4a: Extract new field (around line 135):**
+```python
+# Line 135 - Add to list initialization
+gpu_mem_controller_utils = []
+
+# Line 151 - In GPUMetric creation
+'mem_controller_util_pct': gpu.get('mem_controller_util_pct'),  # NEW
+
+# Line 157 - Keep existing
+'mem_util_pct': gpu.get('mem_util_pct'),
+
+# Lines 172-178 - Build summary arrays for LatestSnapshot
+gpu_utils.append(gpu.get('gpu_util_pct'))
+gpu_mem_controller_utils.append(gpu.get('mem_controller_util_pct'))  # NEW
+gpu_mem_util_pcts.append(gpu.get('mem_util_pct'))
+```
+
+**Step 4b: Store in LatestSnapshot (around line 450):**
+```python
+'gpu_mem_controller_utils_json': gpu_mem_controller_utils,  # NEW
+'gpu_mem_util_pcts_json': gpu_mem_util_pcts,
+```
+
+**Step 4c: Update LatestSnapshot creation (around line 527):**
 ```python
 ls_defaults = {
     # ... existing ...
@@ -137,11 +149,47 @@ LatestSnapshot.objects.update_or_create(
 )
 ```
 
-### 6. Charts - `gpu_monitor/dashboard/views.py`
+---
 
-**File:** `gpu_monitor/dashboard/views.py`
+### 5. Compaction Script - `gpu_monitor/metrics_app/management/commands/compact_data.py`
 
-**Add new metric to chart endpoints (around line 538):**
+**File:** `gpu_monitor/metrics_app/management/commands/compact_data.py`
+
+**Add to `GPUMetric` compaction config (around line 36-47):**
+```python
+{
+    'table': 'metrics_gpumetric',
+    'group_by': ['rig_uuid', 'gpu_index'],
+    'agg_fields': {
+        'gpu_util_pct': 'avg',
+        'mem_controller_util_pct': 'avg',  # NEW
+        'gpu_temp_c': 'avg',
+        'fan_speed_pct': 'avg',
+        'mem_used_mb': 'avg',
+        'mem_free_mb': 'avg',
+        'mem_total_mb': 'last',
+        'mem_util_pct': 'avg',
+        'mem_controller_util_pct': 'avg',  # NEW
+        'power_draw_w': 'avg',
+        'power_limit_w': 'last',
+        'pcie_current_gen': 'last',
+        'pcie_max_gen': 'last',
+        'pcie_current_width': 'last',
+        'pcie_max_width': 'last',
+        'gpu_core_clock_mhz': 'avg',
+        'gpu_mem_clock_mhz': 'avg',
+    },
+    'static_fields': ['model', 'snapshot_id'],
+},
+```
+
+---
+
+### 6. Charts - Dashboard Views
+
+**File:** `gpu_monitor/dashboard/views.py` (around line 538)
+
+**Add to chart invalidation list:**
 ```python
 for metric in (
     'cpu_utilization_pct', 'cpu_temp_c', 'cpu_power_w',
@@ -154,53 +202,28 @@ for metric in (
     'net_tx_bytes_delta', 'net_rx_errors', 'net_tx_errors',
     'gpu_mem_controller_util_pct',  # NEW
 ):
-    for hours in (24, 168, 720):
-        bucket = 1 if hours <= 24 else 60
-        cache.delete(f'chart_{rig_uuid}_{metric}_{hours}_{bucket}')
 ```
 
-**Add chart data endpoint handling:**
-The chart endpoint at `/api/v1/rigs/<uuid>/chart-data/` should handle `metric=gpu_mem_controller_util_pct`.
+---
 
-### 7. Dashboard Template - `gpu_monitor/templates/dashboard/rig_detail.html`
+### 7. Fleet Overview Table - Template
 
-**Add memory controller utilization chart (following existing pattern):**
+**File:** `gpu_monitor/templates/dashboard/_rig_table.html`
 
-In chartLoaders array (around line 540):
-```javascript
-{
-    metric: 'gpu_mem_controller_util_pct',
-    title: 'GPU Memory Controller Utilization',
-    yLabel: 'Utilization (%)',
-    color: '#f59e0b',  // amber
-    elementId: 'chart-gpu-mem-controller-util',
-    min: 0,
-    max: 100
-},
-```
-
-**Add chart element in Charts tab HTML:**
+**Add column header (around line 9):**
 ```html
-<div class="chart-container">
-    <canvas id="chart-gpu-mem-controller-util"></canvas>
-</div>
+<th class="text-left px-2 py-2 font-medium">Mem Ctrl [%]</th>
 ```
 
-### 8. Fleet Overview - `gpu_monitor/templates/dashboard/_rig_table.html`
-
-**Add column for memory controller utilization:**
-```html
-<th class="text-left px-2 py-2 font-medium">Mem Ctrl Util [%]</th>
-```
-
+**Add column cell (after GPU Util column):**
 ```html
 <td class="px-2 py-2 whitespace-nowrap">
-    {% if item.snapshot.gpu_mem_controller_utils_json %}
+    {% if item.snapshot.gpu_count %}
         <span title="{% for util in item.snapshot.gpu_mem_controller_utils_json %}GPU{{ forloop.counter }}: {% if util != None %}{{ util|floatformat:1 }}%{% else %}N/A{% endif %}{% if not forloop.last %} | {% endif %}{% endfor %}">
             {% for util in item.snapshot.gpu_mem_controller_utils_json %}
                 {% if util != None %}
-                <span class="{% if util >= 90 %}text-red-400{% elif util >= 70 %}text-yellow-400{% elif util >= 40 %}text-green-400{% else %}text-gray-500{% endif %}">{{ util|floatformat:1 }}%</span>
-                {% else %}—{% endif %}
+                    <span class="{% if util >= 90 %}text-red-400{% elif util >= 70 %}text-yellow-400{% elif util >= 40 %}text-orange-400{% else %}text-green-400{% endif %}">{{ util|floatformat:1 }}%</span>
+                {% else %}N/A{% endif %}
                 {% if not forloop.last %} {% endif %}
             {% endfor %}
         </span>
@@ -208,46 +231,77 @@ In chartLoaders array (around line 540):
 </td>
 ```
 
-## pynvml API Reference
+---
+
+## pynvml Reference
 
 ```python
-# Returns c_nvmlUtilization_t with fields:
-#   gpu: unsigned int - GPU utilization percent (SM activity)
-#   memory: unsigned int - Memory controller utilization percent
+# From pynvml docs:
 util = pynvml.nvmlDeviceGetUtilizationRates(handle)
-util.gpu      # GPU core utilization %
-util.memory   # Memory controller utilization %
+# Returns nvmlUtilization_t with fields:
+#   gpu:    GPU utilization percentage (0-100)
+#   memory: Memory controller utilization percentage (0-100)
+#   encoder:  Encoder utilization percentage (0-100)
+#   decoder:  Decoder utilization percentage (0-100)
 ```
 
-**Note:** `util.memory` reports percentage of time memory controller was busy, NOT VRAM capacity usage.
+**Usage:**
+```python
+util = pynvml.nvmlDeviceGetUtilizationRates(handle)
+gpu_util = util.gpu        # 0-100
+mem_controller_util = util.memory  # 0-100 - NEW
+```
+
+---
 
 ## Testing Checklist
 
-- [ ] Linux agent collects `mem_controller_util_pct`
-- [ ] Windows agent collects `mem_controller_util_pct`
-- [ ] Serializer stores in MetricSnapshot and LatestSnapshot
+- [ ] Agent collects `mem_controller_util_pct` on Linux
+- [ ] Agent collects `mem_controller_util_pct` on Windows
+- [ ] Serializer stores in GPUMetric.mem_controller_util_pct
+- [ ] Serializer stores in LatestSnapshot.gpu_mem_controller_utils_json
 - [ ] Migration runs without errors
-- [ ] Chart endpoint returns data for `gpu_mem_controller_util_pct`
-- [ ] Chart renders in rig detail page
-- [ ] Fleet overview shows Mem Ctrl Util column
-- [ ] Both Linux and Windows agents work
+- [ ] Compaction script aggregates mem_controller_util_pct with 'avg'
+- [ ] Charts show gpu_mem_controller_util_pct metric
+- [ ] Fleet overview table shows Mem Ctrl [%] column
+- [ ] Data flows correctly: Agent → Ingest → DB → Charts → Dashboard
 
-## Files to Modify
+---
+
+## Rollout Plan
+
+1. **Create branch:** `plan/gpu-mem-util`
+2. **Run migrations** on staging
+3. **Deploy agents** (Linux + Windows) with new code
+4. **Verify** data flows in dashboard
+5. **Test compaction** with `compact_data --dry-run`
+6. **Merge** to main after verification
+
+---
+
+## Files to Modify Summary
 
 | File | Changes |
 |------|---------|
-| `agent/run.py` | Add `mem_controller_util_pct` to GPU dict |
-| `agent_windows/run.py` | Add `mem_controller_util_pct` to GPU dict |
-| `gpu_monitor/metrics_app/models.py` | Add `mem_controller_util_pct` to GPUMetric, LatestSnapshot |
-| `gpu_monitor/metrics_app/serializers.py` | Extract, store, and serialize new field |
-| `gpu_monitor/metrics_app/migrations/` | New migration for model changes |
-| `gpu_monitor/dashboard/views.py` | Add to chart cache invalidation |
-| `gpu_monitor/templates/dashboard/rig_detail.html` | Add chart element |
-| `gpu_monitor/templates/dashboard/_rig_table.html` | Add fleet overview column |
+| `agent/run.py` | Add `mem_controller_util_pct` in collect_gpus() |
+| `agent_windows/run.py` | Add `mem_controller_util_pct` in collect_gpus() |
+| `gpu_monitor/metrics_app/models.py` | Add `mem_controller_util_pct` to GPUMetric + LatestSnapshot |
+| `gpu_monitor/metrics_app/serializers.py` | Extract, store, and forward new field |
+| `gpu_monitor/metrics_app/management/commands/compact_data.py` | Add to GPUMetric compaction config |
+| `gpu_monitor/dashboard/views.py` | Add to chart invalidation list |
+| `gpu_monitor/templates/dashboard/_rig_table.html` | Add Mem Ctrl [%] column |
 
-## Rollout Strategy
+---
 
-1. Deploy agent changes first (backward compatible - new field optional)
-2. Deploy server changes (model, serializer, views)
-3. Run migration
-4. Verify data flows end-to-end
+## Migration Notes
+
+```bash
+# Generate migration
+./manage.py makemigrations metrics_app
+
+# Check migration
+./manage.py sqlmigrate metrics_app <migration_number>
+
+# Apply
+./manage.py migrate
+```

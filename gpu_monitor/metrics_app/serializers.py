@@ -127,6 +127,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
             gpu_models = []
             gpu_temps = []
             gpu_utils = []
+            gpu_mem_controller_utils = []
             gpu_fans = []
             gpu_core_clocks = []
             gpu_mem_clocks = []
@@ -149,6 +150,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                         'snapshot': snapshot,
                         'model': gpu.get('model', ''),
                         'gpu_util_pct': gpu.get('gpu_util_pct'),
+                        'mem_controller_util_pct': gpu.get('mem_controller_util_pct'),
                         'gpu_temp_c': gpu.get('temp_c'),
                         'fan_speed_pct': gpu.get('fan_speed_pct'),
                         'mem_total_mb': gpu.get('mem_total_mb'),
@@ -170,6 +172,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                 gpu_models.append(gpu.get('model', ''))
                 gpu_temps.append(gpu.get('temp_c'))
                 gpu_utils.append(gpu.get('gpu_util_pct'))
+                gpu_mem_controller_utils.append(gpu.get('mem_controller_util_pct'))
                 gpu_fans.append(gpu.get('fan_speed_pct'))
                 gpu_core_clocks.append(gpu.get('gpu_core_clock_mhz'))
                 gpu_mem_clocks.append(gpu.get('gpu_mem_clock_mhz'))
@@ -442,6 +445,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                 'gpu_models_json': gpu_models,
                 'gpu_temps_json': gpu_temps,
                 'gpu_utils_json': gpu_utils,
+                'gpu_mem_controller_utils_json': gpu_mem_controller_utils,
                 'gpu_fans_json': gpu_fans,
                 'gpu_core_clocks_json': gpu_core_clocks,
                 'gpu_mem_clocks_json': gpu_mem_clocks,
@@ -534,7 +538,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
             for hours in (24, 168, 720):
                 cache.delete(f'report_{rig_uuid}_{hours}')
             # Invalidate chart caches for common metrics
-            # (17 metrics x 3 ranges x 2 bucket sizes = ~102 keys)
+            # (18 metrics x 3 ranges x 2 bucket sizes = ~108 keys)
             for metric in ('cpu_utilization_pct', 'cpu_temp_c', 'cpu_power_w',
                           'total_system_power_w', 'cpu_freq_current_mhz',
                           'gpu_temp_c', 'gpu_util_pct', 'gpu_power_w',
@@ -542,7 +546,8 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                           'gpu_mem_used_mb', 'disk_usage_pct',
                           'disk_read_bytes_delta', 'disk_write_bytes_delta',
                           'error_frequency', 'uptime_s', 'net_rx_bytes_delta',
-                          'net_tx_bytes_delta', 'net_rx_errors', 'net_tx_errors'):
+                          'net_tx_bytes_delta', 'net_rx_errors', 'net_tx_errors',
+                          'gpu_mem_controller_util_pct'):
                 for hours in (24, 168, 720):
                     bucket = 1 if hours <= 24 else 60
                     cache.delete(f'chart_{rig_uuid}_{metric}_{hours}_{bucket}')

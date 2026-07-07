@@ -668,6 +668,7 @@ def collect_gpus():
                 'mem_used_mb': info.used // (1024 * 1024),
                 'mem_free_mb': info.free // (1024 * 1024),
                 'mem_util_pct': round(info.used / info.total * 100, 1) if info.total else None,
+                'mem_controller_util_pct': util.memory,
                 'gpu_util_pct': util.gpu,
                 'temp_c': temp,
                 'fan_speed_pct': fan,

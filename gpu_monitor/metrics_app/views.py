@@ -204,11 +204,16 @@ class ChartDataView(APIView):
         'cpu_power_w', 'total_system_power_w',
     }
     GPU_METRICS = {
-        'gpu_temp_c': 'gpu_temp_c', 'gpu_util_pct': 'gpu_util_pct',
-        'gpu_mem_used_mb': 'mem_used_mb', 'gpu_mem_total_mb': 'mem_total_mb',
-        'gpu_power_w': 'power_draw_w', 'gpu_power_limit_w': 'power_limit_w',
+        'gpu_temp_c': 'gpu_temp_c',
+        'gpu_util_pct': 'gpu_util_pct',
+        'gpu_mem_controller_util_pct': 'mem_controller_util_pct',
+        'gpu_mem_used_mb': 'mem_used_mb',
+        'gpu_mem_total_mb': 'mem_total_mb',
+        'gpu_power_w': 'power_draw_w',
+        'gpu_power_limit_w': 'power_limit_w',
         'gpu_fan_pct': 'fan_speed_pct',
-        'gpu_core_clock_mhz': 'gpu_core_clock_mhz', 'gpu_mem_clock_mhz': 'gpu_mem_clock_mhz',
+        'gpu_core_clock_mhz': 'gpu_core_clock_mhz',
+        'gpu_mem_clock_mhz': 'gpu_mem_clock_mhz',
     }
     STORAGE_METRICS = {'disk_usage_pct'}
     DISK_IO_METRICS = {

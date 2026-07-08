@@ -53,8 +53,8 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.6.16-win'
-__schema_version__ = '1.10'
+__version__ = '1.6.17-win'
+__schema_version__ = '1.11'
 
 # ── Config ──────────────────────────────────────────────────────────────────
 
@@ -866,6 +866,7 @@ def collect_gpus():
                 'mem_used_mb': info.used // (1024 * 1024),
                 'mem_free_mb': info.free // (1024 * 1024),
                 'mem_util_pct': round(info.used / info.total * 100, 1) if info.total else None,
+                'mem_controller_util_pct': util.memory,
                 'gpu_util_pct': util.gpu,
                 'temp_c': temp,
                 'fan_speed_pct': fan,

@@ -275,6 +275,7 @@
                 {% endif %}
             </div>
             <div class="flex items-center gap-3 mb-1">
+                <span class="text-xs text-gray-500 w-16 text-right">Core</span>
                 <div class="flex-1">
                     <div class="w-full bg-gray-700 rounded-full h-2">
                         <div class="h-2 rounded-full
@@ -291,6 +292,24 @@
                     {% if gpu.gpu_util_pct != None %}{{ gpu.gpu_util_pct|floatformat:1 }}%{% else %}—{% endif %}
                 </span>
             </div>
+            <div class="flex items-center gap-3 mb-1">
+                <span class="text-xs text-gray-500 w-16 text-right">Mem</span>
+                <div class="flex-1">
+                                <div class="w-full bg-gray-700 rounded-full h-2">
+                                    <div class="h-2 rounded-full
+                                        {% if gpu.mem_controller_util_pct != None %}
+                                            {% if gpu.mem_controller_util_pct > 90 %}bg-red-500
+                                            {% elif gpu.mem_controller_util_pct > 70 %}bg-yellow-500
+                                            {% else %}bg-green-500{% endif %}
+                                        {% else %}bg-gray-600{% endif %}"
+                                        style="width: {% if gpu.mem_controller_util_pct != None %}{{ gpu.mem_controller_util_pct }}{% else %}0{% endif %}%">
+                                    </div>
+                                </div>
+                            </div>
+                            <span class="text-sm font-mono text-gray-300 w-14 text-right">
+                                {% if gpu.mem_controller_util_pct != None %}{{ gpu.mem_controller_util_pct|floatformat:1 }}%{% else %}—{% endif %}
+                            </span>
+                        </div>
             <div class="flex items-center gap-8 text-xs text-gray-500 mb-1">
                 <span>
                     Temp:

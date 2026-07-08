@@ -68,6 +68,7 @@ class GPUMetric(models.Model):
     gpu_index = models.PositiveSmallIntegerField(default=0)
     model = models.CharField(max_length=255, blank=True, default='')
     gpu_util_pct = models.FloatField(null=True)
+    mem_controller_util_pct = models.FloatField(null=True)
     gpu_temp_c = models.FloatField(null=True)
     fan_speed_pct = models.FloatField(null=True)
     mem_total_mb = models.PositiveIntegerField(null=True)
@@ -241,6 +242,7 @@ class LatestSnapshot(models.Model):
     gpu_models_json = models.JSONField(default=list, blank=True)       # ["RTX 3060", "RTX 3060"]
     gpu_temps_json = models.JSONField(default=list, blank=True)         # [72.5, 73.1]
     gpu_utils_json = models.JSONField(default=list, blank=True)         # [98.0, 100.0]
+    gpu_mem_controller_utils_json = models.JSONField(default=list, blank=True)  # [45.2, 47.1]
     gpu_fans_json = models.JSONField(default=list, blank=True)          # [74, 76]
     gpu_core_clocks_json = models.JSONField(default=list, blank=True)   # [2100, 2100]
     gpu_mem_clocks_json = models.JSONField(default=list, blank=True)    # [8000, 8000]

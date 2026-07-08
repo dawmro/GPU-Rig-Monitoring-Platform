@@ -19,9 +19,14 @@
                 <td class="text-right py-1.5 px-2">{{ gpu.gpu_temp_c_max|floatformat:1 }}°C</td>
             </tr>
             <tr class="border-b border-gray-700/50">
-                <td class="py-1.5 pr-3">Utilization</td>
+                <td class="py-1.5 pr-3">Core Utilization</td>
                 <td class="text-right py-1.5 px-2">{{ gpu.gpu_util_pct_avg|floatformat:1 }}%</td>
                 <td class="text-right py-1.5 px-2">{{ gpu.gpu_util_pct_max|floatformat:1 }}%</td>
+            </tr>
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">Mem Utilization</td>
+                <td class="text-right py-1.5 px-2">{{ gpu.mem_controller_util_pct_avg|floatformat:1 }}%</td>
+                <td class="text-right py-1.5 px-2">{{ gpu.mem_controller_util_pct_max|floatformat:1 }}%</td>
             </tr>
             <tr class="border-b border-gray-700/50">
                 <td class="py-1.5 pr-3">Power Draw</td>

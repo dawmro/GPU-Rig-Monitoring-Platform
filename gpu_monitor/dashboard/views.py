@@ -506,6 +506,8 @@ def _build_report_context(uuid, uuid_str, range_hours):
             gpu_temp_c_max=Max('gpu_temp_c'),
             gpu_util_pct_avg=Avg('gpu_util_pct'),
             gpu_util_pct_max=Max('gpu_util_pct'),
+            mem_controller_util_pct_avg=Avg('mem_controller_util_pct'),
+            mem_controller_util_pct_max=Max('mem_controller_util_pct'),
             power_draw_w_avg=Avg('power_draw_w'),
             power_draw_w_max=Max('power_draw_w'),
             mem_used_mb_avg=Avg('mem_used_mb'),

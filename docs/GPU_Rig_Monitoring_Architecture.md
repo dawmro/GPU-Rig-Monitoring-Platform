@@ -415,7 +415,7 @@ POST /api/v1/ingest/
   → APIKeyAuthentication validates X-API-Key
   → Nginx rate limit: 2r/min per rig_uuid (burst=5)
   → DRF throttle (per-rig rate limit via X-Rig-UUID header, 2/min per rig)
-  → IngestSerializer validation (schema version 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, or 1.6)
+  → IngestSerializer validation (schema version 1.0 through 1.11)
   → process_ingest() in transaction.atomic():
       - Upsert MetricSnapshot (cpu, memory, status fields; motherboard/software as JSON; error_count)
       - Upsert GPUMetric per GPU (gpu_index = 0, 1, ...)

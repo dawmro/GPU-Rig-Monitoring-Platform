@@ -1,12 +1,12 @@
 # GPU Rig Monitoring Platform — Top 10 Future Feature Suggestions (v2)
 
 ## Analysis Methodology
-- Read full architecture documentation (1496 lines, v1.7)
+- Read full architecture documentation (1568 lines, v1.8)
 - Analyzed all Django apps: accounts, audit, dashboard, metrics_app, rigs
 - Identified gaps between current state and "Non-Goals (v1)" section
 - Considered scalability path (§10.5), security boundaries (§7), and operational needs (§8)
 - Prioritized by: user value, implementation complexity, architectural fit
-- Excluded already-implemented features (Audit Log & Activity Feed, Log Rotation, Mobile UX, Power Consumption, PCIe Monitoring)
+- Excluded already-implemented features (Audit Log & Activity Feed, Log Rotation, Mobile UX, Power Consumption, PCIe Monitoring, **GPU Memory Controller Utilization**, Report Tab)
 
 ---
 

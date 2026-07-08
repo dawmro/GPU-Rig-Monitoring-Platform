@@ -37,10 +37,10 @@ For each table, old data (>1 day) is aggregated into 1-hour buckets:
 | `ipv4` | LAST | Static value |
 
 ### metrics_gpumetric
+### metrics_gpumetric
 | Field | Aggregation | Rationale |
 |---|---|---|
 | `gpu_util_pct` | AVG | Percentage |
-| `mem_controller_util_pct` | AVG | Memory controller utilization percentage |
 | `gpu_temp_c` | AVG | Temperature |
 | `fan_speed_pct` | AVG | Percentage |
 | `mem_used_mb` | AVG | Memory usage |
@@ -50,6 +50,10 @@ For each table, old data (>1 day) is aggregated into 1-hour buckets:
 | `power_limit_w` | LAST | Static |
 | `pcie_*` | LAST | Static |
 | `model` | LAST | Static |
+| `mem_controller_util_pct` | AVG | Memory controller utilization % |
+| `mem_util_pct` | AVG | VRAM utilization % |
+| `mem_total_mb` | LAST | Static |
+| `mem_free_mb` | AVG | VRAM free |
 
 ### metrics_metricsnapshot
 | Field | Aggregation | Rationale |

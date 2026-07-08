@@ -40,6 +40,7 @@ For each table, old data (>1 day) is aggregated into 1-hour buckets:
 | Field | Aggregation | Rationale |
 |---|---|---|
 | `gpu_util_pct` | AVG | Percentage |
+| `mem_controller_util_pct` | AVG | Memory controller utilization percentage |
 | `gpu_temp_c` | AVG | Temperature |
 | `fan_speed_pct` | AVG | Percentage |
 | `mem_used_mb` | AVG | Memory usage |
@@ -82,7 +83,7 @@ agg_func = Sum if metric in {'net_rx_bytes_delta', 'net_tx_bytes_delta', 'error_
 | CPU util/temp/freq | AVG of per-min values | AVG of hourly AVGs | ✅ |
 | Memory bytes | AVG of per-min values | AVG of hourly AVGs | ✅ |
 | Swap bytes | AVG of per-min values | AVG of hourly AVGs | ✅ |
-| GPU temp/util/mem/power | AVG of per-min values | AVG of hourly AVGs | ✅ |
+| GPU temp/util/mem_ctrl/power | AVG of per-min values | AVG of hourly AVGs | ✅ |
 | GPU clocks | AVG of per-min values | AVG of hourly AVGs | ✅ |
 | Disk usage % | AVG (direct field) | AVG of hourly AVGs | ✅ |
 | Disk read/write bytes | AVG of per-min deltas | AVG of hourly SUMs | ✅ |

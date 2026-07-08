@@ -766,7 +766,7 @@ The rig detail page has three tabs:
 **Fleet Overview Table:**
 - Shows **all GPUs** per rig (not just GPU 0)
 - GPU column: compact model summary with count (e.g., "RTX 3060 ×8")
-- GPU Temp/Util/Fan columns: space-separated color-coded values, one per GPU
+- GPU Temp/Util/Mem Ctrl/Fan columns: space-separated color-coded values, one per GPU
 - Hover tooltips show per-GPU breakdown
 - Units in column headers (e.g., "GPU Temp [°C]") — no inline units in cells
 - **Tag filter** dropdown to filter rigs by tag

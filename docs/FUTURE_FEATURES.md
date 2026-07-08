@@ -184,7 +184,7 @@ The platform's target users (GPU farmers, AI researchers, small data centers) al
 **What was implemented:**
 - New "Report" tab in rig detail page, placed after Errors tab
 - 24h/7d/30d time range selector with HTMX loading (no page reload)
-- Per-GPU breakdown: temperature, utilization, power, VRAM, fan speed, core/memory clocks (avg + max)
+- Per-GPU breakdown: temperature, **Core Utilization**, **Mem Utilization**, power, VRAM, fan speed, core/memory clocks (avg + max)
 - CPU: utilization, temperature, power, frequency (avg + max)
 - Memory: used avg/max, swap avg/max
 - Disk: per-device breakdown (usage, read/write bytes, peak IOPS, utilization)
@@ -735,3 +735,4 @@ Security is a "you only need it when you need it" feature. A compromised account
 - ✅ Report Tab (aggregated metrics table with per-GPU/disk/network breakdown, energy kWh, cost estimate)
 - ✅ Container History (1000 unique states with dedup, per-container tracking)
 - ✅ Chart & Report Caching (55s TTL, invalidated on ingest, rate limiting on chart/report endpoints)
+- ✅ GPU Memory Controller Utilization (agent collects via `nvmlDeviceGetUtilizationRates().memory`, server stores, dashboard displays in Live Metrics, Charts, Fleet Overview, Report)

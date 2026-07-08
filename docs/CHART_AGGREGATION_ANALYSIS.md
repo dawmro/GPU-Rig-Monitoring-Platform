@@ -37,6 +37,7 @@ For each table, old data (>1 day) is aggregated into 1-hour buckets:
 | `ipv4` | LAST | Static value |
 
 ### metrics_gpumetric
+### metrics_gpumetric
 | Field | Aggregation | Rationale |
 |---|---|---|
 | `gpu_util_pct` | AVG | Percentage |
@@ -49,6 +50,10 @@ For each table, old data (>1 day) is aggregated into 1-hour buckets:
 | `power_limit_w` | LAST | Static |
 | `pcie_*` | LAST | Static |
 | `model` | LAST | Static |
+| `mem_controller_util_pct` | AVG | Memory controller utilization % |
+| `mem_util_pct` | AVG | VRAM utilization % |
+| `mem_total_mb` | LAST | Static |
+| `mem_free_mb` | AVG | VRAM free |
 
 ### metrics_metricsnapshot
 | Field | Aggregation | Rationale |
@@ -82,7 +87,7 @@ agg_func = Sum if metric in {'net_rx_bytes_delta', 'net_tx_bytes_delta', 'error_
 | CPU util/temp/freq | AVG of per-min values | AVG of hourly AVGs | ✅ |
 | Memory bytes | AVG of per-min values | AVG of hourly AVGs | ✅ |
 | Swap bytes | AVG of per-min values | AVG of hourly AVGs | ✅ |
-| GPU temp/util/mem/power | AVG of per-min values | AVG of hourly AVGs | ✅ |
+| GPU temp/util/mem_ctrl/power | AVG of per-min values | AVG of hourly AVGs | ✅ |
 | GPU clocks | AVG of per-min values | AVG of hourly AVGs | ✅ |
 | Disk usage % | AVG (direct field) | AVG of hourly AVGs | ✅ |
 | Disk read/write bytes | AVG of per-min deltas | AVG of hourly SUMs | ✅ |

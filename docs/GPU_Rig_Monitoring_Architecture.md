@@ -1,8 +1,8 @@
 # GPU Rig Monitoring Platform — Architecture Document
 
-**Version:** 1.7
+**Version:** 1.8
 **Status:** Implemented — Living Architecture Reference
-**Last Updated:** 2026-06-23
+**Last Updated:** 2026-07-08
 
 ---
 
@@ -107,7 +107,7 @@ Cron → Agent collects metrics → JSON payload → POST /api/v1/ingest/
   → DRF APIKeyAuthentication (X-API-Key header → Argon2id hash comparison)
   → DRF throttle (per-rig rate limit via X-Rig-UUID header, 2/min per rig)
   → Timestamp sanity check (reject if >5 min future or >1 hour past)
-  → IngestSerializer validation (schema version 1.0 through 1.9)
+  → IngestSerializer validation (schema version 1.0 through 1.11)
   → process_ingest() → DB upsert (MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, LatestDockerContainer, RigStatusEvent, LatestSnapshot)
   → StorageMetric: capacity, usage%, temp, SMART, read/write bytes, read/write IOPS, busy_time_ms, utilization%
   → LatestSnapshot: 11 storage JSON arrays (devices, fstypes, mountpoints, capacities, usage%, temps, smart, deltas, totals), 3 process fields (top_cpu_processes_json, top_mem_processes_json, process_count)
@@ -373,13 +373,13 @@ debug_mode: false         # Verbose logging
 
 | Agent | File | Version | Schema | Platform | Scheduling |
 |-------|------|---------|--------|----------|------------|
-|| Linux | `agent/run.py` | 1.5.15 | 1.10 | Any Linux, VMware NAT | `cron` every 60s with `flock` |
-||| Windows | `agent_windows/run.py` | 1.6.15-win | 1.10 | Windows 10/11 | Task Scheduler (1 min) with `pythonw.exe` (hidden window) |
+|| Linux | `agent/run.py` | 1.6.0 | 1.11 | Any Linux, VMware NAT | `cron` every 60s with `flock` |
+|| Windows | `agent_windows/run.py` | 1.6.17-win | 1.11 | Windows 10/11 | Task Scheduler (1 min) with `pythonw.exe` (hidden window) |
 
 **Versioning rules:**
 - `agent_version` (e.g. `1.1.0`): incremented for agent-side changes (collectors, payload format, bug fixes). Format: `MAJOR.MINOR.PATCH`.
 - `schema_version` (e.g. `1.1`): incremented only when the payload structure changes in a way that affects the server's serialization/storage. Format: `MAJOR.MINOR`.
-- Schema versions 1.0 through 1.10 are supported (backward compatible via `validate_schema_version` in `IngestSerializer`).
+- Schema versions 1.0 through 1.11 are supported (backward compatible via `validate_schema_version` in `IngestSerializer`).
 - When schema versions change, the `validate_schema_version` method in `IngestSerializer` is updated to accept the new version. The same serializer handles all supported versions.
 - See §11.5 for the contract testing strategy.
 
@@ -415,7 +415,7 @@ POST /api/v1/ingest/
   → APIKeyAuthentication validates X-API-Key
   → Nginx rate limit: 2r/min per rig_uuid (burst=5)
   → DRF throttle (per-rig rate limit via X-Rig-UUID header, 2/min per rig)
-  → IngestSerializer validation (schema version 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, or 1.6)
+  → IngestSerializer validation (schema version 1.0 through 1.11)
   → process_ingest() in transaction.atomic():
       - Upsert MetricSnapshot (cpu, memory, status fields; motherboard/software as JSON; error_count)
       - Upsert GPUMetric per GPU (gpu_index = 0, 1, ...)
@@ -529,11 +529,12 @@ HTMX polls use `hx-swap="innerHTML"` (not `outerHTML`). This is critical: `inner
 | Status | Rig.status | Online/Stale/Offline |
 | Last Seen | Rig.last_seen | Short relative time via `last_seen_short` filter (e.g., '5d, 21h', '45m', '20s') |
 | Tags | RigTag M2M | Colored pills |
-| GPU | LatestSnapshot.gpu_models_json | Compact summary via `gpu_compact_summary_json` filter (e.g., "RTX 3060 ×8", "5080×4 + ...") |
-|| GPU Temp [°C] | LatestSnapshot.gpu_temps_json | Space-separated color-coded values via `gpu_temp_cell_json` |
-|| GPU Fan [%] | LatestSnapshot.gpu_fans_json | Space-separated color-coded values via `gpu_fan_cell_json` |
-|| GPU Util [%] | LatestSnapshot.gpu_utils_json | Space-separated color-coded values via `gpu_util_cell_json` |
-|| CPU Temp [°C] | LatestSnapshot.cpu_temp_c | Color-coded (green/yellow/red) |
+|| GPU | LatestSnapshot.gpu_models_json | Compact summary via `gpu_compact_summary_json` filter (e.g., "RTX 3060 ×8", "5080×4 + ...") |
+||| GPU Temp [°C] | LatestSnapshot.gpu_temps_json | Space-separated color-coded values via `gpu_temp_cell_json` |
+||| GPU Fan [%] | LatestSnapshot.gpu_fans_json | Space-separated color-coded values via `gpu_fan_cell_json` |
+||| GPU Util [%] | LatestSnapshot.gpu_utils_json | Space-separated color-coded values via `gpu_util_cell_json` |
+||| GPU Mem Ctrl [%] | LatestSnapshot.gpu_mem_controller_utils_json | Space-separated color-coded values |
+||| CPU Temp [°C] | LatestSnapshot.cpu_temp_c | Color-coded (green/yellow/red) |
 || CPU [%] | LatestSnapshot.cpu_utilization_pct | Percentage |
 || CPU Freq [MHz] | LatestSnapshot.cpu_freq_current_mhz | Current / Min-Max range |
 || Memory [%] | LatestSnapshot.mem_used_bytes, mem_total_bytes | Used / Total (GB) |
@@ -617,7 +618,7 @@ The dashboard display (Fleet Overview + Live Metrics) is fully decoupled from ti
 || CPU | cpu_model, cpu_physical_cores, cpu_logical_cores, cpu_utilization_pct, cpu_temp_c, cpu_load_avg_json, cpu_freq_current_mhz, cpu_freq_min_mhz, cpu_freq_max_mhz |
 | Memory | mem_total_bytes, mem_used_bytes, mem_free_bytes, mem_cached_bytes, swap_total_bytes, swap_used_bytes |
 | System | uptime_s, motherboard_json, software_json, agent_version |
-||| GPU (×N) | 17 JSON arrays (uuid/model/temp/util/fan/clocks/mem/power/PCIe) |
+|||| GPU (×N) | 18 JSON arrays (uuid/model/temp/util/mem_ctrl_util/fan/clocks/mem/power/PCIe) |
 ||| Storage (×N) | 7 JSON arrays (device/fstype/mountpoint/capacity/usage/temp/SMART) |
 ||| Network (×N) | 7 JSON arrays (interface/IPv4/speed/rx/tx/errors) |
 ||| Processes | top_cpu_processes_json, top_mem_processes_json, process_count |
@@ -730,10 +731,11 @@ The `ChartDataView` uses a name-mapping dict because chart-facing metric names d
 Similar mappings exist for other models (StorageMetric, NetworkMetric, etc.) and are handled via query parameters
 (multi_gpu, multi_disk, multi_iface, etc.) and special handling for JSON fields and aggregated metrics.
 
-|| Chart Metric (URL param) | GPUMetric Model Field |
+||| Chart Metric (URL param) | GPUMetric Model Field |
 |--------------------------|----------------------|
 | `gpu_temp_c`             | `gpu_temp_c`         |
 | `gpu_util_pct`           | `gpu_util_pct`       |
+| `gpu_mem_controller_util_pct` | `mem_controller_util_pct` |
 | `gpu_mem_used_mb`        | `mem_used_mb`        |
 | `gpu_mem_total_mb`       | `mem_total_mb`       |
 || `gpu_mem_util_pct`       | `mem_util_pct`       |
@@ -1292,18 +1294,18 @@ sudo -u postgres psql gpu_monitor
 
 ### A. Full JSON Schema Definitions (Agent Payload)
 
-**Current: v1.9** (see changelog below)
+**Current: v1.11** (see changelog below)
 
 ```json
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "GPU Rig Monitoring Agent Payload v1.9",
+  "title": "GPU Rig Monitoring Agent Payload v1.11",
   "type": "object",
   "required": ["rig_uuid", "schema_version", "timestamp", "metrics"],
   "properties": {
     "rig_uuid": { "type": "string", "format": "uuid" },
     "rig_name": { "type": "string", "maxLength": 128 },
-    "schema_version": { "type": "string", "enum": ["1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9"] },
+    "schema_version": { "type": "string", "enum": ["1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "1.10", "1.11"] },
     "agent_version": { "type": "string" },
     "timestamp": { "type": "string", "format": "date-time" },
     "metrics": {
@@ -1380,6 +1382,7 @@ sudo -u postgres psql gpu_monitor
               "mem_used_mb": { "type": "integer" },
               "mem_free_mb": { "type": "integer" },
               "mem_util_pct": { "type": "number" },
+              "mem_controller_util_pct": { "type": "number" },
               "gpu_util_pct": { "type": "number" },
               "temp_c": { "type": ["number", "null"] },
               "fan_speed_pct": { "type": ["number", "null"] },
@@ -1456,6 +1459,22 @@ sudo -u postgres psql gpu_monitor
 - 3 new FloatFields on LatestSnapshot: same names
 - Backward compatible: `hasattr()` check in serializer skips fields if migration not applied
 - `freq` is `null` on platforms that don't support it (macOS, some VMs)
+
+**Schema 1.9 → 1.10 changelog:**
+- Added GPU memory controller utilization: `mem_controller_util_pct` to GPU metrics
+- 1 new FloatField on GPUMetric: `mem_controller_util_pct` (from `nvmlDeviceGetUtilizationRates().memory`)
+- 1 new JSONField on LatestSnapshot: `gpu_mem_controller_utils_json` (array of mem controller util % per GPU)
+- New chart metric: `gpu_mem_controller_util_pct` for historical charts
+- Fleet Overview: "Mem Ctrl [%]" column
+- Live Metrics: "Mem" utilization bar with percentage
+- Report page: "Mem Utilization" row (avg/max) alongside "Core Utilization"
+- Backward compatible: `None` if agent doesn't send field
+
+**Schema 1.10 → 1.11 changelog:**
+- Schema version bump only (no payload structure changes)
+- Aligns agent schema version with implementation
+- Agents: Linux 1.6.0, Windows 1.6.17-win
+- Server accepts schema versions 1.0 through 1.11
 
 ### B. Endpoint Catalog (Summary)
 

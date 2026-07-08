@@ -24,7 +24,7 @@ class IngestSerializer(serializers.Serializer):
     power = serializers.JSONField(required=False, default=dict)
 
     def validate_schema_version(self, value):
-        if value not in ('1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8', '1.9', '1.10'):
+        if value not in ('1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8', '1.9', '1.10', '1.11'):
             raise serializers.ValidationError(f"Unsupported schema_version: {value}")
         return value
 

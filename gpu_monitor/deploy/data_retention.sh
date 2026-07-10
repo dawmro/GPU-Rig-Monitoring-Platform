@@ -37,16 +37,15 @@ echo "Cleaning up data older than ${RETENTION_DAYS} days..." >> "$LOG_DIR/cleanu
 python manage.py cleanup_old_data --days="$RETENTION_DAYS" >> "$LOG_DIR/cleanup.log" 2>&1 || true
 
 # Phase 3: VACUUM ANALYZE on metrics tables
+# Phase 3: VACUUM ANALYZE on metrics tables
 # Reclaims dead tuples and updates planner statistics after bulk DELETEs
 echo "Running VACUUM ANALYZE..." >> "$LOG_DIR/cleanup.log"
-sudo -u postgres psql -d gpu_monitor -c "
-  VACUUM ANALYZE metrics_gpumetric;
-  VACUUM ANALYZE metrics_storagemetric;
-  VACUUM ANALYZE metrics_networkmetric;
-  VACUUM ANALYZE metrics_gpu_process;
-  VACUUM ANALYZE metrics_power_reading;
-  VACUUM ANALYZE metrics_metricsnapshot;
-" >> "$LOG_DIR/cleanup.log" 2>&1 || true
+# VACUUM ANALYZE cannot run inside a transaction block.
+# Run each VACUUM ANALYZE in its own psql call (autocommit mode by default).
+# Use PGPASSWORD env var for password, connect with application DB credentials.
+for table in metrics_gpumetric metrics_storagemetric metrics_networkmetric metrics_gpu_process metrics_power_reading metrics_metricsnapshot; do
+    PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "VACUUM ANALYZE $table;" >> "$LOG_DIR/cleanup.log" 2>&1 || true
+done
 
 # Phase 4: Clean up old audit log entries (90-day retention)
 echo "Cleaning up audit logs older than 90 days..." >> "$LOG_DIR/cleanup.log"

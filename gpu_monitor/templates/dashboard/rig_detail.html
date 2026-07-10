@@ -619,7 +619,7 @@ async function loadChart(canvasId, metric, uuid, range, unit, borderColor, bgCol
                     borderWidth: chartType === 'bar' ? 0 : 2,
                     fill: chartType === 'line',
                     tension: 0.0,
-                    pointRadius: 1,
+                    pointRadius: 0.5,
                     pointHitRadius: 10,
                     spanGaps: false,
                 }]
@@ -707,7 +707,7 @@ async function loadChartLoadAvg(canvasId, uuid, range) {
                         borderWidth: 2,
                         fill: false,
                         tension: 0.0,
-                        pointRadius: 1,
+                        pointRadius: 0.5,
                                             pointHitRadius: 10,
                         spanGaps: false,
                     };
@@ -803,7 +803,7 @@ async function loadChartMemSwap(canvasId, uuid, range) {
                         borderWidth: 2,
                         fill: i === 0,  // fill only Memory Used area
                         tension: 0.0,
-                        pointRadius: 1,
+                        pointRadius: 0.5,
                                             pointHitRadius: 10,
                         spanGaps: false,
                     };
@@ -905,7 +905,7 @@ async function loadChartNetworkCombined(canvasId, uuid, range) {
                 borderWidth: 2,
                 fill: false,
                 tension: 0.0,
-                pointRadius: 1,
+                pointRadius: 0.5,
                                     pointHitRadius: 10,
                 spanGaps: false,
                 yAxisID: 'y',
@@ -924,7 +924,7 @@ async function loadChartNetworkCombined(canvasId, uuid, range) {
                 borderWidth: 2,
                 fill: false,
                 tension: 0.0,
-                pointRadius: 1,
+                pointRadius: 0.5,
                                     pointHitRadius: 10,
                 spanGaps: false,
                 yAxisID: 'y',
@@ -943,7 +943,7 @@ async function loadChartNetworkCombined(canvasId, uuid, range) {
                 borderWidth: 0,
                 fill: false,
                 tension: 0.0,
-                pointRadius: 1,
+                pointRadius: 0.5,
                                     pointHitRadius: 10,
                 spanGaps: false,
                 yAxisID: 'y1',
@@ -1090,7 +1090,7 @@ async function loadChartMultiKeyDual(canvasId, metricRead, metricWrite, uuid, ra
                 borderDash: [4, 2],
                 fill: false,
                 tension: 0.0,
-                pointRadius: 1,
+                pointRadius: 0.5,
                                     pointHitRadius: 10,
                 spanGaps: false,
             });
@@ -1105,7 +1105,7 @@ async function loadChartMultiKeyDual(canvasId, metricRead, metricWrite, uuid, ra
                 borderWidth: 2,
                 fill: false,
                 tension: 0.0,
-                pointRadius: 1,
+                pointRadius: 0.5,
                                     pointHitRadius: 10,
                 spanGaps: false,
             });
@@ -1202,7 +1202,7 @@ async function loadChartMultiGpu(canvasId, metric, uuid, range, unit) {
                         borderWidth: 2,
                         fill: false,
                         tension: 0.0,
-                        pointRadius: 1,
+                        pointRadius: 0.5,
                                             pointHitRadius: 10,
                         spanGaps: false,
                     };
@@ -1322,7 +1322,7 @@ async function loadChartMultiKey(canvasId, metric, uuid, range, unit, multi_para
                         borderWidth: 2,
                         fill: false,
                         tension: 0.0,
-                        pointRadius: 1,
+                        pointRadius: 0.5,
                                             pointHitRadius: 10,
                         spanGaps: false,
                     };

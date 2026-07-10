@@ -251,7 +251,14 @@ class ChartDataView(APIView):
 
         metric = request.query_params.get('metric', 'cpu_utilization_pct')
         range_hours = int(request.query_params.get('range', 24))
-        bucket_minutes = 1 if range_hours <= 24 else 60
+        
+        # Bucket size: 1-min for 24h, 15-min for 7d, 1-hour for 30d
+        if range_hours <= 24:
+            bucket_minutes = 1
+        elif range_hours <= 168:
+            bucket_minutes = 15
+        else:
+            bucket_minutes = 60
 
         # Cache key: chart_data_{uuid}_{metric}_{range}_{bucket}
         # TTL: 55s (just under the 60s heartbeat interval)
@@ -270,7 +277,7 @@ class ChartDataView(APIView):
         # Bucket size: 1-min for 24h, 1-hour for 7d/30d
         labels, start_bucket, end_bucket = self._build_buckets(range_hours, bucket_minutes)
         total_buckets = len(labels)
-        trunc = TruncMinute if bucket_minutes == 1 else TruncHour
+        trunc = TruncMinute if bucket_minutes == 1 else (TruncMinute if bucket_minutes == 15 else TruncHour)
         agg_func = Sum if metric in {'net_rx_bytes_delta', 'net_tx_bytes_delta', 'net_rx_errors', 'net_tx_errors', 'error_frequency', 'disk_read_bytes_delta', 'disk_write_bytes_delta', 'disk_read_iops_delta', 'disk_write_iops_delta'} else Avg
 
         # Helper: run SQL aggregation and map to values array

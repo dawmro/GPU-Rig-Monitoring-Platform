@@ -83,7 +83,6 @@
         var clocks = [
             'global-refresh-clock',           // Rig detail header
             'rig-table-container-clock',      // Fleet Overview table
-            'rig-status-container-clock',     // Rig status badge (if present)
         ];
         clocks.forEach(function(id) {
             var el = document.getElementById(id);
@@ -103,8 +102,6 @@
         if (clock) clock.textContent = 'Refreshed @ ' + ts;
         var fc = document.getElementById('rig-table-container-clock');
         if (fc) fc.textContent = 'Refreshed @ ' + ts;
-        var sc = document.getElementById('rig-status-container-clock');
-        if (sc) sc.textContent = 'Refreshed @ ' + ts;
     });
 
     // Toggle all owner emails in fleet overview

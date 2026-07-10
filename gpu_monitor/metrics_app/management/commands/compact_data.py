@@ -44,7 +44,7 @@ COMPACT_TABLES = [
         'table': 'metrics_gpu_process',
         'group_by': ['rig_uuid', 'gpu_index', 'pid'],
         'agg_fields': {'gpu_mem_mb': 'avg'},
-        'static_fields': ['name', 'type', 'snapshot_id'],
+        'static_fields': ['process_name', 'type', 'snapshot_id'],
     },
     {
         'table': 'metrics_gpumetric',

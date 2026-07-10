@@ -97,7 +97,7 @@ COMPACT_TABLES = [
     # Power readings — compact like other timeseries
     {
         'table': 'metrics_power_reading',
-        'group_by': ['rig_uuid'],
+        'group_by': ['rig_id'],
         'agg_fields': {
             'gpu_power_w': 'avg',
             'cpu_power_w': 'avg',

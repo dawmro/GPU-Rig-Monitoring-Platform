@@ -259,8 +259,8 @@ class ChartDataView(APIView):
 
     def get(self, request, uuid):
         from django.db.models import Avg, Sum, Count
-        from django.db.models.functions import TruncMinute, TruncHour, DateTimeField
-        from django.db.models import Func
+        from django.db.models.functions import TruncMinute, TruncHour
+        from django.db.models import Func, DateTimeField
         from django.core.cache import cache
 
         user = request.user

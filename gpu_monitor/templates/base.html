@@ -71,7 +71,26 @@
     </main>
 
     <script>
-    // HTMX refresh clock — update on any HTMX swap
+    // Initialize clocks on page load with "Loaded @"
+    document.addEventListener('DOMContentLoaded', function() {
+        var d = new Date();
+        var ts = String(d.getHours()).padStart(2,'0') + ':' +
+                 String(d.getMinutes()).padStart(2,'0') + ':' +
+                 String(d.getSeconds()).padStart(2,'0');
+        var loadedText = 'Loaded @ ' + ts;
+        
+        // Initialize all known clock elements
+        var clocks = [
+            'global-refresh-clock',           // Rig detail header
+            'rig-table-container-clock',      // Fleet Overview table
+        ];
+        clocks.forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) el.textContent = loadedText;
+        });
+    });
+
+    // HTMX refresh clock — update on any HTMX swap with "Refreshed @"
     document.body.addEventListener('htmx:afterSwap', function(evt) {
         var targetId = evt.detail && evt.detail.target && evt.detail.target.id;
         if (!targetId) return;

@@ -3,17 +3,23 @@
 GPU Rig Monitoring Platform — Historical Data Compaction Script
 
 Compacts old metric data into larger time buckets to save storage.
-Processes in bucket-sized time windows (1 hour) for natural boundaries.
+3-Tier Strategy:
+- Tier 1 (Raw): 0-1 day, 1-minute buckets — no compaction needed
+- Tier 2 (15-min): 1-7 days, 15-minute buckets
+- Tier 3 (1-hour): 7-31 days, 1-hour buckets
 
+Processes in bucket-sized time windows for natural boundaries.
 Strategy:
 1. Compact child tables FIRST (no FK exclusion needed)
 2. Compact parent table SECOND (FK-safe with NOT EXISTS)
-3. Each batch processes exactly one bucket window (1 hour)
+3. Each batch processes exactly one bucket window
 4. Bucket timestamp = batch start, so no overlapping timestamps
 
 Usage:
   python manage.py compact_data --dry-run
   python manage.py compact_data --verbose
+  python manage.py compact_data --phase tier2  # only 1-7 day compaction
+  python manage.py compact_data --phase tier3  # only 7-31 day compaction
 """
 
 import logging
@@ -24,6 +30,14 @@ from django.utils import timezone
 from django.db import connection
 
 logger = logging.getLogger(__name__)
+
+# Tier configuration
+TIER_1_DAYS = 1      # 0-1 day: raw 1-minute data (no compaction)
+TIER_2_DAYS = 7      # 1-7 days: 15-minute buckets
+TIER_3_DAYS = 31     # 7-31 days: 1-hour buckets
+
+TIER_2_BUCKET_MINUTES = 15
+TIER_3_BUCKET_MINUTES = 60
 
 COMPACT_TABLES = [
     {
@@ -113,43 +127,84 @@ COMPACT_TABLES = [
 
 
 class Command(BaseCommand):
-    help = 'Compact old metric data into larger time buckets to save storage'
+    help = 'Compact old metric data into larger time buckets to save storage (3-tier: 15m for 1-7d, 1h for 7-31d)'
 
     def add_arguments(self, parser):
         parser.add_argument('--dry-run', action='store_true', help='Preview without making changes')
         parser.add_argument('--verbose', action='store_true', help='Show detailed per-table statistics')
+        parser.add_argument('--phase', choices=['all', 'tier2', 'tier3'], default='all',
+                            help='Run specific compaction phase: tier2 (1-7d -> 15m), tier3 (7-31d -> 1h), or all (default)')
+        parser.add_argument('--days', type=int, default=31,
+                            help='Retention period in days (default: 31)')
 
     def handle(self, *args, **options):
         dry_run = options['dry_run']
         verbose = options['verbose']
+        phase = options['phase']
+        retention_days = options['days']
+
         if dry_run:
             self.stdout.write(self.style.WARNING('DRY RUN — no changes will be made'))
 
         now = timezone.now()
-        cutoff = now - timedelta(days=1)
 
-        self.stdout.write(self.style.MIGRATE_HEADING(
-            'Compacting 1-minute -> 1-hour buckets (data older than 1 day)'))
-        self.stdout.write('')
-
-        for config in COMPACT_TABLES:
-            self._compact_table(config, cutoff, 60, dry_run, verbose)
+        # Tier 3 cutoff (retention boundary)
+        tier3_cutoff = now - timedelta(days=retention_days)
+        
+        if phase in ('all', 'tier2'):
+            self._compact_tier2(now, dry_run, verbose)
+        if phase in ('all', 'tier3'):
+            self._compact_tier3(now, dry_run, verbose)
 
         self.stdout.write(self.style.SUCCESS('Compaction complete'))
 
-    def _compact_table(self, config, cutoff, bucket_minutes, dry_run, verbose):
-        """Compact a single table using bucket-sized time windows."""
+    def _compact_tier2(self, now, dry_run, verbose):
+        """Phase A: Compact 1-7 day old data from 1-minute to 15-minute buckets."""
+        tier2_start = now - timedelta(days=TIER_2_DAYS)  # 7 days ago
+        tier2_end = now - timedelta(days=TIER_1_DAYS)    # 1 day ago
+
+        self.stdout.write(self.style.MIGRATE_HEADING(
+            f'Tier 2: Compacting 1-min -> 15-min buckets (data {TIER_1_DAYS}-{TIER_2_DAYS} days old)'))
+        self.stdout.write('')
+
+        for config in COMPACT_TABLES:
+            self._compact_table(
+                config=config,
+                window_start=tier2_start,
+                window_end=tier2_end,
+                bucket_minutes=TIER_2_BUCKET_MINUTES,
+                dry_run=dry_run,
+                verbose=verbose
+            )
+
+    def _compact_tier3(self, now, dry_run, verbose):
+        """Phase B: Compact 7-31 day old data from 15-minute to 1-hour buckets."""
+        tier3_start = now - timedelta(days=TIER_3_DAYS)  # 31 days ago
+        tier3_end = now - timedelta(days=TIER_2_DAYS)    # 7 days ago
+
+        self.stdout.write(self.style.MIGRATE_HEADING(
+            f'Tier 3: Compacting 15-min -> 1-hour buckets (data {TIER_2_DAYS}-{TIER_3_DAYS} days old)'))
+        self.stdout.write('')
+
+        for config in COMPACT_TABLES:
+            self._compact_table(
+                config=config,
+                window_start=tier3_start,
+                window_end=tier3_end,
+                bucket_minutes=TIER_3_BUCKET_MINUTES,
+                dry_run=dry_run,
+                verbose=verbose
+            )
+
+    def _compact_table(self, config, window_start, window_end, bucket_minutes, dry_run, verbose):
+        """Compact a single table within a specific time window using bucket-sized batches."""
         table_name = config['table']
         group_cols = ', '.join(config['group_by'])
         agg_fields = config['agg_fields']
         static_fields = config['static_fields']
 
-        # Build SELECT clause with bucket expression
-        bucket_expr = (
-            f"date_trunc('hour', timestamp) + "
-            f"INTERVAL '{bucket_minutes} min' * "
-            f"(EXTRACT(MINUTE FROM timestamp)::int / {bucket_minutes})"
-        )
+        # Build bucket expression based on bucket size
+        bucket_expr = self._bucket_expression(bucket_minutes)
         select_parts = [f"{bucket_expr} AS bucket_ts"] + list(config['group_by'])
         for f, agg in agg_fields.items():
             select_parts.append(
@@ -168,16 +223,22 @@ class Command(BaseCommand):
         insert_cols = ', '.join(insert_fields)
         insert_vals = ', '.join(['bucket_ts' if f == 'timestamp' else f for f in insert_fields])
 
-        # Get total rows and oldest timestamp
+        # Get total rows and oldest timestamp in window
         with connection.cursor() as c:
-            c.execute(f"SELECT COUNT(*) FROM {table_name} WHERE timestamp < %s", [cutoff])
+            c.execute(
+                f"SELECT COUNT(*) FROM {table_name} WHERE timestamp >= %s AND timestamp < %s",
+                [window_start, window_end]
+            )
             total_rows = c.fetchone()[0]
-            c.execute(f"SELECT MIN(timestamp) FROM {table_name} WHERE timestamp < %s", [cutoff])
+            c.execute(
+                f"SELECT MIN(timestamp) FROM {table_name} WHERE timestamp >= %s AND timestamp < %s",
+                [window_start, window_end]
+            )
             oldest = c.fetchone()[0]
 
         if total_rows == 0 or oldest is None:
             if verbose:
-                self.stdout.write(f'  {table_name}: nothing to compact')
+                self.stdout.write(f'  {table_name}: nothing to compact in this window')
             return
 
         if verbose:
@@ -204,11 +265,11 @@ class Command(BaseCommand):
         t_start = time.time()
 
         # Round oldest down to bucket boundary
-        current = oldest.replace(minute=0, second=0, microsecond=0)
+        current = self._round_to_bucket(oldest, bucket_minutes)
 
-        while current < cutoff:
+        while current < window_end:
             batch_num += 1
-            batch_end = min(current + batch_window, cutoff)
+            batch_end = min(current + batch_window, window_end)
 
             where_sql = f"timestamp >= %s AND timestamp < %s {fk_where}"
             params = [current, batch_end]
@@ -259,5 +320,32 @@ class Command(BaseCommand):
             current = batch_end
 
         elapsed = time.time() - t_start
+        tier_name = "Tier 2 (15m)" if bucket_minutes == 15 else "Tier 3 (1h)"
         self.stdout.write(self.style.SUCCESS(
-            f'  {table_name}: compacted {total_compacted:,} rows in {batch_num} batches ({elapsed:.1f}s)'))
+            f'  {table_name}: compacted {total_compacted:,} rows in {batch_num} batches ({elapsed:.1f}s) [{tier_name}]'))
+
+    def _bucket_expression(self, bucket_minutes):
+        """Generate SQL bucket expression for given minute interval."""
+        if bucket_minutes == 60:
+            return "date_trunc('hour', timestamp)"
+        elif bucket_minutes == 15:
+            return (
+                "date_trunc('hour', timestamp) + "
+                "INTERVAL '15 min' * (EXTRACT(MINUTE FROM timestamp)::int / 15)"
+            )
+        elif bucket_minutes == 1:
+            return "date_trunc('minute', timestamp)"
+        else:
+            raise ValueError(f"Unsupported bucket size: {bucket_minutes}")
+
+    def _round_to_bucket(self, dt, bucket_minutes):
+        """Round datetime down to bucket boundary."""
+        if bucket_minutes == 60:
+            return dt.replace(minute=0, second=0, microsecond=0)
+        elif bucket_minutes == 15:
+            minute = (dt.minute // 15) * 15
+            return dt.replace(minute=minute, second=0, microsecond=0)
+        elif bucket_minutes == 1:
+            return dt.replace(second=0, microsecond=0)
+        else:
+            raise ValueError(f"Unsupported bucket size: {bucket_minutes}")

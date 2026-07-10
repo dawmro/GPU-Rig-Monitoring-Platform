@@ -228,20 +228,39 @@ class ChartDataView(APIView):
     BYTE_TO_MB = {'rx_bytes_delta', 'tx_bytes_delta'}
 
     def _build_buckets(self, range_hours, bucket_minutes=1):
+        """Build bucket boundaries aligned to the same boundaries as compaction script.
+        
+        For 15-minute buckets: align to hour boundaries (0, 15, 30, 45)
+        For 1-hour buckets: align to hour boundaries
+        For 1-minute buckets: align to minute boundaries
+        """
         now = timezone.now()
+        # Align end_bucket to the same boundary as compaction script
         end_bucket = now.replace(second=0, microsecond=0)
-        end_bucket -= timedelta(minutes=end_bucket.minute % bucket_minutes)
+        if bucket_minutes == 60:
+            end_bucket = end_bucket.replace(minute=0)
+        elif bucket_minutes == 15:
+            # Align to 15-minute boundary (0, 15, 30, 45)
+            minute = (now.minute // 15) * 15
+            end_bucket = end_bucket.replace(minute=minute)
+        elif bucket_minutes == 1:
+            pass  # Already aligned to minute
+        
         total_buckets = (range_hours * 60) // bucket_minutes
         start_bucket = end_bucket - timedelta(minutes=total_buckets * bucket_minutes)
         labels = []
         for i in range(total_buckets):
             t = start_bucket + timedelta(minutes=i * bucket_minutes)
-            labels.append(t.strftime('%m-%d %H:%M') if range_hours > 24 or bucket_minutes >= 60 else t.strftime('%H:%M'))
+            if range_hours > 24 or bucket_minutes >= 60:
+                labels.append(t.strftime('%m-%d %H:%M'))
+            else:
+                labels.append(t.strftime('%H:%M'))
         return labels, start_bucket, end_bucket
 
     def get(self, request, uuid):
         from django.db.models import Avg, Sum, Count
         from django.db.models.functions import TruncMinute, TruncHour
+        from django.db.models import Func, DateTimeField
         from django.core.cache import cache
 
         user = request.user
@@ -251,7 +270,7 @@ class ChartDataView(APIView):
 
         metric = request.query_params.get('metric', 'cpu_utilization_pct')
         range_hours = int(request.query_params.get('range', 24))
-        
+
         # Bucket size: 1-min for 24h, 15-min for 7d, 1-hour for 30d
         if range_hours <= 24:
             bucket_minutes = 1
@@ -261,7 +280,7 @@ class ChartDataView(APIView):
             bucket_minutes = 60
 
         # Cache key: chart_data_{uuid}_{metric}_{range}_{bucket}
-        # TTL: 55s (just under the 60s heartbeat interval)
+        # TTL: 55s (just under the 60s agent heartbeat interval)
         cache_key = f'chart_{uuid}_{metric}_{range_hours}_{bucket_minutes}'
         cached = cache.get(cache_key)
         if cached is not None:
@@ -271,13 +290,30 @@ class ChartDataView(APIView):
         multi_gpu = request.query_params.get('multi_gpu', 'false').lower() == 'true'
         multi_disk = request.query_params.get('multi_disk', 'false').lower() == 'true'
         multi_iface = request.query_params.get('multi_iface', 'false').lower() == 'true'
-
         multi_mem = request.query_params.get('multi_mem', 'false').lower() == 'true'
 
-        # Bucket size: 1-min for 24h, 1-hour for 7d/30d
+        # Bucket size: 1-min for 24h, 15-min for 7d, 1-hour for 30d
         labels, start_bucket, end_bucket = self._build_buckets(range_hours, bucket_minutes)
         total_buckets = len(labels)
-        trunc = TruncMinute if bucket_minutes == 1 else (TruncMinute if bucket_minutes == 15 else TruncHour)
+
+        # For 15-min buckets, use custom truncation to 15-minute intervals
+        # For 1-hour buckets, use TruncHour
+        # For 1-min buckets, use TruncMinute
+        from django.db.models.functions import TruncMinute, TruncHour
+        from django.db.models import Func, DateTimeField
+
+        if bucket_minutes == 1:
+            trunc = TruncMinute
+        elif bucket_minutes == 15:
+            # Use custom SQL for 15-minute intervals
+            class Trunc15Min(Func):
+                function = 'date_trunc'
+                template = "date_trunc('hour', %(expressions)s) + INTERVAL '15 min' * (EXTRACT(MINUTE FROM %(expressions)s)::int / 15)"
+                output_field = DateTimeField()
+            trunc = Trunc15Min
+        else:
+            trunc = TruncHour
+
         agg_func = Sum if metric in {'net_rx_bytes_delta', 'net_tx_bytes_delta', 'net_rx_errors', 'net_tx_errors', 'error_frequency', 'disk_read_bytes_delta', 'disk_write_bytes_delta', 'disk_read_iops_delta', 'disk_write_iops_delta'} else Avg
 
         # Helper: run SQL aggregation and map to values array

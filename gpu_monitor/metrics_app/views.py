@@ -300,8 +300,7 @@ class ChartDataView(APIView):
         # For 1-hour buckets, use TruncHour
         # For 1-min buckets, use TruncMinute
         from django.db.models.functions import TruncMinute, TruncHour
-        from django.db.models import Func
-        from django.db.models import DateTimeField
+        from django.db.models import Func, DateTimeField
 
         if bucket_minutes == 1:
             trunc = TruncMinute

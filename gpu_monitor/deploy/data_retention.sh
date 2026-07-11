@@ -1,7 +1,6 @@
 #!/bin/bash
 # GPU Rig Monitoring Platform — Daily data retention cleanup
-# Runs compact_data, cleanup_old_data, and VACUUM ANALYZE
-# Designed to be called by cron
+# Runs compact_data (3-tier: 1m -> 15m for 1-7d, 15m -> 1h for 7-31d), cleanup_old_data, VACUUM ANALYZE
 
 OPT="/opt/gpu_monitor"
 LOG_DIR="/opt/gpu_monitor/logs"
@@ -28,7 +27,7 @@ if [ "$DISK_USAGE" -gt 80 ]; then
     echo "WARNING: Disk usage at ${DISK_USAGE}%" >> "$LOG_DIR/cleanup.log"
 fi
 
-# Phase 1: Compact old data (continue on error)
+# Phase 1: Compact data - Phase A (1-7 days -> 15-min buckets), Phase B (7-31 days -> 1-hour buckets)
 echo "Compacting data..." >> "$LOG_DIR/cleanup.log"
 python manage.py compact_data --verbose >> "$LOG_DIR/cleanup.log" 2>&1 || true
 
@@ -36,7 +35,6 @@ python manage.py compact_data --verbose >> "$LOG_DIR/cleanup.log" 2>&1 || true
 echo "Cleaning up data older than ${RETENTION_DAYS} days..." >> "$LOG_DIR/cleanup.log"
 python manage.py cleanup_old_data --days="$RETENTION_DAYS" >> "$LOG_DIR/cleanup.log" 2>&1 || true
 
-# Phase 3: VACUUM ANALYZE on metrics tables
 # Phase 3: VACUUM ANALYZE on metrics tables
 # Reclaims dead tuples and updates planner statistics after bulk DELETEs
 echo "Running VACUUM ANALYZE..." >> "$LOG_DIR/cleanup.log"

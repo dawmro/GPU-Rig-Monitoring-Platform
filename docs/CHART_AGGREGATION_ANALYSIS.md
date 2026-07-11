@@ -71,33 +71,34 @@ For each table, old data (>1 day) is aggregated into 1-hour buckets:
 
 ## Chart Data Strategy (ChartDataView)
 
-Charts use two time ranges:
+Charts use three time ranges:
 - **24h:** 1-minute buckets (raw data)
-- **7d/30d:** 1-hour buckets (compacted data)
+- **7d:** 15-minute buckets (Tier 2 compacted data)
+- **30d:** 1-hour buckets (Tier 3 compacted data)
 
 ### Aggregation function selection:
 ```python
-agg_func = Sum if metric in {'net_rx_bytes_delta', 'net_tx_bytes_delta', 'error_frequency'} else Avg
+agg_func = Sum if metric in {'net_rx_bytes_delta', 'net_tx_bytes_delta', 'net_rx_errors', 'net_tx_errors', 'error_frequency', 'disk_read_bytes_delta', 'disk_write_bytes_delta', 'disk_read_iops_delta', 'disk_write_iops_delta'} else Avg
 ```
 
 ### Per-metric analysis:
 
-| Chart Metric | 24h (raw) | 7d/30d (compacted) | Correct? |
-|---|---|---|---|
-| CPU util/temp/freq | AVG of per-min values | AVG of hourly AVGs | ✅ |
-| Memory bytes | AVG of per-min values | AVG of hourly AVGs | ✅ |
-| Swap bytes | AVG of per-min values | AVG of hourly AVGs | ✅ |
-| GPU temp/util/mem_ctrl/power | AVG of per-min values | AVG of hourly AVGs | ✅ |
-| GPU clocks | AVG of per-min values | AVG of hourly AVGs | ✅ |
-| Disk usage % | AVG (direct field) | AVG of hourly AVGs | ✅ |
-| Disk read/write bytes | AVG of per-min deltas | AVG of hourly SUMs | ✅ |
-| Disk read/write IOPS | AVG of per-min deltas | AVG of hourly SUMs | ✅ |
-| Disk utilization % | AVG (direct field) | AVG of hourly AVGs | ✅ |
-| Network rx/tx bytes | SUM of per-min deltas | SUM of hourly SUMs | ✅ |
-| Network errors | SUM of per-min values | SUM of hourly SUMs | ✅ |
-| Error frequency | SUM of per-min counts | SUM of hourly SUMs | ✅ |
-| Uptime | Raw values (no agg) | Raw values | ✅ |
-| CPU load avg | Raw JSON parsing | Raw JSON parsing | ✅ |
+| Chart Metric | 24h (raw, 1-min) | 7d (15-min compacted) | 30d (1-hr compacted) | Correct? |
+|---|---|---|---|---|
+| CPU util/temp/freq | AVG of per-min values | AVG of 15-min AVGs | AVG of hourly AVGs | ✅ |
+| Memory bytes | AVG of per-min values | AVG of 15-min AVGs | AVG of hourly AVGs | ✅ |
+| Swap bytes | AVG of per-min values | AVG of 15-min AVGs | AVG of hourly AVGs | ✅ |
+| GPU temp/util/mem_ctrl/power | AVG of per-min values | AVG of 15-min AVGs | AVG of hourly AVGs | ✅ |
+| GPU clocks | AVG of per-min values | AVG of 15-min AVGs | AVG of hourly AVGs | ✅ |
+| Disk usage % | AVG (direct field) | AVG of 15-min AVGs | AVG of hourly AVGs | ✅ |
+| Disk read/write bytes | SUM of per-min deltas | SUM of 15-min SUMs | SUM of hourly SUMs | ✅ |
+| Disk read/write IOPS | SUM of per-min deltas | SUM of 15-min SUMs | SUM of hourly SUMs | ✅ |
+| Disk utilization % | AVG (direct field) | AVG of 15-min AVGs | AVG of hourly AVGs | ✅ |
+| Network rx/tx bytes | SUM of per-min deltas | SUM of 15-min SUMs | SUM of hourly SUMs | ✅ |
+| Network errors | SUM of per-min values | SUM of 15-min SUMs | SUM of hourly SUMs | ✅ |
+| Error frequency | SUM of per-min counts | SUM of 15-min SUMs | SUM of hourly SUMs | ✅ |
+| Uptime | Raw values (no agg) | Raw values | Raw values | ✅ |
+| CPU load avg | Raw JSON parsing | Raw JSON parsing | Raw JSON parsing | ✅ |
 
 ## Key Insight: Why AVG on compacted SUMs is correct
 

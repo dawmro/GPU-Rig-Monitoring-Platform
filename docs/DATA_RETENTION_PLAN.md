@@ -48,18 +48,23 @@
 
 ---
 
-## Retention Strategy: Tiered Compaction
+## Retention Strategy: Tiered Compaction (3-Tier)
 
 ### Tier 1: Raw Data (0-1 day)
 - Keep all per-minute data unchanged
 - Needed for Live Metrics and 24h charts (1-minute buckets)
 
-### Tier 2: 1-Hour Buckets (1-31 days)
-- Compact data older than 1 day into 1-hour buckets
-- Reduces 1,440 rows/day to 24 rows/day (60× savings)
-- 7d and 30d charts use 1-hour buckets
+### Tier 2: 15-Minute Buckets (1-7 days)
+- Compact data older than 1 day into 15-minute buckets
+- Reduces 1,440 rows/day to 96 rows/day (15× savings)
+- 7d charts use 15-minute buckets
 
-### Tier 3: Delete (31+ days)
+### Tier 3: 1-Hour Buckets (7-31 days)
+- Compact data older than 7 days into 1-hour buckets
+- Reduces 96 rows/day to 24 rows/day (4× savings)
+- 30d charts use 1-hour buckets
+
+### Tier 4: Delete (31+ days)
 - Remove all data older than 31 days
 - 31 days provides 1-day safety margin beyond the 30-day max chart range
 
@@ -70,17 +75,18 @@
 ### Without Compaction
 31 days × 15.7 MB/day × 1,000 rigs = **486.7 GB**
 
-### With Tiered Compaction
+### With 3-Tier Compaction
 
 | Tier | Period | Raw Size | Factor | Compact Size |
 |---|---|---|---|---|
 | Raw | Day 0-1 | 15.3 GB | 1× | 15.3 GB |
-| 1-hour | Day 1-31 | 471.4 GB | 60× | 7.9 GB |
-| **Total** | **31 days** | **486.7 GB** | | **~23.2 GB** |
+| 15-min | Day 1-7 | 94.2 GB | 15× | 6.3 GB |
+| 1-hour | Day 7-31 | 377.2 GB | 60× | 6.3 GB |
+| **Total** | **31 days** | **486.7 GB** | | **~27.9 GB** |
 
-**~95% storage reduction** through compaction (486.7 GB → 23.2 GB).
+**~94% storage reduction** through compaction (486.7 GB → 27.9 GB).
 
-**Per-rig 31-day retention:** 15.7 MB (raw day) + 7.9 MB (30 days compacted) = **23.6 MB**
+**Per-rig 31-day retention:** 15.7 MB (raw day) + 6.3 MB (6 days at 15-min) + 6.3 MB (24 days at 1-hour) = **28.3 MB**
 
 ---
 
@@ -88,16 +94,18 @@
 
 ### `compact_data` — Aggregate Old Data into Larger Buckets
 
-**Purpose:** Reduces storage by aggregating per-minute rows into 1-hour buckets.
+**Purpose:** Reduces storage by aggregating per-minute rows into 15-minute buckets (1-7 days) and 1-hour buckets (7-31 days).
 
 **How It Works:**
 
-Single phase:
+Two-phase approach:
 
-**Phase 1** (data > 1 day old):
-- Creates 1-hour buckets from per-minute data
-- Groups rows by `rig_uuid` (and `gpu_index`, `device`, etc.) into 1-hour windows
-||- Applies aggregation per metric type:
+**Phase A (Tier 2): 1-min → 15-min buckets for data 1-7 days old**
+- Cutoff range: 7 days ago to 1 day ago
+- Bucket size: 15 minutes
+- Bucket expression: `date_trunc('hour', timestamp) + INTERVAL '15 min' * (EXTRACT(MINUTE FROM timestamp)::int / 15)`
+- Groups rows by `rig_uuid` (and `gpu_index`, `device`, etc.) into 15-minute windows
+- Applies aggregation per metric type:
   - `AVG` for gauges: temperature, utilization, power, memory usage, GPU core/memory clock, utilization_pct, **mem_controller_util_pct**
   - `SUM` for counters: network byte deltas, error_count, read_bytes_delta, write_bytes_delta, read_iops_delta, write_iops_delta
   - `LAST` for static fields: model names, UUIDs, capacity, PCIe link info, read_bytes, write_bytes, read_iops, write_iops, busy_time_ms
@@ -106,16 +114,26 @@ Single phase:
 - Deletes original per-minute rows, inserts aggregated rows
 - FK-safe: parent rows referenced by children are excluded from compaction
 
-**Table Processing Order:**
+**Phase B (Tier 3): 15-min → 1-hour buckets for data 7-31 days old**
+- Cutoff range: 31 days ago to 7 days ago
+- Bucket size: 60 minutes
+- Source data: Can be raw 1-min data (if Tier 2 not yet run) OR already-compacted 15-min data
+- Must handle both cases gracefully — same aggregation logic applies
+- `AVG` of 15-min AVGs = correct hourly average
+- `SUM` of 15-min SUMs = correct hourly total
+- `LAST` of static fields = still correct
+
+**Table Processing Order (each phase):**
 1. `metrics_gpu_process` (child with FK) — compacted first
 2. `metrics_gpumetric` (child with FK) — compacted after gpu_process
 3. `metrics_storagemetric` (child with FK) — compacted after gpu
 4. `metrics_networkmetric` (child with FK) — compacted after storage
-5. `metrics_metricsnapshot` (parent) — compacted LAST, excluding rows still referenced by children
+5. `metrics_power_reading` (child with FK) — compacted after network
+6. `metrics_metricsnapshot` (parent) — compacted LAST, excluding rows still referenced by children
 
 **FK Handling:**
 - Parent table rows referenced by children are excluded from compaction (to avoid FK violations)
-- Child tables (GPU, storage, network, gpu_process) keep their `snapshot_id` pointing to the parent
+- Child tables (GPU, storage, network, gpu_process, power_reading) keep their `snapshot_id` pointing to the parent
 - `metrics_latest_docker_container` is not compacted (delete-before-insert, latest only)
 
 **Options:**
@@ -123,14 +141,20 @@ Single phase:
 |---|---|
 | `--dry-run` | Preview row counts without making changes |
 | `--verbose` | Show per-table row counts and status |
+| `--phase` | Run specific phase: `all` (default), `tier2`, `tier3` |
+| `--days` | Retention period in days (default: 31) |
 
 **Example Output:**
 ```
-Phase 1: Compacting 1-minute -> 1-hour buckets (data older than 1 day)
-  metrics_metricsnapshot: 50,000 rows compacted
-  metrics_gpumetric: 390,000 rows compacted
-  metrics_storagemetric: 357,000 rows compacted
-  metrics_networkmetric: 197,000 rows compacted
+Tier 2: Compacting 1-min -> 15-min buckets (data 1-7 days old)
+  metrics_gpu_process: 0 rows compacted
+  metrics_gpumetric: 1,234,567 rows compacted
+  metrics_storagemetric: 890,123 rows compacted
+  metrics_networkmetric: 456,789 rows compacted
+  metrics_power_reading: 234,567 rows compacted
+Tier 3: Compacting 15-min -> 1-hour buckets (data 7-31 days old)
+  metrics_gpumetric: 1,000,000 rows compacted
+  metrics_storagemetric: 789,012 rows compacted
 Compaction complete
 ```
 

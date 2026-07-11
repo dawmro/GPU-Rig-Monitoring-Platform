@@ -1,8 +1,8 @@
 # GPU Rig Monitoring Platform — Architecture Document
 
-**Version:** 1.8
+**Version:** 1.9
 **Status:** Implemented — Living Architecture Reference
-**Last Updated:** 2026-07-08
+**Last Updated:** 2026-07-11
 
 ---
 
@@ -40,10 +40,11 @@ The GPU Rig Monitoring Platform is a single-server telemetry dashboard for GPU r
 
 **Data retention:** 31 days (matches 30-day max chart range + 1 day safety margin)
 - 0-1 day: raw per-minute data
-- 1-31 days: compacted to 1-hour buckets
+- 1-7 days: compacted to 15-minute buckets
+- 7-31 days: compacted to 1-hour buckets
 - 31+ days: deleted
 
-**Note:** Earlier projections estimated ~4.7 MB/day/rig. Actual measurements from 100 rigs over 10 days show ~15.7 MB/day/rig (~3.3x higher) due to larger row sizes from JSON fields (motherboard_json, software_json, cpu_load_avg_json) and higher-than-expected Docker container metric volume.
+**Note:** Earlier projections estimated ~4.7 MB/day/rig. Actual measurements from 100 rigs over 10 days show ~15.7 MB/day/rig (~3.3x higher) due to larger row sizes from JSON fields (motherboard_json, software_json, cpu_load_avg_json) and higher-than-expected Docker container metric volume. With 3-tier compaction: ~23.6 MB/rig/31-days (raw day + 6 days 15-min + 24 days 1-hour).
 
 ### 1.1 Non-Goals (v1)
 
@@ -106,8 +107,8 @@ Cron → Agent collects metrics → JSON payload → POST /api/v1/ingest/
   → Nginx (rate limit: 2r/min per rig_uuid burst=5, payload size check)
   → DRF APIKeyAuthentication (X-API-Key header → Argon2id hash comparison)
   → DRF throttle (per-rig rate limit via X-Rig-UUID header, 2/min per rig)
-  → Timestamp sanity check (reject if >5 min future or >1 hour past)
-  → IngestSerializer validation (schema version 1.0 through 1.11)
+    → Timestamp sanity check (reject if >5 min future or >1 hour past)
+    → IngestSerializer validation (schema version 1.0 through 1.11)
   → process_ingest() → DB upsert (MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, LatestDockerContainer, RigStatusEvent, LatestSnapshot)
   → StorageMetric: capacity, usage%, temp, SMART, read/write bytes, read/write IOPS, busy_time_ms, utilization%
   → LatestSnapshot: 11 storage JSON arrays (devices, fstypes, mountpoints, capacities, usage%, temps, smart, deltas, totals), 3 process fields (top_cpu_processes_json, top_mem_processes_json, process_count)
@@ -326,7 +327,7 @@ debug_mode: false         # Verbose logging
 }
 ```
 
-**Changelog from schema 1.8 → 1.9:**
+**Changelog from schema 1.9 → 1.10:**
 - Added `cpu_freq_current_mhz`, `cpu_freq_min_mhz`, `cpu_freq_max_mhz` to CPU metrics (psutil `cpu_freq()`)
 - Added CPU Frequency chart (single-line, reads from `MetricSnapshot.cpu_freq_current_mhz`)
 - Added `error_history_json` to Rig model (rolling 1000 errors with dedup via `_seen_error_hashes_json`)
@@ -371,10 +372,10 @@ debug_mode: false         # Verbose logging
 
 ### 3.5 Two Agents
 
-| Agent | File | Version | Schema | Platform | Scheduling |
-|-------|------|---------|--------|----------|------------|
-|| Linux | `agent/run.py` | 1.6.0 | 1.11 | Any Linux, VMware NAT | `cron` every 60s with `flock` |
-|| Windows | `agent_windows/run.py` | 1.6.17-win | 1.11 | Windows 10/11 | Task Scheduler (1 min) with `pythonw.exe` (hidden window) |
+| Agent | Version | Schema | Platform | Scheduling |
+|-------|---------|--------|----------|------------|
+| Linux | 1.6.0   | 1.11   | Any Linux, VMware NAT | `cron` every 60s with `flock` |
+| Windows | 1.6.17-win | 1.11 | Windows 10/11 | Task Scheduler (1 min) with `pythonw.exe` (hidden window) |
 
 **Versioning rules:**
 - `agent_version` (e.g. `1.1.0`): incremented for agent-side changes (collectors, payload format, bug fixes). Format: `MAJOR.MINOR.PATCH`.
@@ -1470,7 +1471,7 @@ sudo -u postgres psql gpu_monitor
 - Report page: "Mem Utilization" row (avg/max) alongside "Core Utilization"
 - Backward compatible: `None` if agent doesn't send field
 
-**Schema 1.10 → 1.11 changelog:**
+**Changelog from schema 1.10 → 1.11:**
 - Schema version bump only (no payload structure changes)
 - Aligns agent schema version with implementation
 - Agents: Linux 1.6.0, Windows 1.6.17-win

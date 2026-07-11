@@ -313,7 +313,9 @@ echo '0 3 * * * qrv bash /opt/gpu_monitor/deploy/data_retention.sh >> /var/log/m
 ```
 
 The cron job runs `data_retention.sh` which executes three steps:
-1. `compact_data` — aggregate old data into 1-hour buckets
+1. `compact_data` — two-phase aggregation of old data:
+   - **Phase A (Tier 2):** Data 1-7 days old → 15-minute buckets (15× reduction)
+   - **Phase B (Tier 3):** Data 7-31 days old → 1-hour buckets (4× reduction)
 2. `cleanup_old_data` — delete data older than 31 days
 3. `VACUUM ANALYZE` — reclaim dead tuples and update planner statistics
 
@@ -331,13 +333,13 @@ echo '0 3 * * * qrv cd /opt/gpu_monitor && source venv/bin/activate && set -a &&
 
 #### What It Does
 
+#### What It Does
+
 The `data_retention.sh` wrapper runs three steps daily. This is the **production** maintenance script — the agent install script (`agent/install.sh`) deploys it automatically. Do NOT also add `daily_maintenance.sh` to cron — they do the same work and running both would execute maintenance twice daily.
 
-1. **`compact_data`** — Single-phase aggregation of old data:
-   - Data > 1 day old → 1-hour buckets (60× reduction)
-   - Aggregation per metric: AVG (temperature, utilization, power), SUM (network bytes, error_count), LAST (model names, UUIDs)
-   - Parent table (`metrics_metricsnapshot`) compacted first; child tables after
-   - FK-safe: parent rows referenced by children are excluded from compaction
+1. **`compact_data`** — two-phase aggregation of old data:
+   - **Phase A (Tier 2):** Data 1-7 days old → 15-minute buckets (15× reduction)
+   - **Phase B (Tier 3):** Data 7-31 days old → 1-hour buckets (4× reduction)
 
 2. **`cleanup_old_data`** — Deletes data older than 31 days:
    - Processes tables in dependency order (children first, parent last)

@@ -6,7 +6,7 @@
 - Identified gaps between current state and "Non-Goals (v1)" section
 - Considered scalability path (§10.5), security boundaries (§7), and operational needs (§8)
 - Prioritized by: user value, implementation complexity, architectural fit
-- Excluded already-implemented features (Audit Log & Activity Feed, Log Rotation, Mobile UX, Power Consumption, PCIe Monitoring, **GPU Memory Controller Utilization**, Report Tab)
+- **Excluded already-implemented features** (Audit Log & Activity Feed, Log Rotation, Mobile UX, Power Consumption, PCIe Monitoring, **GPU Memory Controller Utilization**, Report Tab)
 
 ---
 

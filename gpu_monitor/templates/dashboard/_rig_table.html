@@ -21,7 +21,7 @@
         </thead>
         <tbody>
             {% for item in rig_data %}
-            <tr class="border-b border-gray-700/50 hover:bg-gray-750">
+            <tr class="border-b border-gray-700/50 hover:bg-gray-750 {% if item.rig.status == 'offline' %}rig-offline{% endif %}">
                 <td class="px-3 py-2">
                     <a href="{% url 'dashboard:rig-detail' item.rig.uuid %}"
                        class="text-blue-400 hover:text-blue-300 font-medium truncate inline-block max-w-[140px]"

@@ -170,8 +170,8 @@ GPU-Rig-Monitoring-Platform/
 | [`docs/DEPLOYMENT_GUIDE.md`](docs/DEPLOYMENT_GUIDE.md) | Production VPS deployment with TLS, domain, firewall |
 | [`docs/LOCAL_DEPLOYMENT_GUIDE.md`](docs/LOCAL_DEPLOYMENT_GUIDE.md) | Local testing (no domain, HTTP only) |
 | [`docs/GPU_Rig_Monitoring_Architecture.md`](docs/GPU_Rig_Monitoring_Architecture.md) | Full architecture reference (1500+ lines) |
-| `agent/README.md` | Linux agent installation & config |
-| `agent_windows/README.md` | Windows agent setup |
+| [`agent/README.md`](agent/README.md) | Linux agent installation & config |
+| [`agent_windows/README.md`](agent_windows/README.md) | Windows agent setup |
 
 ---
 

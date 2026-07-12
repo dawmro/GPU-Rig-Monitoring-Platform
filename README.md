@@ -10,7 +10,8 @@
 > **A production-ready, single-server telemetry platform for monitoring GPU rigs running AI/ML workloads.** Collects hardware metrics from remote agents and displays them in a real-time, server-rendered web dashboard with zero JavaScript frameworks.
 
 <img width="1853" height="732" alt="image" src="https://github.com/user-attachments/assets/220cdcb8-344c-4448-8567-182816b3369f" />
-<img width="3068" height="5874" alt="monitor zet-tech eu_dashboard_rigs_97a7b3ce-c86d-49a2-8bbc-f40b4a0c6612_" src="https://github.com/user-attachments/assets/463e7359-d0f2-4f6b-9229-63ccd7d51481" />
+<img width="3068" height="5874" alt="image" src="https://github.com/user-attachments/assets/7cff23cc-8003-47be-931c-ba9339aedb3b" />
+
 
 
 

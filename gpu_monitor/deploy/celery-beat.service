@@ -1,0 +1,24 @@
+[Unit]
+Description=Celery Beat Scheduler
+After=network.target redis.service postgresql.service
+Wants=redis.service postgresql.service
+
+[Service]
+Type=simple
+User=monitoring
+Group=monitoring
+WorkingDirectory=/opt/gpu_monitor
+EnvironmentFile=/opt/gpu_monitor/.env
+ExecStart=/opt/gpu_monitor/venv/bin/celery -A gpu_monitor beat \
+    --loglevel=INFO \
+    --scheduler=django_celery_beat.schedulers:DatabaseScheduler \
+    --pidfile=/var/run/celery/beat.pid \
+    --schedule=/var/lib/celery/beat-schedule
+RuntimeDirectory=celery
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

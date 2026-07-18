@@ -193,7 +193,7 @@ phase0_configure_django() {
 # Redis / Celery — build URLs from components (same pattern as DB)
 REDIS_HOST = os.environ.get('REDIS_HOST', '127.0.0.1')
 REDIS_PORT = os.environ.get('REDIS_PORT', '6379')
-REDIS_PASSWORD=os.env...RD', '')
+REDIS_PASSWORD=os.environ.get('REDIS_PASSWORD', '')
 REDIS_DB_BROKER = os.environ.get('REDIS_DB_BROKER', '0')
 REDIS_DB_RESULTS = os.environ.get('REDIS_DB_RESULTS', '1')
 
@@ -201,7 +201,7 @@ from urllib.parse import quote
 
 def _redis_url(db: str) -> str:
     """Build redis:// URL from components. Handles empty password."""
-    auth = f":***@" if REDIS_PASSWORD else ""
+    auth = f":{quote(REDIS_PASSWORD, safe='')}@" if REDIS_PASSWORD else ""
     return f"redis://{auth}{REDIS_HOST}:{REDIS_PORT}/{db}"
 
 CELERY_BROKER_URL = _redis_url(REDIS_DB_BROKER)

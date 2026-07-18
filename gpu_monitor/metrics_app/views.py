@@ -16,6 +16,7 @@ from .serializers import process_ingest
 from .models import LatestSnapshot, MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric
 from rigs.models import Rig
 from audit.middleware import log_audit_event
+from metrics_app.tasks import process_ingest_payload
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,7 @@ class IngestView(APIView):
         if not rig_uuid:
             return Response({'status': 'error', 'message': 'Missing rig_uuid'}, status=400)
 
-        # ── Timestamp sanity check ──────────────────────────────────────
+        # ── Timestamp sanity check (keep synchronous - fast) ────────────────
         ts = data.get('timestamp')
         if ts is not None:
             try:
@@ -82,7 +83,7 @@ class IngestView(APIView):
                             status=400,
                         )
             except Exception:
-                pass  # If parsing fails, let it through — process_ingest will handle it
+                pass  # Let process_ingest handle it
 
         # Check ownership
         rig_name = data.get('rig_name', '').strip()
@@ -103,15 +104,24 @@ class IngestView(APIView):
             if rig.owner_id != user.id:
                 return Response({'status': 'error', 'message': 'UUID already claimed by another user'}, status=409)
 
-        # Update enrolled_by_api_key to the current key (handles key rotation on the agent)
+        # Update enrolled_by_api_key if changed
         enrolled_by_key_changed = rig.enrolled_by_api_key_id != api_key.id
         if enrolled_by_key_changed:
             rig.enrolled_by_api_key = api_key
 
-        # Process the payload
-        result, http_status = process_ingest(rig_uuid, data, user.id, rig=rig, enrolled_by_key_changed=enrolled_by_key_changed)
+        # Dispatch async task - return 202 immediately
+        task = process_ingest_payload.delay(
+            rig_uuid=rig_uuid,
+            payload_dict=data,
+            user_id=user.id,
+            api_key_id=api_key.id,
+            enrolled_by_key_changed=enrolled_by_key_changed
+        )
 
-        return Response(result, status=http_status)
+        return Response(
+            {'status': 'accepted', 'task_id': task.id, 'message': 'Payload accepted for processing'},
+            status=202
+        )
 
 
 class HealthView(APIView):

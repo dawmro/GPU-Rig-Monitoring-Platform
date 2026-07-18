@@ -153,23 +153,50 @@ find "$OPT/gpu_monitor" -type d -exec chmod 755 {} \;
 find "$OPT/gpu_monitor/deploy" -name "*.sh" -exec chmod 755 {} \; 2>/dev/null || true
 find "$OPT/gpu_monitor" -name "manage.py" -exec chmod 755 {} \; 2>/dev/null || true
 
-# Agent-side: all files must be readable/executable by monitoring-agent
-if [ -d "$OPT/monitoring-agent" ]; then
-    chown -R monitoring-agent:monitoring-agent "$OPT/monitoring-agent"
-    chmod 755 "$OPT/monitoring-agent"
-    [ -f "$OPT/monitoring-agent/run.py" ] && chmod 755 "$OPT/monitoring-agent/run.py"
-    [ -f "$OPT/monitoring-agent/check_update.py" ] && chmod 755 "$OPT/monitoring-agent/check_update.py"
-    [ -f "$OPT/monitoring-agent/install.sh" ] && chmod 755 "$OPT/monitoring-agent/install.sh"
+# ── Step 7: Fix permissions (PRODUCTION /opt only) ──────────────────
+# CRITICAL: Only fix /opt/gpu_monitor (production). Workspace stays qrv:qrv.
+echo "--- Fixing permissions on /opt/gpu_monitor (production) ---"
+
+# Production /opt/gpu_monitor owned by monitoring user for systemd services
+sudo chown -R monitoring:monitoring "$OPT/gpu_monitor"
+sudo chmod -R 755 "$OPT/gpu_monitor"
+sudo chmod 644 "$OPT/gpu_monitor/.env"
+
+# Ensure specific directories have correct permissions
+sudo chmod 755 "$OPT/gpu_monitor/logs"
+# Ensure app.log exists and has correct permissions for both monitoring and qrv
+sudo touch "$OPT/gpu_monitor/logs/app.log"
+sudo chown qrv:monitoring "$OPT/gpu_monitor/logs/app.log"
+sudo chmod 664 "$OPT/gpu_monitor/logs/app.log"
+sudo chmod 664 "$OPT/gpu_monitor/logs"/*.log 2>/dev/null || true
+
+# Ensure qrv user is in monitoring group for log access
+if ! id -nG qrv | grep -qw monitoring; then
+    sudo usermod -a -G monitoring qrv
+    echo "Added qrv to monitoring group"
 fi
 
-# Agent log directory must be writable by monitoring-agent
+# Agent files in /opt/monitoring-agent (production agent)
+if [ -d "$OPT/monitoring-agent" ]; then
+    sudo chown -R monitoring-agent:monitoring-agent "$OPT/monitoring-agent"
+    sudo chmod 755 "$OPT/monitoring-agent"
+    [ -f "$OPT/monitoring-agent/run.py" ] && sudo chmod 755 "$OPT/monitoring-agent/run.py"
+    [ -f "$OPT/monitoring-agent/check_update.py" ] && sudo chmod 755 "$OPT/monitoring-agent/check_update.py"
+    [ -f "$OPT/monitoring-agent/install.sh" ] && sudo chmod 755 "$OPT/monitoring-agent/install.sh"
+fi
+
+# Agent log directory
 if [ -d "/var/log/monitoring-agent" ]; then
-    chown -R monitoring-agent:monitoring-agent /var/log/monitoring-agent/
-    chmod 755 /var/log/monitoring-agent/
+    sudo chown -R monitoring-agent:monitoring-agent /var/log/monitoring-agent/
+    sudo chmod 755 /var/log/monitoring-agent/
 fi
 
 # Clear stale .pyc cache (root-owned from gunicorn) to prevent migration loader issues
-find "$OPT/gpu_monitor" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+find "$OPT/gpu_monitor" -name "__pycache__" -type d -exec sudo rm -rf {} + 2>/dev/null || true
+
+# Workspace files MUST remain owned by qrv (development user)
+# The sync copies TO /opt, so workspace should stay qrv:qrv
+echo "--- Workspace permissions unchanged (qrv:qrv) ---"
 
 # ── Step 8: Generate + apply migrations in /opt ─────────────────────
 # Source code is already synced, so makemigrations sees the latest models.

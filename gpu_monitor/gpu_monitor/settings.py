@@ -43,6 +43,8 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'django.contrib.humanize',
     'django_htmx',
+    'django_celery_beat',
+    'django_celery_results',
     'rest_framework',
     'accounts',
     'rigs',
@@ -204,6 +206,37 @@ else:
 
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@gpurgmonitor.local')
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
+
+
+# Redis / Celery — build URLs from components (same pattern as DB)
+REDIS_HOST = os.environ.get('REDIS_HOST', '127.0.0.1')
+REDIS_PORT = os.environ.get('REDIS_PORT', '6379')
+REDIS_PASSWORD = os.environ.get('REDIS_PASSWORD', '')
+REDIS_DB_BROKER = os.environ.get('REDIS_DB_BROKER', '0')
+REDIS_DB_RESULTS = os.environ.get('REDIS_DB_RESULTS', '1')
+
+def _redis_url(db: str) -> str:
+    """Build redis:// URL from components. Handles empty password."""
+    auth = f":{REDIS_PASSWORD}@" if REDIS_PASSWORD else ""
+    return f"redis://{auth}{REDIS_HOST}:{REDIS_PORT}/{db}"
+
+CELERY_BROKER_URL = _redis_url(REDIS_DB_BROKER)
+CELERY_RESULT_BACKEND = _redis_url(REDIS_DB_RESULTS)
+
+# Celery Configuration
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 300
+CELERY_TASK_SOFT_TIME_LIMIT = 240
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_WORKER_MAX_TASKS_PER_CHILD = 100
+CELERY_RESULT_EXPIRES = 86400  # 24h
+CELERY_TASK_VISIBILITY_TIMEOUT = 3600  # 1h (covers long compaction)
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'UTC'
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers.DatabaseScheduler'
+
 
 # Only configure file logging if the log directory is writable
 _log_dir = BASE_DIR / 'logs'

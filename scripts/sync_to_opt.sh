@@ -171,9 +171,10 @@ sudo chmod 664 "$OPT/gpu_monitor/logs/app.log"
 sudo chmod 664 "$OPT/gpu_monitor/logs"/*.log 2>/dev/null || true
 
 # Ensure qrv user is in monitoring group for log access
-if ! id -nG qrv | grep -qw monitoring; then
-    sudo usermod -a -G monitoring qrv
-    echo "Added qrv to monitoring group"
+WORKSPACE_OWNER=$(stat -c '%U' "$WORKSPACE")
+if ! id -nG "$WORKSPACE_OWNER" | grep -qw monitoring; then
+    sudo usermod -a -G monitoring "$WORKSPACE_OWNER"
+    echo "Added $WORKSPACE_OWNER to monitoring group"
 fi
 
 # Agent files in /opt/monitoring-agent (production agent)

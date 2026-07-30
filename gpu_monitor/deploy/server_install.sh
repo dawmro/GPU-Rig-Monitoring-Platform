@@ -64,21 +64,23 @@ echo "==> Enabling and starting PostgreSQL..."
 systemctl restart postgresql
 systemctl enable postgresql
 
-# Install and configure Redis
+# ── Install and configure Redis ───────────────────────────────────────────
 echo "==> Installing and configuring Redis..."
 apt install -y redis-server redis-tools
 
 ENV_FILE="/opt/gpu_monitor/.env"
+
+# Generate Redis password if not already in .env
 if [ -f "$ENV_FILE" ] && grep -q "^REDIS_PASSWORD=" "$ENV_FILE" 2>/dev/null; then
     echo "==> Existing Redis password found in .env, reusing..."
+    REDIS_PASSWORD=$(grep "^REDIS_PASSWORD=" "$ENV_FILE" | cut -d= -f2-)
 else
     REDIS_PASSWORD=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
-    echo "REDIS_PASSWORD=$REDIS_PASSWORD" >> /opt/gpu_monitor/.env
     echo "Generated Redis password (save this!): $REDIS_PASSWORD"
 fi
 
-# Configure Redis
-REDIS_PASSWORD=$(grep "^REDIS_PASSWORD=" /opt/gpu_monitor/.env | cut -d= -f2-)
+# Configure Redis (secure, memory-bound, no persistence for broker)
+REDIS_PASSWORD=$(grep "^REDIS_PASSWORD=" /opt/gpu_monitor/.env 2>/dev/null | cut -d= -f2- || echo "$REDIS_PASSWORD")
 sudo tee /etc/redis/redis.conf > /dev/null <<REDIS
 bind 127.0.0.1 ::1
 requirepass $REDIS_PASSWORD
@@ -92,7 +94,8 @@ systemctl restart redis-server
 systemctl enable redis-server
 
 # Verify Redis
-redis-cli -a "$(grep '^REDIS_PASSWORD=' /opt/gpu_monitor/.env | cut -d= -f2-)" ping | grep -q PONG
+redis-cli -a "$REDIS_PASSWORD" ping | grep -q PONG
+echo "==> Redis verified successfully"
 
 # ── Secrets loading / generation ──────────────────────────────────────────
 APP_DIR="/opt/gpu_monitor"
@@ -173,7 +176,7 @@ chmod 664 "/opt/gpu_monitor/logs/gunicorn-error.log"
 mkdir -p "/opt/gpu_monitor/staticfiles"
 chown "monitoring:monitoring" "/opt/gpu_monitor/staticfiles"
 
-# ── Python virtualenv ─────────────────────────────────────────────────────
+# ── Python virtualenv (includes Celery stack) ─────────────────────────────
 echo "==> Creating/updating Python virtualenv..."
 sudo -u "monitoring" bash << 'APP'
 cd /opt/gpu_monitor
@@ -188,8 +191,13 @@ pip install django djangorestframework django-htmx psycopg2-binary argon2-cffi \
 APP
 
 # ── Environment file ──────────────────────────────────────────────────────
-REDIS_PASSWORD=$(grep "^REDIS_PASSWORD=" /opt/gpu_monitor/.env 2>/dev/null | cut -d= -f2- || python3 -c "import secrets; print(secrets.token_urlsafe(32))")
-echo "REDIS_PASSWORD=$REDIS_PASSWORD" >> /opt/gpu_monitor/.env
+# Ensure REDIS_PASSWORD is in .env (generate if missing)
+if [ -f "$ENV_FILE" ] && grep -q "^REDIS_PASSWORD=" "$ENV_FILE" 2>/dev/null; then
+    REDIS_PASSWORD=$(grep "^REDIS_PASSWORD=" "$ENV_FILE" | cut -d= -f2-)
+else
+    REDIS_PASSWORD=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
+    echo "REDIS_PASSWORD=$REDIS_PASSWORD" >> /opt/gpu_monitor/.env
+fi
 
 cat > "/opt/gpu_monitor/.env" << ENVEOF
 DJANGO_SECRET_KEY=$DJANGO_SECRET
@@ -269,7 +277,7 @@ python manage.py migrate
 python manage.py collectstatic --noinput
 MIGRATE
 
-# ── Redis configuration (already done above but ensure it's correct) ───────
+# ── Redis configuration (ensure it's correct) ─────────────────────────────
 REDIS_PASSWORD=$(grep '^REDIS_PASSWORD=' /opt/gpu_monitor/.env | cut -d= -f2-)
 sudo tee /etc/redis/redis.conf > /dev/null <<REDIS
 bind 127.0.0.1 ::1
@@ -285,6 +293,7 @@ systemctl enable redis-server
 
 # Verify Redis
 redis-cli -a "$REDIS_PASSWORD" ping | grep -q PONG
+echo "==> Redis verified successfully"
 
 # ── Celery Django settings ────────────────────────────────────────────────
 echo "==> Adding Celery configuration to Django settings..."
@@ -331,29 +340,6 @@ INSTALLED_APPS += [
 SETTINGS_EOF
 fi
 
-# ── Redis config (already done above, but ensure it's correct) ────────────
-REDIS_PASSWORD=$(grep '^REDIS_PASSWORD=' /opt/gpu_monitor/.env | cut -d= -f2-)
-sudo tee /etc/redis/redis.conf > /dev/null <<REDIS
-bind 127.0.0.1 ::1
-requirepass $REDIS_PASSWORD
-maxmemory 2gb
-maxmemory-policy allkeys-lru
-save ""
-appendonly no
-REDIS
-
-systemctl restart redis-server
-systemctl enable redis-server
-
-# Verify Redis
-redis-cli -a "$REDIS_PASSWORD" ping | grep -q PONG
-
-# Install Celery packages in venv
-cd /opt/gpu_monitor
-source venv/bin/activate
-pip install celery redis django-celery-beat django-celery-results
-
-# ── Django settings for Celery (already added above) ──────────────────────
 # Verify settings load
 cd /opt/gpu_monitor
 source venv/bin/activate
@@ -368,7 +354,6 @@ set -a && source .env && set +a
 python manage.py migrate django_celery_beat
 python manage.py migrate django_celery_results
 python manage.py migrate
-python manage.py collectstatic --noinput
 MIGRATE
 
 # ── Create Celery systemd unit files ──────────────────────────────────────
@@ -502,15 +487,17 @@ systemd-analyze verify /etc/systemd/system/celery-beat.service
 # Reload systemd
 systemctl daemon-reload
 
-# Start services (Beat first, then workers)
+# Start Celery services (Beat first, then workers)
+echo "==> Starting Celery services..."
 systemctl enable --now celery-beat
 sleep 3
 systemctl status celery-beat --no-pager
 
-systemctl enable --now celery-default@1
+systemctl enable --now celery-ingest@1
 systemctl enable --now celery-maintenance@1
+systemctl enable --now celery-default@1
 sleep 2
-systemctl status celery-beat celery-default@1 celery-maintenance@1 --no-pager
+systemctl status celery-beat celery-ingest@1 celery-maintenance@1 celery-default@1 --no-pager
 
 # Verify Celery connectivity
 cd /opt/gpu_monitor
@@ -519,7 +506,7 @@ set -a && source .env && set +a
 celery -A gpu_monitor inspect ping
 celery -A gpu_monitor inspect active_queues
 
-# ── Gunicorn systemd unit (with reduced workers) ─────────────────────────
+# ── Gunicorn systemd unit (reduced workers since ingest offloaded) ────────
 cat > /etc/systemd/system/gunicorn.service << GUNICORN
 [Unit]
 Description=GPU Rig Monitor - Gunicorn
@@ -639,18 +626,16 @@ PeriodicTask.objects.get_or_create(
 print('All periodic tasks created/updated')
 
 # Verify Beat is scheduling
-celery -A gpu_monitor inspect scheduled
+import subprocess
+result = subprocess.run(['celery', '-A', 'gpu_monitor', 'inspect', 'scheduled'], capture_output=True, text=True)
+print(result.stdout)
 "
 
 # ── Log Rotation ──────────────────────────────────────────────────────────
 cp "/opt/gpu_monitor/deploy/logrotate.conf" /etc/logrotate.d/gpu-monitor
 
-# Start/enable services
+# ── Final service reload and verification ────────────────────────────────
 systemctl daemon-reload
-systemctl enable --now celery-beat
-systemctl enable --now celery-ingest@1
-systemctl enable --now celery-maintenance@1
-systemctl enable --now celery-default@1
 systemctl restart gunicorn
 
 sleep 3

@@ -66,7 +66,7 @@ systemctl enable postgresql
 
 # ── Install and configure Redis ───────────────────────────────────────────
 echo "==> Installing and configuring Redis..."
-apt install -y redis-server redis-tools
+# Redis already installed via apt above
 
 ENV_FILE="/opt/gpu_monitor/.env"
 
@@ -265,37 +265,7 @@ ENVEOF
 chmod 600 "/opt/gpu_monitor/.env"
 chown "monitoring:monitoring" "/opt/gpu_monitor/.env"
 
-# ── Django migrations and static files ────────────────────────────────────
-echo "==> Running Django migrations..."
-sudo -u "monitoring" bash << 'MIGRATE'
-cd /opt/gpu_monitor
-source venv/bin/activate
-set -a
-source .env
-set +a
-python manage.py migrate
-python manage.py collectstatic --noinput
-MIGRATE
-
-# ── Redis configuration (ensure it's correct) ─────────────────────────────
-REDIS_PASSWORD=$(grep '^REDIS_PASSWORD=' /opt/gpu_monitor/.env | cut -d= -f2-)
-sudo tee /etc/redis/redis.conf > /dev/null <<REDIS
-bind 127.0.0.1 ::1
-requirepass $REDIS_PASSWORD
-maxmemory 2gb
-maxmemory-policy allkeys-lru
-save ""
-appendonly no
-REDIS
-
-systemctl restart redis-server
-systemctl enable redis-server
-
-# Verify Redis
-redis-cli -a "$REDIS_PASSWORD" ping | grep -q PONG
-echo "==> Redis verified successfully"
-
-# ── Celery Django settings ────────────────────────────────────────────────
+# ── Celery Django settings (BEFORE any migrations) ────────────────────────
 echo "==> Adding Celery configuration to Django settings..."
 SETTINGS_FILE="/opt/gpu_monitor/gpu_monitor/settings.py"
 if ! grep -q "CELERY_BROKER_URL" "$SETTINGS_FILE"; then
@@ -340,28 +310,46 @@ INSTALLED_APPS += [
 SETTINGS_EOF
 fi
 
-# Verify settings load
+# ── Django migrations and static files ────────────────────────────────────
+echo "==> Running Django migrations..."
+sudo -u "monitoring" bash << 'MIGRATE'
 cd /opt/gpu_monitor
 source venv/bin/activate
-set -a && source .env && set +a
-python -c "import django; django.setup(); from django.conf import settings; print('CELERY_BROKER_URL:', settings.CELERY_BROKER_URL)"
-
-# ── Django migrations for Celery apps ─────────────────────────────────────
-sudo -u monitoring bash << 'MIGRATE'
-cd /opt/gpu_monitor
-source venv/bin/activate
-set -a && source .env && set +a
+set -a
+source .env
+set +a
 python manage.py migrate django_celery_beat
 python manage.py migrate django_celery_results
 python manage.py migrate
+python manage.py collectstatic --noinput
 MIGRATE
 
+# ── Redis configuration (ensure it's correct) ─────────────────────────────
+REDIS_PASSWORD=$(grep '^REDIS_PASSWORD=' /opt/gpu_monitor/.env | cut -d= -f2-)
+sudo tee /etc/redis/redis.conf > /dev/null <<REDIS
+bind 127.0.0.1 ::1
+requirepass $REDIS_PASSWORD
+maxmemory 2gb
+maxmemory-policy allkeys-lru
+save ""
+appendonly no
+REDIS
+
+systemctl restart redis-server
+systemctl enable redis-server
+
+# Verify Redis
+redis-cli -a "$REDIS_PASSWORD" ping | grep -q PONG
+echo "==> Redis verified successfully"
+
 # ── Create Celery systemd unit files ──────────────────────────────────────
+echo "==> Creating Celery systemd unit files..."
+
 cat > /etc/systemd/system/celery-ingest@.service <<'EOF'
 [Unit]
 Description=Celery Ingest Worker %i
-After=network.target redis.service postgresql.service
-Wants=redis.service postgresql.service
+After=network.target redis-server.service postgresql.service
+Wants=redis-server.service postgresql.service
 
 [Service]
 Type=simple
@@ -390,8 +378,8 @@ EOF
 cat > /etc/systemd/system/celery-maintenance@.service <<'EOF'
 [Unit]
 Description=Celery Maintenance Worker %i
-After=network.target redis.service postgresql.service
-Wants=redis.service postgresql.service
+After=network.target redis-server.service postgresql.service
+Wants=redis-server.service postgresql.service
 
 [Service]
 Type=simple
@@ -420,8 +408,8 @@ EOF
 cat > /etc/systemd/system/celery-default@.service <<'EOF'
 [Unit]
 Description=Celery Default Worker %i
-After=network.target redis.service postgresql.service
-Wants=redis.service postgresql.service
+After=network.target redis-server.service postgresql.service
+Wants=redis-server.service postgresql.service
 
 [Service]
 Type=simple
@@ -450,8 +438,8 @@ EOF
 cat > /etc/systemd/system/celery-beat.service <<'EOF'
 [Unit]
 Description=Celery Beat Scheduler
-After=network.target redis.service postgresql.service
-Wants=redis.service postgresql.service
+After=network.target redis-server.service postgresql.service
+Wants=redis-server.service postgresql.service
 
 [Service]
 Type=simple
@@ -484,7 +472,7 @@ systemd-analyze verify /etc/systemd/system/celery-maintenance@.service
 systemd-analyze verify /etc/systemd/system/celery-default@.service
 systemd-analyze verify /etc/systemd/system/celery-beat.service
 
-# Reload systemd
+# Reload systemd ONCE
 systemctl daemon-reload
 
 # Start Celery services (Beat first, then workers)

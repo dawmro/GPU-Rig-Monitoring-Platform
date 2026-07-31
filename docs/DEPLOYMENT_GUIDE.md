@@ -44,7 +44,7 @@ This guide deploys the GPU Rig Monitoring Platform on a **production VPS** with 
 
 ## 1. Architecture Overview
 
-```
+```plaintext
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                        RIG FLEET (Untrusted)                            │
 │                                                                         │
@@ -60,7 +60,7 @@ This guide deploys the GPU Rig Monitoring Platform on a **production VPS** with 
 │                   SINGLE UBUNTU VPS (Trusted)                 │          │
 │                                                               ▼          │
 │  ┌─────────────────┐    TCP/5432    ┌──────────────────────────────┐    │
-│  │ Django + DRF    │ ────────────→  │ PostgreSQL     │    │
+│  │ Django + DRF    │ ────────────→  │ PostgreSQL     │    │        │    │
 │  │ (Gunicorn)      │                │                              │    │
 │  └────────┬────────┘                └──────────────────────────────┘    │
 │           │                                                             │
@@ -70,6 +70,24 @@ This guide deploys the GPU Rig Monitoring Platform on a **production VPS** with 
 │  │ HTMX Dashboard  │ ←─────────────────── │   User Browser           │  │
 │  │ UI              │    + HTMX Polling     │                          │  │
 │  └─────────────────┘                       └──────────────────────────┘  │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │                    ASYNC TASK PROCESSING                        │   │
+│  │                                                                   │   │
+│  │  ┌─────────────┐   ┌─────────────┐   ┌─────────────┐            │   │
+│  │  │ Celery Beat │   │   Redis     │   │   Celery    │            │   │
+│  │  │ (Scheduler) │──→│ (Broker/    │←──│   Workers   │            │   │
+│  │  └─────────────┘   │  Results)   │   └──────┬──────┘            │   │
+│  │                    └─────────────┘          │                  │   │
+│  │               ┌───────────────┬────────────┼───────────────┐  │   │
+│  │               │               │            │               │  │   │
+│  │        ┌──────▼──────┐ ┌──────▼──────┐ ┌──▼────────────┐ │   │
+│  │        │  Ingest     │ │ Maintenance │ │ Default/      │ │   │
+│  │        │  Workers    │ │ Workers     │ │ Alerts/Reports│ │   │
+│  │        │ (1×2 conc.) │ │ (1×1 conc.) │ │ Workers (1×1) │ │   │
+│  │        └─────────────┘ └─────────────┘ └───────────────┘ │   │
+│  │                                                                   │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -83,6 +101,8 @@ This guide deploys the GPU Rig Monitoring Platform on a **production VPS** with 
 | Storage | 500 GB+ NVMe SSD (NVMe required for write IOPS) |
 | Network | 1 public IPv4, DNS A record |
 | TLS | Let's Encrypt (certbot), auto-renew via systemd timer |
+| Redis | 127.0.0.1:6379 (password, maxmemory 2GB, LRU eviction) |
+| Celery | 4 workers + Beat scheduler (ingest/maintenance/default queues) |
 
 ---
 
@@ -231,17 +251,21 @@ chmod +x /opt/gpu_monitor/deploy/server_install.sh
 
 | Step | What It Does |
 |------|-------------|
-| 1 | Installs system packages (Python, PostgreSQL, Nginx, certbot, UFW) |
+| 1 | Installs system packages (Python, PostgreSQL, Nginx, certbot, UFW, **Redis**) |
 | 2 | Creates `gpu_monitor` DB user and database |
 | 3 | Creates `monitoring` OS user (no-login shell) |
-| 4 | Sets up Python virtualenv and installs dependencies |
-| 5 | Writes `/opt/gpu_monitor/.env` with secrets and DB credentials |
-| 6 | Runs Django migrations + `collectstatic` |
-| 7 | Installs Gunicorn systemd unit and starts it |
-| 8 | Installs Nginx site config, removes default site, restarts Nginx |
-| 9 | Runs Certbot to obtain Let's Encrypt TLS certificate |
-| 10 | Configures UFW firewall (allow 22/80/443) |
-| 11 | Enables and starts all services |
+| 4 | Sets up Python virtualenv and installs dependencies (**including Celery stack**) |
+| 5 | Writes `/opt/gpu_monitor/.env` with secrets, DB credentials, **and Redis/Celery config** |
+| 6 | **Adds Celery configuration to Django settings** (`CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`, queues, beat scheduler) |
+| 7 | Runs Django migrations + `collectstatic` (**includes `django_celery_beat` & `django_celery_results`**) |
+| 8 | **Creates Celery systemd units** (Beat, Ingest, Maintenance, Default workers) |
+| 9 | Starts **Celery services** (Beat first, then workers) + verifies connectivity |
+| 10 | Installs Gunicorn systemd unit (reduced workers: 4) and starts it |
+| 11 | Installs Nginx site config, removes default site, restarts Nginx |
+| 12 | Runs Certbot to obtain Let's Encrypt TLS certificate |
+| 13 | Configures UFW firewall (allow 22/80/443) |
+| 14 | **Creates Celery Beat periodic tasks** (rig status every 2min, 5 maintenance tasks at 3 AM) |
+| 15 | Enables and starts all services |
 
 ### 4.5 Save the Database Password
 
@@ -273,20 +297,34 @@ SECURE_REFERRER_POLICY=same-origin
 SECURE_HSTS_SECONDS=31536000
 SECURE_HSTS_INCLUDE_SUBDOMAINS=False
 SECURE_HSTS_PRELOAD=False
-DB_NAME=gpu_monitor
-DB_USER=gpu_monitor
-DB_PASSWORD=your-random-password-here
-DB_HOST=127.0.0.1
-DB_PORT=5432
-
-# Optional: uncomment for Gmail SMTP password recovery
-# See Architecture doc §7.5 for setup instructions
-# EMAIL_HOST=smtp.gmail.com
-# EMAIL_PORT=587
-# EMAIL_USE_TLS=true
-# EMAIL_HOST_USER=youragent@gmail.com
-# EMAIL_HOST_PASSWORD=*** efgh ijkl mnop
-# DEFAULT_FROM_EMAIL=noreply@yourdomain.com
+| DB_NAME=gpu_monitor
+| DB_USER=gpu_monitor
+| DB_PASSWORD=your-random-password-here
+| DB_HOST=127.0.0.1
+| DB_PORT=5432
+|
+| # Redis / Celery
+| REDIS_HOST=127.0.0.1
+| REDIS_PORT=6379
+| REDIS_PASSWORD=your-redis-password-here
+| REDIS_DB_BROKER=0
+| REDIS_DB_RESULTS=1
+|
+| CELERY_BROKER_URL=redis://:***@127.0.0.1:6379/0
+| CELERY_RESULT_BACKEND=redis://:***@127.0.0.1:6379/1
+|
+| CELERY_TASK_TRACK_STARTED=True
+| CELERY_TASK_TIME_LIMIT=300
+| CELERY_TASK_SOFT_TIME_LIMIT=240
+| CELERY_WORKER_PREFETCH_MULTIPLIER=1
+| CELERY_WORKER_MAX_TASKS_PER_CHILD=100
+| CELERY_RESULT_EXPIRES=86400
+| CELERY_TASK_VISIBILITY_TIMEOUT=3600
+| CELERY_ACCEPT_CONTENT=['json']
+| CELERY_TASK_SERIALIZER=json
+| CELERY_RESULT_SERIALIZER=json
+| CELERY_TIMEZONE=UTC
+| CELERY_BEAT_SCHEDULER=django_celery_beat.schedulers.DatabaseScheduler
 ```
 
 > **Email setup (optional):** For password recovery via Gmail SMTP, see §7.5 in the Architecture doc. Leave `EMAIL_HOST` commented out for development (emails print to console).
@@ -301,186 +339,58 @@ sudo -u monitoring bash -c 'cd /opt/gpu_monitor && source venv/bin/activate && s
 
 Enter email, username, and password when prompted. Use the email to log into the dashboard.
 
-### 4.7 Set Up Data Retention
+### 4.7 Set Up Data Retention (Now via Celery Beat)
 
 Configure automated data compaction and cleanup. This is essential for long-term storage management — without it, the database grows indefinitely (~487 GB/month at 1,000 rigs). With compaction: ~23 GB/month (95% savings).
 
-#### Quick Setup
+**The `server_install.sh` script now automatically creates the following Celery Beat periodic tasks:**
 
-```bash
-# Add cron job for daily data cleanup (runs at 3 AM as qrv user)
-echo '0 3 * * * qrv bash /opt/gpu_monitor/deploy/data_retention.sh >> /var/log/monitoring-agent/cleanup-cron.log 2>&1' | sudo tee /etc/cron.d/monitoring-data-cleanup
-```
+| Task | Schedule | Queue | Priority | Description |
+|------|----------|-------|----------|-------------|
+| Rig Status Update | Every 2 minutes | `maintenance` | 5 | Marks rigs Stale/Offline based on `last_seen` |
+| Compact Data - Tier 2 | Daily 3:00 AM | `maintenance` | 3 | 1-min → 15-min buckets (1-7 days) |
+| Compact Data - Tier 3 | Daily 3:05 AM | `maintenance` | 3 | 15-min → 1-hour buckets (7-31 days) |
+| Cleanup Old Data | Daily 3:10 AM | `maintenance` | 2 | Delete data > 31 days (batched DELETEs) |
+| VACUUM ANALYZE | Daily 3:15 AM | `maintenance` | 1 | Reclaim space + update planner stats |
+| Cleanup Audit Log | Daily 3:20 AM | `maintenance` | 4 | Delete audit entries > 90 days |
 
-The cron job runs `data_retention.sh` which executes three steps:
-1. `compact_data` — two-phase aggregation of old data:
-   - **Phase A (Tier 2):** Data 1-7 days old → 15-minute buckets (15× reduction)
-   - **Phase B (Tier 3):** Data 7-31 days old → 1-hour buckets (4× reduction)
-2. `cleanup_old_data` — delete data older than 31 days
-3. `VACUUM ANALYZE` — reclaim dead tuples and update planner statistics
+**The tasks are automatically created by `server_install.sh` and managed by Celery Beat (DatabaseScheduler).**
 
-> **Note:** `data_retention.sh` is the production maintenance script deployed by the agent install script. There is also a `daily_maintenance` Django management command that does the same thing — **use one or the other, not both**. Running both would compact, clean up, and vacuum twice daily, which is unnecessary load on the database.
+**No manual cron setup is required.** The legacy cron approach (`/etc/cron.d/monitoring-data-cleanup` and `/etc/cron.d/rig-status`) is **deprecated** — Celery Beat now handles all scheduled tasks with:
+- Persistent scheduling (survives restarts)
+- Admin UI via Django admin (`/admin/django_celery_beat/periodictask/`)
+- Task visibility (logs, retries, history)
+- Proper queue isolation (maintenance queue)
 
-**Alternative using the Django management command directly** (not recommended for production — use `data_retention.sh` instead):
-```bash
-echo '0 3 * * * qrv cd /opt/gpu_monitor && source venv/bin/activate && set -a && source .env && set +a && python manage.py daily_maintenance --verbose >> /var/log/monitoring-agent/cleanup-cron.log 2>&1' | sudo tee /etc/cron.d/monitoring-data-cleanup
-```
-
-> **Note:** The cron job runs as `qrv` (not root). Ensure `/opt/gpu_monitor/logs/` is owned by `qrv`:
-> ```bash
-> sudo chown -R qrv:qrv /opt/gpu_monitor/logs/
-> ```
-
-#### What It Does
-
-#### What It Does
-
-The `data_retention.sh` wrapper runs three steps daily. This is the **production** maintenance script — the agent install script (`agent/install.sh`) deploys it automatically. Do NOT also add `daily_maintenance.sh` to cron — they do the same work and running both would execute maintenance twice daily.
-
-1. **`compact_data`** — two-phase aggregation of old data:
-   - **Phase A (Tier 2):** Data 1-7 days old → 15-minute buckets (15× reduction)
-   - **Phase B (Tier 3):** Data 7-31 days old → 1-hour buckets (4× reduction)
-
-2. **`cleanup_old_data`** — Deletes data older than 31 days:
-   - Processes tables in dependency order (children first, parent last)
-   - Deletes in batches of 10,000 rows to avoid long table locks
-   - 31 days provides 1-day safety margin beyond the 30-day max chart range
-   - Handles tables with non-standard primary keys (e.g., `metrics_latest_snapshot` uses `rig_uuid`)
-
-3. **`VACUUM ANALYZE`** — Reclaims dead tuples and updates query planner statistics:
-   - Runs on all 5 metrics tables after compaction and cleanup
-   - Uses regular `VACUUM ANALYZE` (not `VACUUM FULL`) — no exclusive lock, runs concurrently with production traffic
-   - Reclaims space from dead tuples for reuse within the table
-   - Updates planner statistics so query plans stay optimal after data distribution changes
-   - Takes seconds per table (not minutes like VACUUM FULL)
-
-> **Why not VACUUM FULL?** `VACUUM FULL` acquires an exclusive lock on each table, blocking all reads/writes for the duration. For large tables (millions of rows), this could block agent ingest for 30+ seconds, causing missed heartbeats and false "stale" alarms. Regular `VACUUM ANALYZE` runs concurrently with no blocking.
-
-> **Why run it manually?** PostgreSQL's autovacuum daemon handles dead tuple cleanup eventually, but after bulk DELETE operations (from compact_data and cleanup_old_data), a manual `VACUUM ANALYZE` ensures immediate reclamation and fresh planner statistics.
-
-#### Manual Run
-
-```bash
-cd /opt/gpu_monitor
-source venv/bin/activate
-set -a && source .env && set +a
-
-# Run all maintenance steps at once (recommended)
-python manage.py daily_maintenance --verbose
-
-# Or run individual steps:
-
-# Compact data (dry run first)
-python manage.py compact_data --dry-run --verbose
-
-# Compact data (actual)
-python manage.py compact_data --verbose
-
-# Cleanup old data (dry run first)
-python manage.py cleanup_old_data --dry-run --days=31 --verbose
-
-# Cleanup old data (actual)
-python manage.py cleanup_old_data --days=31 --verbose
-```
-
-#### Command Options
-
-**daily_maintenance:**
-| Flag | Description |
-|---|---|
-| `--days N` | Retention period in days (default: 31) |
-| `--dry-run` | Preview without making changes |
-| `--verbose` | Show detailed per-table statistics |
-| `--skip-compact` | Skip compaction step |
-| `--skip-cleanup` | Skip cleanup step |
-| `--skip-vacuum` | Skip vacuum analyze step |
-
-**compact_data:**
-| Flag | Description |
-|---|---|
-| `--dry-run` | Preview without making changes |
-| `--verbose` | Show per-table row counts |
-
-**cleanup_old_data:**
-| Flag | Description |
-|---|---|
-| `--days N` | Delete data older than N days (default: 31) |
-| `--dry-run` | Preview without making changes |
-| `--verbose` | Show per-table row counts |
-
-#### Storage Impact
-
-| Retention | Raw Storage (1,000 rigs) | After Compaction |
-|---|---|---|
-|| 1 day | 15.3 GB | 15.3 GB ||
-|| 7 days | 107 GB | 22 GB ||
-|| 31 days | 460 GB | ~23 GB ||
-
-#### Troubleshooting
-
-**Check cron job is running:**
-```bash
-cat /etc/cron.d/monitoring-data-cleanup
-tail -f /var/log/monitoring-agent/cleanup-cron.log
-```
-
-**Check if data is being compacted:**
+**Verify periodic tasks are registered:**
 ```bash
 cd /opt/gpu_monitor
 source venv/bin/activate && set -a && source .env && set +a
-python -c "
-import os; os.environ['DJANGO_SETTINGS_MODULE'] = 'gpu_monitor.settings'
-import django; django.setup()
-from django.db import connection
-for t in ['metrics_metricsnapshot', 'metrics_gpumetric', 'metrics_storagemetric',
-          'metrics_networkmetric']:
-    with connection.cursor() as c:
-        c.execute(f'SELECT COUNT(*), MIN(timestamp), MAX(timestamp) FROM {t}')
-        row = c.fetchall()[0]
-        print(f'{t}: {row[0]:,} rows, {row[1]} to {row[2]}')
-"
+celery -A gpu_monitor inspect scheduled
 ```
 
-```
+**Expected output shows 6 registered tasks** (5 maintenance + 1 rig status).
 
-#### Backfill (Test Data Generation)
-
-For testing charts and data retention, the `backfill_historical_data` command creates
-historical data by repeating recent data with shifted timestamps:
-
+**Manual run (for testing):**
 ```bash
-# Preview what will be inserted
-python manage.py backfill_historical_data --dry-run
+cd /opt/gpu_monitor
+source venv/bin/activate && set -a && source .env && set +a
 
-# Full 32-day backfill with 12-hour source window
-python manage.py backfill_historical_data --hours 12 --days 32
+# Run all maintenance steps at once
+python manage.py daily_maintenance --verbose
+
+# Or run individual steps:
+python manage.py compact_data --dry-run --verbose
+python manage.py cleanup_old_data --dry-run --days=31 --verbose
+python manage.py update_rig_status
 ```
 
-**Options:**
-| Flag | Description |
-|---|---|
-| `--hours N` | Source data window in hours (default: 9) |
-| `--days N` | Target number of days to fill (default: 32) |
-| `--dry-run` | Preview without inserting data |
-
-**⚠️ Important:** After backfill, verify child data was inserted correctly:
+**Rollback to cron (if needed):**
 ```bash
-python -c "
-from metrics_app.models import MetricSnapshot, GPUMetric
-from django.utils import timezone
-from datetime import timedelta
-cutoff = timezone.now() - timedelta(hours=1)
-snaps = MetricSnapshot.objects.filter(timestamp__lt=cutoff).count()
-gpus = GPUMetric.objects.filter(timestamp__lt=cutoff).count()
-print(f'GPU/snap ratio: {gpus/max(snaps,1):.2f} (expected > 1.0)')
-"
+# Re-enable legacy cron (comment out Beat tasks in Django admin first)
+# echo '*/2 * * * * root bash /opt/gpu_monitor/deploy/update_rig_status.sh' | sudo tee /etc/cron.d/rig-status
+# echo '0 3 * * * monitoring /opt/gpu_monitor/deploy/data_retention.sh >> /var/log/monitoring-agent/cleanup-cron.log 2>&1' | sudo tee /etc/cron.d/monitoring-data-cleanup
 ```
-
-**To remove backfilled data:**
-```bash
-python manage.py cleanup_old_data --days=0 --verbose
-```
-
 **Permission denied on logs:**
 ```bash
 # Fix ownership and permissions on the logs directory
@@ -1069,10 +979,15 @@ tail -50 /opt/gpu_monitor/logs/app.log
 |------|---------|
 | `/etc/nginx/sites-available/gpu_monitor` | Nginx site configuration |
 | `/etc/systemd/system/gunicorn.service` | Gunicorn systemd unit |
-| `/etc/cron.d/rig-status` | Rig status update cron job |
+| `/etc/systemd/system/celery-beat.service` | Celery Beat scheduler systemd unit |
+| `/etc/systemd/system/celery-ingest@.service` | Celery Ingest worker template (1×2 concurrency) |
+| `/etc/systemd/system/celery-maintenance@.service` | Celery Maintenance worker template (1×1 concurrency) |
+| `/etc/systemd/system/celery-default@.service` | Celery Default worker template (1×1 concurrency) |
 | `/etc/cron.d/gpu-monitor-backup` | Database backup cron job |
 | `/etc/logrotate.d/gpu-monitor` | Log rotation configuration |
 | `/var/backups/postgres/` | Database backup files |
+
+> **Note:** The legacy cron jobs `/etc/cron.d/rig-status` and `/etc/cron.d/monitoring-data-cleanup` are **deprecated**. Celery Beat (DatabaseScheduler) now handles all scheduled tasks. See §4.7 for details.
 
 ---
 

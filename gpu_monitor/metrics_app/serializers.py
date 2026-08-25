@@ -10,6 +10,25 @@ from dashboard.views import _json_get
 
 logger = logging.getLogger(__name__)
 
+# Chart cache ranges invalidated on ingest — MUST stay in sync with the ranges
+# the frontend actually requests (rig_detail.html chart loaders: 24/168/720).
+# Bucket size per range is derived by _chart_bucket_minutes(), which mirrors
+# ChartDataView.get()'s bucket selection in views.py.
+CHART_CACHE_RANGES = (24, 168, 720)
+
+
+def _chart_bucket_minutes(range_hours):
+    """Bucket size used by ChartDataView for a given chart range.
+
+    MUST stay in sync with ChartDataView.get() bucket selection
+    (metrics_app/views.py): 1-min for <=24h, 15-min for <=168h, 1-hour above.
+    """
+    if range_hours <= 24:
+        return 1
+    if range_hours <= 168:
+        return 15
+    return 60
+
 
 class IngestSerializer(serializers.Serializer):
     rig_uuid = serializers.UUIDField()
@@ -538,7 +557,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
             for hours in (24, 168, 720):
                 cache.delete(f'report_{rig_uuid}_{hours}')
             # Invalidate chart caches for common metrics
-            # (18 metrics x 3 ranges x 2 bucket sizes = ~108 keys)
+            # (22 metrics x 3 ranges x 3 bucket sizes = ~198 keys)
             for metric in ('cpu_utilization_pct', 'cpu_temp_c', 'cpu_power_w',
                           'total_system_power_w', 'cpu_freq_current_mhz',
                           'gpu_temp_c', 'gpu_util_pct', 'gpu_power_w',
@@ -548,8 +567,8 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                           'error_frequency', 'uptime_s', 'net_rx_bytes_delta',
                           'net_tx_bytes_delta', 'net_rx_errors', 'net_tx_errors',
                           'gpu_mem_controller_util_pct'):
-                for hours in (24, 168, 720):
-                    bucket = 1 if hours <= 24 else 60
+                for hours in CHART_CACHE_RANGES:
+                    bucket = _chart_bucket_minutes(hours)
                     cache.delete(f'chart_{rig_uuid}_{metric}_{hours}_{bucket}')
             # Track rig status transitions
             if rig:

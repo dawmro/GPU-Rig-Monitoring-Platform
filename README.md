@@ -62,31 +62,217 @@
 ## 🏗️ Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────────────────┐
-│                        RIG FLEET (Untrusted)                            │
-│                                                                         │
-│  ┌─────────────────┐    HTTPS POST /api/v1/ingest/    ┌──────────────┐  │
-│  │ Python Agent    │ ────────────────────────────────→ │   Nginx      │  │
-│  │ (cron 60s)      │                                   │   Reverse    │  │
-│  │ Linux + Windows │                                   │   Proxy      │  │
-│  └─────────────────┘                                   └──────┬───────┘  │
-└───────────────────────────────────────────────────────────────┼──────────┘
-                                                                │ HTTPS
-┌───────────────────────────────────────────────────────────────┼──────────┐
-│                   SINGLE UBUNTU VPS (Trusted)                 │          │
-│                                                               ▼          │
-│  ┌─────────────────┐    TCP/5432    ┌──────────────────────────────┐    │
-│  │ Django + DRF    │ ────────────→  │ PostgreSQL 16                │    │
-│  │ (Gunicorn 4w)   │                │ (plain, no TimescaleDB)      │    │
-│  └────────┬────────┘                └──────────────────────────────┘    │
-│           │                                                             │
-│           │ Render/Query                                                 │
-│           ▼                                                             │
-│  ┌─────────────────┐    HTTPS GET/POST    ┌──────────────────────────┐  │
-│  │ HTMX Dashboard  │ ←─────────────────── │   User Browser           │  │
-│  │ (30s polling)   │    + HTMX Polling     │                          │  │
-│  └─────────────────┘                       └──────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────┐
+│                           RIG FLEET (Untrusted, N rigs)                            │
+│                                                                                    │
+│  ┌──────────────────────────────────────────────────────────────────────────────┐  │
+│  │  METRICS INGESTION PATH (cron ~60s)                                          │  │
+│  │                                                                              │  │
+│  │  ┌────────────────────┐         ┌────────────────────┐                       │  │
+│  │  │ Linux Agent        │         │ Windows Agent      │                       │  │
+│  │  │ agent/run.py       │         │ agent_windows/     │                       │  │
+│  │  │ v1.6.0, schema 1.11│         │ run.py v1.6.17-win │                       │  │
+│  │  └─────────┬──────────┘         └─────────┬──────────┘                       │  │
+│  │            │                              │                                  │  │
+│  │            │ HTTPS POST                   │ HTTPS POST                       │  │
+│  │            │ /api/v1/ingest/              │ /api/v1/ingest/                  │  │
+│  │            │ X-API-Key, X-Rig-UUID        │ X-API-Key, X-Rig-UUID            │  │
+│  │            └──────────────┬───────────────┘                                  │  │
+│  │                           │                                                  │  │
+│  │                           ▼                                                  │  │
+│  │                    ┌──────────────┐                                          │  │
+│  │                    │   Nginx      │                                          │  │
+│  │                    │   (Server)   │                                          │  │
+│  │                    └──────────────┘                                          │  │
+│  └──────────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                    │
+│  ┌──────────────────────────────────────────────────────────────────────────────┐  │
+│  │  UPDATE CHECK (cron ~daily, independent)                                     │  │
+│  │  ┌────────────────────────────────────────────────────────────────────────┐  │  │
+│  │  │ check_update.py                                                        │  │  │
+│  │  │ • Queries GitHub API for latest release                                │  │  │
+│  │  │   https://github.com/dawmro/GPU-Rig-Monitoring-Platform                │  │  │
+│  │  │ • Triggers self-update if newer version available                      │  │  │
+│  │  │ • Completely outbound, NOT in ingest path                              │  │  │
+│  │  └────────────────────────────────────────────────────────────────────────┘  │  │
+│  └──────────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                    │
+│                              ┌────────────────────┐                                │
+│                              │   GitHub API       │                                │
+│                              │   (external)       │                                │
+│                              └────────────────────┘                                │
+│                                    ▲                                               │
+│                                    │ HTTPS GET (outbound)                          │
+│                                    │ check_update.py → GitHub                      │
+│                                                                                    │
+└────────────────────────────────────────────────────────────────────────────────────┘
+                                            │
+                                            │ HTTPS :443 (TLS terminated)
+                                            │ Rate limits: zone=rig burst=3, zone=ip burst=50
+                                            │ client_max_body_size: 2m
+                                            │ /static/ → staticfiles
+                                            ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                        SINGLE UBUNTU VPS (Trusted, /opt/gpu_monitor)                   │
+│                                                                                        │
+│  ┌──────────────────────────────────────────────────────────────────────────────────┐  │
+│  │                              NGINX (Reverse Proxy)                               │  │
+│  │  • TLS termination (:80 → :443 redirect)                                         │  │
+│  │  • Rate limiting per rig + per IP                                                │  │
+│  │  • Static file serving                                                           │  │
+│  └──────────────────────────────────────────────────────────────────────────────────┘  │
+│                                      │                                                 │
+│                                      │ proxy_pass http://127.0.0.1:8000                │
+│                                      ▼                                                 │
+│  ┌─────────────────────────────────────────────────────────────────────────────────┐   │
+│  │                         DJANGO + DRF (Gunicorn 4w, systemd)                     │   │
+│  │                                                                                 │   │
+│  │  ┌──────────────────────────────────────────────────────────────────────────┐   │   │
+│  │  │ INGESTION LAYER                                                          │   │   │
+│  │  │ • IngestView POST /api/v1/ingest/                                        │   │   │
+│  │  │   - X-API-Key auth + IngestRateThrottle (2/min/rig)                      │   │   │
+│  │  │   - Timestamp sanity: ±5min future / 1h past                             │   │   │
+│  │  │   - Auto-enrolls unknown rigs                                            │   │   │
+│  │  │ • serializers.process_ingest() [transaction.atomic()]                    │   │   │
+│  │  └──────────────────────────────────────────────────────────────────────────┘   │   │
+│  │                                                                                 │   │
+│  │  ┌──────────────────────────────────────────────────────────────────────────┐   │   │
+│  │  │ READ APIs (SessionAuth, rate-limited)                                    │   │   │
+│  │  │ • ChartDataView GET /api/v1/rigs/{uuid}/chart-data/                      │   │   │
+│  │  │   - 120/min/user, 55s cache                                              │   │   │
+│  │  │ • GET /api/v1/rigs/{uuid}/metrics/                                       │   │   │
+│  │  │ • GET /api/v1/health/ (open, no auth)                                    │   │   │
+│  │  └──────────────────────────────────────────────────────────────────────────┘   │   │
+│  │                                                                                 │   │
+│  │  ┌──────────────────────────────────────────────────────────────────────────┐   │   │
+│  │  │ HTMX DASHBOARD (@login_required + per-user rate_limit)                   │   │   │
+│  │  │ • rig_list, rig_detail                                                   │   │   │
+│  │  │ • htmx_metrics, htmx_status, htmx_report                                 │   │   │
+│  │  │ • 30s polling via HTMX                                                   │   │   │
+│  │  └──────────────────────────────────────────────────────────────────────────┘   │   │
+│  │                                                                                 │   │
+│  │  ┌──────────────────────────────────────────────────────────────────────────┐   │   │
+│  │  │ ACCOUNTS & SECURITY                                                      │   │   │
+│  │  │ • register/login/profile                                                 │   │   │
+│  │  │ • ApiKey create/revoke/transfer                                          │   │   │
+│  │  │ • electricity_rate_kwh configuration                                     │   │   │
+│  │  └──────────────────────────────────────────────────────────────────────────┘   │   │
+│  │                                                                                 │   │
+│  │  ┌──────────────────────────────────────────────────────────────────────────┐   │   │
+│  │  │ AUDIT & MAINTENANCE                                                      │   │   │
+│  │  │ • Audit middleware + AuditLog feed                                       │   │   │
+│  │  │ • Management commands:                                                   │   │   │
+│  │  │   compact_data, cleanup_old_data, backfill_historical_data,              │   │   │
+│  │  │   daily_maintenance, update_rig_status, cleanup_audit_log                │   │   │
+│  │  └──────────────────────────────────────────────────────────────────────────┘   │   │
+│  └─────────────────────────────────────────────────────────────────────────────────┘   │
+│           │                          │                          │                      │
+│           │ TCP/5432                 │ TCP/5432                 │ TCP/5432             │
+│           ▼                          ▼                          ▼                      │
+│  ┌─────────────────────────────────────────────────────────────────────────────────┐   │
+│  │                         POSTGRESQL 16 (db: gpu_monitor)                         │   │
+│  │                                                                                 │   │
+│  │  ┌──────────────────────────────────────────────────────────────────────────┐   │   │
+│  │  │ TIMESERIES TABLES (high write volume, 31d retention)                     │   │   │
+│  │  │ • MetricSnapshot  • GPUMetric       • StorageMetric                      │   │   │
+│  │  │ • NetworkMetric   • GPUProcessMetric • PowerReading                      │   │   │
+│  │  │ • RigStatusEvent                                                         │   │   │
+│  │  └──────────────────────────────────────────────────────────────────────────┘   │   │
+│  │                                                                                 │   │
+│  │  ┌──────────────────────────────────────────────────────────────────────────┐   │   │
+│  │  │ LATEST STATE (1 row/rig, denormalized)                                   │   │   │
+│  │  │ • LatestSnapshot (~67 JSON-array fields)                                 │   │   │
+│  │  │ • LatestDockerContainer                                                  │   │   │
+│  │  └──────────────────────────────────────────────────────────────────────────┘   │   │
+│  │                                                                                 │   │
+│  │  ┌──────────────────────────────────────────────────────────────────────────┐   │   │
+│  │  │ CORE TABLES (relational, low churn)                                      │   │   │
+│  │  │ • Rig • RigTag • User • ApiKey • AuditLog                                │   │   │
+│  │  └──────────────────────────────────────────────────────────────────────────┘   │   │
+│  └─────────────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                        │
+│  ┌─────────────────────────────────────────────────────────────────────────────────┐   │
+│  │                              CRON (server-side)                                 │   │
+│  │                                                                                 │   │
+│  │  ┌────────────────────────────────┐    ┌────────────────────────────────────┐   │   │
+│  │  │ */2 min:                       │    │ 03:00 daily:                       │   │   │
+│  │  │ update_rig_status.sh           │    │ data_retention.sh                  │   │   │
+│  │  │ → stale >2min, offline >10min  │    │ → compact_data                     │   │   │
+│  │  │ → calls update_rig_status cmd  │    │ → cleanup_old_data(31d)            │   │   │
+│  │  └────────────────────────────────┘    │ → VACUUM ANALYZE ×6 tables         │   │   │
+│  │                                        │ → cleanup_audit_log(90d)           │   │   │
+│  │                                        └────────────────────────────────────┘   │   │
+│  └─────────────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                        │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+                                            ▲
+                                            │ HTTPS GET/POST + HTMX polling (30s)
+                                            │ SessionAuth, per-user rate limits
+                                            │
+                              ┌─────────────┴─────────────┐
+                              │      USER BROWSER         │
+                              │  (authenticated session)  │
+                              └───────────────────────────┘
+```
+
+```mermaid
+flowchart LR
+    subgraph Rigs["Rig machines (N rigs)"]
+        A1["agent/run.py (Linux) v1.6.0 / schema 1.11"]
+        A2["agent_windows/run.py v1.6.17-win / schema 1.11"]
+        A3["check_update.py<br/>cron ~daily<br/>fetches run.py from GitHub main<br/>self-update if newer version"]
+    end
+
+    subgraph Edge["Server edge"]
+        NG["Nginx :80/443<br/>client_max_body_size 2m<br/>limit_req zone=rig burst=3 / zone=ip burst=50<br/>/static/ from staticfiles"]
+    end
+
+    subgraph App["Django app (Gunicorn systemd, /opt/gpu_monitor)"]
+        ING["metrics_app.IngestView<br/>POST /api/v1/ingest/<br/>X-API-Key auth + IngestRateThrottle 2/min/rig<br/>timestamp sanity ±5min future / 1h past<br/>auto-enrolls unknown rigs"]
+        SER["serializers.process_ingest()<br/>transaction.atomic()"]
+        CH["ChartDataView<br/>GET /api/v1/rigs/{uuid}/chart-data/<br/>SessionAuth, 120/min/user, 55s cache"]
+        MET["GET /api/v1/rigs/{uuid}/metrics/"]
+        HLTH["GET /api/v1/health/ (open)"]
+        DASH["dashboard views (HTMX)<br/>rig_list / rig_detail / htmx_metrics / htmx_status / htmx_report<br/>@login_required + per-user rate_limit decorator"]
+        ACC["accounts<br/>register/login/profile<br/>ApiKey create/revoke/transfer<br/>electricity_rate_kwh"]
+        AUD["audit middleware + AuditLog feed"]
+        CMD["mgmt commands<br/>compact_data · cleanup_old_data · backfill_historical_data<br/>daily_maintenance · update_rig_status · cleanup_audit_log"]
+    end
+
+    subgraph Data["PostgreSQL (db gpu_monitor)"]
+        TS[("Timeseries<br/>MetricSnapshot · GPUMetric · StorageMetric<br/>NetworkMetric · GPUProcessMetric<br/>PowerReading · RigStatusEvent")]
+        LS[("LatestSnapshot<br/>1 row/rig, ~67 JSON-array fields")]
+        LD[("LatestDockerContainer")]
+        RG[("Rig · RigTag · User · ApiKey · AuditLog")]
+    end
+
+    subgraph Ops["Cron (server)"]
+        C1["*/2 min<br/>update_rig_status.sh<br/>→ stale >2min, offline >10min"]
+        C2["03:00<br/>data_retention.sh<br/>compact_data → cleanup_old_data(31d)<br/>→ VACUUM ANALYZE ×6 tables<br/>→ cleanup_audit_log(90d)"]
+    end
+
+    subgraph GitHub["GitHub (external)"]
+        GH["GitHub raw content<br/>raw.githubusercontent.com<br/>/dawmro/GPU-Rig-Monitoring-Platform<br/>/main/agent/run.py"]
+    end
+
+    A1 -->|"HTTPS POST /api/v1/ingest/<br/>X-API-Key, X-Rig-UUID"| NG
+    A2 -->|"HTTPS POST /api/v1/ingest/<br/>X-API-Key, X-Rig-UUID"| NG
+    A3 -.->|"HTTPS GET (outbound)<br/>fetch latest run.py from main"| GH
+    
+    NG --> ING --> SER
+    SER --> TS
+    SER --> LS
+    SER --> LD
+    SER --> RG
+    NG --> CH --> TS
+    NG --> MET --> LS
+    NG --> DASH --> LS
+    DASH --> RG
+    ACC --> RG
+    AUD --> RG
+    C1 --> CMD
+    C2 --> CMD
+    CMD --> TS
 ```
 
 **Stack:** Django 6.x + DRF · PostgreSQL 16 · Gunicorn (4 workers) · Nginx (TLS 1.3, rate limiting) · HTMX 1.9 (server-rendered, no SPA)

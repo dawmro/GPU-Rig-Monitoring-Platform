@@ -169,7 +169,7 @@ Errors are filtered on the server side — "no error" placeholders from agents
 
 **Views using LatestSnapshot:**
 - `rig_list` (Fleet Overview): Reads LatestSnapshot + Rig + RigTag. **0 timeseries queries.**
-- `htmx_metrics` (Live Metrics): Reads LatestSnapshot + LatestDockerContainer + GPUProcessMetric. **0 timeseries queries for GPU/storage/network.** Also renders the "Process Details" card from `top_cpu_processes_json` ∪ `top_mem_processes_json` (top-5 each, deduplicated by PID) with full command lines.
+- `htmx_metrics` (Live Metrics): Reads LatestSnapshot + LatestDockerContainer + GPUProcessMetric. **0 timeseries queries for GPU/storage/network.** Also renders the "Process Details" card from `top_cpu_processes_json` ∪ `top_mem_processes_json` (top-5 each, deduplicated by PID, entries without a command line omitted) with full command lines.
 
 **Views still using timeseries:**
 - `ChartDataView` (Historical Charts): Reads GPUMetric, StorageMetric, NetworkMetric, MetricSnapshot for time-series aggregation. **Unchanged.**

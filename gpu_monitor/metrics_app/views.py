@@ -272,6 +272,8 @@ class ChartDataView(APIView):
         range_hours = int(request.query_params.get('range', 24))
 
         # Bucket size: 1-min for 24h, 15-min for 7d, 1-hour for 30d
+        # NOTE: metrics_app/serializers.py:_chart_bucket_minutes() mirrors this
+        # mapping for ingest-time cache invalidation — keep the two in sync.
         if range_hours <= 24:
             bucket_minutes = 1
         elif range_hours <= 168:

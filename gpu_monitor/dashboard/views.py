@@ -217,6 +217,26 @@ def _fetch_rig_metrics(uuid, rig=None):
                 primary_ip = ip
                 break
 
+    # Process Details: union of top-5 by CPU and top-5 by memory,
+    # deduplicated by PID, sorted by cpu_pct desc then mem_pct desc.
+    # Rendered by the "Process Details" card (_metrics_cards.html).
+    seen_pids = set()
+    process_details = []
+    for proc in ((snapshot.top_cpu_processes_json if snapshot else [])[:5]
+                 + (snapshot.top_mem_processes_json if snapshot else [])[:5]):
+        pid = proc.get('pid')
+        if pid in seen_pids:
+            continue
+        seen_pids.add(pid)
+        process_details.append({
+            'pid': pid,
+            'name': proc.get('name') or '—',
+            'cmdline': proc.get('cmdline') or '',
+            'cpu_pct': proc.get('cpu_pct') or 0.0,
+            'mem_pct': proc.get('mem_pct') or 0.0,
+        })
+    process_details.sort(key=lambda p: (-p['cpu_pct'], -p['mem_pct']))
+
     return {
         'snapshot': snapshot,
         'gpu_metrics': gpu_metrics,
@@ -231,6 +251,7 @@ def _fetch_rig_metrics(uuid, rig=None):
         'top_cpu_processes': snapshot.top_cpu_processes_json if snapshot else [],
         'top_mem_processes': snapshot.top_mem_processes_json if snapshot else [],
         'process_count': snapshot.process_count if snapshot else 0,
+        'process_details': process_details,
     }
 
 

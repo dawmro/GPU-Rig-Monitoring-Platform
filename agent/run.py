@@ -43,8 +43,8 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.6.0'
-__schema_version__ = '1.11'
+__version__ = '1.7.0'
+__schema_version__ = '1.12'
 
 # ── Config ──────────────────────────────────────────────────────────────────
 
@@ -761,6 +761,122 @@ def collect_gpu_processes():
     return processes
 
 
+def collect_docker_inspect(containers, docker_prefix):
+    """Enrich running containers with inspect data (manifest) and log tail.
+
+    Only processes containers with status == 'running'.
+    Adds 'manifest' and 'logs' keys to each container dict.
+    """
+    import json
+    import os
+
+    running = [c for c in containers if c.get('status') == 'running']
+    if not running:
+        return containers
+
+    for container in running:
+        cid = container['container_id']
+        try:
+            # docker inspect <id>
+            result = subprocess.run(
+                docker_prefix + ['inspect', cid],
+                capture_output=True, text=True, timeout=5
+            )
+            if result.returncode != 0:
+                logging.getLogger('docker').debug('inspect %s failed: %s', cid, result.stderr[:100])
+                continue
+
+            data = json.loads(result.stdout)[0]
+
+            # Build manifest dict
+            manifest = {}
+
+            # ImageManifestDescriptor (primary request)
+            imd = data.get('ImageManifestDescriptor', {})
+            if imd:
+                manifest['digest'] = imd.get('digest', '')
+                manifest['size'] = imd.get('size', 0)
+                manifest['media_type'] = imd.get('mediaType', '')
+                manifest['platform'] = imd.get('platform', {})
+                # Annotations: version, source, url, etc.
+                annotations = imd.get('annotations', {})
+                if annotations:
+                    manifest['annotations'] = {
+                        k: v for k, v in annotations.items()
+                        if k.startswith(('org.opencontainers.image.', 'com.docker.'))
+                    }
+
+            # Config.Image (tag like "alpine:latest" or "nginx")
+            config = data.get('Config', {})
+            if config.get('Image'):
+                manifest['image_tag'] = config['Image']
+            if config.get('Labels'):
+                manifest['labels'] = config['Labels']
+
+            # State (health/uptime)
+            state = data.get('State', {})
+            if state:
+                manifest['state'] = {
+                    'started_at': state.get('StartedAt', ''),
+                    'exit_code': state.get('ExitCode', 0),
+                    'oom_killed': state.get('OOMKilled', False),
+                    'error': state.get('Error', ''),
+                }
+
+            # Mounts (volumes)
+            mounts = data.get('Mounts', [])
+            if mounts:
+                manifest['mounts'] = [
+                    {'source': m.get('Source', ''), 'destination': m.get('Destination', ''),
+                     'type': m.get('Type', ''), 'rw': m.get('RW', False)}
+                    for m in mounts
+                ]
+
+            # Networks (IP addresses)
+            nets = data.get('NetworkSettings', {}).get('Networks', {})
+            if nets:
+                manifest['networks'] = {
+                    net_name: {
+                        'ip': net_info.get('IPAddress', ''),
+                        'gateway': net_info.get('Gateway', ''),
+                        'mac': net_info.get('MacAddress', ''),
+                    }
+                    for net_name, net_info in nets.items()
+                    if net_info.get('IPAddress')
+                }
+
+            container['manifest'] = manifest
+
+            # --- LOG COLLECTION ---
+            log_config = data.get('HostConfig', {}).get('LogConfig', {})
+            if log_config.get('Type') == 'json-file':
+                log_path = data.get('LogPath', '')
+                if log_path and os.path.exists(log_path):
+                    try:
+                        lines = []
+                        with open(log_path, 'r') as f:
+                            all_lines = f.readlines()
+                            for line in all_lines[-20:]:
+                                try:
+                                    log_entry = json.loads(line.strip())
+                                    msg = log_entry.get('log', '').rstrip('\n')
+                                    if msg:
+                                        lines.append(msg[:500])
+                                except json.JSONDecodeError:
+                                    lines.append(line.strip()[:500])
+                        if lines:
+                            container['logs'] = lines
+                    except (OSError, PermissionError) as e:
+                        logging.getLogger('docker').debug('Cannot read log %s: %s', log_path, e)
+
+        except subprocess.TimeoutExpired:
+            logging.getLogger('docker').warning('inspect %s timed out', cid)
+        except Exception as e:
+            logging.getLogger('docker').debug('inspect %s error: %s', cid, e)
+
+    return containers
+
+
 def collect_docker():
     """Collect Docker container metrics using docker CLI via subprocess.
 
@@ -770,6 +886,7 @@ def collect_docker():
     3. Returns empty list if both fail
 
     For each container, collects: container_id, name, image, status, created, status_text.
+    Running containers additionally get: manifest (inspect data) and logs (tail).
     """
     containers = []
 
@@ -839,6 +956,9 @@ def collect_docker():
                 'created': created_str.strip(),
                 'status_text': status_str.strip(),
             })
+
+        # Enrich running containers with inspect data and logs
+        containers = collect_docker_inspect(containers, docker_prefix)
 
         return containers
 

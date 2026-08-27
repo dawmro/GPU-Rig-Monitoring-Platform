@@ -181,6 +181,8 @@ class LatestDockerContainer(models.Model):
     status = models.CharField(max_length=32, blank=True, default='')
     created = models.CharField(max_length=64, blank=True, default='')
     status_text = models.CharField(max_length=255, blank=True, default='')
+    manifest_json = models.JSONField(default=dict, blank=True)
+    logs_json = models.JSONField(default=list, blank=True)
 
     class Meta:
         db_table = 'metrics_latest_docker_container'

@@ -751,13 +751,29 @@
                 <div class="space-y-2 text-xs mt-4 pt-4 border-t border-gray-700">
                     <div class="text-gray-500 font-medium border-b border-gray-700 pb-1">Logs (last 50 lines)</div>
                     {% if c.logs %}
-                    <div class="bg-black rounded-lg p-3 font-mono text-[11px] leading-relaxed text-green-300 whitespace-pre-wrap break-all">
-                        {% for line in c.logs %}
-                        <div>{{ line }}</div>
-                        {% endfor %}
+                    <div class="bg-black rounded-lg border border-gray-700 overflow-hidden" style="font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;">
+                        <div class="bg-gray-800 border-b border-gray-700 px-3 py-2 flex items-center gap-2">
+                            <div class="w-3 h-3 rounded-full bg-red-500"></div>
+                            <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
+                            <div class="w-3 h-3 rounded-full bg-green-500"></div>
+                            <span class="text-gray-400 text-xs ml-2">container.log</span>
+                        </div>
+                        <div class="p-3 font-mono text-[11px] leading-relaxed text-green-300 whitespace-pre-wrap break-all">
+                            {% for line in c.logs %}
+                            <div>{{ line }}</div>
+                            {% endfor %}
+                        </div>
                     </div>
                     {% else %}
-                    <div class="bg-black rounded-lg p-3 font-mono text-[11px] text-gray-500">No logs (non-json-file driver or unreadable)</div>
+                    <div class="bg-black rounded-lg border border-gray-700 p-6 text-center">
+                        <div class="bg-gray-800 border-b border-gray-700 px-3 py-2 flex items-center gap-2">
+                            <div class="w-3 h-3 rounded-full bg-red-500"></div>
+                            <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
+                            <div class="w-3 h-3 rounded-full bg-green-500"></div>
+                            <span class="text-gray-400 text-xs ml-2">container.log</span>
+                        </div>
+                        <div class="p-3 font-mono text-[11px] text-gray-500">No logs (non-json-file driver or unreadable)</div>
+                    </div>
                     {% endif %}
                 </div>
             </div>

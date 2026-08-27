@@ -219,15 +219,15 @@ def _fetch_rig_metrics(uuid, rig=None):
                 primary_ip = ip
                 break
 
-    # Process Details: union of top-5 by CPU and top-5 by memory,
+    # Process Details: union of top-10 by CPU and top-10 by memory,
     # deduplicated by PID, entries without a command line omitted
     # (kernel/system pseudo-processes), sorted by cpu_pct desc then
     # mem_pct desc. Rendered by the "Process Details" card
     # (_metrics_cards.html).
     seen_pids = set()
     process_details = []
-    for proc in ((snapshot.top_cpu_processes_json if snapshot else [])[:5]
-                 + (snapshot.top_mem_processes_json if snapshot else [])[:5]):
+    for proc in ((snapshot.top_cpu_processes_json if snapshot else [])[:10]
+                 + (snapshot.top_mem_processes_json if snapshot else [])[:10]):
         pid = proc.get('pid')
         if pid in seen_pids:
             continue

@@ -393,3 +393,33 @@ def filter_running(containers):
     if not containers:
         return []
     return [c for c in containers if c.get('status') == 'running']
+
+
+@register.filter
+def cpu_util_color(value):
+    """Return Tailwind color class for CPU utilization percentage.
+    
+    Thresholds (matching Disk Util and Live Metrics progress bar):
+        > 80%  -> text-red-400
+        > 60%  -> text-orange-400
+        > 40%  -> text-yellow-400
+        > 20%  -> text-green-400
+        <= 20% -> text-gray-400
+    
+    Usage: <span class="{{ cpu_util|cpu_util_color }}">{{ cpu_util }}</span>
+    """
+    if value is None:
+        return 'text-gray-400'
+    try:
+        v = float(value)
+    except (ValueError, TypeError):
+        return 'text-gray-400'
+    if v > 80:
+        return 'text-red-400'
+    elif v > 60:
+        return 'text-orange-400'
+    elif v > 40:
+        return 'text-yellow-400'
+    elif v > 20:
+        return 'text-green-400'
+    return 'text-gray-400'

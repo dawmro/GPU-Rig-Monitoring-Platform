@@ -118,9 +118,9 @@
                     {% else %}—{% endif %}
                 </td>
                 {# CPU Util column #}
-                <td class="px-2 py-2 text-gray-400 whitespace-nowrap">
+                <td class="px-2 py-2 whitespace-nowrap">
                     {% if item.snapshot and item.snapshot.cpu_utilization_pct != None %}
-                        {{ item.snapshot.cpu_utilization_pct|floatformat:1 }}
+                        <span class="{{ item.snapshot.cpu_utilization_pct|cpu_util_color }}">{{ item.snapshot.cpu_utilization_pct|floatformat:1 }}</span>
                     {% else %}—{% endif %}
                 </td>
                 {# Disk Util column: max utilization across all disks #}

@@ -859,7 +859,7 @@ def collect_docker_inspect(containers, docker_prefix):
                         lines = []
                         with open(log_path, 'r') as f:
                             all_lines = f.readlines()
-                            for line in all_lines[-20:]:
+                            for line in all_lines[-50:]:
                                 try:
                                     log_entry = json.loads(line.strip())
                                     msg = log_entry.get('log', '').rstrip('\n')
@@ -879,12 +879,12 @@ def collect_docker_inspect(containers, docker_prefix):
             if not log_collected:
                 try:
                     result = subprocess.run(
-                        docker_prefix + ['logs', '--tail', '20', cid],
+                        docker_prefix + ['logs', '--tail', '50', cid],
                         capture_output=True, text=True, timeout=10
                     )
                     if result.returncode == 0 and result.stdout.strip():
                         lines = []
-                        for line in result.stdout.strip().split('\n')[-20:]:
+                        for line in result.stdout.strip().split('\n')[-50:]:
                             line = line.strip()
                             if line:
                                 lines.append(line[:500])

@@ -634,10 +634,144 @@
     {% endif %}
 </div>
 
-<!-- ═══════════════════════════════════════════════════════════════ -->
-<!-- Latest Errors (from Rig.latest_errors_json) -->
-<!-- ═══════════════════════════════════════════════════════════════ -->
-<div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
+<!-- ════════════════════════════════════════════════════════════════ -->
+    <!-- Container Details (manifest + logs for RUNNING containers)      -->
+    <!-- ════════════════════════════════════════════════════════════════ -->
+    {% with running_containers=docker_metrics|filter_running %}
+    {% if running_containers %}
+    <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
+        <h3 class="text-gray-400 text-sm font-medium mb-2">
+            Container Details ({{ running_containers|length }} running)
+            {% if is_data_stale %}<span class="text-xs text-yellow-400 ml-1">(stale)</span>{% endif %}
+        </h3>
+        <div class="space-y-4">
+            {% for c in running_containers %}
+            <div class="border border-gray-700 rounded p-3">
+                <!-- Container header -->
+                <div class="flex items-center gap-2 mb-2">
+                    <span class="text-xs px-2 py-0.5 rounded bg-green-900/50 text-green-300">Running</span>
+                    <span class="text-sm text-gray-200 font-medium">{{ c.name|default:"unnamed" }}</span>
+                    <span class="text-xs text-gray-500 font-mono">{{ c.container_id|truncatechars:12 }}</span>
+                </div>
+            
+                <!-- Manifest -->
+                <div class="space-y-2 text-xs">
+                    <div class="text-gray-500 font-medium border-b border-gray-700 pb-1">Manifest</div>
+                    
+                    {% if c.manifest %}
+                    <dl class="space-y-1">
+                        {% if c.manifest.image_tag %}
+                        <div class="flex gap-2">
+                            <dt class="text-gray-500 w-20 flex-shrink-0">Image:</dt>
+                            <dd class="text-gray-300 truncate">{{ c.manifest.image_tag }}</dd>
+                        </div>
+                        {% endif %}
+                        
+                        {% if c.manifest.digest %}
+                        <div class="flex gap-2">
+                            <dt class="text-gray-500 w-20 flex-shrink-0">Digest:</dt>
+                            <dd class="text-gray-400 font-mono truncate" title="{{ c.manifest.digest }}">{{ c.manifest.digest }}</dd>
+                        </div>
+                        {% endif %}
+                        
+                        {% if c.manifest.platform %}
+                        <div class="flex gap-2">
+                            <dt class="text-gray-500 w-20 flex-shrink-0">Platform:</dt>
+                            <dd class="text-gray-300">
+                                {{ c.manifest.platform.architecture }}/{{ c.manifest.platform.os }}
+                            </dd>
+                        </div>
+                        {% endif %}
+                        
+                        {% if c.manifest.state %}
+                        <div class="flex gap-2">
+                            <dt class="text-gray-500 w-20 flex-shrink-0">State:</dt>
+                            <dd class="text-gray-300">
+                                Started {{ c.manifest.state.started_at|default:"?" }}
+                                {% if c.manifest.state.oom_killed %}<span class="text-red-400 ml-1">OOM</span>{% endif %}
+                                {% if c.manifest.state.exit_code != 0 %}<span class="text-yellow-400 ml-1">Exit {{ c.manifest.state.exit_code }}</span>{% endif %}
+                            </dd>
+                        </div>
+                        {% endif %}
+                        
+                        {% if c.manifest.mounts %}
+                        <div class="flex gap-2">
+                            <dt class="text-gray-500 w-20 flex-shrink-0">Mounts:</dt>
+                            <dd class="text-gray-300">
+                                {% for m in c.manifest.mounts %}
+                                <div class="truncate">{{ m.source }} → {{ m.destination }} ({{ m.type }}{% if m.rw %}, rw{% endif %})</div>
+                                {% endfor %}
+                            </dd>
+                        </div>
+                        {% endif %}
+                        
+                        {% if c.manifest.networks %}
+                        <div class="flex gap-2">
+                            <dt class="text-gray-500 w-20 flex-shrink-0">Networks:</dt>
+                            <dd class="text-gray-300">
+                                {% for net_name, net_info in c.manifest.networks.items %}
+                                <div>{{ net_name }}: {{ net_info.ip }}{% if net_info.gateway %} via {{ net_info.gateway }}{% endif %}</div>
+                                {% endfor %}
+                            </dd>
+                        </div>
+                        {% endif %}
+                        
+                        {% if c.manifest.labels %}
+                        <div class="flex gap-2">
+                            <dt class="text-gray-500 w-20 flex-shrink-0">Labels:</dt>
+                            <dd class="text-gray-300">
+                                {% for k, v in c.manifest.labels.items %}
+                                <div class="truncate">{{ k }}: {{ v }}</div>
+                                {% endfor %}
+                            </dd>
+                        </div>
+                        {% endif %}
+                        
+                        {% if c.manifest.annotations %}
+                        <div class="flex gap-2">
+                            <dt class="text-gray-500 w-20 flex-shrink-0">Annotations:</dt>
+                            <dd class="text-gray-300">
+                                {% for k, v in c.manifest.annotations.items %}
+                                <div class="truncate">{{ k|cut:"org.opencontainers.image."|cut:"com.docker." }}: {{ v }}</div>
+                                {% endfor %}
+                            </dd>
+                        </div>
+                        {% endif %}
+                    </dl>
+                    {% else %}
+                    <div class="text-gray-500">No manifest data</div>
+                    {% endif %}
+                </div>
+                
+                <!-- Logs -->
+                <div class="space-y-2 text-xs mt-4 pt-4 border-t border-gray-700">
+                    <div class="text-gray-500 font-medium border-b border-gray-700 pb-1">Logs (last 20 lines)</div>
+                    {% if c.logs %}
+                    <div class="bg-gray-900 rounded p-2 font-mono text-[11px] leading-tight max-h-48 overflow-y-auto text-gray-300">
+                        {% for line in c.logs %}
+                        <div class="whitespace-pre-wrap break-all">{{ line }}</div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="text-gray-500 text-center py-4">No logs (non-json-file driver or unreadable)</div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% else %}
+    <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
+        <h3 class="text-gray-400 text-sm font-medium mb-2">Container Details</h3>
+        <div class="text-gray-500 text-xs">No running containers</div>
+    </div>
+    {% endif %}
+    {% endwith %}
+
+    <!-- ════════════════════════════════════════════════════════════════ -->
+    <!-- Latest Errors (from Rig.latest_errors_json) -->
+    <!-- ════════════════════════════════════════════════════════════════ -->
+    <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
     <h3 class="text-gray-400 text-sm font-medium mb-2">Latest Errors</h3>
     {% if recent_errors %}
     <div class="text-2xl font-bold text-red-400 mb-2">{{ recent_errors|length }}</div>

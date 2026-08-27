@@ -382,3 +382,14 @@ def divide(value, arg):
         return float(value) / divisor
     except (ValueError, TypeError):
         return 0
+
+
+@register.filter
+def filter_running(containers):
+    """Return only running containers from a list of container dicts.
+    
+    Usage: {% for c in docker_metrics|filter_running %}
+    """
+    if not containers:
+        return []
+    return [c for c in containers if c.get('status') == 'running']

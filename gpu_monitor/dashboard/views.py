@@ -174,6 +174,8 @@ def _fetch_rig_metrics(uuid, rig=None):
             'status': lc.status,
             'created': lc.created,
             'status_text': lc.status_text,
+            'manifest': lc.manifest_json,
+            'logs': lc.logs_json,
         })
 
     # Sort: running/restarting first, then by name

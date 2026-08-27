@@ -43,7 +43,7 @@ class IngestSerializer(serializers.Serializer):
     power = serializers.JSONField(required=False, default=dict)
 
     def validate_schema_version(self, value):
-        if value not in ('1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8', '1.9', '1.10', '1.11'):
+        if value not in ('1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8', '1.9', '1.10', '1.11', '1.12'):
             raise serializers.ValidationError(f"Unsupported schema_version: {value}")
         return value
 
@@ -428,6 +428,8 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                     status=container.get('status', ''),
                     created=container.get('created', ''),
                     status_text=container.get('status_text', ''),
+                    manifest_json=container.get('manifest', {}),
+                    logs_json=container.get('logs', []),
                 )
 
             # Update latest snapshot (denormalized)

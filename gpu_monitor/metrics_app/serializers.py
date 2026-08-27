@@ -41,9 +41,10 @@ class IngestSerializer(serializers.Serializer):
     software = serializers.JSONField(required=False, default=dict)
     errors = serializers.ListField(required=False, default=list)
     power = serializers.JSONField(required=False, default=dict)
+    has_active_job = serializers.BooleanField(required=False, default=False)
 
     def validate_schema_version(self, value):
-        if value not in ('1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8', '1.9', '1.10', '1.11', '1.12'):
+        if value not in ('1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8', '1.9', '1.10', '1.11', '1.12', '1.13'):
             raise serializers.ValidationError(f"Unsupported schema_version: {value}")
         return value
 
@@ -509,6 +510,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                 'top_cpu_processes_json': top_processes.get('by_cpu', []) if top_processes else [],
                 'top_mem_processes_json': top_processes.get('by_mem', []) if top_processes else [],
                 'process_count': top_processes.get('total_count', 0) if top_processes else 0,
+                'has_active_job': validated.get('has_active_job', False),
             }
 
             # ── Process power data ──────────────────────────────────────────

@@ -6,6 +6,7 @@
                 <th class="text-left px-3 py-2 font-medium">Rig Name</th>
                 <th class="text-left px-3 py-2 font-medium">Tags</th>
                 <th class="text-left px-3 py-2 font-medium">Status</th>
+                <th class="text-left px-3 py-2 font-medium">Job</th>
                 <th class="text-left px-3 py-2 font-medium">Last Seen</th>
                 <th class="text-left px-3 py-2 font-medium">Uptime</th>
                 <th class="text-left px-2 py-2 font-medium">GPU</th>
@@ -51,6 +52,13 @@
                     <span class="badge-stale px-1.5 py-0.5 rounded text-xs">Stale</span>
                     {% else %}
                     <span class="badge-offline px-1.5 py-0.5 rounded text-xs">Offline</span>
+                    {% endif %}
+                </td>
+                <td class="px-3 py-2">
+                    {% if item.snapshot and item.snapshot.has_active_job %}
+                    <span class="w-3 h-3 rounded-full bg-green-400 inline-block" title="Active job"></span>
+                    {% else %}
+                    <span class="w-3 h-3 rounded-full bg-red-400 inline-block" title="No active job"></span>
                     {% endif %}
                 </td>
                 <td class="px-3 py-2 text-gray-400 whitespace-nowrap">

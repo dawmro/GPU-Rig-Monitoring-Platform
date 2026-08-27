@@ -299,6 +299,9 @@ class LatestSnapshot(models.Model):
     top_mem_processes_json = models.JSONField(default=list, blank=True)     # Top 20 by memory%
     process_count = models.PositiveIntegerField(default=0)                   # Total running processes
 
+    # Job indicator: True if rig has active GPU process or running Docker container
+    has_active_job = models.BooleanField(default=False)
+
     # Power consumption (latest values — for Live Metrics display)
     # All values are AC (wall) — PSU efficiency already factored in by agent
     power_total_w = models.FloatField(null=True, blank=True)     # Total system power (AC)

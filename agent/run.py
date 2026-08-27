@@ -43,8 +43,8 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.7.0'
-__schema_version__ = '1.12'
+__version__ = '1.8.0'
+__schema_version__ = '1.13'
 
 # ── Config ──────────────────────────────────────────────────────────────────
 
@@ -1113,14 +1113,24 @@ def build_payload(config):
     - errors: recent system errors
     """
     now = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+    
+    # Collect metrics first so we can compute has_active_job
+    gpu_processes = collect_gpu_processes()
+    docker_containers = collect_docker()
+    
+    # Compute has_active_job: True if any GPU process OR any running Docker container
+    has_active_job = bool(gpu_processes) or any(
+        c.get('status') == 'running' for c in docker_containers
+    )
+    
     metrics = {
         'cpu': collect_cpu(),
         'memory': collect_memory(),
         'storage': collect_storage(),
         'network': collect_network(),
         'gpus': collect_gpus(),
-        'gpu_processes': collect_gpu_processes(),
-        'docker_containers': collect_docker(),
+        'gpu_processes': gpu_processes,
+        'docker_containers': docker_containers,
         'top_processes': collect_top_processes(),
     }
 
@@ -1135,6 +1145,7 @@ def build_payload(config):
         'software': collect_software(),
         'errors': collect_errors(),
         'power': collect_power(metrics['cpu']),
+        'has_active_job': has_active_job,
     }
 
     return payload

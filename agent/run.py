@@ -43,7 +43,7 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.8.0'
+__version__ = '1.8.1'
 __schema_version__ = '1.13'
 
 # ── Config ──────────────────────────────────────────────────────────────────
@@ -849,6 +849,9 @@ def collect_docker_inspect(containers, docker_prefix):
 
             # --- LOG COLLECTION ---
             log_config = data.get('HostConfig', {}).get('LogConfig', {})
+            log_collected = False
+            
+            # Primary: read LogPath directly (fast, no subprocess)
             if log_config.get('Type') == 'json-file':
                 log_path = data.get('LogPath', '')
                 if log_path and os.path.exists(log_path):
@@ -866,8 +869,36 @@ def collect_docker_inspect(containers, docker_prefix):
                                     lines.append(line.strip()[:500])
                         if lines:
                             container['logs'] = lines
+                            log_collected = True
+                        else:
+                            logging.getLogger('docker').debug('Log file exists but empty: %s', log_path)
                     except (OSError, PermissionError) as e:
-                        logging.getLogger('docker').debug('Cannot read log %s: %s', log_path, e)
+                        logging.getLogger('docker').warning('Cannot read log file %s: %s; falling back to docker logs', log_path, e)
+            
+            # Fallback: use docker logs (works for all log drivers, handles permissions)
+            if not log_collected:
+                try:
+                    result = subprocess.run(
+                        docker_prefix + ['logs', '--tail', '20', cid],
+                        capture_output=True, text=True, timeout=10
+                    )
+                    if result.returncode == 0 and result.stdout.strip():
+                        lines = []
+                        for line in result.stdout.strip().split('\n')[-20:]:
+                            line = line.strip()
+                            if line:
+                                lines.append(line[:500])
+                        if lines:
+                            container['logs'] = lines
+                            log_collected = True
+                        else:
+                            logging.getLogger('docker').debug('docker logs returned empty output for %s', cid)
+                    else:
+                        logging.getLogger('docker').warning('docker logs failed for %s: %s', cid, result.stderr.strip()[:200])
+                except subprocess.TimeoutExpired:
+                    logging.getLogger('docker').warning('docker logs timed out for %s', cid)
+                except Exception as e:
+                    logging.getLogger('docker').warning('docker logs fallback failed for %s: %s', cid, e)
 
         except subprocess.TimeoutExpired:
             logging.getLogger('docker').warning('inspect %s timed out', cid)

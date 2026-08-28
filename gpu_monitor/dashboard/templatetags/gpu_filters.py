@@ -423,3 +423,14 @@ def cpu_util_color(value):
     elif v > 20:
         return 'text-green-400'
     return 'text-gray-400'
+
+
+@register.filter
+def trim(value):
+    """Strip leading and trailing whitespace from a string.
+    
+    Usage: {% if line|trim %}...{% endif %}
+    """
+    if value is None:
+        return ''
+    return value.strip()

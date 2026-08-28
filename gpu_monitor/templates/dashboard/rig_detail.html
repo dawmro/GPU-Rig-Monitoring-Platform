@@ -104,10 +104,10 @@
     <div id="tab-content-metrics" class="tab-content">
         <div id="metrics-container"
              hx-get="{% url 'dashboard:htmx-metrics' rig.uuid %}"
-             hx-trigger="every 30s"
+             hx-trigger="load, every 30s"
              hx-target="#metrics-container"
-             hx-swap="innerHTML">
-            {% include "dashboard/_metrics_cards.html" %}
+             hx-swap="innerHTML"
+             hx-indicator=".htmx-indicator">
         </div>
     </div>
 

@@ -1061,14 +1061,14 @@ def collect_docker_inspect(containers, docker_prefix):
                         lines = []
                         with open(log_path, 'r') as f:
                             all_lines = f.readlines()
-                            for line in all_lines[-50:]:
+                            for line in all_lines[-100:]:
                                 try:
                                     log_entry = json.loads(line.strip())
                                     msg = log_entry.get('log', '').rstrip('\n')
                                     if msg:
-                                        lines.append(msg[:500])
+                                        lines.append(msg[:700])
                                 except json.JSONDecodeError:
-                                    lines.append(line.strip()[:500])
+                                    lines.append(line.strip()[:700])
                         if lines:
                             container['logs'] = lines
                             log_collected = True
@@ -1081,16 +1081,16 @@ def collect_docker_inspect(containers, docker_prefix):
             if not log_collected:
                 try:
                     result = subprocess.run(
-                        docker_prefix + ['logs', '--tail', '50', cid],
+                        docker_prefix + ['logs', '--tail', '100', cid],
                         capture_output=True, text=True, timeout=10,
                         encoding='utf-8', errors='replace'
                     )
                     if result.returncode == 0 and result.stdout.strip():
                         lines = []
-                        for line in result.stdout.strip().split('\n')[-50:]:
+                        for line in result.stdout.strip().split('\n')[-100:]:
                             line = line.strip()
                             if line:
-                                lines.append(line[:500])
+                                lines.append(line[:700])
                         if lines:
                             container['logs'] = lines
                             log_collected = True

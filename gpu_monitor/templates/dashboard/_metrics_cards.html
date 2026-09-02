@@ -747,6 +747,655 @@
                     {% endif %}
                 </div>
                 
+                <!-- Extended Manifest Fields -->
+                <div class="space-y-2 text-xs mt-4 pt-4 border-t border-gray-700">
+                    <div class="text-gray-500 font-medium border-b border-gray-700 pb-1">Extended Details</div>
+                    
+                    {% if c.manifest.port_bindings %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Port Bindings:</dt>
+                        <dd class="text-gray-300">
+                            {% for host_port, bindings in c.manifest.port_bindings.items %}
+                            <div class="truncate">{{ host_port }} → {% for b in bindings %}{{ b.HostIp }}:{{ b.HostPort }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>
+                            {% endfor %}
+                        </dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.resource_limits %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Resources:</dt>
+                        <dd class="text-gray-300">
+                            {% for k, v in c.manifest.resource_limits.items %}
+                            <div class="truncate">{{ k }}: {{ v }}</div>
+                            {% endfor %}
+                        </dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.restart_policy %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Restart:</dt>
+                        <dd class="text-gray-300">
+                            {{ c.manifest.restart_policy.name }}{% if c.manifest.restart_policy.max_retry > 0 %} (max {{ c.manifest.restart_policy.max_retry }}){% endif %}
+                        </dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.resource_reservations %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Reservations:</dt>
+                        <dd class="text-gray-300">
+                            {% for k, v in c.manifest.resource_reservations.items %}
+                            <div class="truncate">{{ k }}: {{ v }}</div>
+                            {% endfor %}
+                        </dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.restart_count is not none %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Restarts:</dt>
+                        <dd class="text-gray-300">{{ c.manifest.restart_count }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.created %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Created:</dt>
+                        <dd class="text-gray-300">{{ c.manifest.created }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.exposed_ports %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Exposed:</dt>
+                        <dd class="text-gray-300">
+                            {% for port in c.manifest.exposed_ports %}
+                            <span class="text-gray-300 mr-1">{{ port }}</span>
+                            {% endfor %}
+                        </dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.working_dir %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Workdir:</dt>
+                        <dd class="text-gray-300 truncate">{{ c.manifest.working_dir }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.entrypoint %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Entrypoint:</dt>
+                        <dd class="text-gray-300 truncate">{{ c.manifest.entrypoint|join:" " }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.cmd %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Cmd:</dt>
+                        <dd class="text-gray-300 truncate">{{ c.manifest.cmd|join:" " }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.user %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">User:</dt>
+                        <dd class="text-gray-300">{{ c.manifest.user }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.healthcheck %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Healthcheck:</dt>
+                        <dd class="text-gray-300">{{ c.manifest.healthcheck.Test|join:" " }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.security %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Security:</dt>
+                        <dd class="text-gray-300">
+                            {% for k, v in c.manifest.security.items %}
+                            <div class="truncate">{{ k }}: {{ v }}</div>
+                            {% endfor %}
+                        </dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.dns %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">DNS:</dt>
+                        <dd class="text-gray-300">
+                            {% for k, v in c.manifest.dns.items %}
+                            <div class="truncate">{{ k }}: {{ v }}</div>
+                            {% endfor %}
+                        </dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.resource_limits %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Limits:</dt>
+                        <dd class="text-gray-300">
+                            {% for k, v in c.manifest.resource_limits.items %}
+                            <div class="truncate">{{ k }}: {{ v }}</div>
+                            {% endfor %}
+                        </dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.resource_reservations %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Reservations:</dt>
+                        <dd class="text-gray-300">
+                            {% for k, v in c.manifest.resource_reservations.items %}
+                            <div class="truncate">{{ k }}: {{ v }}</div>
+                            {% endfor %}
+                        </dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.restart_count is not none %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Restarts:</dt>
+                        <dd class="text-gray-300">{{ c.manifest.restart_count }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.created %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Created:</dt>
+                        <dd class="text-gray-300">{{ c.manifest.created }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.exposed_ports %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Exposed:</dt>
+                        <dd class="text-gray-300">
+                            {% for port in c.manifest.exposed_ports %}
+                            <span class="text-gray-300 mr-1">{{ port }}</span>
+                            {% endfor %}
+                        </dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.working_dir %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Workdir:</dt>
+                        <dd class="text-gray-300 truncate">{{ c.manifest.working_dir }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.entrypoint %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Entrypoint:</dt>
+                        <dd class="text-gray-300 truncate">{{ c.manifest.entrypoint|join:" " }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.cmd %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Cmd:</dt>
+                        <dd class="text-gray-300 truncate">{{ c.manifest.cmd|join:" " }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.user %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">User:</dt>
+                        <dd class="text-gray-300">{{ c.manifest.user }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.healthcheck %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Healthcheck:</dt>
+                        <dd class="text-gray-300">{{ c.manifest.healthcheck.Test|join:" " }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.security %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Security:</dt>
+                        <dd class="text-gray-300">
+                            {% for k, v in c.manifest.security.items %}
+                            <div class="truncate">{{ k }}: {{ v }}</div>
+                            {% endfor %}
+                        </dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.dns %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">DNS:</dt>
+                        <dd class="text-gray-300">
+                            {% for k, v in c.manifest.dns.items %}
+                            <div class="truncate">{{ k }}: {{ v }}</div>
+                            {% endfor %}
+                        </dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.resource_limits %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Limits:</dt>
+                        <dd class="text-gray-300">
+                            {% for k, v in c.manifest.resource_limits.items %}
+                            <div class="truncate">{{ k }}: {{ v }}</div>
+                            {% endfor %}
+                        </dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.resource_reservations %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Reservations:</dt>
+                        <dd class="text-gray-300">
+                            {% for k, v in c.manifest.resource_reservations.items %}
+                            <div class="truncate">{{ k }}: {{ v }}</div>
+                            {% endfor %}
+                        </dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.restart_count is not none %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Restarts:</dt>
+                        <dd class="text-gray-300">{{ c.manifest.restart_count }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.created %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Created:</dt>
+                        <dd class="text-gray-300">{{ c.manifest.created }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.exposed_ports %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Exposed:</dt>
+                        <dd class="text-gray-300">
+                            {% for port in c.manifest.exposed_ports %}
+                            <span class="text-gray-300 mr-1">{{ port }}</span>
+                            {% endfor %}
+                        </dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.working_dir %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Workdir:</dt>
+                        <dd class="text-gray-300 truncate">{{ c.manifest.working_dir }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.entrypoint %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Entrypoint:</dt>
+                        <dd class="text-gray-300 truncate">{{ c.manifest.entrypoint|join:" " }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.cmd %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Cmd:</dt>
+                        <dd class="text-gray-300 truncate">{{ c.manifest.cmd|join:" " }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.user %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">User:</dt>
+                        <dd class="text-gray-300">{{ c.manifest.user }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.healthcheck %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Healthcheck:</dt>
+                        <dd class="text-gray-300">{{ c.manifest.healthcheck.Test|join:" " }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.security %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Security:</dt>
+                        <dd class="text-gray-300">
+                            {% for k, v in c.manifest.security.items %}
+                            <div class="truncate">{{ k }}: {{ v }}</div>
+                            {% endfor %}
+                        </dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.dns %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">DNS:</dt>
+                        <dd class="text-gray-300">
+                            {% for k, v in c.manifest.dns.items %}
+                            <div class="truncate">{{ k }}: {{ v }}</div>
+                            {% endfor %}
+                        </dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.resource_limits %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Limits:</dt>
+                        <dd class="text-gray-300">
+                            {% for k, v in c.manifest.resource_limits.items %}
+                            <div class="truncate">{{ k }}: {{ v }}</div>
+                            {% endfor %}
+                        </dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.resource_reservations %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Reservations:</dt>
+                        <dd class="text-gray-300">
+                            {% for k, v in c.manifest.resource_reservations.items %}
+                            <div class="truncate">{{ k }}: {{ v }}</div>
+                            {% endfor %}
+                        </dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.restart_count is not none %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Restarts:</dt>
+                        <dd class="text-gray-300">{{ c.manifest.restart_count }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.created %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Created:</dt>
+                        <dd class="text-gray-300">{{ c.manifest.created }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.exposed_ports %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Exposed:</dt>
+                        <dd class="text-gray-300">
+                            {% for port in c.manifest.exposed_ports %}
+                            <span class="text-gray-300 mr-1">{{ port }}</span>
+                            {% endfor %}
+                        </dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.working_dir %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Workdir:</dt>
+                        <dd class="text-gray-300 truncate">{{ c.manifest.working_dir }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.entrypoint %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Entrypoint:</dt>
+                        <dd class="text-gray-300 truncate">{{ c.manifest.entrypoint|join:" " }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.cmd %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Cmd:</dt>
+                        <dd class="text-gray-300 truncate">{{ c.manifest.cmd|join:" " }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.user %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">User:</dt>
+                        <dd class="text-gray-300">{{ c.manifest.user }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.healthcheck %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Healthcheck:</dt>
+                        <dd class="text-gray-300">{{ c.manifest.healthcheck.Test|join:" " }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.security %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Security:</dt>
+                        <dd class="text-gray-300">
+                            {% for k, v in c.manifest.security.items %}
+                            <div class="truncate">{{ k }}: {{ v }}</div>
+                            {% endfor %}
+                        </dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.dns %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">DNS:</dt>
+                        <dd class="text-gray-300">
+                            {% for k, v in c.manifest.dns.items %}
+                            <div class="truncate">{{ k }}: {{ v }}</div>
+                            {% endfor %}
+                        </dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.resource_limits %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Limits:</dt>
+                        <dd class="text-gray-300">
+                            {% for k, v in c.manifest.resource_limits.items %}
+                            <div class="truncate">{{ k }}: {{ v }}</div>
+                            {% endfor %}
+                        </dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.resource_reservations %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Reservations:</dt>
+                        <dd class="text-gray-300">
+                            {% for k, v in c.manifest.resource_reservations.items %}
+                            <div class="truncate">{{ k }}: {{ v }}</div>
+                            {% endfor %}
+                        </dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.restart_count is not none %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Restarts:</dt>
+                        <dd class="text-gray-300">{{ c.manifest.restart_count }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.created %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Created:</dt>
+                        <dd class="text-gray-300">{{ c.manifest.created }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.exposed_ports %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Exposed:</dt>
+                        <dd class="text-gray-300">
+                            {% for port in c.manifest.exposed_ports %}
+                            <span class="text-gray-300 mr-1">{{ port }}</span>
+                            {% endfor %}
+                        </dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.working_dir %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Workdir:</dt>
+                        <dd class="text-gray-300 truncate">{{ c.manifest.working_dir }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.entrypoint %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Entrypoint:</dt>
+                        <dd class="text-gray-300 truncate">{{ c.manifest.entrypoint|join:" " }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.cmd %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Cmd:</dt>
+                        <dd class="text-gray-300 truncate">{{ c.manifest.cmd|join:" " }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.user %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">User:</dt>
+                        <dd class="text-gray-300">{{ c.manifest.user }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.healthcheck %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Healthcheck:</dt>
+                        <dd class="text-gray-300">{{ c.manifest.healthcheck.Test|join:" " }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.security %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Security:</dt>
+                        <dd class="text-gray-300">
+                            {% for k, v in c.manifest.security.items %}
+                            <div class="truncate">{{ k }}: {{ v }}</div>
+                            {% endfor %}
+                        </dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.dns %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">DNS:</dt>
+                        <dd class="text-gray-300">
+                            {% for k, v in c.manifest.dns.items %}
+                            <div class="truncate">{{ k }}: {{ v }}</div>
+                            {% endfor %}
+                        </dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.resource_limits %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Limits:</dt>
+                        <dd class="text-gray-300">
+                            {% for k, v in c.manifest.resource_limits.items %}
+                            <div class="truncate">{{ k }}: {{ v }}</div>
+                            {% endfor %}
+                        </dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.resource_reservations %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Reservations:</dt>
+                        <dd class="text-gray-300">
+                            {% for k, v in c.manifest.resource_reservations.items %}
+                            <div class="truncate">{{ k }}: {{ v }}</div>
+                            {% endfor %}
+                        </dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.restart_count is not none %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Restarts:</dt>
+                        <dd class="text-gray-300">{{ c.manifest.restart_count }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.created %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Created:</dt>
+                        <dd class="text-gray-300">{{ c.manifest.created }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.exposed_ports %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Exposed:</dt>
+                        <dd class="text-gray-300">
+                            {% for port in c.manifest.exposed_ports %}
+                            <span class="text-gray-300 mr-1">{{ port }}</span>
+                            {% endfor %}
+                        </dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.working_dir %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Workdir:</dt>
+                        <dd class="text-gray-300 truncate">{{ c.manifest.working_dir }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.entrypoint %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Entrypoint:</dt>
+                        <dd class="text-gray-300 truncate">{{ c.manifest.entrypoint|join:" " }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.cmd %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Cmd:</dt>
+                        <dd class="text-gray-300 truncate">{{ c.manifest.cmd|join:" " }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.user %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">User:</dt>
+                        <dd class="text-gray-300">{{ c.manifest.user }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.healthcheck %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Healthcheck:</dt>
+                        <dd class="text-gray-300">{{ c.manifest.healthcheck.Test|join:" " }}</dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.security %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Security:</dt>
+                        <dd class="text-gray-300">
+                            {% for k, v in c.manifest.security.items %}
+                            <div class="truncate">{{ k }}: {{ v }}</div>
+                            {% endfor %}
+                        </dd>
+                    </div>
+                    {% endif %}
+                    
+                    {% if c.manifest.dns %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">DNS:</dt>
+                        <dd class="text-gray-300">
+                            {% for k, v in c.manifest.dns.items %}
+                            <div class="truncate">{{ k }}: {{ v }}</div>
+                            {% endfor %}
+                        </dd>
+                    </div>
+                    {% endif %}
+                </div>
+                
                 <!-- Logs -->
                 <div class="space-y-2 text-xs mt-4 pt-4 border-t border-gray-700">
                     <div class="text-gray-500 font-medium border-b border-gray-700 pb-1">Logs (last 100 lines)</div>

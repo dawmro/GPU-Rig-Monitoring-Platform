@@ -43,8 +43,8 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.8.3'
-__schema_version__ = '1.13'
+__version__ = '1.9.0'
+__schema_version__ = '1.14'
 
 # ── Config ──────────────────────────────────────────────────────────────────
 
@@ -844,6 +844,86 @@ def collect_docker_inspect(containers, docker_prefix):
                     for net_name, net_info in nets.items()
                     if net_info.get('IPAddress')
                 }
+
+            container['manifest'] = manifest
+
+            # --- ADDITIONAL MANIFEST FIELDS ---
+            # Port Bindings
+            host_config = data.get('HostConfig', {})
+            if host_config.get('PortBindings'):
+                manifest['port_bindings'] = host_config['PortBindings']
+
+            # Resource Limits
+            resource_limits = {}
+            for key in ['CpuShares', 'Memory', 'MemorySwap', 'NanoCpus',
+                        'CpuQuota', 'CpuPeriod', 'CpuPeriod', 'BlkioWeight']:
+                if host_config.get(key) is not None:
+                    resource_limits[key.lower()] = host_config[key]
+            if resource_limits:
+                manifest['resource_limits'] = resource_limits
+
+            # Restart Policy
+            restart_policy = host_config.get('RestartPolicy', {})
+            if restart_policy:
+                manifest['restart_policy'] = {
+                    'name': restart_policy.get('Name'),
+                    'max_retry': restart_policy.get('MaximumRetryCount')
+                }
+
+            # Resource Reservations
+            reservations = {}
+            for key in ['MemoryReservation', 'KernelMemory', 'CpuCount', 'CpuPercent']:
+                if host_config.get(key) is not None:
+                    reservations[key.lower()] = host_config[key]
+            if reservations:
+                manifest['resource_reservations'] = reservations
+
+            # Restart Count (top-level)
+            if data.get('RestartCount') is not None:
+                manifest['restart_count'] = data['RestartCount']
+
+            # Created Time
+            if data.get('Created'):
+                manifest['created'] = data['Created']
+
+            # Exposed Ports
+            config = data.get('Config', {})
+            if config.get('ExposedPorts'):
+                manifest['exposed_ports'] = list(config['ExposedPorts'].keys())
+
+            # Working Directory
+            if config.get('WorkingDir'):
+                manifest['working_dir'] = config['WorkingDir']
+
+            # Entrypoint / Cmd
+            if config.get('Entrypoint'):
+                manifest['entrypoint'] = config['Entrypoint']
+            if config.get('Cmd'):
+                manifest['cmd'] = config['Cmd']
+
+            # User
+            if config.get('User'):
+                manifest['user'] = config['User']
+
+            # Health Check
+            if config.get('Healthcheck'):
+                manifest['healthcheck'] = config['Healthcheck']
+
+            # Security
+            security = {}
+            for key in ['CapAdd', 'CapDrop', 'SecurityOpt', 'Privileged', 'ReadonlyRootfs']:
+                if host_config.get(key) is not None:
+                    security[key.lower()] = host_config[key]
+            if security:
+                manifest['security'] = security
+
+            # DNS
+            dns = {}
+            for key in ['Dns', 'DnsOptions', 'DnsSearch', 'ExtraHosts']:
+                if host_config.get(key) is not None:
+                    dns[key.lower()] = host_config[key]
+            if dns:
+                manifest['dns'] = dns
 
             container['manifest'] = manifest
 

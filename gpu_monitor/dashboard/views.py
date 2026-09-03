@@ -161,8 +161,12 @@ def _fetch_rig_metrics(uuid, rig=None):
             })
 
     # Docker containers: LatestDockerContainer has all needed fields
-    latest_containers = LatestDockerContainer.objects.filter(
-        rig_uuid=str(uuid)
+    # Deduplicate by container_id at query level (defense-in-depth)
+    latest_containers = (
+        LatestDockerContainer.objects
+        .filter(rig_uuid=str(uuid))
+        .order_by('container_id')
+        .distinct('container_id')
     )
 
     docker_metrics = []
@@ -177,16 +181,6 @@ def _fetch_rig_metrics(uuid, rig=None):
             'manifest': lc.manifest_json,
             'logs': lc.logs_json,
         })
-
-    # Deduplicate by container_id to prevent duplicates
-    seen_container_ids = set()
-    unique_docker_metrics = []
-    for c in docker_metrics:
-        if c['container_id'] in seen_container_ids:
-            continue
-        seen_container_ids.add(c['container_id'])
-        docker_metrics.append(c)
-    docker_metrics = unique_docker_metrics
 
     # Recent errors — last 10 from error_history (for Live Metrics card)
     error_history = rig.error_history_json if rig else []

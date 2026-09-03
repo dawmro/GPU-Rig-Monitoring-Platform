@@ -178,9 +178,15 @@ def _fetch_rig_metrics(uuid, rig=None):
             'logs': lc.logs_json,
         })
 
-    # Sort: running/restarting first, then by name
-    status_order = {'running': 0, 'restarting': 1, 'exited': 2}
-    docker_metrics.sort(key=lambda c: (status_order.get(c['status'], 9), c['name']))
+    # Deduplicate by container_id to prevent duplicates
+    seen_container_ids = set()
+    unique_docker_metrics = []
+    for c in docker_metrics:
+        if c['container_id'] in seen_container_ids:
+            continue
+        seen_container_ids.add(c['container_id'])
+        docker_metrics.append(c)
+    docker_metrics = unique_docker_metrics
 
     # Recent errors — last 10 from error_history (for Live Metrics card)
     error_history = rig.error_history_json if rig else []

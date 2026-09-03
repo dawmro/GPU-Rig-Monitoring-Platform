@@ -432,17 +432,24 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                 container_id = container.get('container_id')
                 if not container_id:
                     continue
-                LatestDockerContainer.objects.create(
-                    rig_uuid=rig_uuid,
-                    container_id=container_id,
-                    name=container.get('name', ''),
-                    image=container.get('image', ''),
-                    status=container.get('status', ''),
-                    created=container.get('created', ''),
-                    status_text=container.get('status_text', ''),
-                    manifest_json=container.get('manifest', {}),
-                    logs_json=container.get('logs', []),
-                )
+                try:
+                    LatestDockerContainer.objects.create(
+                        rig_uuid=rig_uuid,
+                        container_id=container_id,
+                        name=container.get('name', ''),
+                        image=container.get('image', ''),
+                        status=container.get('status', ''),
+                        created=container.get('created', ''),
+                        status_text=container.get('status_text', ''),
+                        manifest_json=container.get('manifest', {}),
+                        logs_json=container.get('logs', []),
+                    )
+                except Exception as e:
+                    # Skip individual container errors to prevent transaction rollback
+                    # from wiping out all containers
+                    logging.getLogger('serializer').warning(
+                        'Failed to save container %s: %s', container_id, e
+                    )
 
             # Update latest snapshot (denormalized)
             ls_defaults = {

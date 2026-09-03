@@ -417,7 +417,18 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
             # Store latest container snapshot (for Live Metrics display)
             # Delete-before-insert pattern: remove all old rows for this rig first
             LatestDockerContainer.objects.filter(rig_uuid=rig_uuid).delete()
+            
+            # Deduplicate containers by container_id to avoid duplicates
+            seen_container_ids = set()
+            unique_containers = []
             for container in docker_containers:
+                container_id = container.get('container_id')
+                if not container_id or container_id in seen_container_ids:
+                    continue
+                seen_container_ids.add(container_id)
+                unique_containers.append(container)
+            
+            for container in unique_containers:
                 container_id = container.get('container_id')
                 if not container_id:
                     continue

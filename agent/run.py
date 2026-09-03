@@ -43,7 +43,7 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.9.0'
+__version__ = '1.9.1'
 __schema_version__ = '1.14'
 
 # ── Config ──────────────────────────────────────────────────────────────────
@@ -924,6 +924,18 @@ def collect_docker_inspect(containers, docker_prefix):
                     dns[key.lower()] = host_config[key]
             if dns:
                 manifest['dns'] = dns
+
+            # Environment Variables
+            env_vars = data.get('Config', {}).get('Env', [])
+            if env_vars:
+                # Parse "KEY=VALUE" pairs into a dict
+                parsed_env = {}
+                for entry in env_vars:
+                    if '=' in entry:
+                        k, v = entry.split('=', 1)
+                        parsed_env[k] = v
+                if parsed_env:
+                    manifest['env'] = parsed_env
 
             container['manifest'] = manifest
 

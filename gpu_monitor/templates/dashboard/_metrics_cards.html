@@ -874,6 +874,17 @@
                         </dd>
                     </div>
                     {% endif %}
+                    
+                    {% if c.manifest.env %}
+                    <div class="flex gap-2">
+                        <dt class="text-gray-500 w-20 flex-shrink-0">Env:</dt>
+                        <dd class="text-gray-300 max-w-full overflow-x-auto">
+                            {% for k, v in c.manifest.env.items %}
+                            <div class="whitespace-nowrap"><span class="text-gray-500">{{ k }}</span>=<span class="text-green-300">{{ v }}</span></div>
+                            {% endfor %}
+                        </dd>
+                    </div>
+                    {% endif %}
                 </div>
                 
                 <!-- Logs -->

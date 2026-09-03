@@ -161,8 +161,12 @@ def _fetch_rig_metrics(uuid, rig=None):
             })
 
     # Docker containers: LatestDockerContainer has all needed fields
-    latest_containers = LatestDockerContainer.objects.filter(
-        rig_uuid=str(uuid)
+    # Deduplicate by container_id at query level (defense-in-depth)
+    latest_containers = (
+        LatestDockerContainer.objects
+        .filter(rig_uuid=str(uuid))
+        .order_by('container_id')
+        .distinct('container_id')
     )
 
     docker_metrics = []
@@ -177,10 +181,6 @@ def _fetch_rig_metrics(uuid, rig=None):
             'manifest': lc.manifest_json,
             'logs': lc.logs_json,
         })
-
-    # Sort: running/restarting first, then by name
-    status_order = {'running': 0, 'restarting': 1, 'exited': 2}
-    docker_metrics.sort(key=lambda c: (status_order.get(c['status'], 9), c['name']))
 
     # Recent errors — last 10 from error_history (for Live Metrics card)
     error_history = rig.error_history_json if rig else []

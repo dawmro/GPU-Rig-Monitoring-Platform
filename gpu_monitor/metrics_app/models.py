@@ -186,7 +186,12 @@ class LatestDockerContainer(models.Model):
 
     class Meta:
         db_table = 'metrics_latest_docker_container'
-        unique_together = ('rig_uuid', 'name')
+        constraints = [
+            models.UniqueConstraint(
+                fields=['rig_uuid', 'container_id'],
+                name='unique_rig_container',
+            ),
+        ]
         indexes = [
             models.Index(fields=['rig_uuid']),
         ]

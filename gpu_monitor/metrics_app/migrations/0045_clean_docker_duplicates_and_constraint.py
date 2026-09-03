@@ -1,21 +1,21 @@
 """Data migration to clean up duplicate LatestDockerContainer rows
 and add unique constraint on (rig_uuid, container_id)."""
 
-from django.db import migrations
+from django.db import migrations, models
 from django.db.models import Count
 
 
 def clean_duplicates(apps, schema_editor):
     """Remove duplicate containers, keeping only the first (oldest) per (rig_uuid, container_id)."""
     LatestDockerContainer = apps.get_model('metrics_app', 'LatestDockerContainer')
-    
+
     duplicates = (
         LatestDockerContainer.objects
         .values('rig_uuid', 'container_id')
         .annotate(count=Count('id'))
         .filter(count__gt=1)
     )
-    
+
     for dup in duplicates:
         rows = list(
             LatestDockerContainer.objects
@@ -39,8 +39,11 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.RunPython(clean_duplicates, reverse_clean),
-        migrations.AlterUniqueTogether(
-            name='latestdockercontainer',
-            unique_together={('rig_uuid', 'container_id')},
+        migrations.AddConstraint(
+            model_name='latestdockercontainer',
+            constraint=models.UniqueConstraint(
+                fields=['rig_uuid', 'container_id'],
+                name='unique_rig_container',
+            ),
         ),
     ]

@@ -1,5 +1,11 @@
 """Data migration to clean up duplicate LatestDockerContainer rows
-and add unique constraint on (rig_uuid, container_id)."""
+and add unique constraint on (rig_uuid, container_id).
+
+Also fixes the migration state to reflect that the old
+unique_together = ('rig_uuid', 'name') constraint was never actually
+created in the database (or was removed), so we use SeparateDatabaseAndState
+to update the state without trying to remove the non-existent constraint.
+"""
 
 from django.db import migrations, models
 from django.db.models import Count
@@ -38,7 +44,24 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        # Step 1: Clean up duplicate rows in the database
         migrations.RunPython(clean_duplicates, reverse_clean),
+
+        # Step 2: Update Django's migration state to remove the old
+        # unique_together = ('rig_uuid', 'name') that was never actually
+        # created in the database. Use SeparateDatabaseAndState with
+        # state_operations only to avoid trying to remove a non-existent constraint.
+        migrations.SeparateDatabaseAndState(
+            database_operations=[],
+            state_operations=[
+                migrations.AlterUniqueTogether(
+                    name='latestdockercontainer',
+                    unique_together=set(),
+                ),
+            ],
+        ),
+
+        # Step 3: Add the new unique constraint with an explicit name
         migrations.AddConstraint(
             model_name='latestdockercontainer',
             constraint=models.UniqueConstraint(

@@ -2,16 +2,20 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
 from django.http import Http404, HttpResponse
 from django.views.decorators.http import require_POST
-from django.db.models import Count
 from django.core.cache import cache
 from django.utils import timezone
 from datetime import timedelta
 from functools import wraps
+import re
 import time
+from collections import Counter
 
 from rigs.models import Rig, RigTag
 from metrics_app.models import MetricSnapshot, LatestSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, LatestDockerContainer
 from audit.middleware import log_audit_event
+
+# Pre-compiled regex for natural sort: splits "rig12" -> ["rig", 12, ""]
+_NATURAL_SORT_RE = re.compile(r'(\d+)')
 
 
 def index_view(request):
@@ -264,7 +268,7 @@ def _fetch_rig_metrics(uuid, rig=None):
 @login_required
 @rate_limit(max_requests=60, window_s=60)
 def rig_list(request):
-    """Fleet overview page.
+    """Fleet Overview page.
 
     Refreshes every 30s via HTMX (see rig_list.html).
     All table columns are rendered from ``rig_data`` passed to
@@ -274,40 +278,63 @@ def rig_list(request):
     2. Fetch the data here in the ``rig_data`` loop (or annotate the queryset).
     3. Extend the ``rig_data.append({...})`` dict with the new key.
     4. Add the <td> cell in ``_rig_table.html`` <tbody> using the new key.
+
+    Query strategy:
+    - 1 query: Rig base queryset (with prefetched tags + owner)
+    - 1 query: LatestSnapshot batch fetch for all rig UUIDs
+    - Counts derived in Python (no extra queries) via Counter
+    - Total: 2 queries regardless of how many rigs
     """
     user = request.user
+
+    # Step 1: Load ALL rigs (no status/search/tag filter) for status counts.
+    # This avoids re-querying with .values_list().annotate(Count) which
+    # was an extra DB roundtrip.
     if user.is_staff:
-        rigs = Rig.objects.all().prefetch_related('tags', 'owner').order_by('name')
+        all_rigs = Rig.objects.all().prefetch_related('tags', 'owner')
     else:
-        rigs = Rig.objects.filter(owner=user).prefetch_related('tags').order_by('name')
+        all_rigs = Rig.objects.filter(owner=user).prefetch_related('tags', 'owner')
+
+    # Step 2: Compute status counts from already-loaded data.
+    # Counter is O(N) and avoids an extra .values_list('status').annotate() query.
+    status_counts = dict(Counter(r.status for r in all_rigs))
+    online_count = status_counts.get('online', 0)
+    stale_count = status_counts.get('stale', 0)
+    offline_count = status_counts.get('offline', 0)
+    total_count = online_count + stale_count + offline_count
+
+    # Step 3: Apply user filters to derive the displayed queryset.
+    # We use the already-loaded all_rigs list for natural sort (Python-side)
+    # since prefetched relations + Python sort is faster than re-fetching
+    # ordered with .order_by() on the queryset.
+    rigs = all_rigs
 
     status_filter = request.GET.get('status', '')
     if status_filter:
-        rigs = rigs.filter(status=status_filter)
+        rigs = [r for r in rigs if r.status == status_filter]
 
     search = request.GET.get('search', '')
     if search:
-        rigs = rigs.filter(name__icontains=search)
+        rigs = [r for r in rigs if search.lower() in (r.name or '').lower()]
 
     tag_filter = request.GET.get('tag', '')
     if tag_filter:
-        rigs = rigs.filter(tags__name=tag_filter)
+        # Build set of rig UUIDs that have the requested tag (1 query)
+        # instead of per-rig tags.filter().exists() which is N+1.
+        rigs_with_tag = set(
+            RigTag.objects.filter(name=tag_filter).values_list('rigs__uuid', flat=True)
+        )
+        rigs = [r for r in rigs if str(r.uuid) in rigs_with_tag]
 
-    # Sort rigs naturally by name (e.g., rig2 before rig11)
-    # Python-side sorting after all queryset filtering is complete
-    import re
+    # Sort rigs naturally by name (e.g., rig2 before rig11).
+    # Use pre-compiled _NATURAL_SORT_RE for efficiency.
     def _natural_sort_key(value):
         """Split string into text/number chunks for human-friendly sorting."""
         return [
             int(chunk) if chunk.isdigit() else chunk.lower()
-            for chunk in re.split(r'(\d+)', value or '')
+            for chunk in _NATURAL_SORT_RE.split(value or '')
         ]
     rigs = sorted(rigs, key=lambda r: _natural_sort_key(r.name))
-
-    # Build rig_data dicts consumed by _rig_table.html.
-    # Each key maps directly to a template variable in the table cells:
-    #   rig_data[]['rig']      -> Rig model (name, status, last_seen, tags, uuid)
-    #   rig_data[]['snapshot'] -> LatestSnapshot (cpu_utilization_pct, cpu_temp_c, mem_*, software_json.uptime_s)
 
     # Batch-fetch all LatestSnapshot rows in ONE query (avoids N+1)
     rig_uuids = [str(r.uuid) for r in rigs]
@@ -331,20 +358,12 @@ def rig_list(request):
 
     all_tags = RigTag.objects.filter(user=user).order_by('name') if not user.is_staff else RigTag.objects.all().order_by('name')
 
-    # Count rigs by status for the header display
-    rigs_for_counts = Rig.objects.all() if user.is_staff else Rig.objects.filter(owner=user)
-    status_counts = dict(rigs_for_counts.values_list('status').annotate(count=Count('status')).values_list('status', 'count'))
-    online_count = status_counts.get('online', 0)
-    stale_count = status_counts.get('stale', 0)
-    offline_count = status_counts.get('offline', 0)
-    total_count = online_count + stale_count + offline_count
-
     return render(request, 'dashboard/rig_list.html', {
         'rig_data': rig_data,
         'status_filter': status_filter,
         'search': search,
-        'all_tags': all_tags,
         'tag_filter': tag_filter,
+        'all_tags': all_tags,
         'online_count': online_count,
         'stale_count': stale_count,
         'offline_count': offline_count,

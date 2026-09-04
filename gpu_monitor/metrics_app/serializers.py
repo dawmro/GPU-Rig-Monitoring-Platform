@@ -692,6 +692,12 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                 update_fields.append('enrolled_by_api_key')
             rig.save(update_fields=update_fields)
 
+            # Invalidate cached Rig data — status and last_seen just changed.
+            # Without this, htmx_metrics/htmx_rig_status would show stale
+            # status for up to 30s after the rig comes online.
+            from dashboard.views import invalidate_rig_cache
+            invalidate_rig_cache(rig_uuid)
+
             http_status = status.HTTP_200_OK if created else status.HTTP_202_ACCEPTED
             status_label = 'new' if created else 'duplicate'
             result = {

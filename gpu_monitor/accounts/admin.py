@@ -61,9 +61,12 @@ class ApiKeyAdmin(admin.ModelAdmin):
                         key.save(update_fields=['user', 'name', 'transfer_count'])
 
                         # CRITICAL: Update rig ownership for all enrolled rigs
-                        rig_count = Rig.objects.filter(
-                            enrolled_by_api_key=key
-                        ).update(owner=target_user)
+                        rigs = Rig.objects.filter(enrolled_by_api_key=key)
+                        rig_count = rigs.update(owner=target_user)
+                        # Invalidate cached rig data (owner changed)
+                        from dashboard.views import invalidate_rig_cache
+                        for rig in rigs:
+                            invalidate_rig_cache(rig.uuid)
 
                         messages.success(
                             request,

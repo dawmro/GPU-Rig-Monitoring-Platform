@@ -9,6 +9,7 @@ from functools import wraps
 import re
 import time
 from collections import Counter
+from types import SimpleNamespace
 
 from rigs.models import Rig, RigTag
 from metrics_app.models import MetricSnapshot, LatestSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, LatestDockerContainer
@@ -16,6 +17,64 @@ from audit.middleware import log_audit_event
 
 # Pre-compiled regex for natural sort: splits "rig12" -> ["rig", 12, ""]
 _NATURAL_SORT_RE = re.compile(r'(\d+)')
+
+# Cache TTLs for Rig-related cached data (seconds).
+# 30s for high-frequency polls (htmx_metrics, htmx_rig_status).
+# After a rig's name/tags/owner changes, max 30s staleness.
+# For permission-sensitive operations, we re-validate from DB.
+_RIG_CACHE_TTL_S = 30
+
+
+def _get_rig_light_cached(uuid, user):
+    """Get a minimal Rig representation for permission check + status display.
+
+    Returns a SimpleNamespace with: uuid, owner_id, status, last_seen
+    (or None if not found / not accessible to user).
+
+    Used by high-frequency HTMX endpoints (htmx_metrics, htmx_rig_status)
+    that poll every 15-30s. Avoids 1 DB query per poll.
+
+    Full Rig object is NOT cached here because:
+    - It's heavy (tags, owner, GPU arrays)
+    - Permission check only needs owner_id
+    - Status display only needs .status + .last_seen
+    - For full data (rig_detail), use Rig.objects.get() directly
+
+    Returns None if rig doesn't exist OR user doesn't have access.
+    """
+    cache_key = f'rig_light_{uuid}'
+    cached = cache.get(cache_key)
+    if cached is not None:
+        rig = cached
+    else:
+        # Minimal DB query — only fields we need
+        try:
+            row = Rig.objects.only('uuid', 'owner_id', 'status', 'last_seen').get(uuid=uuid)
+        except Rig.DoesNotExist:
+            return None
+        rig = SimpleNamespace(
+            uuid=row.uuid,
+            owner_id=row.owner_id,
+            status=row.status,
+            last_seen=row.last_seen,
+        )
+        cache.set(cache_key, rig, _RIG_CACHE_TTL_S)
+
+    # Permission check (always re-validate from cached data, not DB)
+    if rig.owner_id != user.id and not user.is_staff:
+        return None
+    return rig
+
+
+def invalidate_rig_cache(uuid):
+    """Invalidate cached Rig data. Call this when rig data changes
+    (rename, ownership transfer, status change, tag changes, delete).
+
+    Safe to call even if no cache entry exists.
+    """
+    cache.delete(f'rig_light_{uuid}')
+    # Also invalidate the LatestSnapshot cache (in case it's affected)
+    cache.delete(f'lsnap_{uuid}')
 
 
 def index_view(request):
@@ -386,6 +445,9 @@ def rig_toggle_tag(request, uuid, tag_id):
             rig.tags.add(tag)
             action = 'tag.added'
         log_audit_event(request, action, 'Rig', rig.uuid, {'tag': tag.name})
+        # Invalidate cached rig data (tags changed; status badge still valid
+        # but the cached rig data may be stale for htmx_metrics in 30s)
+        invalidate_rig_cache(uuid)
         if request.headers.get('HX-Request'):
             return render(request, 'dashboard/_rig_tags.html', {'rig': rig})
     return redirect('dashboard:rig-detail', uuid=uuid)
@@ -409,12 +471,21 @@ def rig_detail(request, uuid):
 @login_required
 @rate_limit(max_requests=120, window_s=60)
 def htmx_metrics(request, uuid):
-    """HTMX polling endpoint for live metrics."""
-    rig = get_object_or_404(Rig, uuid=uuid)
-    if rig.owner_id != request.user.id and not request.user.is_staff:
+    """HTMX polling endpoint for live metrics.
+
+    Polled every ~30s by the rig detail page. Uses cached Rig lookup to
+    avoid a DB query per poll (was: 1 query every 30s per rig = 200 queries/min
+    for 100 rigs). The 30s cache TTL matches typical rig data change frequency.
+    """
+    rig = _get_rig_light_cached(uuid, request.user)
+    if rig is None:
         raise Http404
 
+    # _fetch_rig_metrics accepts a rig argument. Our SimpleNamespace is compatible
+    # with the duck-typed access (rig.uuid, rig.status, etc.).
     context = _fetch_rig_metrics(uuid, rig)
+    # Template (_metrics_cards.html) only needs snapshot + is_data_stale,
+    # but we pass rig for consistency with the rig_detail view.
     context['rig'] = rig
     context['is_data_stale'] = rig.status in [Rig.Status.OFFLINE, Rig.Status.STALE]
 
@@ -424,22 +495,16 @@ def htmx_metrics(request, uuid):
 @login_required
 @rate_limit(max_requests=120, window_s=60)
 def htmx_rig_status(request, uuid):
-    """HTMX polling endpoint — returns just the status badge + last_seen."""
-    # Field-selective query: only fetch status, last_seen, owner_id
-    # Reduces data transfer for this high-frequency poll (every 15s)
-    rig_data = Rig.objects.filter(
-        uuid=uuid
-    ).values('status', 'last_seen', 'owner_id').first()
+    """HTMX polling endpoint — returns just the status badge + last_seen.
 
-    if not rig_data:
-        raise Http404
-    if rig_data['owner_id'] != request.user.id and not request.user.is_staff:
+    Polled every ~15s for the Fleet Overview status badges. Uses cached
+    Rig lookup (was: 4 queries/min × 100 rigs = 400 queries/min).
+    """
+    rig = _get_rig_light_cached(uuid, request.user)
+    if rig is None:
         raise Http404
 
-    # Use SimpleNamespace to provide attribute access for template
-    from types import SimpleNamespace
-    rig = SimpleNamespace(**rig_data)
-
+    # rig already has uuid, owner_id, status, last_seen from cache
     return render(request, 'dashboard/_rig_status_badge.html', {'rig': rig})
 
 
@@ -466,8 +531,8 @@ def rig_delete(request, uuid):
     RigStatusEvent.objects.filter(rig_uuid=uuid).delete()
 
     rig.delete()
-    # Invalidate cached snapshot for this rig
-    cache.delete(f'lsnap_{uuid}')
+    # Invalidate all cached data for this rig (rig deleted, no longer exists)
+    invalidate_rig_cache(uuid)
     log_audit_event(request, 'rig.deleted', 'Rig', uuid, {'name': rig_name})
 
     if request.headers.get('HX-Request'):
@@ -495,6 +560,8 @@ def rig_rename(request, uuid):
             'old_name': old_name,
             'new_name': rig.name,
         })
+        # Invalidate cached rig data (name changed; cached rig still has old name)
+        invalidate_rig_cache(uuid)
 
     if request.headers.get('HX-Request'):
         return render(request, 'dashboard/_rig_name.html', {'rig': rig})

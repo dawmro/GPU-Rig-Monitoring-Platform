@@ -245,6 +245,11 @@ def admin_transfer_keys(request):
                     rig_count = rigs.update(owner=target_user)
                     for rig in rigs:
                         rig.tags.clear()
+                        # Invalidate cached rig data (owner changed; old owner's
+                        # cached permission check would be wrong, and new owner
+                        # needs the new owner_id).
+                        from dashboard.views import invalidate_rig_cache
+                        invalidate_rig_cache(rig.uuid)
 
                     log_audit_event(request, 'apikey.transferred', 'ApiKey', key.id, {
                         'name': key.name,

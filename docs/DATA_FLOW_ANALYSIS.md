@@ -164,12 +164,15 @@ Errors are filtered on the server side — "no error" placeholders from agents
 ||| 17 | Storage (×N) | storage_count, storage_devices_json, storage_fstypes_json, storage_mountpoints_json, storage_capacities_json, storage_usage_pcts_json, storage_temps_json, storage_smart_json, storage_read_bytes_delta_json, storage_write_bytes_delta_json, storage_read_iops_delta_json, storage_write_iops_delta_json, storage_utilization_pcts_json, storage_read_bytes_total_json, storage_write_bytes_total_json, storage_read_iops_total_json, storage_write_iops_total_json, storage_busy_time_ms_total_json | 18 |
 || Network (×N) | network_count, network_interfaces_json, network_ipv4s_json, network_speeds_json, network_rx_bytes_json, network_tx_bytes_json, network_rx_errors_json, network_tx_errors_json | 8 |
 || Processes | top_cpu_processes_json, top_mem_processes_json, process_count | 3 |
+| **Job indicator** | has_active_job (BooleanField, agent 1.8.0+) | 1 |
+| **Docker manifest** | stored in LatestDockerContainer.manifest_json (JSONField, 30+ fields: image_tag, digest, mounts, networks, port_bindings, resource_limits, restart_policy, env, etc.) | JSON |
+| **Docker logs** | stored in LatestDockerContainer.logs_json (JSONField, last 100 lines) | JSON |
 || Metadata | updated_at (auto) | 1 |
 || **Total** | | **~67 fields** |
 
 **Views using LatestSnapshot:**
 - `rig_list` (Fleet Overview): Reads LatestSnapshot + Rig + RigTag. **0 timeseries queries.**
-- `htmx_metrics` (Live Metrics): Reads LatestSnapshot + LatestDockerContainer + GPUProcessMetric. **0 timeseries queries for GPU/storage/network.** Also renders the "Process Details" card from `top_cpu_processes_json` ∪ `top_mem_processes_json` (top-5 each, deduplicated by PID, entries without a command line omitted) with full command lines.
+- `htmx_metrics` (Live Metrics): Reads LatestSnapshot + LatestDockerContainer + GPUProcessMetric. **0 timeseries queries for GPU/storage/network.** Also renders the "Process Details" card from `top_cpu_processes_json` ∪ `top_mem_processes_json` (top-10 each, deduplicated by PID, entries without a command line omitted) with full command lines.
 
 **Views still using timeseries:**
 - `ChartDataView` (Historical Charts): Reads GPUMetric, StorageMetric, NetworkMetric, MetricSnapshot for time-series aggregation. **Unchanged.**

@@ -1,8 +1,8 @@
 # GPU Rig Monitoring Platform — Architecture Document
 
-**Version:** 1.9
+**Version:** 2.0
 **Status:** Implemented — Living Architecture Reference
-**Last Updated:** 2026-07-11
+**Last Updated:** 2026-09-04
 
 ---
 
@@ -1397,12 +1397,54 @@ sudo -u postgres psql gpu_monitor
           "items": {
             "type": "object",
             "properties": {
+              "container_id": { "type": "string" },
               "name": { "type": "string" },
               "image": { "type": "string" },
               "status": { "type": "string" },
-              "restart_count": { "type": "integer" }
+              "created": { "type": "string" },
+              "status_text": { "type": "string" },
+              "manifest": {
+                "type": "object",
+                "description": "Extended manifest (30+ fields from docker inspect)",
+                "properties": {
+                  "image_tag": { "type": "string" },
+                  "digest": { "type": "string" },
+                  "size": { "type": "integer" },
+                  "media_type": { "type": "string" },
+                  "platform": { "type": "object" },
+                  "annotations": { "type": "object" },
+                  "labels": { "type": "object" },
+                  "state": { "type": "object" },
+                  "mounts": { "type": "array" },
+                  "networks": { "type": "object" },
+                  "port_bindings": { "type": "object" },
+                  "resource_limits": { "type": "object" },
+                  "restart_policy": { "type": "object" },
+                  "resource_reservations": { "type": "object" },
+                  "restart_count": { "type": "integer" },
+                  "created": { "type": "string" },
+                  "exposed_ports": { "type": "array" },
+                  "working_dir": { "type": "string" },
+                  "entrypoint": { "type": "array" },
+                  "cmd": { "type": "array" },
+                  "user": { "type": "string" },
+                  "healthcheck": { "type": "object" },
+                  "security": { "type": "object" },
+                  "dns": { "type": "object" },
+                  "env": { "type": "object" }
+                }
+              },
+              "logs": {
+                "type": "array",
+                "description": "Last 100 log lines (json-file driver primary, docker logs fallback)",
+                "items": { "type": "string" }
+              }
             }
           }
+        },
+        "has_active_job": {
+          "type": "boolean",
+          "description": "True if any GPU process or running Docker container exists (agent 1.8.0+)"
         }
       }
     },
@@ -1547,6 +1589,141 @@ WantedBy=multi-user.target
 # /etc/cron.d/rig-status — Rig status update, every 2 min
 */2 * * * * root bash /opt/gpu_monitor/deploy/update_rig_status.sh
 ```
+
+### D. Feature Implementation Reference (added in v2.0)
+
+This appendix documents key features added in v2.0 of the platform.
+
+#### D.1 Docker Manifest Extension (Schema 1.12+)
+
+**Added:** 2026-08 — commit series, schema bump 1.11 → 1.12, agent 1.7.0+.
+
+The Docker manifest collection in the agent was extended from a basic 6-field snapshot to a comprehensive manifest with **30+ fields** extracted from `docker inspect`. All fields are stored as JSON in `LatestDockerContainer.manifest_json` for forward compatibility.
+
+**Manifest fields collected (in `collect_docker_inspect()`):**
+
+| Category | Fields | Source |
+|----------|--------|--------|
+| **Identity** | `image_tag`, `digest`, `size`, `media_type` | `Config.Image`, `ImageManifestDescriptor` |
+| **Platform** | `platform` (architecture, os) | `ImageManifestDescriptor` |
+| **Annotations** | OCI/Docker annotations (filtered) | `ImageManifestDescriptor.annotations` |
+| **Labels** | `labels` | `Config.Labels` |
+| **State** | `started_at`, `exit_code`, `oom_killed`, `error` | `State` |
+| **Mounts** | source, destination, type, rw | `Mounts` |
+| **Networks** | IP, gateway, MAC per network | `NetworkSettings.Networks` |
+| **Port Bindings** | host:container port mappings | `HostConfig.PortBindings` |
+| **Resource Limits** | CpuShares, Memory, MemorySwap, NanoCpus, CpuQuota, CpuPeriod, BlkioWeight | `HostConfig` |
+| **Restart Policy** | name, max_retry | `HostConfig.RestartPolicy` |
+| **Resource Reservations** | MemoryReservation, KernelMemory, CpuCount, CpuPercent | `HostConfig` |
+| **Runtime** | `restart_count`, `created`, `exposed_ports`, `working_dir`, `entrypoint`, `cmd`, `user` | top-level + `Config` |
+| **Health Check** | `healthcheck` (test, interval, timeout, retries) | `Config.Healthcheck` |
+| **Security** | `cap_add`, `cap_drop`, `security_opt`, `privileged`, `readonly_rootfs` | `HostConfig` |
+| **DNS** | `dns`, `dns_options`, `dns_search`, `extra_hosts` | `HostConfig` |
+| **Environment** | `env` (parsed KEY=VALUE dict) | `Config.Env` |
+
+**Display:** All fields render in the **Container Details** section of Live Metrics (only for running containers) using a `<dl>`-based definition list. Logs (last 100 lines) are shown below the manifest in a clean black-background box (no terminal chrome, no underlines).
+
+**Log collection strategy** (`collect_docker_inspect()`):
+1. **Primary**: Read `LogPath` directly from `docker inspect` (fast, no subprocess)
+2. **Fallback**: `docker logs --tail 100 <cid>` (works for all log drivers, handles permission issues)
+3. **Empty-line filter**: Strips blank lines for clean display
+4. **json-file only** for primary; all drivers for fallback
+
+**Database:** `LatestDockerContainer.manifest_json` (JSONField) and `LatestDockerContainer.logs_json` (JSONField). No migration needed for new manifest fields (stored in JSON).
+
+**Unique constraint:** `(rig_uuid, container_id)` via `UniqueConstraint` (not `unique_together` — Django 5+ deprecated it). Migration `0045_clean_docker_duplicates_and_constraint.py` cleans up existing duplicates before applying constraint.
+
+#### D.2 Job Indicator (Schema 1.13+)
+
+**Added:** 2026-08 — schema bump 1.12 → 1.13, agent 1.8.0+.
+
+A boolean field `has_active_job` in the payload (top-level) and `LatestSnapshot.has_active_job` (BooleanField, default=False) indicates whether the rig is currently running a meaningful workload.
+
+**Computation in agent** (`build_payload()`):
+```python
+has_active_job = bool(gpu_processes) or any(
+    c.get('status') == 'running' for c in docker_containers
+)
+```
+
+**True if either:**
+- Any GPU process is using the GPU (`gpu_processes` list non-empty), OR
+- Any Docker container has `status == 'running'`
+
+**Display:** Fleet Overview table shows a green circle (active job) or red circle (no job) in the "Job" column, positioned after the Status column. Conditional CSS: `bg-green-400` for active, `bg-red-400` for inactive.
+
+**Performance:** Computed at agent (no server-side cost). One boolean per heartbeat stored in `LatestSnapshot` (denormalized, fast read).
+
+**Migration:** `0044_latestsnapshot_has_active_job.py` adds the field with `default=False` (safe, existing rows get False).
+
+#### D.3 Power Consumption (LatestSnapshot)
+
+**Added:** 2026-07 — agent 1.5.0+.
+
+Three fields track real-time AC power draw (PSU efficiency already factored in by agent):
+- `power_total_w` (FloatField, nullable) — Total system AC power
+- `power_gpu_w` (FloatField, nullable) — Sum of all GPU AC power
+- `power_cpu_w` (FloatField, nullable) — CPU AC power (RAPL on Linux only)
+- `power_other_w` (FloatField, nullable) — Flat 40W for RAM + disks + motherboard + fans
+
+**Chart support:** Report table shows avg/max per-rig power metrics. Charts tab can render `cpu_power_w` and `total_system_power_w` time series.
+
+**Why AC not DC:** Agent reads RAPL (DC) and applies known PSU efficiency curve to estimate AC. This matches what users actually pay for on their electricity bill.
+
+**Limitation:** CPU power is Linux-only (RAPL). Windows agent has no equivalent — `cpu_power_w` will be null for Windows rigs.
+
+#### D.4 GPU Memory Controller Utilization
+
+**Added:** 2026-07 — agent 1.4.0+.
+
+A new GPU metric `mem_controller_util_pct` distinct from `mem_util_pct`:
+
+| Metric | Source | Meaning |
+|--------|--------|---------|
+| `mem_util_pct` | VRAM capacity (used/total) | "How full is the GPU memory?" |
+| `mem_controller_util_pct` | `nvmlDeviceGetUtilizationRates().memory` | "How busy is the GPU memory controller?" |
+
+**Why it matters:** A GPU can be 80% full but idle (just allocated, not accessed), or 20% full but 95% busy (heavy streaming workload). Memory controller utilization captures the actual memory bandwidth pressure.
+
+**Display:**
+- Live Metrics GPU card: dedicated "Mem Ctrl" bar
+- Charts: `chartGpuMemCtrlUtil` canvas (alongside `mem_util_pct`)
+- Report table: `mem_controller_util_pct_avg` column
+
+#### D.5 Process Details Card (Live Metrics)
+
+**Added:** 2026-08 — agent 1.6.0+.
+
+A new "Process Details" card displays **top-10 by CPU + top-10 by memory** processes (deduplicated by PID, sorted by `cpu_pct desc then mem_pct desc`).
+
+**Filter (F1):** Entries without a `cmdline` field are omitted. This is strict consistency with the compact By CPU / By Memory tables — no rank-shifting, only rows with a full command line are shown.
+
+**Why top-10 not top-5:** User reported that top-5 was too few. Top-10 gives better coverage of background processes while still fitting in the card.
+
+**Data source:** `top_cpu_processes_json` ∪ `top_mem_processes_json` from `LatestSnapshot`. Agent truncates `cmdline` to 200 chars to bound payload size.
+
+**Template:** `_metrics_cards.html` Process Details card, between Top Processes and Network.
+
+#### D.6 Container History (Rig model)
+
+**Added:** 2026-07.
+
+`Rig.container_history_json` (JSONField, list) maintains a rolling buffer of Docker container state transitions for the rig. Each entry: `{container_id, name, status, timestamp}`. Used in the rig detail page for showing "Container History" timeline.
+
+**Update flow:** During ingest, if the docker container list changes (new container, removed container, status change), append to history. Capped at last 100 entries to bound size.
+
+#### D.7 Documented but NOT Implemented (Moved to docs/future_plans/)
+
+The following features have planning documents in `docs/future_plans/` but **no code**:
+
+- **Celery migration** (`docs/future_plans/CELERY_*.md`): Plan to migrate cron → Celery + Redis. No `celery.py`, no `tasks.py`, no Redis config. Production tasks remain on cron.
+- **Monetization** (`docs/future_plans/MONETIZATION_DESIGN.md`): Billing system. No billing models, no payment integration.
+- **Remote terminal** (`docs/future_plans/REMOTE_TERMINAL_IMPLEMENTATION.md`): Web SSH terminal. No SSH code in repo.
+- **TimescaleDB migration** (`docs/POSSIBLE_FUTURE_WORK_TIMESCALEDB.md`, `TIMESCALEDB_VS_OUR_APPROACH.md`): Future scaling consideration for 10,000+ rigs.
+
+These are **deliberately preserved** as forward-looking design notes but are not part of the v2.0 architecture.
+
+---
 
 ### E. Glossary
 

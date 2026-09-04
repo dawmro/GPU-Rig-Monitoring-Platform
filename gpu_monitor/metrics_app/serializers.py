@@ -33,8 +33,8 @@ def _chart_bucket_minutes(range_hours):
 class IngestSerializer(serializers.Serializer):
     rig_uuid = serializers.UUIDField()
     rig_name = serializers.CharField(required=False, default='')
-    schema_version = serializers.CharField(default='1.5')
-    agent_version = serializers.CharField(default='1.1.0')
+    schema_version = serializers.CharField(default='1.0')  # Lowest accepted; agents always send current version
+    agent_version = serializers.CharField(default='')  # Agents always send; empty if missing
     timestamp = serializers.DateTimeField()
     metrics = serializers.JSONField(required=False, default=dict)
     motherboard = serializers.JSONField(required=False, default=dict)

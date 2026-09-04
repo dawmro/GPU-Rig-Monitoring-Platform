@@ -360,11 +360,11 @@ class ChartDataView(APIView):
             )
         elif metric in self.STORAGE_METRICS or metric in self.DISK_IO_METRICS:
             response_data = self._handle_storage_metric(
-                metric, uuid, start_bucket, end_bucket, total_buckets, labels, multi_disk
+                metric, uuid, start_bucket, end_bucket, total_buckets, labels, multi_disk, bucket_minutes
             )
         elif metric in self.NETWORK_METRICS:
             response_data = self._handle_network_metric(
-                metric, uuid, start_bucket, end_bucket, total_buckets, labels, multi_iface
+                metric, uuid, start_bucket, end_bucket, total_buckets, labels, multi_iface, bucket_minutes
             )
         else:
             return Response({'status': 'error', 'message': f'Unknown metric: {metric}'}, status=400)
@@ -407,61 +407,54 @@ class ChartDataView(APIView):
 
     def _read_prebucketed(self, model, uuid, db_field, start_bucket, end_bucket,
                            bucket_minutes, group_by_keys, agg_func, agg_alias='val'):
-        """Read data already pre-bucketed at the correct granularity.
+        """Read data at the chart's bucket granularity using SQL aggregation.
 
-        For pre-bucketed tables (GPUMetric, StorageMetric, NetworkMetric), the
-        ``compact_data`` script has already aggregated rows to the appropriate
-        bucket size. We just need to read them and place them into the chart
-        value array based on their bucket timestamp.
+        Works correctly with BOTH pre-bucketed and raw 1-min data:
+
+        - For tier 2/3 data (already pre-bucketed at 15-min or 1-hour
+          granularity), the GROUP BY collapses to 1 row per bucket, so
+          AVG/SUM returns the bucket's stored value.
+        - For tier 1 data (raw 1-min), the GROUP BY aggregates multiple
+          rows per bucket into the bucket's average/sum.
+
+        The bucket boundary SQL must match the compaction script's tier
+        boundaries exactly so that pre-bucketed rows align with the
+        chart's bucket array indices.
 
         Args:
             model: Django model class.
             uuid: Rig UUID.
             db_field: Database column to read.
             start_bucket, end_bucket: Query time range.
-            bucket_minutes: Bucket size matching the data's granularity.
+            bucket_minutes: Chart bucket size (1, 15, or 60).
             group_by_keys: List of columns to GROUP BY (e.g. ['gpu_index']).
-            agg_func: 'avg' or 'sum' — kept for compatibility (data is already
-                aggregated, so this is informational only when data is pre-bucketed).
+            agg_func: 'avg' or 'sum'.
             agg_alias: Alias for the value column in the query.
 
         Returns:
-            Dict mapping (group_key_tuple) -> list of values indexed by bucket.
-            e.g. {(0,): [v0, v1, ...], (1,): [v0, v1, ...]}
+            Dict mapping (group_key_tuple) -> {bucket_index: value}.
+            e.g. {(0,): {0: v0, 1: v1, ...}, (1,): {0: v0, 1: v1, ...}}
         """
         bucket_seconds = bucket_minutes * 60
 
-        # When the bucket is small (1-min), the data in the requested time
-        # range may NOT be pre-bucketed yet (still in tier 1). In that case we
-        # fall back to SQL aggregation. For 15-min and 60-min buckets, the data
-        # is pre-bucketed and we can just read it.
-        needs_aggregation = bucket_minutes == 1
-
-        if needs_aggregation:
-            # Aggregate raw 1-min data on the fly
-            trunc = self._trunc_for_bucket(bucket_minutes)
-            qs = (model.objects
-                  .filter(rig_uuid=uuid, timestamp__gte=start_bucket,
-                          timestamp__lte=end_bucket)
-                  .annotate(bucket=trunc('timestamp')))
-            agg_expr = Sum(db_field) if agg_func == 'sum' else Avg(db_field)
-            rows = (qs.values(*group_by_keys, 'bucket')
-                     .annotate(**{agg_alias: agg_expr})
-                     .order_by('bucket'))
-        else:
-            # Read pre-bucketed rows directly. The timestamp on each row is
-            # the bucket boundary; data has already been aggregated.
-            rows = (model.objects
-                    .filter(rig_uuid=uuid, timestamp__gte=start_bucket,
-                            timestamp__lte=end_bucket)
-                    .values(*group_by_keys, 'timestamp')
-                    .order_by('timestamp'))
+        # SQL aggregation always works because:
+        # - For pre-bucketed rows: GROUP BY collapses to 1 row per bucket
+        #   (since timestamp is already at the bucket boundary)
+        # - For raw 1-min rows: GROUP BY aggregates multiple rows into 1
+        trunc = self._trunc_for_bucket(bucket_minutes)
+        qs = (model.objects
+              .filter(rig_uuid=uuid, timestamp__gte=start_bucket,
+                      timestamp__lte=end_bucket)
+              .annotate(bucket=trunc('timestamp')))
+        agg_expr = Sum(db_field) if agg_func == 'sum' else Avg(db_field)
+        rows = (qs.values(*group_by_keys, 'bucket')
+                 .annotate(**{agg_alias: agg_expr})
+                 .order_by('bucket'))
 
         result = {}
         for row in rows:
             key = tuple(row[k] for k in group_by_keys)
-            ts = row['bucket'] if needs_aggregation else row['timestamp']
-            idx = self._bucket_index(ts, start_bucket, bucket_seconds)
+            idx = self._bucket_index(row['bucket'], start_bucket, bucket_seconds)
             if idx is None:
                 continue
             value = row[agg_alias]
@@ -640,8 +633,14 @@ class ChartDataView(APIView):
         return {'labels': labels, 'datasets': datasets}
 
     def _handle_storage_metric(self, metric, uuid, start_bucket, end_bucket,
-                                total_buckets, labels, multi_disk):
-        """Handle storage/disk metrics. Uses pre-bucketed data from compact_data."""
+                                total_buckets, labels, multi_disk, bucket_minutes):
+        """Handle storage/disk metrics. Uses pre-bucketed data from compact_data.
+
+        Args:
+            bucket_minutes: Chart's bucket size (1, 15, or 60). Passed from
+                the parent view — matches the chart's x-axis resolution
+                and aligns with the compaction tier boundaries.
+        """
         if metric in self.DISK_IO_METRICS:
             db_field = self.DISK_IO_METRICS[metric]
             agg_func = 'sum' if metric in self.SUM_METRICS else 'avg'
@@ -654,7 +653,7 @@ class ChartDataView(APIView):
         if not multi_disk:
             groups = self._read_prebucketed(
                 StorageMetric, uuid, db_field, start_bucket, end_bucket,
-                bucket_minutes=1 if (end_bucket - start_bucket).total_seconds() <= 86400 else 15,
+                bucket_minutes=bucket_minutes,
                 group_by_keys=['device'],
                 agg_func=agg_func,
             )
@@ -684,7 +683,7 @@ class ChartDataView(APIView):
         # multi_disk: single GROUP BY (device, bucket) — no N+1
         groups = self._read_prebucketed(
             StorageMetric, uuid, db_field, start_bucket, end_bucket,
-            bucket_minutes=1 if (end_bucket - start_bucket).total_seconds() <= 86400 else 15,
+            bucket_minutes=bucket_minutes,
             group_by_keys=['device'],
             agg_func=agg_func,
         )
@@ -702,12 +701,17 @@ class ChartDataView(APIView):
         return {'labels': labels, 'datasets': datasets}
 
     def _handle_network_metric(self, metric, uuid, start_bucket, end_bucket,
-                                total_buckets, labels, multi_iface):
-        """Handle network metrics. Uses pre-bucketed data from compact_data."""
+                                total_buckets, labels, multi_iface, bucket_minutes):
+        """Handle network metrics. Uses pre-bucketed data from compact_data.
+
+        Args:
+            bucket_minutes: Chart's bucket size (1, 15, or 60). Passed from
+                the parent view — matches the chart's x-axis resolution
+                and aligns with the compaction tier boundaries.
+        """
         db_field = self.NETWORK_METRICS[metric]
         agg_func = 'sum' if metric in self.SUM_METRICS else 'avg'
         byte_metric = db_field in self.BYTE_TO_MB
-        bucket_minutes = 1 if (end_bucket - start_bucket).total_seconds() <= 86400 else 15
 
         if not multi_iface:
             groups = self._read_prebucketed(

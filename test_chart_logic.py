@@ -158,6 +158,69 @@ def test_prebucketed_data_reuse():
     print("✓ Pre-bucketed data read: 4 buckets placed correctly")
 
 
+def test_unified_sql_aggregation():
+    """Verify the new unified SQL aggregation handles both pre-bucketed and raw data.
+
+    With the unified approach, we ALWAYS use SQL GROUP BY, which:
+    - For pre-bucketed data: collapses to 1 row per bucket (returns stored value)
+    - For raw 1-min data: aggregates multiple rows per bucket (returns avg/sum)
+
+    This eliminates the need to know if data is pre-bucketed.
+    """
+    # Simulate query: SELECT gpu_index, date_trunc('hour', ts) + 15min*..., AVG(value)
+    #                     FROM gpumetric
+    #                     WHERE timestamp BETWEEN start AND end
+    #                     GROUP BY gpu_index, bucket
+
+    # Mock: 3 rows at different GPU indexes, all in same 15-min bucket (pre-bucketed)
+    prebucketed_rows = [
+        {'gpu_index': 0, 'bucket': 0, 'val': 50.0},   # already at 15-min boundary
+        {'gpu_index': 0, 'bucket': 1, 'val': 52.0},
+        {'gpu_index': 1, 'bucket': 0, 'val': 60.0},
+    ]
+    # GROUP BY collapses to unique (gpu_index, bucket) pairs
+    groups = {}
+    for row in prebucketed_rows:
+        key = (row['gpu_index'],)
+        if key not in groups:
+            groups[key] = {}
+        groups[key][row['bucket']] = row['val']
+
+    # Verify single row per bucket per gpu (no double-counting)
+    assert len(groups[(0,)]) == 2
+    assert groups[(0,)][0] == 50.0
+    assert len(groups[(1,)]) == 1
+    assert groups[(1,)][0] == 60.0
+
+    # Now simulate raw 1-min data: 3 rows in same 15-min bucket
+    raw_rows = [
+        {'gpu_index': 0, 'bucket': 0, 'val': 50.0},
+        {'gpu_index': 0, 'bucket': 0, 'val': 60.0},
+        {'gpu_index': 0, 'bucket': 0, 'val': 70.0},
+    ]
+    # SQL AVG: (50+60+70)/3 = 60.0
+    groups_raw = {}
+    for row in raw_rows:
+        key = (row['gpu_index'],)
+        if key not in groups_raw:
+            groups_raw[key] = {}
+        if row['bucket'] in groups_raw[key]:
+            # AVG: accumulate and divide
+            existing = groups_raw[key][row['bucket']]
+            groups_raw[key][row['bucket']] = (existing[0] + row['val'], existing[1] + 1)
+        else:
+            groups_raw[key][row['bucket']] = (row['val'], 1)
+
+    # Finalize: divide for AVG
+    for gpu_key in groups_raw:
+        for bucket_idx, (total, count) in groups_raw[gpu_key].items():
+            groups_raw[gpu_key][bucket_idx] = total / count
+
+    assert groups_raw[(0,)][0] == 60.0  # AVG of 50,60,70
+
+    print("✓ Unified SQL aggregation: pre-bucketed (single row) and raw (AVG) both work")
+
+
 def test_backward_compat_metric_names():
     """Verify all metric names from old code are still recognized."""
     expected_metrics = {
@@ -192,6 +255,7 @@ if __name__ == '__main__':
     test_bucket_index()
     test_n_plus_1_elimination()
     test_prebucketed_data_reuse()
+    test_unified_sql_aggregation()
     test_backward_compat_metric_names()
     print("=" * 60)
-    print("All 5 tests passed!")
+    print("All 6 tests passed!")

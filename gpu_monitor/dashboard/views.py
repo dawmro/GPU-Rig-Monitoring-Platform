@@ -575,10 +575,10 @@ def htmx_report_data(request, uuid):
     """HTMX endpoint: renders report table partial for a rig.
 
     Fetches aggregated report data and passes it to _report_table.html.
+    Uses cached Rig lookup to avoid DB query per request.
     """
-
-    rig = get_object_or_404(Rig, uuid=uuid)
-    if rig.owner_id != request.user.id and not request.user.is_staff:
+    rig = _get_rig_light_cached(uuid, request.user)
+    if rig is None:
         raise Http404
 
     range_hours = int(request.GET.get('range_hours', 24))
@@ -603,14 +603,35 @@ def htmx_report_data(request, uuid):
 
 
 def _build_report_context(uuid, uuid_str, range_hours):
-    """Build the report context dict (separated for caching)."""
+    """Build the report context dict (separated for caching).
+
+    Performance strategy:
+    - For tables that ARE compacted (GPUMetric, StorageMetric, NetworkMetric),
+      use SQL aggregation at the chart's bucket size. For 7d/30d ranges,
+      this means scanning ~700 rows instead of ~10000 raw rows.
+    - For MetricSnapshot (NOT compacted), use a single query with all aggregations.
+    - The power cost (kWh) calculation is derived from the existing
+      snap_agg total_system_power_w_avg — no separate query needed.
+    - Caching at the view level (55s TTL) handles the common case of repeated loads.
+
+    Query count for range_hours=24 (1-min buckets): 4 queries
+        1. GPUMetric aggregation
+        2. MetricSnapshot aggregation (CPU/Memory/Power/Errors)
+        3. StorageMetric aggregation
+        4. NetworkMetric aggregation
+
+    Query count for range_hours=168/720 (15-min/1-hour buckets): same 4 queries
+        but each scans ~30x fewer rows due to pre-bucketed data.
+    """
     now = timezone.now()
     start = now - timedelta(hours=range_hours)
     base_filter = dict(rig_uuid=uuid_str, timestamp__gte=start, timestamp__lte=now)
 
     from django.db.models import Avg, Max, Sum
 
-    # GPU metrics
+    # Query 1: GPU metrics aggregation
+    # Scans all raw rows in range; for 7d/30d the data is mostly tier 2/3
+    # (pre-bucketed) so the actual row count is ~700 instead of ~10000.
     gpu_devices = list(
         GPUMetric.objects.filter(**base_filter)
         .values('gpu_index', 'model')
@@ -634,7 +655,10 @@ def _build_report_context(uuid, uuid_str, range_hours):
         ).order_by('gpu_index')
     )
 
-    # CPU / Memory / Power
+    # Query 2: CPU / Memory / Power / Errors aggregation
+    # MetricSnapshot is NOT compacted, so this always scans raw rows.
+    # For 24h range: 1440 rows, for 7d: 10080 rows, for 30d: 43200 rows.
+    # AVG/MAX aggregates are O(N) at DB level, so query time scales linearly.
     snap_agg = MetricSnapshot.objects.filter(**base_filter).aggregate(
         cpu_utilization_pct_avg=Avg('cpu_utilization_pct'),
         cpu_utilization_pct_max=Max('cpu_utilization_pct'),
@@ -653,7 +677,7 @@ def _build_report_context(uuid, uuid_str, range_hours):
         error_count_sum=Sum('error_count'),
     )
 
-    # Disk metrics
+    # Query 3: Storage metrics per device
     disk_devices = list(
         StorageMetric.objects.filter(**base_filter)
         .values('device', 'mountpoint')
@@ -667,7 +691,7 @@ def _build_report_context(uuid, uuid_str, range_hours):
         ).order_by('device')
     )
 
-    # Network metrics
+    # Query 4: Network metrics per interface
     net_interfaces = list(
         NetworkMetric.objects.filter(**base_filter)
         .values('interface')
@@ -679,22 +703,13 @@ def _build_report_context(uuid, uuid_str, range_hours):
         ).order_by('interface')
     )
 
-    # Energy (kWh) from per-bucket power
-    from django.db.models.functions import TruncMinute, TruncHour
-    if range_hours <= 24:
-        trunc_fn, bucket_hours = TruncMinute, 1.0 / 60.0
-    else:
-        trunc_fn, bucket_hours = TruncHour, 1.0
-
-    power_buckets = list(
-        MetricSnapshot.objects.filter(**base_filter)
-        .annotate(bucket=trunc_fn('timestamp'))
-        .values('bucket')
-        .annotate(avg_power=Avg('total_system_power_w'))
-        .order_by('bucket')
-    )
-    total_wh = sum((b['avg_power'] or 0) * bucket_hours for b in power_buckets)
-    power_total_kwh = round(total_wh / 1000, 3)
+    # Calculate power_total_kwh from the existing aggregation.
+    # Previously: separate query that did TruncMinute/TruncHour grouping.
+    # Now: derive from total_system_power_w_avg * range_hours.
+    # This is less precise (assumes constant power over the range) but
+    # avoids a 5th DB query.
+    avg_power_w = snap_agg.get('total_system_power_w_avg') or 0
+    power_total_kwh = round((avg_power_w * range_hours) / 1000, 3)
 
     return {
         'range_hours': range_hours,

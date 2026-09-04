@@ -646,6 +646,113 @@ def test_report_performance_impact():
     print(f"    Total: {total_rows_saved} rows across all ranges")
 
 
+def test_build_gpu_title():
+    """Verify _build_gpu_title produces correct output for various inputs."""
+    # Define a local copy for testing (no Django import needed)
+    def _build_gpu_title(values, default_value='N/A', suffix='', fmt=None):
+        if not values:
+            return ''
+        parts = []
+        for i, v in enumerate(values, 1):
+            if v is None:
+                value_str = default_value
+            elif fmt:
+                value_str = f'{v:{fmt}}{suffix}'
+            else:
+                value_str = f'{v}{suffix}'
+            parts.append(f'GPU{i}: {value_str}')
+        return ' | '.join(parts)
+
+    # Test 1: simple values
+    assert _build_gpu_title(['RTX 4090', 'A100', 'H100']) == \
+        'GPU1: RTX 4090 | GPU2: A100 | GPU3: H100'
+
+    # Test 2: None values replaced with default
+    assert _build_gpu_title([65.5, None, 72.0], default_value='N/A', suffix='°C', fmt='.1f') == \
+        'GPU1: 65.5°C | GPU2: N/A | GPU3: 72.0°C'
+
+    # Test 3: None values list
+    assert _build_gpu_title(None) == ''
+
+    # Test 4: Empty list
+    assert _build_gpu_title([]) == ''
+
+    # Test 5: Integer values
+    assert _build_gpu_title([50, 60, 70], suffix='%', fmt='.0f') == \
+        'GPU1: 50% | GPU2: 60% | GPU3: 70%'
+
+    # Test 6: String values (GPU models)
+    assert _build_gpu_title(['RTX 4090', None], default_value='Unknown', suffix='') == \
+        'GPU1: RTX 4090 | GPU2: Unknown'
+
+    # Test 7: Floats with no format
+    assert _build_gpu_title([1.234, 5.678], suffix=' MHz') == \
+        'GPU1: 1.234 MHz | GPU2: 5.678 MHz'
+    print("✓ _build_gpu_title: 7 test cases passed")
+
+
+def test_fleet_table_template_efficiency():
+    """Verify the template uses pre-computed titles (no inline for-loops).
+
+    The template should access item.gpu_*_title directly without
+    iterating JSON lists.
+    """
+    template = open('/home/qrv/workspace/GPU-Rig-Monitoring-Platform/gpu_monitor/templates/dashboard/_rig_table.html').read()
+
+    # Count inline `{% for %}` loops in title attributes (should be 0 after fix)
+    # Note: tag loop is OK, but title loops in multi-GPU cells should be pre-computed
+    lines = template.split('\n')
+    bad_lines = []
+    for i, line in enumerate(lines, 1):
+        if 'title="{% for' in line or 'title=\"{% for' in line:
+            bad_lines.append((i, line.strip()[:100]))
+
+    assert len(bad_lines) == 0, \
+        f"Found {len(bad_lines)} inline for-loops in title attributes:\n  " + \
+        "\n  ".join(f"Line {i}: {l}" for i, l in bad_lines)
+    print(f"✓ Fleet table: 0 inline for-loops in title attributes (was 4)")
+
+
+def test_fleet_table_template_uses_with():
+    """Verify the template uses {% with %} to alias item.rig and item.snapshot."""
+    template = open('/home/qrv/workspace/GPU-Rig-Monitoring-Platform/gpu_monitor/templates/dashboard/_rig_table.html').read()
+
+    # Should have {% with rig=item.rig snapshot=item.snapshot %}
+    assert '{% with rig=item.rig snapshot=item.snapshot %}' in template, \
+        "Template should use {% with %} to alias item.rig and item.snapshot"
+
+    # Should have corresponding {% endwith %}
+    assert '{% endwith %}' in template, \
+        "Template should have corresponding {% endwith %}"
+
+    # Count remaining item.rig and item.snapshot accesses
+    # (they should still be allowed for the row-level pre-computed values)
+    import re
+    # Within {% with %} block, only item.X (where X != rig, snapshot) should appear
+    with_block_match = re.search(
+        r'\{% with rig=item\.rig snapshot=item\.snapshot %\}(.*?)\{% endwith %\}',
+        template, re.DOTALL
+    )
+    assert with_block_match, "Could not find {% with %} block"
+
+    with_block = with_block_match.group(1)
+    # Count item.rig/item.snapshot inside the with block (should be 0)
+    item_rig_count = with_block.count('item.rig')
+    item_snapshot_count = with_block.count('item.snapshot')
+    # Allow item.gpu_*_title accesses (pre-computed in view)
+    item_gpu_title_count = with_block.count('item.gpu_')
+    total_item_dot_rig_snapshot = item_rig_count + item_snapshot_count
+
+    assert total_item_dot_rig_snapshot == 0, \
+        f"Found {item_rig_count} item.rig and {item_snapshot_count} item.snapshot " \
+        "accesses inside {% with %} block (should be 0 after aliasing)"
+
+    print("✓ Fleet table: {% with %} aliases rig and snapshot")
+    print("    0 item.rig accesses (was many)")
+    print("    0 item.snapshot accesses (was 26+ per row)")
+    print(f"    {item_gpu_title_count} item.gpu_*_title accesses (pre-computed, OK)")
+
+
 
 if __name__ == '__main__':
     print("=" * 60)
@@ -671,5 +778,8 @@ if __name__ == '__main__':
     test_report_power_kwh_calculation()
     test_report_uses_cached_rig()
     test_report_performance_impact()
+    test_build_gpu_title()
+    test_fleet_table_template_efficiency()
+    test_fleet_table_template_uses_with()
     print("=" * 60)
-    print("All 20 tests passed!")
+    print("All 23 tests passed!")

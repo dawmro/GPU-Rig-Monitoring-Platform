@@ -133,6 +133,41 @@ def _json_get(lst, idx, default=None):
     return default
 
 
+def _build_gpu_title(values, default_value='N/A', suffix='', fmt=None):
+    """Build a 'GPU1: X | GPU2: Y | ...' title string for tooltips.
+
+    Used in _rig_table.html to pre-compute title attributes for multi-GPU
+    cells. Without this, the template iterates the JSON list per row to
+    build the title, causing O(rigs × gpus) Python iterations on every
+    Fleet Overview page load.
+
+    Args:
+        values: List of values (e.g. ['RTX 4090', 'A100', None])
+                or None if rig has no GPUs
+        default_value: Value to use when entry is None (e.g. 'Unknown', 'N/A')
+        suffix: String to append to formatted value (e.g. '°C', '%', ' MHz')
+        fmt: Optional format spec (e.g. '.1f' for 1 decimal place)
+
+    Returns:
+        Formatted title string like 'GPU1: RTX 4090 | GPU2: A100 | GPU3: N/A'
+        or empty string if values is None/empty.
+    """
+    if not values:
+        return ''
+
+    parts = []
+    for i, v in enumerate(values, 1):
+        if v is None:
+            value_str = default_value
+        elif fmt:
+            value_str = f'{v:{fmt}}{suffix}'
+        else:
+            value_str = f'{v}{suffix}'
+        parts.append(f'GPU{i}: {value_str}')
+
+    return ' | '.join(parts)
+
+
 def _fetch_rig_metrics(uuid, rig=None):
     """Fetch the latest rig metrics for Live Metrics display.
 
@@ -402,7 +437,10 @@ def rig_list(request):
         for s in LatestSnapshot.objects.filter(rig_uuid__in=rig_uuids)
     }
 
-    # Build rig_data using snapshot data (no GPUMetric queries needed)
+    # Build rig_data using snapshot data (no GPUMetric queries needed).
+    # Pre-compute title strings for multi-GPU cells (4 cells per row × N rigs).
+    # Without this, the template iterates the JSON list 4× per row to build
+    # title attributes, causing O(rigs × gpus) Python iterations on every page load.
     rig_data = []
     for rig in rigs:
         rig_uuid_str = str(rig.uuid)
@@ -410,6 +448,14 @@ def rig_list(request):
         rig_data.append({
             'rig': rig,
             'snapshot': snapshot,
+            'gpu_models_title': _build_gpu_title(snapshot.gpu_models_json if snapshot else None,
+                                                 default_value='Unknown', suffix=''),
+            'gpu_temps_title': _build_gpu_title(snapshot.gpu_temps_json if snapshot else None,
+                                                default_value='N/A', suffix='°C', fmt='.1f'),
+            'gpu_fans_title': _build_gpu_title(snapshot.gpu_fans_json if snapshot else None,
+                                               default_value='N/A', suffix='%', fmt='.0f'),
+            'gpu_utils_title': _build_gpu_title(snapshot.gpu_utils_json if snapshot else None,
+                                                default_value='N/A', suffix='%', fmt='.1f'),
         })
 
     if request.headers.get('HX-Request'):

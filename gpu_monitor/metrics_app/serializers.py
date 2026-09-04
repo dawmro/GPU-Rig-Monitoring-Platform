@@ -4,7 +4,7 @@ from rest_framework import serializers, status
 from django.db import transaction
 from django.utils import timezone
 from django.core.cache import cache
-from .models import MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, LatestDockerContainer, LatestSnapshot, RigStatusEvent
+from .models import MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, LatestDockerContainer, LatestSnapshot, RigStatusEvent
 from rigs.models import Rig
 from dashboard.views import _json_get
 
@@ -207,21 +207,24 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                 gpu_pcie_width.append(gpu.get('pcie_current_width'))
                 gpu_pcie_max_width.append(gpu.get('pcie_max_width'))
 
-            # Store per-GPU process metrics
-            # Delete old process records for this rig first — we only care about
-            # the latest snapshot, not historical process data
-            GPUProcessMetric.objects.filter(rig_uuid=rig_uuid).delete()
+            # Build denormalized GPU process list for LatestSnapshot.
+            # NOTE: We intentionally do NOT write to GPUProcessMetric time-series
+            # table. Historical GPU process data is not used anywhere (the Live
+            # Metrics page only shows the CURRENT snapshot's processes). Storing
+            # 1 row per minute × N processes × 31 days would be wasted storage.
+            # The serializer used to delete-and-reinsert into GPUProcessMetric
+            # every heartbeat, which was wasteful I/O. Now we keep only the
+            # current snapshot in LatestSnapshot.gpu_processes_json.
+            gpu_processes_for_snapshot = []
             for proc in gpu_process_list:
-                GPUProcessMetric.objects.create(
-                    rig_uuid=rig_uuid,
-                    timestamp=ts,
-                    snapshot=snapshot,
-                    gpu_index=proc.get('gpu_index', 0),
-                    pid=proc.get('pid'),
-                    process_name=proc.get('name', '')[:500],
-                    type=proc.get('type', ''),
-                    gpu_mem_mb=proc.get('gpu_mem_mb'),
-                )
+                gpu_processes_for_snapshot.append({
+                    'gpu_index': proc.get('gpu_index', 0),
+                    'pid': proc.get('pid'),
+                    'process_name': proc.get('name', '')[:500],
+                    'type': proc.get('type', ''),
+                    'gpu_mem_mb': proc.get('gpu_mem_mb'),
+                })
+            gpu_process_count = len(gpu_processes_for_snapshot)
 
             # Store per-disk metrics with I/O delta calculation
             # Previous values come from LatestSnapshot (fetched before transaction)
@@ -528,6 +531,8 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                 'top_cpu_processes_json': top_processes.get('by_cpu', []) if top_processes else [],
                 'top_mem_processes_json': top_processes.get('by_mem', []) if top_processes else [],
                 'process_count': top_processes.get('total_count', 0) if top_processes else 0,
+                'gpu_processes_json': gpu_processes_for_snapshot,
+                'gpu_process_count': gpu_process_count,
                 'has_active_job': validated.get('has_active_job', False),
             }
 

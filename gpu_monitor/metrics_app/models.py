@@ -304,6 +304,13 @@ class LatestSnapshot(models.Model):
     top_mem_processes_json = models.JSONField(default=list, blank=True)     # Top 20 by memory%
     process_count = models.PositiveIntegerField(default=0)                   # Total running processes
 
+    # GPU processes (latest snapshot only — for Live Metrics display)
+    # Each entry: [{gpu_index, pid, process_name, type, gpu_mem_mb}, ...]
+    # Denormalized from GPUProcessMetric to avoid querying time-series table
+    # for a single current-state display (processes change every minute).
+    gpu_processes_json = models.JSONField(default=list, blank=True)         # Current GPU processes
+    gpu_process_count = models.PositiveIntegerField(default=0)               # Count of GPU processes
+
     # Job indicator: True if rig has active GPU process or running Docker container
     has_active_job = models.BooleanField(default=False)
 

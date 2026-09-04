@@ -40,12 +40,11 @@ TIER_2_BUCKET_MINUTES = 15
 TIER_3_BUCKET_MINUTES = 60
 
 COMPACT_TABLES = [
-    {
-        'table': 'metrics_gpu_process',
-        'group_by': ['rig_uuid', 'gpu_index', 'pid'],
-        'agg_fields': {'gpu_mem_mb': 'avg'},
-        'static_fields': ['process_name', 'type', 'snapshot_id'],
-    },
+    # NOTE: 'metrics_gpu_process' was removed from compaction on 2026-09.
+    # GPU process data is now stored only in LatestSnapshot.gpu_processes_json
+    # (denormalized). Historical GPU process data is not used anywhere.
+    # The serializer no longer writes to GPUProcessMetric, so it is safe to
+    # also remove it from compaction to avoid wasted work.
     {
         'table': 'metrics_gpumetric',
         'group_by': ['rig_uuid', 'gpu_index'],
@@ -249,11 +248,12 @@ class Command(BaseCommand):
 
         # Build FK-safe WHERE for parent table
         if table_name == 'metrics_metricsnapshot':
+            # 'metrics_gpu_process' FK check removed (table is no longer written
+            # to by the serializer; only child tables still written are listed)
             fk_where = """
                 AND NOT EXISTS (SELECT 1 FROM metrics_gpumetric g WHERE g.snapshot_id = metrics_metricsnapshot.id)
                 AND NOT EXISTS (SELECT 1 FROM metrics_storagemetric s WHERE s.snapshot_id = metrics_metricsnapshot.id)
                 AND NOT EXISTS (SELECT 1 FROM metrics_networkmetric n WHERE n.snapshot_id = metrics_metricsnapshot.id)
-                AND NOT EXISTS (SELECT 1 FROM metrics_gpu_process p WHERE p.snapshot_id = metrics_metricsnapshot.id)
             """
         else:
             fk_where = ""

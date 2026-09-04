@@ -189,11 +189,11 @@ def _fetch_rig_metrics(uuid, rig=None):
     # Rolling container history (for rig detail page)
     container_history = rig.container_history_json if rig else []
 
-    # GPU processes (latest per GPU per pid)
-    gpu_processes = list(
-        GPUProcessMetric.objects.filter(rig_uuid=str(uuid))
-        .order_by('-timestamp')[:50]
-    )
+    # GPU processes: read from LatestSnapshot denormalized field
+    # This is always the CURRENT snapshot's processes (not historical)
+    # since the serializer deletes old GPUProcessMetric rows each heartbeat
+    # AND the denormalized json in LatestSnapshot is overwritten in place.
+    gpu_processes = snapshot.gpu_processes_json if snapshot else []
 
     # Derive primary IP from the first non-loopback, non-virtual interface
     # (for rig header display). Prefers physical NICs over virtual adapters.

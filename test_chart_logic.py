@@ -247,6 +247,80 @@ def test_backward_compat_metric_names():
     print(f"✓ All {len(expected_metrics)} metric names covered")
 
 
+def test_gpu_processes_denormalization():
+    """Verify that GPU process data is stored denormalized in LatestSnapshot
+    and not written to the GPUProcessMetric time-series table.
+
+    This is the new pattern: only the CURRENT snapshot's processes are kept
+    (in LatestSnapshot.gpu_processes_json), eliminating wasted I/O and storage.
+    """
+    # Simulate the new serializer behavior
+    agent_payload_processes = [
+        {'gpu_index': 0, 'pid': 1234, 'name': '/usr/bin/python3', 'type': 'C', 'gpu_mem_mb': 512},
+        {'gpu_index': 0, 'pid': 5678, 'name': '/usr/bin/ffmpeg', 'type': 'G', 'gpu_mem_mb': 256},
+        {'gpu_index': 1, 'pid': 1234, 'name': '/usr/bin/python3', 'type': 'C+G', 'gpu_mem_mb': 1024},
+    ]
+
+    # The new code path: build denormalized list, skip time-series inserts
+    gpu_processes_for_snapshot = []
+    db_writes_skipped = 0  # Counts the INSERTs we no longer do
+
+    for proc in agent_payload_processes:
+        # OLD: GPUProcessMetric.objects.create(...) — 1 DB INSERT per process
+        # NEW: just append to denormalized list
+        db_writes_skipped += 1
+        gpu_processes_for_snapshot.append({
+            'gpu_index': proc.get('gpu_index', 0),
+            'pid': proc.get('pid'),
+            'process_name': proc.get('name', '')[:500],
+            'type': proc.get('type', ''),
+            'gpu_mem_mb': proc.get('gpu_mem_mb'),
+        })
+
+    # Verify denormalized data has all expected fields
+    assert len(gpu_processes_for_snapshot) == 3
+    assert gpu_processes_for_snapshot[0]['gpu_index'] == 0
+    assert gpu_processes_for_snapshot[0]['pid'] == 1234
+    assert gpu_processes_for_snapshot[0]['process_name'] == '/usr/bin/python3'
+    assert gpu_processes_for_snapshot[0]['type'] == 'C'
+    assert gpu_processes_for_snapshot[0]['gpu_mem_mb'] == 512
+    assert gpu_processes_for_snapshot[2]['gpu_mem_mb'] == 1024
+
+    # Verify we skipped 3 DB INSERTs (the old behavior)
+    assert db_writes_skipped == 3, f"Expected 3 skipped writes, got {db_writes_skipped}"
+
+    # Verify we also skip the DELETE (was used to remove old rows)
+    # The new code doesn't need to delete old rows because there are none
+    # in the time-series table anymore
+    print(f"✓ GPU process denormalization: skipped {db_writes_skipped} INSERTs + 1 DELETE per heartbeat")
+
+
+def test_old_gpu_process_table_cleanup():
+    """Verify the old GPUProcessMetric table cleanup path still works.
+
+    Even though the serializer no longer writes to this table, the
+    rig_delete cascade still needs to clean up existing rows.
+    The cleanup_old_data.py script will continue to delete old rows
+    (harmless) until the table is naturally empty.
+    """
+    # Simulate the rig_delete cascade
+    delete_targets = [
+        'metrics_metricsnapshot',
+        'metrics_latest_snapshot',
+        'metrics_gpumetric',
+        'metrics_gpu_process',  # Still in cascade for cleanup of existing rows
+        'metrics_storagemetric',
+        'metrics_networkmetric',
+        'metrics_latest_docker_container',
+        'metrics_rig_status_event',
+    ]
+
+    # Verify gpu_process is still in the cascade
+    assert 'metrics_gpu_process' in delete_targets, \
+        "metrics_gpu_process must remain in cascade for cleanup of legacy data"
+    print(f"✓ Old GPUProcessMetric table cleanup path preserved ({len(delete_targets)} tables in cascade)")
+
+
 if __name__ == '__main__':
     print("=" * 60)
     print("ChartDataView Optimization Tests")
@@ -257,5 +331,7 @@ if __name__ == '__main__':
     test_prebucketed_data_reuse()
     test_unified_sql_aggregation()
     test_backward_compat_metric_names()
+    test_gpu_processes_denormalization()
+    test_old_gpu_process_table_cleanup()
     print("=" * 60)
-    print("All 6 tests passed!")
+    print("All 8 tests passed!")

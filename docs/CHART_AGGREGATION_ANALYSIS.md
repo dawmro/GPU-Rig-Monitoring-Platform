@@ -20,11 +20,8 @@ For each table, old data (>1 day) is aggregated into 1-hour buckets:
 | `read_iops_delta` | **SUM** | Delta counter — sum over hour = total IOPS |
 | `write_iops_delta` | **SUM** | Delta counter — sum over hour = total IOPS |
 | `utilization_pct` | AVG | Percentage should be averaged |
-| `read_bytes` | LAST | Cumulative counter — latest value |
-| `write_bytes` | LAST | Cumulative counter — latest value |
-| `read_iops` | LAST | Cumulative counter — latest value |
-| `write_iops` | LAST | Cumulative counter — latest value |
-| `busy_time_ms` | LAST | Cumulative counter — latest value |
+
+*(Updated 2026-09-05: Cumulative counters `read_bytes`, `write_bytes`, `read_iops`, `write_iops`, `busy_time_ms` were removed from `StorageMetric` in migration 0049. They are now stored only in `LatestSnapshot.storage_*_total_json` (the source of truth) and are no longer aggregated through the compaction pipeline.)*
 
 ### metrics_networkmetric
 | Field | Aggregation | Rationale |
@@ -33,8 +30,8 @@ For each table, old data (>1 day) is aggregated into 1-hour buckets:
 | `tx_bytes_delta` | **SUM** | Delta counter — sum over hour |
 | `rx_errors` | **SUM** | Error count — sum over hour |
 | `tx_errors` | **SUM** | Error count — sum over hour |
-| `link_speed_mbps` | LAST | Static value |
-| `ipv4` | LAST | Static value |
+
+*(Updated 2026-09-05: Static fields `ipv4` and `link_speed_mbps` were removed from `NetworkMetric` in migration 0050. They are now stored only in `LatestSnapshot.network_ipv4s_json` and `network_speeds_json` (the source of truth) and are no longer aggregated through the compaction pipeline.)*
 
 ### metrics_gpumetric
 ### metrics_gpumetric

@@ -23,6 +23,7 @@
 |--------|-------|
 | **Architecture** | Single VPS (Django + Gunicorn + Nginx + PostgreSQL) |
 | **Agents** | Linux (cron) & Windows (Task Scheduler) |
+| **Agent version** | v1.9.1 (Linux) / v1.9.1-win (Windows) — schema 1.14 |
 | **Collection Interval** | 60 seconds |
 | **Scale Target** | 1,000+ rigs |
 | **Data Retention** | 31 days (3-tier compaction: 1m → 15m → 1h) |
@@ -71,7 +72,7 @@
 │  │  ┌────────────────────┐         ┌────────────────────┐                       │  │
 │  │  │ Linux Agent        │         │ Windows Agent      │                       │  │
 │  │  │ agent/run.py       │         │ agent_windows/     │                       │  │
-│  │  │ v1.6.0, schema 1.11│         │ run.py v1.6.17-win │                       │  │
+│  │  │ v1.9.1, schema 1.14│         │ run.py v1.9.1-win  │                       │  │
 │  │  └─────────┬──────────┘         └─────────┬──────────┘                       │  │
 │  │            │                              │                                  │  │
 │  │            │ HTTPS POST                   │ HTTPS POST                       │  │
@@ -172,18 +173,21 @@
 │  ┌─────────────────────────────────────────────────────────────────────────────────┐   │
 │  │                         POSTGRESQL 16 (db: gpu_monitor)                         │   │
 │  │                                                                                 │   │
-│  │  ┌──────────────────────────────────────────────────────────────────────────┐   │   │
-│  │  │ TIMESERIES TABLES (high write volume, 31d retention)                     │   │   │
-│  │  │ • MetricSnapshot  • GPUMetric       • StorageMetric                      │   │   │
-│  │  │ • NetworkMetric   • GPUProcessMetric • PowerReading                      │   │   │
-│  │  │ • RigStatusEvent                                                         │   │   │
-│  │  └──────────────────────────────────────────────────────────────────────────┘   │   │
-│  │                                                                                 │   │
-│  │  ┌──────────────────────────────────────────────────────────────────────────┐   │   │
-│  │  │ LATEST STATE (1 row/rig, denormalized)                                   │   │   │
-│  │  │ • LatestSnapshot (~67 JSON-array fields)                                 │   │   │
-│  │  │ • LatestDockerContainer                                                  │   │   │
-│  │  └──────────────────────────────────────────────────────────────────────────┘   │   │
+│  │  ┌──────────────────────────────────────────────────────────────────────────┐   │  │
+│  │  │ TIMESERIES TABLES (high write volume, 31d retention)                     │   │  │
+│  │  │ • MetricSnapshot  • GPUMetric       • StorageMetric                      │   │  │
+│  │  │ • NetworkMetric   • RigStatusEvent                                       │   │  │
+│  │  │   (GPUProcessMetric removed in migration 0047 — denormalized             │   │  │
+│  │  │    into LatestSnapshot.gpu_processes_json)                                 │   │  │
+│  │  │   (PowerReading removed in migration 0048 — power data lives in          │   │  │
+│  │  │    MetricSnapshot.cpu_power_w/total_system_power_w + GPUMetric.power_draw_w)│   │  │
+│  │  └──────────────────────────────────────────────────────────────────────────┘   │  │
+│  │                                                                                 │   │  │
+│  │  ┌──────────────────────────────────────────────────────────────────────────┐   │  │
+│  │  │ LATEST STATE (1 row/rig, denormalized)                                   │   │  │
+│  │  │ • LatestSnapshot (~77 JSON-array fields — incl. power, GPU processes)    │   │  │
+│  │  │ • LatestDockerContainer                                                  │   │  │
+│  │  └──────────────────────────────────────────────────────────────────────────┘   │  │
 │  │                                                                                 │   │
 │  │  ┌──────────────────────────────────────────────────────────────────────────┐   │   │
 │  │  │ CORE TABLES (relational, low churn)                                      │   │   │
@@ -218,8 +222,8 @@
 ```mermaid
 flowchart LR
     subgraph Rigs["Rig machines (N rigs)"]
-        A1["agent/run.py (Linux) v1.6.0 / schema 1.11"]
-        A2["agent_windows/run.py v1.6.17-win / schema 1.11"]
+        A1["agent/run.py (Linux) v1.9.1 / schema 1.14"]
+        A2["agent_windows/run.py v1.9.1-win / schema 1.14"]
         A3["check_update.py<br/>cron ~daily<br/>fetches run.py from GitHub main<br/>self-update if newer version"]
     end
 
@@ -240,8 +244,8 @@ flowchart LR
     end
 
     subgraph Data["PostgreSQL (db gpu_monitor)"]
-        TS[("Timeseries<br/>MetricSnapshot · GPUMetric · StorageMetric<br/>NetworkMetric · GPUProcessMetric<br/>PowerReading · RigStatusEvent")]
-        LS[("LatestSnapshot<br/>1 row/rig, ~67 JSON-array fields")]
+        TS[("Timeseries<br/>MetricSnapshot · GPUMetric · StorageMetric<br/>NetworkMetric · RigStatusEvent<br/>(GPUProcessMetric + PowerReading removed in migrations 0047/0048)")]
+        LS[("LatestSnapshot<br/>1 row/rig, ~77 JSON-array fields — incl. power, GPU processes")]
         LD[("LatestDockerContainer")]
         RG[("Rig · RigTag · User · ApiKey · AuditLog")]
     end

@@ -527,31 +527,24 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
             # Agent sends pre-calculated power values (PSU efficiency already factored in)
             if power_data and rig:
                 try:
-                    from metrics_app.models import PowerReading
-
                     gpu_power_w = float(power_data.get('gpu_power_w', 0) or 0)
                     cpu_power_w = float(power_data.get('cpu_power_w', 0) or 0)
                     cpu_power_source = power_data.get('cpu_power_source', 'estimate')
                     other_power_w = float(power_data.get('other_power_w', 40) or 40)
                     total_power_w = float(power_data.get('total_power_w', 0) or 0)
 
-                    # Store at most once per minute to reduce DB growth
-                    last_reading = PowerReading.objects.filter(rig=rig).first()
-                    store_reading = True
-                    if last_reading:
-                        time_diff = (timezone.now() - last_reading.timestamp).total_seconds()
-                        if time_diff < 60:
-                            store_reading = False
-
-                    if store_reading:
-                        PowerReading.objects.create(
-                            rig=rig,
-                            gpu_power_w=round(gpu_power_w, 1),
-                            cpu_power_w=round(cpu_power_w, 1),
-                            cpu_power_source=cpu_power_source,
-                            other_power_w=other_power_w,
-                            total_power_w=round(total_power_w, 1),
-                        )
+                    # Throttle power fields to 1/minute using cache to avoid
+                    # a DB write per heartbeat. Power data is denormalized
+                    # into LatestSnapshot on every heartbeat; the throttle
+                    # controls how often the separate (now-removed) PowerReading
+                    # table was written, but LatestSnapshot itself is always
+                    # updated. This is a no-op now but kept for clarity.
+                    power_throttle_key = f'power_throttle_{rig_uuid}'
+                    if cache.add(power_throttle_key, 1, timeout=60):
+                        # First write in this 60s window — no-op now (was
+                        # PowerReading.objects.create). Kept for telemetry
+                        # timing analysis if needed in the future.
+                        pass
 
                     # Update LatestSnapshot power fields
                     ls_defaults['power_total_w'] = round(total_power_w, 1)

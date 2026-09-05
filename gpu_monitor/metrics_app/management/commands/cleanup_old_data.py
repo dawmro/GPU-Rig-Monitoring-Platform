@@ -23,11 +23,12 @@ logger = logging.getLogger(__name__)
 # All tables have 'id' as PK except metrics_latest_snapshot (rig_uuid)
 # NOTE: 'metrics_gpu_process' was removed in migration 0047 (GPUProcessMetric
 # model dropped — processes denormalized to LatestSnapshot.gpu_processes_json)
+# NOTE: 'metrics_power_reading' was removed in migration 0048 (PowerReading
+# model dropped — power time-series lives in MetricSnapshot + GPUMetric)
 CLEANUP_TABLES = [
     {'table': 'metrics_gpumetric',           'pk': 'id',         'has_ts': True},
     {'table': 'metrics_storagemetric',       'pk': 'id',         'has_ts': True},
     {'table': 'metrics_networkmetric',       'pk': 'id',         'has_ts': True},
-    {'table': 'metrics_power_reading',       'pk': 'id',         'has_ts': True},
     {'table': 'metrics_latest_docker_container', 'pk': 'id',     'has_ts': False},
     {'table': 'metrics_rig_status_event',    'pk': 'id',         'has_ts': True},
     {'table': 'metrics_metricsnapshot',     'pk': 'id',         'has_ts': True},

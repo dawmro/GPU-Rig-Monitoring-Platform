@@ -93,18 +93,10 @@ COMPACT_TABLES = [
         },
         'static_fields': ['snapshot_id'],
     },
-    # Power readings — compact like other timeseries
-    {
-        'table': 'metrics_power_reading',
-        'group_by': ['rig_id'],
-        'agg_fields': {
-            'gpu_power_w': 'avg',
-            'cpu_power_w': 'avg',
-            'other_power_w': 'avg',
-            'total_power_w': 'avg',
-        },
-        'static_fields': ['cpu_power_source'],
-    },
+    # NOTE: 'metrics_power_reading' was removed in migration 0048.
+    # Power time-series lives in MetricSnapshot.cpu_power_w and
+    # total_system_power_w (plus GPUMetric.power_draw_w per-GPU).
+    # The PowerReading table was never read by any view.
     # Parent table LAST — FK-safe with NOT EXISTS
     {
         'table': 'metrics_metricsnapshot',

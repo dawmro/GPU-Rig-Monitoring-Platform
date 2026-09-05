@@ -798,6 +798,51 @@ def test_gpu_process_metric_table_dropped():
         'Migration must reference GPUProcessMetric'
 
 
+def test_power_reading_table_dropped():
+    """Verify PowerReading model is removed and migration exists.
+
+    Power time-series lives in MetricSnapshot.cpu_power_w/total_system_power_w
+    and GPUMetric.power_draw_w. PowerReading was used only as a sentinel
+    for throttling; no view ever queried it.
+    """
+    models_src = open('/home/qrv/workspace/GPU-Rig-Monitoring-Platform/gpu_monitor/metrics_app/models.py').read()
+    assert 'class PowerReading' not in models_src, \
+        'PowerReading class should be removed from models.py'
+
+    views_src = open('/home/qrv/workspace/GPU-Rig-Monitoring-Platform/gpu_monitor/metrics_app/views.py').read()
+    assert 'PowerReading' not in views_src, \
+        'PowerReading import should be removed from views.py'
+
+    ser_src = open('/home/qrv/workspace/GPU-Rig-Monitoring-Platform/gpu_monitor/metrics_app/serializers.py').read()
+    # The serializer should not have any active PowerReading code references
+    # (comments mentioning PowerReading for context are fine)
+    import re
+    code_lines = [l for l in ser_src.split('\n') if not l.strip().startswith('#')]
+    code_only = '\n'.join(code_lines)
+    assert 'PowerReading.objects' not in code_only, \
+        'Serializer should not query PowerReading.objects'
+    assert 'PowerReading.objects.create' not in code_only, \
+        'Serializer should not create PowerReading rows'
+    # No import of PowerReading
+    assert 'from metrics_app.models import PowerReading' not in code_only, \
+        'Serializer should not import PowerReading'
+
+    # Migration exists
+    migration_path = '/home/qrv/workspace/GPU-Rig-Monitoring-Platform/gpu_monitor/metrics_app/migrations/0048_drop_power_reading_table.py'
+    with open(migration_path) as f:
+        migration = f.read()
+    assert 'DeleteModel' in migration, \
+        'Migration must use DeleteModel to drop the table'
+    assert 'PowerReading' in migration, \
+        'Migration must reference PowerReading'
+
+    # Verify power charts still query the right tables
+    assert "'cpu_power_w'" in views_src, \
+        'cpu_power_w chart should still be defined'
+    assert "'total_system_power_w'" in views_src, \
+        'total_system_power_w chart should still be defined'
+
+
 def test_get_rig_light_cached_includes_error_history():
     """Verify _get_rig_light_cached includes error_history_json + container_history_json.
 
@@ -888,5 +933,6 @@ if __name__ == '__main__':
     test_disk_utilization_fallback_in_view()
     test_chart_cache_version_invalidation()
     test_gpu_process_metric_table_dropped()
+    test_power_reading_table_dropped()
     print("=" * 60)
-    print("All 28 tests passed!")
+    print("All 29 tests passed!")

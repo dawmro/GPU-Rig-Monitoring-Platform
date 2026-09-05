@@ -347,42 +347,6 @@ class RigStatusEvent(models.Model):
         ]
 
 
-class PowerReading(models.Model):
-    """Power consumption reading — one row per rig per heartbeat.
-
-    Stores measured (GPU via nvidia-smi, CPU via RAPL) and estimated
-    (CPU fallback, other components) power consumption data.
-    All power values are AC (wall) — PSU efficiency already factored in by agent.
-    Used for power charts and cost estimation.
-    """
-    id = models.BigAutoField(primary_key=True)
-    rig = models.ForeignKey('rigs.Rig', on_delete=models.CASCADE, related_name='power_readings')
-    timestamp = models.DateTimeField(default=timezone.now, db_index=True)
-
-    # GPU power (measured via nvidia-smi, sum of all GPUs, AC)
-    gpu_power_w = models.FloatField(default=0)
-
-    # CPU power (measured via RAPL or estimated from utilization, AC)
-    cpu_power_w = models.FloatField(default=0)
-    cpu_power_source = models.CharField(max_length=10, default='rapl', choices=[
-        ('rapl', 'RAPL (measured)'),
-        ('estimate', 'Estimated from utilization'),
-    ])
-
-    # Other components (flat estimate: RAM + disks + MB + fans, AC)
-    other_power_w = models.FloatField(default=40)
-
-    # Total system power (AC, PSU efficiency already factored in by agent)
-    total_power_w = models.FloatField(default=0)
-
-    class Meta:
-        db_table = 'metrics_power_reading'
-        ordering = ['-timestamp']
-        indexes = [
-            models.Index(fields=['rig', '-timestamp']),
-        ]
-
-
 
 
 

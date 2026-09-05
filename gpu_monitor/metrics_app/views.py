@@ -15,7 +15,7 @@ from django.db.models.functions import TruncMinute, TruncHour
 from accounts.authentication import APIKeyAuthentication
 from accounts.models import ApiKey
 from .serializers import process_ingest
-from .models import LatestSnapshot, MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, PowerReading
+from .models import LatestSnapshot, MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric
 from rigs.models import Rig
 from audit.middleware import log_audit_event
 

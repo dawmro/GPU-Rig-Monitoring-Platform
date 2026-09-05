@@ -386,8 +386,12 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                     interface=iface_name,
                     defaults={
                         'snapshot': snapshot,
-                        'ipv4': iface.get('ipv4', ''),
-                        'link_speed_mbps': iface.get('link_speed_mbps'),
+                        # NOTE: 'ipv4' and 'link_speed_mbps' were removed from
+                        # NetworkMetric in migration 0050. These static fields
+                        # are stored only in LatestSnapshot.network_ipv4s_json
+                        # and network_speeds_json (current state for Live
+                        # Metrics display). No chart or report ever read them
+                        # from the time-series table.
                         'rx_bytes': new_rx,
                         'tx_bytes': new_tx,
                         'rx_bytes_delta': rx_delta,
@@ -407,25 +411,24 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                 network_tx_errors.append(iface.get('tx_errors', 0))
 
             # Store latest container snapshot (for Live Metrics display)
-            # Delete-before-insert pattern: remove all old rows for this rig first
-            LatestDockerContainer.objects.filter(rig_uuid=rig_uuid).delete()
-            
-            # Deduplicate containers by container_id to avoid duplicates
+            # Strategy: validate all container data first, then DELETE all old
+            # rows in one query, then bulk_create the new ones in one query.
+            # This reduces N+1 queries (was 1 DELETE + N INSERTs per heartbeat)
+            # to just 1 DELETE + 1 INSERT.
+            #
+            # Per-container validation: invalid container data is logged and
+            # skipped (NOT failed) to prevent transaction rollback. This
+            # matches the previous behavior where individual container errors
+            # did not break the entire ingest.
             seen_container_ids = set()
-            unique_containers = []
+            valid_containers = []
             for container in docker_containers:
                 container_id = container.get('container_id')
                 if not container_id or container_id in seen_container_ids:
                     continue
                 seen_container_ids.add(container_id)
-                unique_containers.append(container)
-            
-            for container in unique_containers:
-                container_id = container.get('container_id')
-                if not container_id:
-                    continue
                 try:
-                    LatestDockerContainer.objects.create(
+                    valid_containers.append(LatestDockerContainer(
                         rig_uuid=rig_uuid,
                         container_id=container_id,
                         name=container.get('name', ''),
@@ -435,13 +438,18 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                         status_text=container.get('status_text', ''),
                         manifest_json=container.get('manifest', {}),
                         logs_json=container.get('logs', []),
-                    )
+                    ))
                 except Exception as e:
-                    # Skip individual container errors to prevent transaction rollback
-                    # from wiping out all containers
                     logging.getLogger('serializer').warning(
-                        'Failed to save container %s: %s', container_id, e
+                        'Skipping invalid container %s: %s', container_id, e
                     )
+
+            if valid_containers:
+                LatestDockerContainer.objects.filter(rig_uuid=rig_uuid).delete()
+                # One query inserts all containers at once
+                LatestDockerContainer.objects.bulk_create(
+                    valid_containers, ignore_conflicts=True
+                )
 
             # Update latest snapshot (denormalized)
             ls_defaults = {

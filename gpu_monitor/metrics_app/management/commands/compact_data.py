@@ -90,7 +90,9 @@ COMPACT_TABLES = [
         'agg_fields': {
             'rx_bytes_delta': 'sum', 'tx_bytes_delta': 'sum',
             'rx_errors': 'sum', 'tx_errors': 'sum',
-            'link_speed_mbps': 'last', 'ipv4': 'last',
+            # NOTE: 'ipv4' and 'link_speed_mbps' were removed in migration 0050.
+            # Static fields live in LatestSnapshot.network_ipv4s_json and
+            # network_speeds_json. No view ever read them from the time-series.
         },
         'static_fields': ['snapshot_id'],
     },

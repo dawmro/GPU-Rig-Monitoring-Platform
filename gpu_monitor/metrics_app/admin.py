@@ -24,8 +24,8 @@ class StorageMetricAdmin(admin.ModelAdmin):
 
 @admin.register(NetworkMetric)
 class NetworkMetricAdmin(admin.ModelAdmin):
-    list_display = ('rig_uuid', 'timestamp', 'interface', 'ipv4', 'link_speed_mbps', 'rx_bytes', 'tx_bytes')
-    search_fields = ('rig_uuid', 'interface', 'ipv4')
+    list_display = ('rig_uuid', 'timestamp', 'interface', 'rx_bytes', 'tx_bytes', 'rx_errors', 'tx_errors')
+    search_fields = ('rig_uuid', 'interface')
 
 
 @admin.register(LatestDockerContainer)

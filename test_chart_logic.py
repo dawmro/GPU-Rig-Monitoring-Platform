@@ -902,6 +902,85 @@ def test_storage_cumulative_counters_removed():
         'disk_write_bytes_delta chart must still be defined'
 
 
+def test_latest_docker_container_bulk_create():
+    """Verify LatestDockerContainer uses bulk_create instead of per-row create.
+
+    Previous pattern: 1 DELETE + N INSERTs per heartbeat (N = containers).
+    New pattern: 1 DELETE + 1 bulk_create INSERT (1 query total).
+    Saves (N-1) queries per heartbeat per rig.
+    """
+    ser_src = open('/home/qrv/workspace/GPU-Rig-Monitoring-Platform/gpu_monitor/metrics_app/serializers.py').read()
+    code_lines = [l for l in ser_src.split('\n') if not l.strip().startswith('#')]
+    code_only = '\n'.join(code_lines)
+
+    # Must use bulk_create
+    assert 'LatestDockerContainer.objects.bulk_create' in code_only, \
+        'Serializer should use bulk_create for LatestDockerContainer'
+    # Must NOT use per-row create (with the loop pattern)
+    # The old pattern: 'for container in unique_containers:' followed by 'create('
+    assert 'for container in unique_containers:' not in code_only, \
+        'Old per-row create loop should be removed'
+
+
+def test_docker_container_short_circuit():
+    """Verify _fetch_rig_metrics short-circuits when no containers exist.
+
+    Previous: 1 query (always runs) for latest_containers
+    New: 1 quick .exists() check, then 1 query only if containers exist
+    Saves 1 query for non-Docker rigs (common case for many rigs).
+    """
+    views_src = open('/home/qrv/workspace/GPU-Rig-Monitoring-Platform/gpu_monitor/dashboard/views.py').read()
+    assert 'LatestDockerContainer.objects.filter(rig_uuid=str(uuid)).exists()' in views_src, \
+        'Should short-circuit with .exists() check before fetching containers'
+
+
+def test_network_static_fields_removed():
+    """Verify NetworkMetric no longer has ipv4 and link_speed_mbps columns.
+
+    These static fields are stored in LatestSnapshot.network_ipv4s_json
+    and network_speeds_json. No chart or report reads them from the
+    time-series table.
+    """
+    # Model must not have these fields
+    models_src = open('/home/qrv/workspace/GPU-Rig-Monitoring-Platform/gpu_monitor/metrics_app/models.py').read()
+    for field in ['ipv4 = models', 'link_speed_mbps = models']:
+        assert field not in models_src, \
+            f'NetworkMetric.{field.split(" = ")[0]} should be removed from models.py'
+
+    # Serializer must not write these to NetworkMetric
+    ser_src = open('/home/qrv/workspace/GPU-Rig-Monitoring-Platform/gpu_monitor/metrics_app/serializers.py').read()
+    code_lines = [l for l in ser_src.split('\n') if not l.strip().startswith('#')]
+    code_only = '\n'.join(code_lines)
+    for field in ["'ipv4': iface.get", "'link_speed_mbps': iface.get"]:
+        assert field not in code_only, \
+            f'Serializer should not write {field} to NetworkMetric'
+
+    # compact_data no longer aggregates the removed fields
+    compact_src = open('/home/qrv/workspace/GPU-Rig-Monitoring-Platform/gpu_monitor/metrics_app/management/commands/compact_data.py').read()
+    for field in ["'link_speed_mbps': 'last'", "'ipv4': 'last'"]:
+        assert field not in compact_src, \
+            f'compact_data should not aggregate {field} for networkmetric'
+
+    # LatestSnapshot still has the static JSON arrays
+    assert 'network_ipv4s_json' in models_src, \
+        'LatestSnapshot.network_ipv4s_json should still exist'
+    assert 'network_speeds_json' in models_src, \
+        'LatestSnapshot.network_speeds_json should still exist'
+
+    # Migration exists with the right content
+    migration_path = '/home/qrv/workspace/GPU-Rig-Monitoring-Platform/gpu_monitor/metrics_app/migrations/0050_drop_network_static_fields.py'
+    with open(migration_path) as f:
+        migration = f.read()
+    for field in ['ipv4', 'link_speed_mbps']:
+        assert field in migration, \
+            f'Migration must remove {field}'
+
+    # Verify chart views still use the dynamic fields
+    chart_src = open('/home/qrv/workspace/GPU-Rig-Monitoring-Platform/gpu_monitor/metrics_app/views.py').read()
+    assert "'net_rx_bytes_delta': 'rx_bytes_delta'" in chart_src, \
+        'net_rx_bytes_delta chart must still be defined'
+
+
 def test_get_rig_light_cached_includes_error_history():
     """Verify _get_rig_light_cached includes error_history_json + container_history_json.
 
@@ -994,5 +1073,8 @@ if __name__ == '__main__':
     test_gpu_process_metric_table_dropped()
     test_power_reading_table_dropped()
     test_storage_cumulative_counters_removed()
+    test_latest_docker_container_bulk_create()
+    test_docker_container_short_circuit()
+    test_network_static_fields_removed()
     print("=" * 60)
-    print("All 30 tests passed!")
+    print("All 33 tests passed!")

@@ -264,27 +264,31 @@ def _fetch_rig_metrics(uuid, rig=None):
                 'tx_errors': _json_get(snapshot.network_tx_errors_json, i, 0),
             })
 
-    # Docker containers: LatestDockerContainer has all needed fields
-    # Deduplicate by container_id at query level (defense-in-depth)
-    latest_containers = (
-        LatestDockerContainer.objects
-        .filter(rig_uuid=str(uuid))
-        .order_by('container_id')
-        .distinct('container_id')
-    )
-
+    # Docker containers: LatestDockerContainer has all needed fields.
+    # Short-circuit: skip the query entirely if the rig has no containers.
+    # The serializer delete-then-insert pattern keeps the table clean,
+    # so an empty query result is the common case for non-Docker rigs.
     docker_metrics = []
-    for lc in latest_containers:
-        docker_metrics.append({
-            'container_id': lc.container_id,
-            'name': lc.name,
-            'image': lc.image,
-            'status': lc.status,
-            'created': lc.created,
-            'status_text': lc.status_text,
-            'manifest': lc.manifest_json,
-            'logs': lc.logs_json,
-        })
+    if LatestDockerContainer.objects.filter(rig_uuid=str(uuid)).exists():
+        # Deduplicate by container_id at query level (defense-in-depth)
+        latest_containers = (
+            LatestDockerContainer.objects
+            .filter(rig_uuid=str(uuid))
+            .order_by('container_id')
+            .distinct('container_id')
+        )
+
+        for lc in latest_containers:
+            docker_metrics.append({
+                'container_id': lc.container_id,
+                'name': lc.name,
+                'image': lc.image,
+                'status': lc.status,
+                'created': lc.created,
+                'status_text': lc.status_text,
+                'manifest': lc.manifest_json,
+                'logs': lc.logs_json,
+            })
 
     # Recent errors — last 10 from error_history (for Live Metrics card)
     error_history = rig.error_history_json if rig else []

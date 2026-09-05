@@ -148,14 +148,19 @@ class StorageMetric(models.Model):
 
 
 class NetworkMetric(models.Model):
-    """Per-interface time-series metrics — one row per interface per snapshot."""
+    """Per-interface time-series metrics — one row per interface per snapshot.
+
+    Stores dynamic per-minute network metrics. Static fields (ipv4,
+    link_speed_mbps) are stored in LatestSnapshot.network_ipv4s_json
+    and network_speeds_json (current state only) — no historical
+    chart or report ever reads them, and they change rarely
+    (DHCP lease renewal, NIC reconfiguration).
+    """
     id = models.BigAutoField(primary_key=True)
     snapshot = models.ForeignKey(MetricSnapshot, on_delete=models.CASCADE, related_name='network_metrics')
     rig_uuid = models.UUIDField(db_index=True)
     timestamp = models.DateTimeField(db_index=True)
     interface = models.CharField(max_length=64, blank=True, default='')
-    ipv4 = models.CharField(max_length=15, blank=True, default='')
-    link_speed_mbps = models.PositiveIntegerField(null=True)
     rx_bytes = models.BigIntegerField(null=True)
     tx_bytes = models.BigIntegerField(null=True)
     rx_bytes_delta = models.BigIntegerField(null=True, help_text="Bytes received since last reading")

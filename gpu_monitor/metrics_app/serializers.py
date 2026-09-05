@@ -10,24 +10,10 @@ from dashboard.views import _json_get
 
 logger = logging.getLogger(__name__)
 
-# Chart cache ranges invalidated on ingest — MUST stay in sync with the ranges
-# the frontend actually requests (rig_detail.html chart loaders: 24/168/720).
-# Bucket size per range is derived by _chart_bucket_minutes(), which mirrors
-# ChartDataView.get()'s bucket selection in views.py.
-CHART_CACHE_RANGES = (24, 168, 720)
-
-
-def _chart_bucket_minutes(range_hours):
-    """Bucket size used by ChartDataView for a given chart range.
-
-    MUST stay in sync with ChartDataView.get() bucket selection
-    (metrics_app/views.py): 1-min for <=24h, 15-min for <=168h, 1-hour above.
-    """
-    if range_hours <= 24:
-        return 1
-    if range_hours <= 168:
-        return 15
-    return 60
+# Chart cache invalidation is now done by bumping a version counter
+# (chart_v_{rig_uuid}) in the serializer. The view's cache key embeds
+# this version, so old keys become unreachable. No need for explicit
+# per-metric / per-range cache.delete() calls.
 
 
 class IngestSerializer(serializers.Serializer):
@@ -208,13 +194,14 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                 gpu_pcie_max_width.append(gpu.get('pcie_max_width'))
 
             # Build denormalized GPU process list for LatestSnapshot.
-            # NOTE: We intentionally do NOT write to GPUProcessMetric time-series
-            # table. Historical GPU process data is not used anywhere (the Live
-            # Metrics page only shows the CURRENT snapshot's processes). Storing
-            # 1 row per minute × N processes × 31 days would be wasted storage.
-            # The serializer used to delete-and-reinsert into GPUProcessMetric
-            # every heartbeat, which was wasteful I/O. Now we keep only the
-            # current snapshot in LatestSnapshot.gpu_processes_json.
+            # NOTE: We intentionally do NOT write to a time-series table.
+            # Historical GPU process data is not used anywhere (the Live
+            # Metrics page only shows the CURRENT snapshot's processes).
+            # Storing 1 row per minute × N processes × 31 days would be
+            # wasted storage. Processes are transient — they change every
+            # minute, so old data has no analytical value. The
+            # GPUProcessMetric time-series table was removed in migration
+            # 0047 (it had 12 orphaned rows from before this denormalization).
             gpu_processes_for_snapshot = []
             for proc in gpu_process_list:
                 gpu_processes_for_snapshot.append({
@@ -583,20 +570,16 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
             # Invalidate report caches for all ranges
             for hours in (24, 168, 720):
                 cache.delete(f'report_{rig_uuid}_{hours}')
-            # Invalidate chart caches for common metrics
-            # (22 metrics x 3 ranges x 3 bucket sizes = ~198 keys)
-            for metric in ('cpu_utilization_pct', 'cpu_temp_c', 'cpu_power_w',
-                          'total_system_power_w', 'cpu_freq_current_mhz',
-                          'gpu_temp_c', 'gpu_util_pct', 'gpu_power_w',
-                          'gpu_fan_pct', 'gpu_core_clock_mhz', 'gpu_mem_clock_mhz',
-                          'gpu_mem_used_mb', 'disk_usage_pct',
-                          'disk_read_bytes_delta', 'disk_write_bytes_delta',
-                          'error_frequency', 'uptime_s', 'net_rx_bytes_delta',
-                          'net_tx_bytes_delta', 'net_rx_errors', 'net_tx_errors',
-                          'gpu_mem_controller_util_pct'):
-                for hours in CHART_CACHE_RANGES:
-                    bucket = _chart_bucket_minutes(hours)
-                    cache.delete(f'chart_{rig_uuid}_{metric}_{hours}_{bucket}')
+            # Invalidate ALL chart caches for this rig by bumping a version counter.
+            # The ChartDataView cache key embeds the current version, so bumping
+            # it makes all old keys unreachable. This is O(1) instead of
+            # invalidating 22 metrics × 3 ranges × 1 bucket × 64 (gpu_index ×
+            # multi_* combos) = ~4,200 cache.delete() calls per heartbeat.
+            # Old keys naturally expire via cache TTL (55s).
+            try:
+                cache.incr(f'chart_v_{rig_uuid}')
+            except ValueError:
+                cache.set(f'chart_v_{rig_uuid}', 1, timeout=None)
             # Track rig status transitions
             if rig:
                 previous_status = rig.status

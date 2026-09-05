@@ -12,7 +12,7 @@ from collections import Counter
 from types import SimpleNamespace
 
 from rigs.models import Rig, RigTag
-from metrics_app.models import MetricSnapshot, LatestSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, LatestDockerContainer
+from metrics_app.models import MetricSnapshot, LatestSnapshot, GPUMetric, StorageMetric, NetworkMetric, LatestDockerContainer
 from audit.middleware import log_audit_event
 
 # Pre-compiled regex for natural sort: splits "rig12" -> ["rig", 12, ""]
@@ -294,9 +294,10 @@ def _fetch_rig_metrics(uuid, rig=None):
     container_history = rig.container_history_json if rig else []
 
     # GPU processes: read from LatestSnapshot denormalized field
-    # This is always the CURRENT snapshot's processes (not historical)
-    # since the serializer deletes old GPUProcessMetric rows each heartbeat
-    # AND the denormalized json in LatestSnapshot is overwritten in place.
+    # This is always the CURRENT snapshot's processes (not historical).
+    # GPU processes are transient live state — historical time-series
+    # was removed in migration 0047 because no historical query was ever
+    # performed (processes change every minute; old data is meaningless).
     gpu_processes = snapshot.gpu_processes_json if snapshot else []
 
     # Derive primary IP from the first non-loopback, non-virtual interface
@@ -571,12 +572,11 @@ def rig_delete(request, uuid):
     rig_name = rig.name
 
     # Delete all associated metric data (MetricSnapshot has rig_uuid as UUIDField, not FK)
-    from metrics_app.models import MetricSnapshot, LatestSnapshot, GPUMetric, GPUProcessMetric, \
+    from metrics_app.models import MetricSnapshot, LatestSnapshot, GPUMetric, \
         StorageMetric, NetworkMetric, LatestDockerContainer, RigStatusEvent
     MetricSnapshot.objects.filter(rig_uuid=uuid).delete()
     LatestSnapshot.objects.filter(rig_uuid=uuid).delete()
     GPUMetric.objects.filter(rig_uuid=uuid).delete()
-    GPUProcessMetric.objects.filter(rig_uuid=uuid).delete()
     StorageMetric.objects.filter(rig_uuid=uuid).delete()
     NetworkMetric.objects.filter(rig_uuid=uuid).delete()
     LatestDockerContainer.objects.filter(rig_uuid=uuid).delete()

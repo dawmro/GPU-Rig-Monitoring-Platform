@@ -21,8 +21,9 @@ logger = logging.getLogger(__name__)
 
 # Tables in FK-safe order: children first, parent last
 # All tables have 'id' as PK except metrics_latest_snapshot (rig_uuid)
+# NOTE: 'metrics_gpu_process' was removed in migration 0047 (GPUProcessMetric
+# model dropped — processes denormalized to LatestSnapshot.gpu_processes_json)
 CLEANUP_TABLES = [
-    {'table': 'metrics_gpu_process',         'pk': 'id',         'has_ts': True},
     {'table': 'metrics_gpumetric',           'pk': 'id',         'has_ts': True},
     {'table': 'metrics_storagemetric',       'pk': 'id',         'has_ts': True},
     {'table': 'metrics_networkmetric',       'pk': 'id',         'has_ts': True},

@@ -306,8 +306,8 @@ class LatestSnapshot(models.Model):
 
     # GPU processes (latest snapshot only — for Live Metrics display)
     # Each entry: [{gpu_index, pid, process_name, type, gpu_mem_mb}, ...]
-    # Denormalized from GPUProcessMetric to avoid querying time-series table
-    # for a single current-state display (processes change every minute).
+    # Historical GPU process time-series was removed in migration 0047 because
+    # no historical query was ever performed (processes change every minute).
     gpu_processes_json = models.JSONField(default=list, blank=True)         # Current GPU processes
     gpu_process_count = models.PositiveIntegerField(default=0)               # Count of GPU processes
 
@@ -344,39 +344,6 @@ class RigStatusEvent(models.Model):
         indexes = [
             models.Index(fields=['rig_uuid', '-timestamp']),
             models.Index(fields=['rig_uuid', 'status']),
-        ]
-
-
-class GPUProcessMetric(models.Model):
-    """Per-GPU-process metrics — one row per process per GPU per snapshot.
-
-    Collected from nvidia-smi process table. Enables the Live Metrics
-    "GPU Processes" display showing which processes use each GPU.
-
-    Fields:
-        gpu_index: GPU device index (0, 1, 2, ...)
-        pid: Process ID from OS
-        process_name: Process executable path/name
-        type: Process type — C (Compute), G (Graphics), C+G (Both)
-        gpu_mem_mb: GPU memory used by this process (MB)
-    """
-    id = models.BigAutoField(primary_key=True)
-    snapshot = models.ForeignKey(MetricSnapshot, on_delete=models.CASCADE, related_name='gpu_processes')
-    rig_uuid = models.UUIDField(db_index=True)
-    timestamp = models.DateTimeField(db_index=True)
-
-    gpu_index = models.PositiveSmallIntegerField(default=0)
-    pid = models.PositiveIntegerField(null=True)
-    process_name = models.CharField(max_length=500, blank=True, default='')
-    type = models.CharField(max_length=10, blank=True, default='')  # C, G, C+G
-    gpu_mem_mb = models.PositiveIntegerField(null=True)
-
-    class Meta:
-        db_table = 'metrics_gpu_process'
-        ordering = ['-gpu_mem_mb']
-        unique_together = ('rig_uuid', 'timestamp', 'gpu_index', 'pid')
-        indexes = [
-            models.Index(fields=['rig_uuid', '-timestamp']),
         ]
 
 

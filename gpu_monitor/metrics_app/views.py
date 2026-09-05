@@ -338,12 +338,13 @@ class ChartDataView(APIView):
         multi_iface = request.query_params.get('multi_iface', 'false').lower() == 'true'
         multi_mem = request.query_params.get('multi_mem', 'false').lower() == 'true'
 
-        # Cache key: chart_data_{uuid}_{metric}_{range}_{bucket}_{multi_flags}_{gpu_index}
-        # TTL: 55s (just under the 60s agent heartbeat interval)
-        # multi_* flags and gpu_index must be in the cache key to avoid
-        # serving a single-dataset response to a multi-disk request (and vice versa)
+        # Cache key includes a per-rig version counter that the serializer
+        # bumps on every heartbeat. Bumping makes all old keys unreachable
+        # (they naturally expire via cache TTL). This is O(1) invalidation.
+        # Key format: chart_{uuid}_{ver}_{metric}_{range}_{bucket}_g{gpu_idx}_{m_*}
+        chart_version = cache.get(f'chart_v_{uuid}') or 0
         cache_key = (
-            f'chart_{uuid}_{metric}_{range_hours}_{bucket_minutes}'
+            f'chart_{uuid}_{chart_version}_{metric}_{range_hours}_{bucket_minutes}'
             f'_g{gpu_index}_{int(multi_gpu)}{int(multi_disk)}'
             f'{int(multi_iface)}{int(multi_mem)}'
         )

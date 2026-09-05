@@ -27,11 +27,11 @@ from django.utils import timezone
 logger = logging.getLogger(__name__)
 
 # Tables to VACUUM ANALYZE after maintenance (in FK-safe order)
+# NOTE: 'metrics_gpu_process' removed in migration 0047 (GPUProcessMetric dropped)
 VACUUM_TABLES = [
     'metrics_gpumetric',
     'metrics_storagemetric',
     'metrics_networkmetric',
-    'metrics_gpu_process',
     'metrics_power_reading',
     'metrics_metricsnapshot',
 ]

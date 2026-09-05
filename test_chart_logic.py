@@ -750,6 +750,54 @@ def test_disk_utilization_fallback_in_view():
         'Fallback must return usage_pct as the column name'
 
 
+def test_chart_cache_version_invalidation():
+    """Verify the chart view uses version-based cache invalidation.
+
+    The serializer bumps a per-rig version counter (chart_v_{uuid}) on
+    every heartbeat. The view embeds this version in the cache key, so
+    bumping makes all old keys unreachable without enumerating them.
+    """
+    view_src = open('/home/qrv/workspace/GPU-Rig-Monitoring-Platform/gpu_monitor/metrics_app/views.py').read()
+    ser_src = open('/home/qrv/workspace/GPU-Rig-Monitoring-Platform/gpu_monitor/metrics_app/serializers.py').read()
+
+    # View must read the version
+    assert "chart_v_{uuid}" in view_src, \
+        'View must read chart_v_{uuid} version counter'
+    # Version must be embedded in cache key
+    assert 'chart_{uuid}_{chart_version}' in view_src, \
+        'View must embed version in cache key'
+
+    # Serializer must bump the version
+    assert "cache.incr(f'chart_v_{rig_uuid}')" in ser_src, \
+        'Serializer must bump chart_v_{rig_uuid} version on heartbeat'
+    # And the old per-metric cache.delete() loop must be gone
+    assert "for metric in ('cpu_utilization_pct'" not in ser_src, \
+        'Old per-metric cache.delete() loop should be removed'
+    # CHART_CACHE_RANGES constant should be removed (no longer needed)
+    assert 'CHART_CACHE_RANGES' not in ser_src, \
+        'CHART_CACHE_RANGES constant is no longer needed'
+
+
+def test_gpu_process_metric_table_dropped():
+    """Verify GPUProcessMetric model is removed and migration exists."""
+    models_src = open('/home/qrv/workspace/GPU-Rig-Monitoring-Platform/gpu_monitor/metrics_app/models.py').read()
+    assert 'class GPUProcessMetric' not in models_src, \
+        'GPUProcessMetric class should be removed from models.py'
+
+    views_src = open('/home/qrv/workspace/GPU-Rig-Monitoring-Platform/gpu_monitor/dashboard/views.py').read()
+    assert 'GPUProcessMetric' not in views_src, \
+        'GPUProcessMetric references should be removed from views.py'
+
+    # Migration exists
+    migration_path = '/home/qrv/workspace/GPU-Rig-Monitoring-Platform/gpu_monitor/metrics_app/migrations/0047_drop_gpu_process_metric_table.py'
+    with open(migration_path) as f:
+        migration = f.read()
+    assert 'DeleteModel' in migration, \
+        'Migration must use DeleteModel to drop the table'
+    assert 'GPUProcessMetric' in migration, \
+        'Migration must reference GPUProcessMetric'
+
+
 def test_get_rig_light_cached_includes_error_history():
     """Verify _get_rig_light_cached includes error_history_json + container_history_json.
 
@@ -838,5 +886,7 @@ if __name__ == '__main__':
     test_chart_cache_key_includes_multi_flags()
     test_get_rig_light_cached_includes_error_history()
     test_disk_utilization_fallback_in_view()
+    test_chart_cache_version_invalidation()
+    test_gpu_process_metric_table_dropped()
     print("=" * 60)
-    print("All 26 tests passed!")
+    print("All 28 tests passed!")

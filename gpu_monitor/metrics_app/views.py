@@ -403,6 +403,31 @@ class ChartDataView(APIView):
             return Trunc15Min
         return TruncHour
 
+    def _maybe_fallback_disk_utilization(self, uuid, start_bucket, end_bucket,
+                                          db_field, agg_func, byte_metric):
+        """Fall back from disk utilization to disk usage when no data.
+
+        Background: Windows psutil does not expose busy_time, so the
+        StorageMetric.utilization_pct column is always NULL on Windows rigs.
+        Linux rigs DO have real utilization data. To make the chart work for
+        both, we check if the rig has any utilization_pct rows in the
+        requested window; if not, we silently fall back to usage_pct
+        (which is always populated).
+
+        This is a graceful degradation — Linux rigs see real utilization,
+        Windows rigs see disk usage (related but different metric).
+        """
+        has_data = StorageMetric.objects.filter(
+            rig_uuid=uuid,
+            timestamp__gte=start_bucket,
+            timestamp__lte=end_bucket,
+            utilization_pct__isnull=False,
+        ).exists()
+        if not has_data:
+            # Fall back to usage_pct (different metric, but always populated)
+            return 'usage_pct', 'avg', False
+        return db_field, agg_func, byte_metric
+
     def _bucket_index(self, ts, start_bucket, bucket_seconds):
         """Return the integer bucket index for a timestamp, or None if out of range."""
         delta = (ts - start_bucket).total_seconds()
@@ -656,6 +681,17 @@ class ChartDataView(APIView):
             agg_func = 'avg'
             byte_metric = False
 
+        # Fallback for disk_utilization_pct: Windows psutil doesn't expose
+        # busy_time, so the StorageMetric.utilization_pct column is always
+        # null on Windows rigs. Fall back to usage_pct (which is always
+        # populated) so the chart still shows useful data.
+        # The fallback is a no-op for Linux rigs which have real utilization
+        # data, and a graceful degradation for Windows.
+        if metric == 'disk_utilization_pct':
+            db_field, agg_func, byte_metric = self._maybe_fallback_disk_utilization(
+                uuid, start_bucket, end_bucket, db_field, agg_func, byte_metric
+            )
+
         if not multi_disk:
             groups = self._read_prebucketed(
                 StorageMetric, uuid, db_field, start_bucket, end_bucket,
@@ -676,7 +712,7 @@ class ChartDataView(APIView):
                 'disk_write_bytes_delta': 'Write MB',
                 'disk_read_iops_delta': 'Read IOPS',
                 'disk_write_iops_delta': 'Write IOPS',
-                'disk_utilization_pct': 'Utilization %',
+                'disk_utilization_pct': 'Disk Usage %' if db_field == 'usage_pct' else 'Utilization %',
             }
             label = label_map.get(metric, 'Disk Usage %')
             if byte_metric:

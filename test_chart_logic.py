@@ -729,6 +729,27 @@ def test_chart_cache_key_includes_multi_flags():
     assert '_g0_' in multi_disk_true
 
 
+def test_disk_utilization_fallback_in_view():
+    """Verify the chart view falls back to usage_pct when utilization_pct has no data.
+
+    Regression test for: Windows rigs always have NULL utilization_pct
+    (Windows psutil doesn't expose busy_time), so the chart showed no data.
+    Server-side fallback to usage_pct restores the chart.
+    """
+    # The view must contain the fallback helper
+    src = open('/home/qrv/workspace/GPU-Rig-Monitoring-Platform/gpu_monitor/metrics_app/views.py').read()
+    assert '_maybe_fallback_disk_utilization' in src, \
+        'Missing _maybe_fallback_disk_utilization helper'
+    assert "metric == 'disk_utilization_pct'" in src, \
+        'Missing check for disk_utilization_pct metric'
+    assert "utilization_pct__isnull=False" in src, \
+        'Missing the existence check for utilization data'
+
+    # Fallback must use usage_pct (always populated)
+    assert "return 'usage_pct'" in src, \
+        'Fallback must return usage_pct as the column name'
+
+
 def test_get_rig_light_cached_includes_error_history():
     """Verify _get_rig_light_cached includes error_history_json + container_history_json.
 
@@ -816,5 +837,6 @@ if __name__ == '__main__':
     test_fleet_table_template_uses_with()
     test_chart_cache_key_includes_multi_flags()
     test_get_rig_light_cached_includes_error_history()
+    test_disk_utilization_fallback_in_view()
     print("=" * 60)
-    print("All 25 tests passed!")
+    print("All 26 tests passed!")

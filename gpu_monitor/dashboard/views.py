@@ -28,7 +28,8 @@ _RIG_CACHE_TTL_S = 30
 def _get_rig_light_cached(uuid, user):
     """Get a minimal Rig representation for permission check + status display.
 
-    Returns a SimpleNamespace with: uuid, owner_id, status, last_seen
+    Returns a SimpleNamespace with: uuid, owner_id, status, last_seen,
+    error_history_json, container_history_json
     (or None if not found / not accessible to user).
 
     Used by high-frequency HTMX endpoints (htmx_metrics, htmx_rig_status)
@@ -49,7 +50,10 @@ def _get_rig_light_cached(uuid, user):
     else:
         # Minimal DB query — only fields we need
         try:
-            row = Rig.objects.only('uuid', 'owner_id', 'status', 'last_seen').get(uuid=uuid)
+            row = Rig.objects.only(
+                'uuid', 'owner_id', 'status', 'last_seen',
+                'error_history_json', 'container_history_json',
+            ).get(uuid=uuid)
         except Rig.DoesNotExist:
             return None
         rig = SimpleNamespace(
@@ -57,6 +61,8 @@ def _get_rig_light_cached(uuid, user):
             owner_id=row.owner_id,
             status=row.status,
             last_seen=row.last_seen,
+            error_history_json=row.error_history_json,
+            container_history_json=row.container_history_json,
         )
         cache.set(cache_key, rig, _RIG_CACHE_TTL_S)
 

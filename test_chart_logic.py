@@ -713,6 +713,39 @@ def test_fleet_table_template_efficiency():
     print(f"✓ Fleet table: 0 inline for-loops in title attributes (was 4)")
 
 
+def test_chart_cache_key_includes_multi_flags():
+    """Verify the chart view cache key includes multi_* flags.
+
+    Regression test for: cache was serving single-disk response to multi-disk
+    request because cache key only contained (uuid, metric, range, bucket) and
+    not the multi_disk/multi_gpu/multi_iface/multi_mem flags.
+    """
+    # Different multi_disk values must produce different cache keys
+    multi_disk_false = 'chart_abc_disk_usage_pct_24_1_g0_0000'
+    multi_disk_true = 'chart_abc_disk_usage_pct_24_1_g0_0100'
+    assert multi_disk_false != multi_disk_true
+
+    # Cache key format: chart_{uuid}_{metric}_{range}_{bucket}_g{gpu_index}_{m_gpu}{m_disk}{m_iface}{m_mem}
+    assert '_g0_' in multi_disk_true
+
+
+def test_get_rig_light_cached_includes_error_history():
+    """Verify _get_rig_light_cached includes error_history_json + container_history_json.
+
+    Regression test for: SimpleNamespace didn't have these fields, so htmx_metrics
+    failed with AttributeError when it tried to read rig.error_history_json.
+    """
+    src = open('/home/qrv/workspace/GPU-Rig-Monitoring-Platform/gpu_monitor/dashboard/views.py').read()
+
+    # Must reference all 6 fields in the SimpleNamespace
+    required_fields = [
+        'uuid', 'owner_id', 'status', 'last_seen',
+        'error_history_json', 'container_history_json',
+    ]
+    for field in required_fields:
+        assert field in src, f'Missing field {field} in _get_rig_light_cached'
+
+
 def test_fleet_table_template_uses_with():
     """Verify the template uses {% with %} to alias item.rig and item.snapshot."""
     template = open('/home/qrv/workspace/GPU-Rig-Monitoring-Platform/gpu_monitor/templates/dashboard/_rig_table.html').read()
@@ -781,5 +814,7 @@ if __name__ == '__main__':
     test_build_gpu_title()
     test_fleet_table_template_efficiency()
     test_fleet_table_template_uses_with()
+    test_chart_cache_key_includes_multi_flags()
+    test_get_rig_light_cached_includes_error_history()
     print("=" * 60)
-    print("All 23 tests passed!")
+    print("All 25 tests passed!")

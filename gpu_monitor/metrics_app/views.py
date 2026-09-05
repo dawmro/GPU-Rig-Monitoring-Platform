@@ -332,18 +332,24 @@ class ChartDataView(APIView):
         range_hours = int(request.query_params.get('range', 24))
         bucket_minutes = self._bucket_minutes_for_range(range_hours)
 
-        # Cache key: chart_data_{uuid}_{metric}_{range}_{bucket}
-        # TTL: 55s (just under the 60s agent heartbeat interval)
-        cache_key = f'chart_{uuid}_{metric}_{range_hours}_{bucket_minutes}'
-        cached = cache.get(cache_key)
-        if cached is not None:
-            return Response(cached)
-
         gpu_index = int(request.query_params.get('gpu_index', 0))
         multi_gpu = request.query_params.get('multi_gpu', 'false').lower() == 'true'
         multi_disk = request.query_params.get('multi_disk', 'false').lower() == 'true'
         multi_iface = request.query_params.get('multi_iface', 'false').lower() == 'true'
         multi_mem = request.query_params.get('multi_mem', 'false').lower() == 'true'
+
+        # Cache key: chart_data_{uuid}_{metric}_{range}_{bucket}_{multi_flags}_{gpu_index}
+        # TTL: 55s (just under the 60s agent heartbeat interval)
+        # multi_* flags and gpu_index must be in the cache key to avoid
+        # serving a single-dataset response to a multi-disk request (and vice versa)
+        cache_key = (
+            f'chart_{uuid}_{metric}_{range_hours}_{bucket_minutes}'
+            f'_g{gpu_index}_{int(multi_gpu)}{int(multi_disk)}'
+            f'{int(multi_iface)}{int(multi_mem)}'
+        )
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return Response(cached)
 
         labels, start_bucket, end_bucket = self._build_buckets(range_hours, bucket_minutes)
         total_buckets = len(labels)

@@ -101,8 +101,18 @@ class StorageMetric(models.Model):
 
     Includes capacity (static) and dynamic metrics (usage, temp, smart).
     Disk I/O metrics: throughput (bytes), IOPS (operations), and utilization (%).
-    Throughput and IOPS are stored as cumulative counters; deltas are computed
-    during ingest by comparing with the previous reading for the same device.
+
+    Only DELTA values are stored in the time-series table (bytes/iops per
+    sample interval). The cumulative counters (read_bytes, write_bytes,
+    read_iops, write_iops, busy_time_ms) live in LatestSnapshot
+    (storage_read_bytes_total_json etc.) for the next ingest's delta
+    calculation. They are NOT stored in this time-series table because:
+    - No chart or report reads cumulative values from this table
+    - The chart view reads `*_delta` columns for the historical data
+    - The Live Metrics view reads `LatestSnapshot.*_delta_json`
+    - The serializer computes deltas from `LatestSnapshot.*_total_json`,
+      not from this table's previous row
+
     Utilization is derived from busy_time delta / sample interval.
     """
     id = models.BigAutoField(primary_key=True)
@@ -117,21 +127,16 @@ class StorageMetric(models.Model):
     temp_c = models.FloatField(null=True)
     smart_health = models.CharField(max_length=16, blank=True, default='')
 
-    # Disk I/O metrics — cumulative counters (like network rx/tx_bytes)
-    read_bytes = models.BigIntegerField(null=True, help_text="Cumulative bytes read (counter)")
-    write_bytes = models.BigIntegerField(null=True, help_text="Cumulative bytes written (counter)")
-    # Deltas computed during ingest (bytes/sec equivalent over sample interval)
+    # Deltas computed during ingest (bytes/sec equivalent over sample interval).
+    # These are the only I/O metrics stored in the time-series table — they
+    # are read by the chart view and report endpoint.
     read_bytes_delta = models.BigIntegerField(null=True, help_text="Bytes read since last sample")
     write_bytes_delta = models.BigIntegerField(null=True, help_text="Bytes written since last sample")
-    # IOPS — cumulative operation counters
-    read_iops = models.PositiveIntegerField(null=True, help_text="Cumulative read operations (counter)")
-    write_iops = models.PositiveIntegerField(null=True, help_text="Cumulative write operations (counter)")
-    # IOPS deltas computed during ingest
     read_iops_delta = models.PositiveIntegerField(null=True, help_text="Read operations since last sample")
     write_iops_delta = models.PositiveIntegerField(null=True, help_text="Write operations since last sample")
-    # Busy time — cumulative ms the disk spent doing I/O
-    busy_time_ms = models.PositiveIntegerField(null=True, help_text="Cumulative busy time in ms (counter)")
     # Utilization — derived: busy_time_delta / (sample_interval_s * 1000) * 100
+    # (busy_time_delta is computed in the serializer from LatestSnapshot
+    # storage_busy_time_ms_total_json — see process_ingest for details)
     utilization_pct = models.FloatField(null=True, help_text="Disk utilization % (0-100)")
 
     class Meta:

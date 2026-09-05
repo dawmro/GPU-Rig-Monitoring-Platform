@@ -843,6 +843,65 @@ def test_power_reading_table_dropped():
         'total_system_power_w chart should still be defined'
 
 
+def test_storage_cumulative_counters_removed():
+    """Verify StorageMetric no longer has cumulative I/O counter columns.
+
+    Cumulative counters (read_bytes, write_bytes, read_iops, write_iops,
+    busy_time_ms) were dead data in the time-series table — never read
+    by any chart, report, or Live Metrics view. They are now stored
+    only in LatestSnapshot.storage_*_total_json (where the serializer
+    reads them for delta calculation).
+    """
+    # Model must not have these fields
+    models_src = open('/home/qrv/workspace/GPU-Rig-Monitoring-Platform/gpu_monitor/metrics_app/models.py').read()
+    for field in ['read_bytes = models', 'write_bytes = models', 'read_iops = models',
+                  'write_iops = models', 'busy_time_ms = models']:
+        assert field not in models_src, \
+            f'StorageMetric.{field.split(" = ")[0]} should be removed from models.py'
+
+    # Serializer must not write these to StorageMetric
+    ser_src = open('/home/qrv/workspace/GPU-Rig-Monitoring-Platform/gpu_monitor/metrics_app/serializers.py').read()
+    code_lines = [l for l in ser_src.split('\n') if not l.strip().startswith('#')]
+    code_only = '\n'.join(code_lines)
+    # These must not be in StorageMetric update_or_create defaults
+    # (they may still appear as local variables like new_read_bytes)
+    for field in ["'read_bytes': new_read_bytes", "'write_bytes': new_write_bytes",
+                  "'read_iops': new_read_iops", "'write_iops': new_write_iops",
+                  "'busy_time_ms': new_busy_time_ms"]:
+        assert field not in code_only, \
+            f'Serializer should not write {field} to StorageMetric'
+
+    # LatestSnapshot still has the cumulative JSON arrays
+    assert 'storage_read_bytes_total_json' in models_src, \
+        'LatestSnapshot.storage_read_bytes_total_json should still exist'
+    assert 'storage_busy_time_ms_total_json' in models_src, \
+        'LatestSnapshot.storage_busy_time_ms_total_json should still exist'
+
+    # Migration exists with the right content
+    migration_path = '/home/qrv/workspace/GPU-Rig-Monitoring-Platform/gpu_monitor/metrics_app/migrations/0049_drop_storage_cumulative_counters.py'
+    with open(migration_path) as f:
+        migration = f.read()
+    for field in ['read_bytes', 'write_bytes', 'read_iops', 'write_iops', 'busy_time_ms']:
+        assert field in migration, \
+            f'Migration must remove {field}'
+
+    # compact_data no longer aggregates the removed fields
+    compact_src = open('/home/qrv/workspace/GPU-Rig-Monitoring-Platform/gpu_monitor/metrics_app/management/commands/compact_data.py').read()
+    # These lines should be gone from the storagemetric config
+    for field in ["'read_bytes': 'last'", "'write_bytes': 'last'",
+                  "'read_iops': 'last'", "'write_iops': 'last'",
+                  "'busy_time_ms': 'last'"]:
+        assert field not in compact_src, \
+            f'compact_data should not aggregate {field} for storagemetric'
+
+    # Verify chart views still use the delta fields (no functional regression)
+    views_src = open('/home/qrv/workspace/GPU-Rig-Monitoring-Platform/gpu_monitor/metrics_app/views.py').read()
+    assert "'disk_read_bytes_delta': 'read_bytes_delta'" in views_src, \
+        'disk_read_bytes_delta chart must still be defined'
+    assert "'disk_write_bytes_delta': 'write_bytes_delta'" in views_src, \
+        'disk_write_bytes_delta chart must still be defined'
+
+
 def test_get_rig_light_cached_includes_error_history():
     """Verify _get_rig_light_cached includes error_history_json + container_history_json.
 
@@ -934,5 +993,6 @@ if __name__ == '__main__':
     test_chart_cache_version_invalidation()
     test_gpu_process_metric_table_dropped()
     test_power_reading_table_dropped()
+    test_storage_cumulative_counters_removed()
     print("=" * 60)
-    print("All 29 tests passed!")
+    print("All 30 tests passed!")

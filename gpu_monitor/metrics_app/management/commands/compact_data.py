@@ -77,9 +77,10 @@ COMPACT_TABLES = [
             'read_bytes_delta': 'sum', 'write_bytes_delta': 'sum',
             'read_iops_delta': 'sum', 'write_iops_delta': 'sum',
             'utilization_pct': 'avg',
-            'read_bytes': 'last', 'write_bytes': 'last',
-            'read_iops': 'last', 'write_iops': 'last',
-            'busy_time_ms': 'last',
+            # NOTE: Cumulative counters (read_bytes, write_bytes, read_iops,
+            # write_iops, busy_time_ms) were removed from StorageMetric in
+            # migration 0049. Only deltas are stored in the time-series table.
+            # Cumulative values live in LatestSnapshot.storage_*_total_json.
         },
         'static_fields': ['mountpoint', 'fstype', 'smart_health', 'snapshot_id'],
     },

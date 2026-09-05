@@ -331,11 +331,13 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                         'usage_pct': disk.get('usage_pct'),
                         'temp_c': disk.get('temp_c'),
                         'smart_health': disk.get('smart_health', ''),
-                        'read_bytes': new_read_bytes,
-                        'write_bytes': new_write_bytes,
-                        'read_iops': new_read_iops,
-                        'write_iops': new_write_iops,
-                        'busy_time_ms': new_busy_time_ms,
+                        # NOTE: Cumulative counters (read_bytes, write_bytes,
+                        # read_iops, write_iops, busy_time_ms) are stored
+                        # ONLY in LatestSnapshot.storage_*_total_json. They
+                        # are not duplicated in StorageMetric because no
+                        # view reads cumulative values from the time-series
+                        # table — all consumers use `*_delta` for historical
+                        # data and LatestSnapshot for current state.
                         'read_bytes_delta': read_bytes_delta,
                         'write_bytes_delta': write_bytes_delta,
                         'read_iops_delta': read_iops_delta,

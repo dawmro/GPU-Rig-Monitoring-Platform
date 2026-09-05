@@ -101,8 +101,18 @@ class StorageMetric(models.Model):
 
     Includes capacity (static) and dynamic metrics (usage, temp, smart).
     Disk I/O metrics: throughput (bytes), IOPS (operations), and utilization (%).
-    Throughput and IOPS are stored as cumulative counters; deltas are computed
-    during ingest by comparing with the previous reading for the same device.
+
+    Only DELTA values are stored in the time-series table (bytes/iops per
+    sample interval). The cumulative counters (read_bytes, write_bytes,
+    read_iops, write_iops, busy_time_ms) live in LatestSnapshot
+    (storage_read_bytes_total_json etc.) for the next ingest's delta
+    calculation. They are NOT stored in this time-series table because:
+    - No chart or report reads cumulative values from this table
+    - The chart view reads `*_delta` columns for the historical data
+    - The Live Metrics view reads `LatestSnapshot.*_delta_json`
+    - The serializer computes deltas from `LatestSnapshot.*_total_json`,
+      not from this table's previous row
+
     Utilization is derived from busy_time delta / sample interval.
     """
     id = models.BigAutoField(primary_key=True)
@@ -117,21 +127,16 @@ class StorageMetric(models.Model):
     temp_c = models.FloatField(null=True)
     smart_health = models.CharField(max_length=16, blank=True, default='')
 
-    # Disk I/O metrics — cumulative counters (like network rx/tx_bytes)
-    read_bytes = models.BigIntegerField(null=True, help_text="Cumulative bytes read (counter)")
-    write_bytes = models.BigIntegerField(null=True, help_text="Cumulative bytes written (counter)")
-    # Deltas computed during ingest (bytes/sec equivalent over sample interval)
+    # Deltas computed during ingest (bytes/sec equivalent over sample interval).
+    # These are the only I/O metrics stored in the time-series table — they
+    # are read by the chart view and report endpoint.
     read_bytes_delta = models.BigIntegerField(null=True, help_text="Bytes read since last sample")
     write_bytes_delta = models.BigIntegerField(null=True, help_text="Bytes written since last sample")
-    # IOPS — cumulative operation counters
-    read_iops = models.PositiveIntegerField(null=True, help_text="Cumulative read operations (counter)")
-    write_iops = models.PositiveIntegerField(null=True, help_text="Cumulative write operations (counter)")
-    # IOPS deltas computed during ingest
     read_iops_delta = models.PositiveIntegerField(null=True, help_text="Read operations since last sample")
     write_iops_delta = models.PositiveIntegerField(null=True, help_text="Write operations since last sample")
-    # Busy time — cumulative ms the disk spent doing I/O
-    busy_time_ms = models.PositiveIntegerField(null=True, help_text="Cumulative busy time in ms (counter)")
     # Utilization — derived: busy_time_delta / (sample_interval_s * 1000) * 100
+    # (busy_time_delta is computed in the serializer from LatestSnapshot
+    # storage_busy_time_ms_total_json — see process_ingest for details)
     utilization_pct = models.FloatField(null=True, help_text="Disk utilization % (0-100)")
 
     class Meta:
@@ -143,14 +148,19 @@ class StorageMetric(models.Model):
 
 
 class NetworkMetric(models.Model):
-    """Per-interface time-series metrics — one row per interface per snapshot."""
+    """Per-interface time-series metrics — one row per interface per snapshot.
+
+    Stores dynamic per-minute network metrics. Static fields (ipv4,
+    link_speed_mbps) are stored in LatestSnapshot.network_ipv4s_json
+    and network_speeds_json (current state only) — no historical
+    chart or report ever reads them, and they change rarely
+    (DHCP lease renewal, NIC reconfiguration).
+    """
     id = models.BigAutoField(primary_key=True)
     snapshot = models.ForeignKey(MetricSnapshot, on_delete=models.CASCADE, related_name='network_metrics')
     rig_uuid = models.UUIDField(db_index=True)
     timestamp = models.DateTimeField(db_index=True)
     interface = models.CharField(max_length=64, blank=True, default='')
-    ipv4 = models.CharField(max_length=15, blank=True, default='')
-    link_speed_mbps = models.PositiveIntegerField(null=True)
     rx_bytes = models.BigIntegerField(null=True)
     tx_bytes = models.BigIntegerField(null=True)
     rx_bytes_delta = models.BigIntegerField(null=True, help_text="Bytes received since last reading")
@@ -304,6 +314,13 @@ class LatestSnapshot(models.Model):
     top_mem_processes_json = models.JSONField(default=list, blank=True)     # Top 20 by memory%
     process_count = models.PositiveIntegerField(default=0)                   # Total running processes
 
+    # GPU processes (latest snapshot only — for Live Metrics display)
+    # Each entry: [{gpu_index, pid, process_name, type, gpu_mem_mb}, ...]
+    # Historical GPU process time-series was removed in migration 0047 because
+    # no historical query was ever performed (processes change every minute).
+    gpu_processes_json = models.JSONField(default=list, blank=True)         # Current GPU processes
+    gpu_process_count = models.PositiveIntegerField(default=0)               # Count of GPU processes
+
     # Job indicator: True if rig has active GPU process or running Docker container
     has_active_job = models.BooleanField(default=False)
 
@@ -337,75 +354,6 @@ class RigStatusEvent(models.Model):
         indexes = [
             models.Index(fields=['rig_uuid', '-timestamp']),
             models.Index(fields=['rig_uuid', 'status']),
-        ]
-
-
-class GPUProcessMetric(models.Model):
-    """Per-GPU-process metrics — one row per process per GPU per snapshot.
-
-    Collected from nvidia-smi process table. Enables the Live Metrics
-    "GPU Processes" display showing which processes use each GPU.
-
-    Fields:
-        gpu_index: GPU device index (0, 1, 2, ...)
-        pid: Process ID from OS
-        process_name: Process executable path/name
-        type: Process type — C (Compute), G (Graphics), C+G (Both)
-        gpu_mem_mb: GPU memory used by this process (MB)
-    """
-    id = models.BigAutoField(primary_key=True)
-    snapshot = models.ForeignKey(MetricSnapshot, on_delete=models.CASCADE, related_name='gpu_processes')
-    rig_uuid = models.UUIDField(db_index=True)
-    timestamp = models.DateTimeField(db_index=True)
-
-    gpu_index = models.PositiveSmallIntegerField(default=0)
-    pid = models.PositiveIntegerField(null=True)
-    process_name = models.CharField(max_length=500, blank=True, default='')
-    type = models.CharField(max_length=10, blank=True, default='')  # C, G, C+G
-    gpu_mem_mb = models.PositiveIntegerField(null=True)
-
-    class Meta:
-        db_table = 'metrics_gpu_process'
-        ordering = ['-gpu_mem_mb']
-        unique_together = ('rig_uuid', 'timestamp', 'gpu_index', 'pid')
-        indexes = [
-            models.Index(fields=['rig_uuid', '-timestamp']),
-        ]
-
-
-class PowerReading(models.Model):
-    """Power consumption reading — one row per rig per heartbeat.
-
-    Stores measured (GPU via nvidia-smi, CPU via RAPL) and estimated
-    (CPU fallback, other components) power consumption data.
-    All power values are AC (wall) — PSU efficiency already factored in by agent.
-    Used for power charts and cost estimation.
-    """
-    id = models.BigAutoField(primary_key=True)
-    rig = models.ForeignKey('rigs.Rig', on_delete=models.CASCADE, related_name='power_readings')
-    timestamp = models.DateTimeField(default=timezone.now, db_index=True)
-
-    # GPU power (measured via nvidia-smi, sum of all GPUs, AC)
-    gpu_power_w = models.FloatField(default=0)
-
-    # CPU power (measured via RAPL or estimated from utilization, AC)
-    cpu_power_w = models.FloatField(default=0)
-    cpu_power_source = models.CharField(max_length=10, default='rapl', choices=[
-        ('rapl', 'RAPL (measured)'),
-        ('estimate', 'Estimated from utilization'),
-    ])
-
-    # Other components (flat estimate: RAM + disks + MB + fans, AC)
-    other_power_w = models.FloatField(default=40)
-
-    # Total system power (AC, PSU efficiency already factored in by agent)
-    total_power_w = models.FloatField(default=0)
-
-    class Meta:
-        db_table = 'metrics_power_reading'
-        ordering = ['-timestamp']
-        indexes = [
-            models.Index(fields=['rig', '-timestamp']),
         ]
 
 

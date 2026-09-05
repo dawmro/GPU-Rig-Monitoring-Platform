@@ -1,5 +1,9 @@
 # Agent vs Serializer Computation Analysis
 
+> **Status (2026-09-05):** Still valid. Server-side delta calculation in `serializers.py` is the correct design (see "RECOMMENDATION: Keep as-is" below). The `LatestSnapshot` query that backs the delta calculation is the SAME query that powers the `lsnap_{uuid}` cache for the Live Metrics view, so it's effectively free.
+>
+> This doc is referenced by the Performance section of `docs/GPU_Rig_Monitoring_Architecture.md` (§10.6) and the serializer analysis in commit history.
+
 ## Current Architecture
 
 - Agent collects raw metrics every 60s and sends cumulative counters

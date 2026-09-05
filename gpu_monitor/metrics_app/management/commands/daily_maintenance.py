@@ -27,12 +27,12 @@ from django.utils import timezone
 logger = logging.getLogger(__name__)
 
 # Tables to VACUUM ANALYZE after maintenance (in FK-safe order)
+# NOTE: 'metrics_gpu_process' removed in migration 0047 (GPUProcessMetric dropped)
+# NOTE: 'metrics_power_reading' removed in migration 0048 (PowerReading dropped)
 VACUUM_TABLES = [
     'metrics_gpumetric',
     'metrics_storagemetric',
     'metrics_networkmetric',
-    'metrics_gpu_process',
-    'metrics_power_reading',
     'metrics_metricsnapshot',
 ]
 
@@ -148,14 +148,18 @@ class Command(BaseCommand):
         self.stdout.write(self.style.MIGRATE_HEADING(f'Table Stats ({label}):'))
         try:
             with connection.cursor() as cursor:
+                # pg_total_relation_size needs the OID from pg_class.
+                # pg_stat_user_tables doesn't expose the OID directly,
+                # so we join through pg_class to get it.
                 cursor.execute("""
-                    SELECT relname, n_live_tup, n_dead_tup,
-                           ROUND(pg_total_relation_size(oid) / 1024.0 / 1024.0, 1) AS total_mb,
-                           last_vacuum, last_autovacuum
-                    FROM pg_stat_user_tables
-                    WHERE schemaname = 'public'
-                      AND relname IN %s
-                    ORDER BY pg_total_relation_size(oid) DESC
+                    SELECT s.relname, s.n_live_tup, s.n_dead_tup,
+                           ROUND(pg_total_relation_size(c.oid) / 1024.0 / 1024.0, 1) AS total_mb,
+                           s.last_vacuum, s.last_autovacuum
+                    FROM pg_stat_user_tables s
+                    JOIN pg_class c ON c.relname = s.relname
+                    WHERE s.schemaname = 'public'
+                      AND s.relname IN %s
+                    ORDER BY pg_total_relation_size(c.oid) DESC
                 """, [tuple(VACUUM_TABLES)])
                 rows = cursor.fetchall()
                 for row in rows:

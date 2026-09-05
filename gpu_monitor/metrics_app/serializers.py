@@ -4,30 +4,16 @@ from rest_framework import serializers, status
 from django.db import transaction
 from django.utils import timezone
 from django.core.cache import cache
-from .models import MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, LatestDockerContainer, LatestSnapshot, RigStatusEvent
+from .models import MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, LatestDockerContainer, LatestSnapshot, RigStatusEvent
 from rigs.models import Rig
 from dashboard.views import _json_get
 
 logger = logging.getLogger(__name__)
 
-# Chart cache ranges invalidated on ingest — MUST stay in sync with the ranges
-# the frontend actually requests (rig_detail.html chart loaders: 24/168/720).
-# Bucket size per range is derived by _chart_bucket_minutes(), which mirrors
-# ChartDataView.get()'s bucket selection in views.py.
-CHART_CACHE_RANGES = (24, 168, 720)
-
-
-def _chart_bucket_minutes(range_hours):
-    """Bucket size used by ChartDataView for a given chart range.
-
-    MUST stay in sync with ChartDataView.get() bucket selection
-    (metrics_app/views.py): 1-min for <=24h, 15-min for <=168h, 1-hour above.
-    """
-    if range_hours <= 24:
-        return 1
-    if range_hours <= 168:
-        return 15
-    return 60
+# Chart cache invalidation is now done by bumping a version counter
+# (chart_v_{rig_uuid}) in the serializer. The view's cache key embeds
+# this version, so old keys become unreachable. No need for explicit
+# per-metric / per-range cache.delete() calls.
 
 
 class IngestSerializer(serializers.Serializer):
@@ -207,21 +193,25 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                 gpu_pcie_width.append(gpu.get('pcie_current_width'))
                 gpu_pcie_max_width.append(gpu.get('pcie_max_width'))
 
-            # Store per-GPU process metrics
-            # Delete old process records for this rig first — we only care about
-            # the latest snapshot, not historical process data
-            GPUProcessMetric.objects.filter(rig_uuid=rig_uuid).delete()
+            # Build denormalized GPU process list for LatestSnapshot.
+            # NOTE: We intentionally do NOT write to a time-series table.
+            # Historical GPU process data is not used anywhere (the Live
+            # Metrics page only shows the CURRENT snapshot's processes).
+            # Storing 1 row per minute × N processes × 31 days would be
+            # wasted storage. Processes are transient — they change every
+            # minute, so old data has no analytical value. The
+            # GPUProcessMetric time-series table was removed in migration
+            # 0047 (it had 12 orphaned rows from before this denormalization).
+            gpu_processes_for_snapshot = []
             for proc in gpu_process_list:
-                GPUProcessMetric.objects.create(
-                    rig_uuid=rig_uuid,
-                    timestamp=ts,
-                    snapshot=snapshot,
-                    gpu_index=proc.get('gpu_index', 0),
-                    pid=proc.get('pid'),
-                    process_name=proc.get('name', '')[:500],
-                    type=proc.get('type', ''),
-                    gpu_mem_mb=proc.get('gpu_mem_mb'),
-                )
+                gpu_processes_for_snapshot.append({
+                    'gpu_index': proc.get('gpu_index', 0),
+                    'pid': proc.get('pid'),
+                    'process_name': proc.get('name', '')[:500],
+                    'type': proc.get('type', ''),
+                    'gpu_mem_mb': proc.get('gpu_mem_mb'),
+                })
+            gpu_process_count = len(gpu_processes_for_snapshot)
 
             # Store per-disk metrics with I/O delta calculation
             # Previous values come from LatestSnapshot (fetched before transaction)
@@ -341,11 +331,13 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                         'usage_pct': disk.get('usage_pct'),
                         'temp_c': disk.get('temp_c'),
                         'smart_health': disk.get('smart_health', ''),
-                        'read_bytes': new_read_bytes,
-                        'write_bytes': new_write_bytes,
-                        'read_iops': new_read_iops,
-                        'write_iops': new_write_iops,
-                        'busy_time_ms': new_busy_time_ms,
+                        # NOTE: Cumulative counters (read_bytes, write_bytes,
+                        # read_iops, write_iops, busy_time_ms) are stored
+                        # ONLY in LatestSnapshot.storage_*_total_json. They
+                        # are not duplicated in StorageMetric because no
+                        # view reads cumulative values from the time-series
+                        # table — all consumers use `*_delta` for historical
+                        # data and LatestSnapshot for current state.
                         'read_bytes_delta': read_bytes_delta,
                         'write_bytes_delta': write_bytes_delta,
                         'read_iops_delta': read_iops_delta,
@@ -394,8 +386,12 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                     interface=iface_name,
                     defaults={
                         'snapshot': snapshot,
-                        'ipv4': iface.get('ipv4', ''),
-                        'link_speed_mbps': iface.get('link_speed_mbps'),
+                        # NOTE: 'ipv4' and 'link_speed_mbps' were removed from
+                        # NetworkMetric in migration 0050. These static fields
+                        # are stored only in LatestSnapshot.network_ipv4s_json
+                        # and network_speeds_json (current state for Live
+                        # Metrics display). No chart or report ever read them
+                        # from the time-series table.
                         'rx_bytes': new_rx,
                         'tx_bytes': new_tx,
                         'rx_bytes_delta': rx_delta,
@@ -415,25 +411,24 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                 network_tx_errors.append(iface.get('tx_errors', 0))
 
             # Store latest container snapshot (for Live Metrics display)
-            # Delete-before-insert pattern: remove all old rows for this rig first
-            LatestDockerContainer.objects.filter(rig_uuid=rig_uuid).delete()
-            
-            # Deduplicate containers by container_id to avoid duplicates
+            # Strategy: validate all container data first, then DELETE all old
+            # rows in one query, then bulk_create the new ones in one query.
+            # This reduces N+1 queries (was 1 DELETE + N INSERTs per heartbeat)
+            # to just 1 DELETE + 1 INSERT.
+            #
+            # Per-container validation: invalid container data is logged and
+            # skipped (NOT failed) to prevent transaction rollback. This
+            # matches the previous behavior where individual container errors
+            # did not break the entire ingest.
             seen_container_ids = set()
-            unique_containers = []
+            valid_containers = []
             for container in docker_containers:
                 container_id = container.get('container_id')
                 if not container_id or container_id in seen_container_ids:
                     continue
                 seen_container_ids.add(container_id)
-                unique_containers.append(container)
-            
-            for container in unique_containers:
-                container_id = container.get('container_id')
-                if not container_id:
-                    continue
                 try:
-                    LatestDockerContainer.objects.create(
+                    valid_containers.append(LatestDockerContainer(
                         rig_uuid=rig_uuid,
                         container_id=container_id,
                         name=container.get('name', ''),
@@ -443,13 +438,18 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                         status_text=container.get('status_text', ''),
                         manifest_json=container.get('manifest', {}),
                         logs_json=container.get('logs', []),
-                    )
+                    ))
                 except Exception as e:
-                    # Skip individual container errors to prevent transaction rollback
-                    # from wiping out all containers
                     logging.getLogger('serializer').warning(
-                        'Failed to save container %s: %s', container_id, e
+                        'Skipping invalid container %s: %s', container_id, e
                     )
+
+            if valid_containers:
+                LatestDockerContainer.objects.filter(rig_uuid=rig_uuid).delete()
+                # One query inserts all containers at once
+                LatestDockerContainer.objects.bulk_create(
+                    valid_containers, ignore_conflicts=True
+                )
 
             # Update latest snapshot (denormalized)
             ls_defaults = {
@@ -528,6 +528,8 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                 'top_cpu_processes_json': top_processes.get('by_cpu', []) if top_processes else [],
                 'top_mem_processes_json': top_processes.get('by_mem', []) if top_processes else [],
                 'process_count': top_processes.get('total_count', 0) if top_processes else 0,
+                'gpu_processes_json': gpu_processes_for_snapshot,
+                'gpu_process_count': gpu_process_count,
                 'has_active_job': validated.get('has_active_job', False),
             }
 
@@ -535,31 +537,24 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
             # Agent sends pre-calculated power values (PSU efficiency already factored in)
             if power_data and rig:
                 try:
-                    from metrics_app.models import PowerReading
-
                     gpu_power_w = float(power_data.get('gpu_power_w', 0) or 0)
                     cpu_power_w = float(power_data.get('cpu_power_w', 0) or 0)
                     cpu_power_source = power_data.get('cpu_power_source', 'estimate')
                     other_power_w = float(power_data.get('other_power_w', 40) or 40)
                     total_power_w = float(power_data.get('total_power_w', 0) or 0)
 
-                    # Store at most once per minute to reduce DB growth
-                    last_reading = PowerReading.objects.filter(rig=rig).first()
-                    store_reading = True
-                    if last_reading:
-                        time_diff = (timezone.now() - last_reading.timestamp).total_seconds()
-                        if time_diff < 60:
-                            store_reading = False
-
-                    if store_reading:
-                        PowerReading.objects.create(
-                            rig=rig,
-                            gpu_power_w=round(gpu_power_w, 1),
-                            cpu_power_w=round(cpu_power_w, 1),
-                            cpu_power_source=cpu_power_source,
-                            other_power_w=other_power_w,
-                            total_power_w=round(total_power_w, 1),
-                        )
+                    # Throttle power fields to 1/minute using cache to avoid
+                    # a DB write per heartbeat. Power data is denormalized
+                    # into LatestSnapshot on every heartbeat; the throttle
+                    # controls how often the separate (now-removed) PowerReading
+                    # table was written, but LatestSnapshot itself is always
+                    # updated. This is a no-op now but kept for clarity.
+                    power_throttle_key = f'power_throttle_{rig_uuid}'
+                    if cache.add(power_throttle_key, 1, timeout=60):
+                        # First write in this 60s window — no-op now (was
+                        # PowerReading.objects.create). Kept for telemetry
+                        # timing analysis if needed in the future.
+                        pass
 
                     # Update LatestSnapshot power fields
                     ls_defaults['power_total_w'] = round(total_power_w, 1)
@@ -578,20 +573,16 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
             # Invalidate report caches for all ranges
             for hours in (24, 168, 720):
                 cache.delete(f'report_{rig_uuid}_{hours}')
-            # Invalidate chart caches for common metrics
-            # (22 metrics x 3 ranges x 3 bucket sizes = ~198 keys)
-            for metric in ('cpu_utilization_pct', 'cpu_temp_c', 'cpu_power_w',
-                          'total_system_power_w', 'cpu_freq_current_mhz',
-                          'gpu_temp_c', 'gpu_util_pct', 'gpu_power_w',
-                          'gpu_fan_pct', 'gpu_core_clock_mhz', 'gpu_mem_clock_mhz',
-                          'gpu_mem_used_mb', 'disk_usage_pct',
-                          'disk_read_bytes_delta', 'disk_write_bytes_delta',
-                          'error_frequency', 'uptime_s', 'net_rx_bytes_delta',
-                          'net_tx_bytes_delta', 'net_rx_errors', 'net_tx_errors',
-                          'gpu_mem_controller_util_pct'):
-                for hours in CHART_CACHE_RANGES:
-                    bucket = _chart_bucket_minutes(hours)
-                    cache.delete(f'chart_{rig_uuid}_{metric}_{hours}_{bucket}')
+            # Invalidate ALL chart caches for this rig by bumping a version counter.
+            # The ChartDataView cache key embeds the current version, so bumping
+            # it makes all old keys unreachable. This is O(1) instead of
+            # invalidating 22 metrics × 3 ranges × 1 bucket × 64 (gpu_index ×
+            # multi_* combos) = ~4,200 cache.delete() calls per heartbeat.
+            # Old keys naturally expire via cache TTL (55s).
+            try:
+                cache.incr(f'chart_v_{rig_uuid}')
+            except ValueError:
+                cache.set(f'chart_v_{rig_uuid}', 1, timeout=None)
             # Track rig status transitions
             if rig:
                 previous_status = rig.status
@@ -686,6 +677,12 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
             if enrolled_by_key_changed:
                 update_fields.append('enrolled_by_api_key')
             rig.save(update_fields=update_fields)
+
+            # Invalidate cached Rig data — status and last_seen just changed.
+            # Without this, htmx_metrics/htmx_rig_status would show stale
+            # status for up to 30s after the rig comes online.
+            from dashboard.views import invalidate_rig_cache
+            invalidate_rig_cache(rig_uuid)
 
             http_status = status.HTTP_200_OK if created else status.HTTP_202_ACCEPTED
             status_label = 'new' if created else 'duplicate'

@@ -19,6 +19,10 @@ class Command(BaseCommand):
                 status=new_status,
                 previous_status=old_status,
             )
+            # Invalidate cached rig data — status just changed; without this
+            # the cached status would be stale for up to 30s after transition.
+            from dashboard.views import invalidate_rig_cache
+            invalidate_rig_cache(rig.uuid)
             return 1
         return 0
 

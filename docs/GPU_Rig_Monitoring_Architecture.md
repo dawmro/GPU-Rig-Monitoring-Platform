@@ -1,8 +1,8 @@
 # GPU Rig Monitoring Platform — Architecture Document
 
-**Version:** 2.0
+**Version:** 2.1
 **Status:** Implemented — Living Architecture Reference
-**Last Updated:** 2026-09-04
+**Last Updated:** 2026-09-05
 
 ---
 
@@ -108,10 +108,11 @@ Cron → Agent collects metrics → JSON payload → POST /api/v1/ingest/
   → DRF APIKeyAuthentication (X-API-Key header → Argon2id hash comparison)
   → DRF throttle (per-rig rate limit via X-Rig-UUID header, 2/min per rig)
     → Timestamp sanity check (reject if >5 min future or >1 hour past)
-    → IngestSerializer validation (schema version 1.0 through 1.11)
+    → IngestSerializer validation (schema version 1.0 through 1.14)
   → process_ingest() → DB upsert (MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, LatestDockerContainer, RigStatusEvent, LatestSnapshot)
-  → StorageMetric: capacity, usage%, temp, SMART, read/write bytes, read/write IOPS, busy_time_ms, utilization%
-  → LatestSnapshot: 11 storage JSON arrays (devices, fstypes, mountpoints, capacities, usage%, temps, smart, deltas, totals), 3 process fields (top_cpu_processes_json, top_mem_processes_json, process_count)
+  → StorageMetric: capacity, usage%, temp, SMART, read/write *deltas*, read/write IOPS *deltas*, utilization% (cumulative counters live only in LatestSnapshot.storage_*_total_json after migration 0049)
+  → NetworkMetric: rx/tx *deltas*, rx/tx errors (static fields ipv4, link_speed_mbps live only in LatestSnapshot.network_*_json after migration 0050)
+  → LatestSnapshot: 11 storage JSON arrays (devices, fstypes, mountpoints, capacities, usage%, temps, smart, deltas, totals) + 5 cumulative storage JSON arrays (read/write bytes/IOPS totals, busy_time_ms) + 3 process fields (top_cpu_processes_json, top_mem_processes_json, process_count) + power fields (power_total_w, power_gpu_w, power_cpu_w, power_other_w) + gpu_processes_json + gpu_process_count + has_active_job + 17 GPU JSON arrays
   → Rig.latest_errors_json updated with latest error text
   → Rig.enrolled_by_api_key updated to current key (handles key rotation)
   → Rig.last_seen and Rig.status updated to ONLINE
@@ -138,7 +139,7 @@ Rate limiting design:
 | `agent_windows/run.py` | Windows agent (~916 lines) |
 | `metrics_app/views.py` | IngestView, HealthView, ChartDataView, RigMetricsView |
 | `metrics_app/serializers.py` | IngestSerializer, process_ingest() |
-|| `metrics_app/models.py` | MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, LatestDockerContainer, LatestSnapshot (with GPU JSON fields), RigStatusEvent |
+|| `metrics_app/models.py` | MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, LatestDockerContainer, LatestSnapshot (with GPU/storage/network JSON fields + power, GPU processes), RigStatusEvent |
 | `dashboard/views.py` | index_view (root → dashboard/login redirect), rig_list, rig_detail, htmx_metrics, htmx_rig_status, rig_rename |
 | `dashboard/templatetags/gpu_filters.py` | gpu_model_name, gpu_model_short, gpu_compact_summary_json, gpu_temp_cell_json, gpu_util_cell_json, gpu_fan_cell_json, time_since, last_seen_short filters |
 | `rigs/models.py` | Rig, RigTag |
@@ -374,13 +375,13 @@ debug_mode: false         # Verbose logging
 
 | Agent | Version | Schema | Platform | Scheduling |
 |-------|---------|--------|----------|------------|
-| Linux | 1.6.0   | 1.11   | Any Linux, VMware NAT | `cron` every 60s with `flock` |
-| Windows | 1.6.17-win | 1.11 | Windows 10/11 | Task Scheduler (1 min) with `pythonw.exe` (hidden window) |
+| Linux | 1.9.1 | 1.14 | Any Linux, VMware NAT | `cron` every 60s with `flock` |
+| Windows | 1.9.1-win | 1.14 | Windows 10/11 | Task Scheduler (1 min) with `pythonw.exe` (hidden window) |
 
 **Versioning rules:**
-- `agent_version` (e.g. `1.1.0`): incremented for agent-side changes (collectors, payload format, bug fixes). Format: `MAJOR.MINOR.PATCH`.
-- `schema_version` (e.g. `1.1`): incremented only when the payload structure changes in a way that affects the server's serialization/storage. Format: `MAJOR.MINOR`.
-- Schema versions 1.0 through 1.11 are supported (backward compatible via `validate_schema_version` in `IngestSerializer`).
+- `agent_version` (e.g. `1.9.1`): incremented for agent-side changes (collectors, payload format, bug fixes). Format: `MAJOR.MINOR.PATCH`.
+- `schema_version` (e.g. `1.14`): incremented only when the payload structure changes in a way that affects the server's serialization/storage. Format: `MAJOR.MINOR`.
+- Schema versions 1.0 through 1.14 are supported (backward compatible via `validate_schema_version` in `IngestSerializer`).
 - When schema versions change, the `validate_schema_version` method in `IngestSerializer` is updated to accept the new version. The same serializer handles all supported versions.
 - See §11.5 for the contract testing strategy.
 
@@ -395,7 +396,7 @@ debug_mode: false         # Verbose logging
 | `gpu_monitor` | — | Settings, URL routing, WSGI |
 | `accounts` | User, ApiKey | Login, logout, API key management |
 | `rigs` | Rig, RigTag | `update_rig_status` management command |
-|| `metrics_app` | MetricSnapshot, GPUMetric, GPUProcessMetric, StorageMetric, NetworkMetric, LatestDockerContainer, LatestSnapshot, RigStatusEvent | IngestView, HealthView, ChartDataView, RigMetricsView |
+|| `metrics_app` | MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, LatestDockerContainer, LatestSnapshot, RigStatusEvent | IngestView, HealthView, ChartDataView, RigMetricsView |
 | `dashboard` | — | rig_list, rig_detail, htmx_metrics, htmx_rig_status, rig_rename |
 | `audit` | AuditLog | Middleware-based request logging |
 | `dashboard/templatetags` | — | gpu_model_name, gpu_model_short, gpu_compact_summary_json, gpu_temp_cell_json, gpu_util_cell_json, gpu_fan_cell_json, time_since, last_seen_short filters |
@@ -416,20 +417,20 @@ POST /api/v1/ingest/
   → APIKeyAuthentication validates X-API-Key
   → Nginx rate limit: 2r/min per rig_uuid (burst=5)
   → DRF throttle (per-rig rate limit via X-Rig-UUID header, 2/min per rig)
-  → IngestSerializer validation (schema version 1.0 through 1.11)
+  → IngestSerializer validation (schema version 1.0 through 1.14)
   → process_ingest() in transaction.atomic():
       - Upsert MetricSnapshot (cpu, memory, status fields; motherboard/software as JSON; error_count)
       - Upsert GPUMetric per GPU (gpu_index = 0, 1, ...)
-      - Delete + recreate GPUProcessMetric per process (latest snapshot only)
-      - Upsert StorageMetric per disk (with path-normalized dedup)
-      - Upsert NetworkMetric per interface (with rx/tx delta calculation)
-      - Delete + recreate LatestDockerContainer per container (container_id, name, image, status, created, status_text — latest snapshot for Live Metrics)
+      - *(GPUProcessMetric removed in migration 0047 — GPU processes denormalized into LatestSnapshot.gpu_processes_json below)*
+      - Upsert StorageMetric per disk (with path-normalized dedup; only deltas + utilization stored, cumulative counters live in LatestSnapshot after migration 0049)
+      - Upsert NetworkMetric per interface (with rx/tx delta calculation; only deltas + errors stored, ipv4/link_speed_mbps live in LatestSnapshot after migration 0050)
+      - Delete + bulk_create LatestDockerContainer per container (container_id, name, image, status, created, status_text, manifest_json, logs_json — latest snapshot for Live Metrics; bulk_create reduces N+1 queries)
       - Create RigStatusEvent on status transition (e.g. offline→online)
       - Update Rig.latest_errors_json with latest error text from payload
       - Update LatestSnapshot (denormalized cache for fast dashboard loading):
           * CPU: cpu_utilization_pct, cpu_temp_c, mem_used_bytes, mem_total_bytes
           * GPU (JSON arrays): gpu_count, gpu_uuids_json, gpu_models_json, gpu_temps_json, gpu_utils_json, gpu_fans_json, gpu_core_clocks_json, gpu_mem_clocks_json, gpu_mem_used_json, gpu_mem_total_json, gpu_mem_util_pcts_json, gpu_mem_free_json, gpu_power_draws_json, gpu_power_limits_json, gpu_pcie_gen_json, gpu_pcie_max_gen_json, gpu_pcie_width_json, gpu_pcie_max_width_json
-          * Storage (JSON arrays): storage_count, storage_devices_json, storage_fstypes_json, storage_mountpoints_json, storage_capacities_json, storage_usage_pcts_json, storage_temps_json, storage_smart_json
+          * Storage (JSON arrays): storage_count, storage_devices_json, storage_fstypes_json, storage_mountpoints_json, storage_capacities_json, storage_usage_pcts_json, storage_temps_json, storage_smart_json + storage_read_bytes_delta_json, storage_write_bytes_delta_json, storage_read_iops_delta_json, storage_write_iops_delta_json, storage_utilization_pcts_json + storage_read_bytes_total_json, storage_write_bytes_total_json, storage_read_iops_total_json, storage_write_iops_total_json, storage_busy_time_ms_total_json
           * Network (JSON arrays): network_count, network_interfaces_json, network_ipv4s_json, network_speeds_json, network_rx_bytes_json, network_tx_bytes_json, network_rx_errors_json, network_tx_errors_json
           * Cache invalidation: cache.delete(lsnap_{uuid})
       - Update Rig.last_seen = now(), Rig.status = ONLINE, cache.delete(lsnap_{uuid})
@@ -545,23 +546,25 @@ HTMX polls use `hx-swap="innerHTML"` (not `outerHTML`). This is critical: `inner
 
 ### 5.2b Power Consumption
 
-The agent calculates total system power and stores it in two places:
+The agent calculates total system power and stores it in LatestSnapshot (for Live Metrics display) and in time-series tables (for historical charts):
 
 **Real-time (LatestSnapshot):** `power_total_w`, `power_gpu_w`, `power_cpu_w`, `power_other_w` — latest values for Live Metrics display and Fleet Overview column.
 
-**Historical (PowerReading):** One row per minute per rig (throttled to avoid duplicate writes within 60s). Used for power charts and cost estimation.
+**Historical (time-series):** Power data lives in two time-series tables, queried by the chart views:
+- `MetricSnapshot.cpu_power_w` and `total_system_power_w` — read by `chartCpuPower` and `chartTotalPower` (CPU/Mem/Power charts)
+- `GPUMetric.power_draw_w` (per-GPU) — read by `chartGpuPower` (multi-GPU chart)
+
+*(PowerReading was a separate time-series table that stored the same power data, throttled to 1 row per minute per rig. It was removed in migration 0048 because it was never read by any view — power charts read from MetricSnapshot/GPUMetric, and Live Metrics reads from LatestSnapshot.)*
 
 | Model | Field | Description |
 |-------|-------|-------------|
 | LatestSnapshot | `power_total_w` | Total system power (AC, PSU efficiency factored in) |
 | LatestSnapshot | `power_gpu_w` | Sum of all GPU power draw (AC) |
 | LatestSnapshot | `power_cpu_w` | CPU power (AC, RAPL-measured or estimated) |
-|| LatestSnapshot | `power_other_w` | Flat 40W for RAM+disks+MB+fans |
-|| PowerReading | `total_power_w` | Same as above, historical timeseries |
-|| PowerReading | `gpu_power_w` | GPU power, historical |
-|| PowerReading | `cpu_power_w` | CPU power, historical |
-|| PowerReading | `cpu_power_source` | 'rapl' or 'estimate' |
-|| PowerReading | `other_power_w` | Flat 40W |
+|  | LatestSnapshot | `power_other_w` | Flat 40W for RAM+disks+MB+fans |
+|  | MetricSnapshot | `cpu_power_w` | CPU power historical, per heartbeat (1-min raw) |
+|  | MetricSnapshot | `total_system_power_w` | Total system power historical, per heartbeat (1-min raw) |
+|  | GPUMetric | `power_draw_w` | Per-GPU power draw historical (sum of GPUs = total GPU power) |
 
 **Power calculation (agent-side):**
 ```
@@ -622,11 +625,14 @@ The dashboard display (Fleet Overview + Live Metrics) is fully decoupled from ti
 |||| GPU (×N) | 18 JSON arrays (uuid/model/temp/util/mem_ctrl_util/fan/clocks/mem/power/PCIe) |
 ||| Storage (×N) | 7 JSON arrays (device/fstype/mountpoint/capacity/usage/temp/SMART) |
 ||| Network (×N) | 7 JSON arrays (interface/IPv4/speed/rx/tx/errors) |
-||| Processes | top_cpu_processes_json, top_mem_processes_json, process_count |
+|||| Processes | top_cpu_processes_json, top_mem_processes_json, process_count |
+||| Power | power_total_w, power_gpu_w, power_cpu_w, power_other_w |
+||| GPU Processes (denormalized) | gpu_processes_json, gpu_process_count |
+||| Job indicator | has_active_job |
 
 **Views using snapshot data:**
 - `rig_list` (Fleet Overview): Reads `LatestSnapshot` + `Rig` + `RigTag`. **0 timeseries queries.**
-- `htmx_metrics` (Live Metrics): Reads `LatestSnapshot` + `LatestDockerContainer` + `GPUProcessMetric`. **0 timeseries queries for GPU/storage/network.**
+- `htmx_metrics` (Live Metrics): Reads `LatestSnapshot` + `LatestDockerContainer` (with `.exists()` short-circuit for non-Docker rigs). **0 timeseries queries for GPU/storage/network/processes/power.** GPU processes come from `LatestSnapshot.gpu_processes_json` (denormalized in migration 0047).
 
 #### Timeseries Data Path (Charts Only)
 
@@ -659,7 +665,9 @@ Timeseries tables store every heartbeat's data for historical chart aggregation:
 
 Storage metrics are deduplicated by device: the view queries the latest `StorageMetric` per unique `device` path, preventing duplicate entries when the agent reports the same disk multiple times within the window.
 
-GPU process metrics use a **delete-before-insert** pattern: all existing `GPUProcessMetric` rows for the rig are deleted before inserting the latest snapshot. This ensures only the current process list is stored — no historical process data is needed. The `unique_together` constraint on `(rig_uuid, timestamp, gpu_index, pid)` provides a safety net but is rarely triggered since old rows are deleted first.
+GPU processes were historically stored in a `GPUProcessMetric` time-series table with a delete-before-insert pattern. In migration 0047, this table was dropped and GPU processes are now denormalized into `LatestSnapshot.gpu_processes_json` (current snapshot only, no historical data). The serializer writes a JSON array of `{gpu_index, pid, process_name, type, gpu_mem_mb}` per heartbeat. This eliminates ~50 INSERTs + 1 DELETE per heartbeat per rig and removes wasted storage from compaction/cleanup of unused historical data. The Live Metrics view reads from this JSON field directly.
+
+LatestDockerContainer uses a **delete-before-bulk_create** pattern: all existing rows for the rig are deleted, then the new container list is inserted in a single `bulk_create` query. This reduces N+1 queries (1 DELETE + N INSERTs) to 2 queries (1 DELETE + 1 bulk_create). Per-container error handling is preserved — invalid containers are logged and skipped before the bulk_create runs. The `unique_together` constraint on `(rig_uuid, container_id)` provides a safety net for race conditions.
 
 Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the agent misses a heartbeat.
 
@@ -670,15 +678,18 @@ Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the age
 | What | Key Pattern | TTL | Invalidation |
 |------|------------|-----|--------------|
 | LatestSnapshot | `lsnap_{uuid}` | 50s | On every ingest (serializer writes new data) |
-|| Chart data | `chart_{uuid}_{metric}_{range}_{bucket}` | 55s | On ingest (explicit delete) for ranges 24/168/720 with matching bucket sizes (1m/15m/1h); other ranges TTL expiry only |
-|| Report context | `report_{uuid}_{range_hours}` | 55s | TTL expiry only (no explicit invalidation) |
+| Chart data | `chart_{uuid}_{ver}_{metric}_{range}_{bucket}_g{gpu_idx}_{m_*}` | 55s | **Version-based** — serializer increments `chart_v_{uuid}` on every ingest, making all old keys unreachable. O(1) invalidation (no per-metric/range enumeration) |
+| Report context | `report_{uuid}_{range_hours}` | 55s | TTL expiry only (no explicit invalidation) |
+| Rig (lightweight) | `rig_light_{uuid}` | 30s | On heartbeat/status change/rename/tag toggle/delete/ownership transfer (7 invalidation paths) |
+| Power throttle | `power_throttle_{uuid}` | 60s | TTL expiry (replaces old PowerReading throttling sentinel) |
 | Rate limit counters | `rl_user_{id}` / `rl_ip_{ip}` | 60s | Automatic TTL |
 
 **Design rules:**
 - Cache TTL (55s) is just under the agent heartbeat interval (60s). Data is at most 1 heartbeat stale.
 - Ingest invalidates cache immediately so next read gets fresh data.
 - Report cost estimate is computed post-cache (user-specific, not cached).
-- Chart cache includes metric name + range + bucket size in key to prevent collisions.
+- Chart cache version: bumping `chart_v_{uuid}` on every heartbeat makes all old chart keys unreachable without enumerating them. The version is included in the cache key so old data simply expires via TTL. This replaced the previous per-metric/range `cache.delete()` loop (was ~198 calls per heartbeat per rig).
+- Rig lightweight cache holds a `SimpleNamespace(uuid, owner_id, status, last_seen, error_history_json, container_history_json)` for HTMX polling endpoints (htmx_metrics, htmx_rig_status) — avoids 1 DB query per poll.
 
 **Report lazy-loading:** The report container does NOT use `hx-trigger="load"`. Instead, data is fetched via `htmx.ajax()` only when the user first opens the Report tab (tracked by `reportLoaded` flag). This prevents wasted DB queries when user never opens the tab.
 
@@ -1045,6 +1056,79 @@ Each ingest performs multiple database operations:
 - Sustained (1,000 rigs/min): ~250 writes/sec = **~5% of capacity**
 
 **Scaling headroom:** The system can handle ~2,000 rigs at 1-minute intervals before reaching 50% DB write capacity. The NetworkMetric delta calculation is the only significant per-interface bottleneck.
+
+### 10.6 Performance Optimizations (Branch `fix/chart-data-view-perf`)
+
+A series of optimizations were applied in the `fix/chart-data-view-perf` branch (2026-09-05). All changes are backward-compatible and verified by the 33 unit tests in `test_chart_logic.py`.
+
+#### 10.6.1 ChartDataView (chart data endpoint)
+
+| Optimization | Before | After | Impact |
+|--------------|--------|-------|--------|
+| Pre-bucketed data reuse | Aggregated all 1-min raw rows in Python | Read directly from pre-bucketed 15-min/1-hour rows | 4-8x fewer rows aggregated |
+| Unified SQL aggregation | Two code paths (pre-bucketed vs raw) with divergent logic | Single `_read_prebucketed()` helper using `date_trunc()` | Correctness fix; same query plan for both |
+| Chart cache key includes multi_* flags + gpu_index | Served stale single-disk response to multi-disk requests (cache key didn't include flags) | Cache key: `chart_{uuid}_{ver}_{metric}_{range}_{bucket}_g{gpu}_{m_*}` | Multi-disk/iface/mem/GPU charts return correct data |
+| Version-based cache invalidation | 198 `cache.delete()` calls per heartbeat (didn't match the new key format) | 1 `cache.incr('chart_v_{uuid}')` call | O(1) invalidation; old keys naturally expire |
+| Disk utilization Windows fallback | Empty chart on Windows (psutil doesn't expose `busy_time`) | Server-side fallback to `usage_pct` when `utilization_pct` has no data | Chart shows data for all rigs |
+
+#### 10.6.2 rig_list (Fleet Overview)
+
+| Optimization | Before | After | Impact |
+|--------------|--------|-------|--------|
+| Duplicate status query | Separate `COUNT()` aggregation against Rig table | `Counter(r.status for r in rigs)` from in-memory list | 1 query saved per page load |
+| Tag filter N+1 | `r.tags.filter(name=tag_filter).exists()` per rig | `RigTag.objects.filter(name=tag_filter).values_list('rigs__uuid', flat=True)` | N queries → 1 query |
+| `owner` N+1 | Owner fetched per-rig | `prefetch_related('owner')` | Eliminates N+1 |
+
+#### 10.6.3 HTMX endpoints (htmx_metrics, htmx_rig_status)
+
+| Optimization | Before | After | Impact |
+|--------------|--------|-------|--------|
+| Rig lookup | 1 `Rig.objects.get()` per poll | 1 cache hit (`rig_light_{uuid}`) for 30s | 600 → 200 DB queries/min for 100 rigs (3x reduction) |
+| Cache invalidation | None | 7 invalidation paths: heartbeat, status change, rename, tag toggle, delete, ownership transfer (admin + user) | Always fresh data |
+
+#### 10.6.4 Fleet table template
+
+| Optimization | Before | After | Impact |
+|--------------|--------|-------|--------|
+| Inline `{% for %}` loops for titles | 4 loops per row × N rows × N GPUs | Pre-computed `item.gpu_*_title` in view | 100% template iteration reduction |
+| `item.snapshot` lookups | 26+ per row | Aliased with `{% with snapshot=item.snapshot %}` | 0 dict lookups per row |
+
+#### 10.6.5 Report endpoint (htmx_report_data)
+
+| Optimization | Before | After | Impact |
+|--------------|--------|-------|--------|
+| Power cost calculation | Separate `power_buckets` query with TruncMinute/TruncHour grouping | Derived from `total_system_power_w_avg * range_hours` | 5 → 4 queries (20% reduction) |
+
+#### 10.6.6 Schema cleanup (migrations 0047-0050)
+
+| Migration | What | Why |
+|-----------|------|-----|
+| 0047 | Drop `GPUProcessMetric` table (12 orphaned rows) | Denormalized to `LatestSnapshot.gpu_processes_json` (migration 0046). Eliminated 50+ INSERTs + 1 DELETE per heartbeat per rig |
+| 0048 | Drop `PowerReading` table (4,374 dead rows) | Never read by any view; power data lives in `MetricSnapshot.cpu_power_w/total_system_power_w` and `GPUMetric.power_draw_w` |
+| 0049 | Drop 5 cumulative columns from `StorageMetric` (`read_bytes`, `write_bytes`, `read_iops`, `write_iops`, `busy_time_ms`) | Never read by any view. Cumulative values live in `LatestSnapshot.storage_*_total_json`. Saves 5 × 8 bytes × N_disks per row |
+| 0050 | Drop 2 static columns from `NetworkMetric` (`ipv4`, `link_speed_mbps`) | Never read by any view. Static values live in `LatestSnapshot.network_ipv4s_json/speeds_json` |
+
+**Net storage impact**: ~3 MB of dead data + 12 orphaned rows eliminated.
+
+#### 10.6.7 Serializer optimizations
+
+| Optimization | Before | After | Impact |
+|--------------|--------|-------|--------|
+| `LatestDockerContainer` ingest | 1 DELETE + N INSERTs (1 per container) | 1 DELETE + 1 `bulk_create()` | N+1 → 1 query for N containers |
+| `LatestDockerContainer` short-circuit | Always queried in `_fetch_rig_metrics` | `.exists()` check first | 1 query saved for non-Docker rigs |
+| Power throttling | 1 DB read + 1 conditional write per heartbeat (PowerReading) | 1 `cache.add('power_throttle_...', 1, timeout=60)` | DB queries removed entirely |
+
+#### 10.6.8 Cumulative impact
+
+| Metric | Before branch | After branch |
+|--------|---------------|--------------|
+| HTMX Rig queries/min (100 rigs) | 600 | 200 (3x reduction) |
+| Chart cache invalidation ops/heartbeat | 198 (most didn't match keys) | 1 (version-based) |
+| LatestDockerContainer queries/heartbeat | 1 + N (containers) | 1 + 1 |
+| `_fetch_rig_metrics` queries (non-Docker rig) | 2 (LatestSnapshot + LatestDockerContainer) | 1 + 1 (cached + short-circuit) |
+| Time-series tables | 7 | 5 (-29% tables) |
+| StorageMetric columns | 21 | 16 (-24% columns) |
+| NetworkMetric columns | 13 | 11 (-15% columns) |
 
 ### 10.3 Query Performance Budgets
 
@@ -1516,7 +1600,7 @@ sudo -u postgres psql gpu_monitor
 **Changelog from schema 1.10 → 1.11:**
 - Schema version bump only (no payload structure changes)
 - Aligns agent schema version with implementation
-- Agents: Linux 1.6.0, Windows 1.6.17-win
+- Agents: Linux 1.9.1, Windows 1.9.1-win
 - Server accepts schema versions 1.0 through 1.11
 
 ### B. Endpoint Catalog (Summary)
@@ -1692,7 +1776,7 @@ A new GPU metric `mem_controller_util_pct` distinct from `mem_util_pct`:
 
 #### D.5 Process Details Card (Live Metrics)
 
-**Added:** 2026-08 — agent 1.6.0+.
+**Added:** 2026-08 — agent 1.6.0+; current: 1.9.1 / schema 1.14.
 
 A new "Process Details" card displays **top-10 by CPU + top-10 by memory** processes (deduplicated by PID, sorted by `cpu_pct desc then mem_pct desc`).
 

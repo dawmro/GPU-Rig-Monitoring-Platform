@@ -40,12 +40,11 @@ TIER_2_BUCKET_MINUTES = 15
 TIER_3_BUCKET_MINUTES = 60
 
 COMPACT_TABLES = [
-    {
-        'table': 'metrics_gpu_process',
-        'group_by': ['rig_uuid', 'gpu_index', 'pid'],
-        'agg_fields': {'gpu_mem_mb': 'avg'},
-        'static_fields': ['process_name', 'type', 'snapshot_id'],
-    },
+    # NOTE: 'metrics_gpu_process' was removed from compaction on 2026-09.
+    # GPU process data is now stored only in LatestSnapshot.gpu_processes_json
+    # (denormalized). Historical GPU process data is not used anywhere.
+    # The serializer no longer writes to GPUProcessMetric, so it is safe to
+    # also remove it from compaction to avoid wasted work.
     {
         'table': 'metrics_gpumetric',
         'group_by': ['rig_uuid', 'gpu_index'],
@@ -78,9 +77,10 @@ COMPACT_TABLES = [
             'read_bytes_delta': 'sum', 'write_bytes_delta': 'sum',
             'read_iops_delta': 'sum', 'write_iops_delta': 'sum',
             'utilization_pct': 'avg',
-            'read_bytes': 'last', 'write_bytes': 'last',
-            'read_iops': 'last', 'write_iops': 'last',
-            'busy_time_ms': 'last',
+            # NOTE: Cumulative counters (read_bytes, write_bytes, read_iops,
+            # write_iops, busy_time_ms) were removed from StorageMetric in
+            # migration 0049. Only deltas are stored in the time-series table.
+            # Cumulative values live in LatestSnapshot.storage_*_total_json.
         },
         'static_fields': ['mountpoint', 'fstype', 'smart_health', 'snapshot_id'],
     },
@@ -90,22 +90,16 @@ COMPACT_TABLES = [
         'agg_fields': {
             'rx_bytes_delta': 'sum', 'tx_bytes_delta': 'sum',
             'rx_errors': 'sum', 'tx_errors': 'sum',
-            'link_speed_mbps': 'last', 'ipv4': 'last',
+            # NOTE: 'ipv4' and 'link_speed_mbps' were removed in migration 0050.
+            # Static fields live in LatestSnapshot.network_ipv4s_json and
+            # network_speeds_json. No view ever read them from the time-series.
         },
         'static_fields': ['snapshot_id'],
     },
-    # Power readings — compact like other timeseries
-    {
-        'table': 'metrics_power_reading',
-        'group_by': ['rig_id'],
-        'agg_fields': {
-            'gpu_power_w': 'avg',
-            'cpu_power_w': 'avg',
-            'other_power_w': 'avg',
-            'total_power_w': 'avg',
-        },
-        'static_fields': ['cpu_power_source'],
-    },
+    # NOTE: 'metrics_power_reading' was removed in migration 0048.
+    # Power time-series lives in MetricSnapshot.cpu_power_w and
+    # total_system_power_w (plus GPUMetric.power_draw_w per-GPU).
+    # The PowerReading table was never read by any view.
     # Parent table LAST — FK-safe with NOT EXISTS
     {
         'table': 'metrics_metricsnapshot',
@@ -249,11 +243,12 @@ class Command(BaseCommand):
 
         # Build FK-safe WHERE for parent table
         if table_name == 'metrics_metricsnapshot':
+            # 'metrics_gpu_process' FK check removed (table is no longer written
+            # to by the serializer; only child tables still written are listed)
             fk_where = """
                 AND NOT EXISTS (SELECT 1 FROM metrics_gpumetric g WHERE g.snapshot_id = metrics_metricsnapshot.id)
                 AND NOT EXISTS (SELECT 1 FROM metrics_storagemetric s WHERE s.snapshot_id = metrics_metricsnapshot.id)
                 AND NOT EXISTS (SELECT 1 FROM metrics_networkmetric n WHERE n.snapshot_id = metrics_metricsnapshot.id)
-                AND NOT EXISTS (SELECT 1 FROM metrics_gpu_process p WHERE p.snapshot_id = metrics_metricsnapshot.id)
             """
         else:
             fk_where = ""

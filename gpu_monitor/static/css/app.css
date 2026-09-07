@@ -242,13 +242,26 @@
     transition: width 200ms ease-out;
 }
 
-/* Threshold-tinted fills — see §0.3 (5-tier color thresholds) */
-.grm-progress-fill-red    { background-color: #ef4444; }   /* bg-red-500 */
-.grm-progress-fill-yellow { background-color: #eab308; }   /* bg-yellow-500 */
-.grm-progress-fill-green  { background-color: #22c55e; }   /* bg-green-500 */
-.grm-progress-fill-blue   { background-color: #3b82f6; }   /* bg-blue-500 */
-.grm-progress-fill-purple { background-color: #a855f7; }   /* bg-purple-500 */
-.grm-progress-fill-gray   { background-color: #4b5563; }   /* bg-gray-600 */
+/* Threshold-tinted fills — see §0.3 (5-tier color thresholds)
+   ---------------------------------------------------------------------
+   Color choices: -400 series instead of -500 series, because the
+   fills sit on top of grm-card (gray-800 / #1f2937) and need to
+   read clearly. WCAG contrast vs #1f2937:
+     -500 series:  red 3.90  yellow 7.65  green 6.44  blue 3.99
+                   purple 3.71  gray 1.94 (FAIL)
+     -400 series:  red 5.31  yellow 9.59  green 8.42  blue 5.77
+                   purple 5.56  gray 5.78  (all pass WCAG AA)
+   The gray-600 (1.94 ratio) was the worst offender — gray-on-gray
+   progress bars were effectively invisible. Bumping to gray-400
+   (5.78 ratio) makes them clearly visible.
+   The 3-tier cpu_util spec (red/orange/yellow/green/gray) is preserved
+   from the original Tailwind palette; the change is just saturation. */
+.grm-progress-fill-red    { background-color: #f87171; }   /* red-400 */
+.grm-progress-fill-yellow { background-color: #facc15; }   /* yellow-400 */
+.grm-progress-fill-green  { background-color: #4ade80; }   /* green-400 */
+.grm-progress-fill-blue   { background-color: #60a5fa; }   /* blue-400 */
+.grm-progress-fill-purple { background-color: #c084fc; }   /* purple-400 */
+.grm-progress-fill-gray   { background-color: #9ca3af; }   /* gray-400 (was -600) */
 
 
 /* ---------------------------------------------------------------------
@@ -268,9 +281,9 @@
 .grm-text-blue-light { color: #93c5fd; }  /* text-blue-300 — hover state for grm-text-blue */
 .grm-text-purple { color: #c084fc; }   /* text-purple-400 */
 .grm-text-cyan   { color: #22d3ee; }   /* text-cyan-400 */
-.grm-text-gray   { color: #9ca3af; }   /* text-gray-400 — secondary text on dark */
-.grm-text-muted  { color: #6b7280; }   /* text-gray-500 — dim/disabled text */
-.grm-text-light  { color: #d1d5db; }   /* text-gray-300 — primary data text on dark */
+.grm-text-gray   { color: #d1d5db; }   /* text-gray-300 — secondary text on dark (bumped from gray-400 for better visibility against gray-800 card) */
+.grm-text-muted  { color: #9ca3af; }   /* text-gray-400 — dim/disabled text (bumped from gray-500; previous 3.04 ratio was AA-large only) */
+.grm-text-light  { color: #e5e7eb; }   /* text-gray-200 — primary data text on dark (bumped from gray-300 so it stays brighter than grm-text-gray) */
 .grm-text-red-strong    { color: #fca5a5; }  /* text-red-300 */
 .grm-text-yellow-strong { color: #fde047; }  /* text-yellow-300 */
 .grm-text-green-strong  { color: #86efac; }  /* text-green-300 */

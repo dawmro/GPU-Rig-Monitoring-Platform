@@ -784,3 +784,133 @@ class CheckNoMultilineTemplateCommentsTests(SimpleTestCase):
         finally:
             import os
             os.unlink(tmppath)
+
+
+# =====================================================================
+# CSS color contrast regression guards
+# =====================================================================
+
+class CssColorContrastTests(SimpleTestCase):
+    """Verify CSS color choices for legibility on the dark UI.
+
+    These tests catch accidental reverts to colors that don't have
+    enough contrast against the gray-800 card background. The
+    original incident (Nov 2025) was a gray progress fill at #4b5563
+    (contrast 1.94 against #1f2937) which was effectively invisible
+    — the user complained that the GPU core bar "had no color".
+
+    See the comment block above .grm-progress-fill-* in app.css for
+    the full contrast analysis.
+    """
+
+    CSS_PATH = "static/css/app.css"
+    BG_CARD = (31, 41, 55)  # #1f2937 gray-800, the grm-card background
+
+    def _read_css(self):
+        from pathlib import Path
+        from django.conf import settings
+        return (Path(settings.BASE_DIR) / self.CSS_PATH).read_text(encoding="utf-8")
+
+    def _hex_to_rgb(self, hex_color):
+        h = hex_color.lstrip("#")
+        if len(h) == 8:
+            h = h[:6]
+        return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+
+    def _relative_luminance(self, rgb):
+        def channel(c):
+            c = c / 255
+            return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+        r, g, b = rgb
+        return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+
+    def _contrast_ratio(self, fg_hex):
+        """Compute WCAG contrast ratio of fg_hex against the card background."""
+        fg = self._hex_to_rgb(fg_hex)
+        bg = self.BG_CARD
+        l_fg = self._relative_luminance(fg)
+        l_bg = self._relative_luminance(bg)
+        if l_fg < l_bg:
+            l_fg, l_bg = l_bg, l_fg
+        return (l_fg + 0.05) / (l_bg + 0.05)
+
+    def _extract_color(self, css, class_name):
+        """Extract the background-color or color value for a CSS class."""
+        import re
+        # Match `.cls { ... background-color: #abc; ... }` or `color: #abc;`
+        # Group 1: property name (background-color | color)
+        # Group 2: hex value
+        pattern = re.compile(
+            rf"\.{re.escape(class_name)}\s*\{{[^\{{\}}]*?(background-color|color):\s*(#[0-9a-fA-F]{{3,8}})"
+        )
+        m = pattern.search(css)
+        if not m:
+            self.fail(f"Could not find color for .{class_name} in app.css")
+        return m.group(2)
+
+    def test_gray_progress_fill_is_visible_against_card(self):
+        """grm-progress-fill-gray must have contrast >= 3.0 vs gray-800.
+
+        The original bug was a gray-600 fill (#4b5563) with contrast
+        1.94 — WCAG FAIL. This test catches any regression to that.
+        """
+        css = self._read_css()
+        gray_hex = self._extract_color(css, "grm-progress-fill-gray")
+        ratio = self._contrast_ratio(gray_hex)
+        self.assertGreaterEqual(
+            ratio, 3.0,
+            f"grm-progress-fill-gray ({gray_hex}) has contrast {ratio:.2f} "
+            f"vs gray-800, which is below the 3.0 minimum for non-text UI. "
+            f"Use gray-400 (#9ca3af) or lighter. Original incident: gray-600 "
+            f"fill was effectively invisible against gray-800."
+        )
+
+    def test_all_progress_fills_pass_AA(self):
+        """All grm-progress-fill-* classes should have contrast >= 4.5 (AA)."""
+        css = self._read_css()
+        import re
+        for m in re.finditer(r"\.grm-progress-fill-(\w+)\s*\{[^}]*?background-color:\s*(#[0-9a-fA-F]+)", css):
+            name, hex_color = m.group(1), m.group(2)
+            ratio = self._contrast_ratio(hex_color)
+            self.assertGreaterEqual(
+                ratio, 4.5,
+                f"grm-progress-fill-{name} ({hex_color}) has contrast {ratio:.2f} "
+                f"vs gray-800, below WCAG AA (4.5). Bump to -400 series."
+            )
+
+    def test_text_gray_is_visible_against_card(self):
+        """grm-text-gray (secondary labels) must have contrast >= 4.5."""
+        css = self._read_css()
+        gray_hex = self._extract_color(css, "grm-text-gray")
+        ratio = self._contrast_ratio(gray_hex)
+        self.assertGreaterEqual(
+            ratio, 4.5,
+            f"grm-text-gray ({gray_hex}) has contrast {ratio:.2f} vs "
+            f"gray-800, below WCAG AA. The previous value (#6b7280 gray-500) "
+            f"had only 3.04 — bumped to gray-300 (#d1d5db) for 9.96."
+        )
+
+    def test_text_muted_is_visible_against_card(self):
+        """grm-text-muted (dim text) must have contrast >= 4.5."""
+        css = self._read_css()
+        muted_hex = self._extract_color(css, "grm-text-muted")
+        ratio = self._contrast_ratio(muted_hex)
+        self.assertGreaterEqual(
+            ratio, 4.5,
+            f"grm-text-muted ({muted_hex}) has contrast {ratio:.2f} vs "
+            f"gray-800, below WCAG AA. Previous value gray-500 had 3.04."
+        )
+
+    def test_text_hierarchy_is_preserved(self):
+        """light > gray > muted in brightness (i.e. contrast vs card)."""
+        css = self._read_css()
+        light = self._contrast_ratio(self._extract_color(css, "grm-text-light"))
+        gray = self._contrast_ratio(self._extract_color(css, "grm-text-gray"))
+        muted = self._contrast_ratio(self._extract_color(css, "grm-text-muted"))
+        # Each tier should be strictly dimmer than the brighter tier
+        self.assertGreater(light, gray,
+            f"grm-text-light ({light:.2f}) should be brighter than "
+            f"grm-text-gray ({gray:.2f})")
+        self.assertGreater(gray, muted,
+            f"grm-text-gray ({gray:.2f}) should be brighter than "
+            f"grm-text-muted ({muted:.2f})")

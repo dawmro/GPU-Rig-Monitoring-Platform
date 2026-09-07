@@ -114,80 +114,95 @@ def gpu_compact_summary_json(snapshot):
 
 @register.simple_tag
 def gpu_temp_cell_json(snapshot):
-    """Render color-coded GPU temperature values from LatestSnapshot JSON."""
+    """Render color-coded GPU temperature values from LatestSnapshot JSON.
+
+    Each value gets the grm-text-{color} class from static/css/app.css.
+    The bare color name (red/orange/yellow/green/gray) is the filter output.
+    """
     if not snapshot or not snapshot.gpu_temps_json:
-        return mark_safe('<span class="text-gray-600">—</span>')
+        return mark_safe('<span class="grm-text-muted">—</span>')
 
     parts = []
     for temp in snapshot.gpu_temps_json:
         if temp is None:
-            parts.append('<span class="text-gray-600">—</span>')
+            parts.append('<span class="grm-text-muted">—</span>')
         else:
             try:
                 t = float(temp)
             except (ValueError, TypeError):
-                parts.append('<span class="text-gray-600">—</span>')
+                parts.append('<span class="grm-text-muted">—</span>')
                 continue
+            # Thresholds: >80 red, >75 orange, >70 yellow, >65 green, else gray
             if t > 80:
-                parts.append(f'<span class="text-red-400 font-medium">{t:.0f}</span>')
+                cls = 'grm-text-red'
             elif t > 75:
-                parts.append(f'<span class="text-orange-400 font-medium">{t:.0f}</span>')
+                cls = 'grm-text-orange'
             elif t > 70:
-                parts.append(f'<span class="text-yellow-400">{t:.0f}</span>')
+                cls = 'grm-text-yellow'
             elif t > 65:
-                parts.append(f'<span class="text-green-400">{t:.0f}</span>')
+                cls = 'grm-text-green'
             else:
-                parts.append(f'<span class="text-gray-400">{t:.0f}</span>')
+                cls = 'grm-text-gray'
+            parts.append(f'<span class="{cls} font-medium">{t:.0f}</span>')
     return mark_safe(' '.join(parts))
 
 
 @register.simple_tag
 def gpu_util_cell_json(snapshot):
-    """Render color-coded GPU utilization values from LatestSnapshot JSON."""
+    """Render color-coded GPU utilization values from LatestSnapshot JSON.
+
+    Thresholds: >90 green (busy = good), >50 neutral, else dim.
+    Note: GPU util is INVERTED from CPU/Disk (high = good for miners).
+    """
     if not snapshot or not snapshot.gpu_utils_json:
-        return mark_safe('<span class="text-gray-600">—</span>')
+        return mark_safe('<span class="grm-text-muted">—</span>')
 
     parts = []
     for util in snapshot.gpu_utils_json:
         if util is None:
-            parts.append('<span class="text-gray-600">—</span>')
+            parts.append('<span class="grm-text-muted">—</span>')
         else:
             try:
                 u = float(util)
             except (ValueError, TypeError):
-                parts.append('<span class="text-gray-600">—</span>')
+                parts.append('<span class="grm-text-muted">—</span>')
                 continue
             if u > 90:
-                parts.append(f'<span class="text-green-400 font-medium">{u:.0f}</span>')
+                cls = 'grm-text-green'
             elif u > 50:
-                parts.append(f'<span class="text-gray-300">{u:.0f}</span>')
+                cls = 'grm-text-gray'
             else:
-                parts.append(f'<span class="text-gray-500">{u:.0f}</span>')
+                cls = 'grm-text-muted'
+            parts.append(f'<span class="{cls}">{u:.0f}</span>')
     return mark_safe(' '.join(parts))
 
 
 @register.simple_tag
 def gpu_fan_cell_json(snapshot):
-    """Render color-coded GPU fan speed values from LatestSnapshot JSON."""
+    """Render color-coded GPU fan speed values from LatestSnapshot JSON.
+
+    Thresholds: >80 red, >60 yellow, else gray.
+    """
     if not snapshot or not snapshot.gpu_fans_json:
-        return mark_safe('<span class="text-gray-600">—</span>')
+        return mark_safe('<span class="grm-text-muted">—</span>')
 
     parts = []
     for fan in snapshot.gpu_fans_json:
         if fan is None:
-            parts.append('<span class="text-gray-600">—</span>')
+            parts.append('<span class="grm-text-muted">—</span>')
         else:
             try:
                 f = float(fan)
             except (ValueError, TypeError):
-                parts.append('<span class="text-gray-600">—</span>')
+                parts.append('<span class="grm-text-muted">—</span>')
                 continue
             if f > 80:
-                parts.append(f'<span class="text-red-400 font-medium">{f:.0f}</span>')
+                cls = 'grm-text-red'
             elif f > 60:
-                parts.append(f'<span class="text-yellow-400">{f:.0f}</span>')
+                cls = 'grm-text-yellow'
             else:
-                parts.append(f'<span class="text-gray-400">{f:.0f}</span>')
+                cls = 'grm-text-gray'
+            parts.append(f'<span class="{cls}">{f:.0f}</span>')
     return mark_safe(' '.join(parts))
 
 
@@ -397,32 +412,35 @@ def filter_running(containers):
 
 @register.filter
 def cpu_util_color(value):
-    """Return Tailwind color class for CPU utilization percentage.
-    
+    """Return bare color name (e.g. 'red', 'yellow') for CPU utilization percentage.
+
+    Used as a class suffix: grm-text-{{ x|cpu_util_color }}
+    See static/css/app.css for the actual color values.
+
     Thresholds (matching Disk Util and Live Metrics progress bar):
-        > 80%  -> text-red-400
-        > 60%  -> text-orange-400
-        > 40%  -> text-yellow-400
-        > 20%  -> text-green-400
-        <= 20% -> text-gray-400
-    
-    Usage: <span class="{{ cpu_util|cpu_util_color }}">{{ cpu_util }}</span>
+        > 80%  -> red
+        > 60%  -> orange
+        > 40%  -> yellow
+        > 20%  -> green
+        <= 20% -> gray
+
+    Usage: <span class="grm-text-{{ cpu_util|cpu_util_color }}">{{ cpu_util }}</span>
     """
     if value is None:
-        return 'text-gray-400'
+        return 'gray'
     try:
         v = float(value)
     except (ValueError, TypeError):
-        return 'text-gray-400'
+        return 'gray'
     if v > 80:
-        return 'text-red-400'
+        return 'red'
     elif v > 60:
-        return 'text-orange-400'
+        return 'orange'
     elif v > 40:
-        return 'text-yellow-400'
+        return 'yellow'
     elif v > 20:
-        return 'text-green-400'
-    return 'text-gray-400'
+        return 'green'
+    return 'gray'
 
 
 @register.filter

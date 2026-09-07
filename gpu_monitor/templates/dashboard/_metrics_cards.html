@@ -4,36 +4,36 @@
 <!-- ════════════════════════════════════════════════════════════════ -->
 <!-- CPU -->
 <!-- ════════════════════════════════════════════════════════════════ -->
-<div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
-    <h3 class="text-gray-400 text-sm font-medium mb-2">
+<div class="grm-card">
+    <h3 class="grm-text-gray text-sm font-medium mb-2">
         CPU
         {% if is_data_stale %}
-        <span class="text-xs text-yellow-400 ml-1">(stale)</span>
+        <span class="text-xs grm-text-yellow ml-1">(stale)</span>
         {% endif %}
     </h3>
     {% if snapshot.cpu_model %}
     <div class="text-lg font-bold text-white mb-1">
         {{ snapshot.cpu_model|default:"Unknown" }}
     </div>
-    <div class="text-sm text-gray-400 mb-2">
+    <div class="text-sm grm-text-gray mb-2">
         {{ snapshot.cpu_physical_cores|default:"?" }} cores / {{ snapshot.cpu_logical_cores|default:"?" }} threads
     </div>
     <div class="flex items-center gap-3 mb-2">
         <div class="flex-1">
-            <div class="w-full bg-gray-700 rounded-full h-2">
-                <div class="h-2 rounded-full
+            <div class="grm-progress">
+                <div class="grm-progress-fill
                     {% if snapshot.cpu_utilization_pct != None %}
-                        {% if snapshot.cpu_utilization_pct > 80 %}bg-red-500
-                        {% elif snapshot.cpu_utilization_pct > 60 %}bg-yellow-500
-                        {% else %}bg-green-500{% endif %}
-                    {% else %}bg-gray-600{% endif %}"
+                        {% if snapshot.cpu_utilization_pct > 80 %}grm-progress-fill-red
+                        {% elif snapshot.cpu_utilization_pct > 60 %}grm-progress-fill-yellow
+                        {% else %}grm-progress-fill-green{% endif %}
+                    {% else %}grm-progress-fill-gray{% endif %}"
                     style="width: {% if snapshot.cpu_utilization_pct != None %}{{ snapshot.cpu_utilization_pct }}{% else %}0{% endif %}%">
                 </div>
             </div>
         </div>
         <span class="text-sm font-mono w-14 text-right">
             {% if snapshot.cpu_utilization_pct != None %}
-            <span class="{{ snapshot.cpu_utilization_pct|cpu_util_color }}">{{ snapshot.cpu_utilization_pct|floatformat:1 }}%</span>
+            <span class="grm-text-{{ snapshot.cpu_utilization_pct|cpu_util_color }}">{{ snapshot.cpu_utilization_pct|floatformat:1 }}%</span>
             {% else %}—{% endif %}
         </span>
     </div>
@@ -41,7 +41,7 @@
         <span>
             Temp:
             {% if snapshot.cpu_temp_c != None %}
-                <span class="{% if snapshot.cpu_temp_c > 85 %}text-red-400{% elif snapshot.cpu_temp_c > 70 %}text-yellow-400{% else %}text-green-400{% endif %}">
+                <span class="{% if snapshot.cpu_temp_c > 85 %}grm-text-red{% elif snapshot.cpu_temp_c > 70 %}grm-text-yellow{% else %}grm-text-green{% endif %}">
                     {{ snapshot.cpu_temp_c|floatformat:1 }}°C
                 </span>
             {% else %}—{% endif %}
@@ -49,7 +49,7 @@
         {% if snapshot.cpu_freq_current_mhz != None %}
         <span>
             Freq:
-            <span class="text-cyan-400">
+            <span class="grm-text-cyan">
                 {{ snapshot.cpu_freq_current_mhz|floatformat:0 }} MHz
             </span>
             {% if snapshot.cpu_freq_min_mhz or snapshot.cpu_freq_max_mhz %}
@@ -63,15 +63,15 @@
         <span>
             Load:
             {% for val in snapshot.cpu_load_avg_json %}
-                <span class="text-gray-400">{{ val|floatformat:2 }}</span>{% if not forloop.last %} / {% endif %}
+                <span class="grm-text-gray">{{ val|floatformat:2 }}</span>{% if not forloop.last %} / {% endif %}
             {% endfor %}
         </span>
         {% endif %}
     </div>
     {% elif snapshot %}
-    <div class="text-sm text-gray-400 mb-2">
+    <div class="text-sm grm-text-gray mb-2">
         Utilization: {% if snapshot.cpu_utilization_pct != None %}
-        <span class="{{ snapshot.cpu_utilization_pct|cpu_util_color }}">{{ snapshot.cpu_utilization_pct|floatformat:1 }}%</span>
+        <span class="grm-text-{{ snapshot.cpu_utilization_pct|cpu_util_color }}">{{ snapshot.cpu_utilization_pct|floatformat:1 }}%</span>
         {% else %}—{% endif %}
     </div>
     {% else %}
@@ -82,11 +82,11 @@
 <!-- ════════════════════════════════════════════════════════════════ -->
 <!-- Power Consumption -->
 <!-- ════════════════════════════════════════════════════════════════ -->
-<div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
-    <h3 class="text-gray-400 text-sm font-medium mb-2">
+<div class="grm-card">
+    <h3 class="grm-text-gray text-sm font-medium mb-2">
         Power Consumption
         {% if is_data_stale %}
-        <span class="text-xs text-yellow-400 ml-1">(stale)</span>
+        <span class="text-xs grm-text-yellow ml-1">(stale)</span>
         {% endif %}
     </h3>
     {% if snapshot.power_total_w != None %}
@@ -112,7 +112,7 @@
     <div class="pt-2 border-t border-gray-700/50">
         <div class="flex items-center justify-between text-xs mb-1">
             <span class="text-gray-500">Cost:</span>
-            <span class="text-green-400 font-medium">${{ snapshot.power_total_w|multiply:user.electricity_rate_kwh|divide:1000|floatformat:4 }}/hr</span>
+            <span class="grm-text-green font-medium">${{ snapshot.power_total_w|multiply:user.electricity_rate_kwh|divide:1000|floatformat:4 }}/hr</span>
         </div>
         <div class="flex items-center justify-between text-xs text-gray-500">
             <span>Est. daily:</span>
@@ -121,7 +121,7 @@
     </div>
     {% endif %}
     {% elif snapshot %}
-    <div class="text-sm text-gray-400">No power data</div>
+    <div class="text-sm grm-text-gray">No power data</div>
     {% else %}
     <div class="text-gray-500">No data</div>
     {% endif %}
@@ -129,42 +129,42 @@
 
 <!-- ════════════════════════════════════════════════════════════════ -->
 <!-- Memory -->
-<div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
-    <h3 class="text-gray-400 text-sm font-medium mb-2">
+<div class="grm-card">
+    <h3 class="grm-text-gray text-sm font-medium mb-2">
         Memory
         {% if is_data_stale %}
-        <span class="text-xs text-yellow-400 ml-1">(stale)</span>
+        <span class="text-xs grm-text-yellow ml-1">(stale)</span>
         {% endif %}
     </h3>
     {% if snapshot.mem_total_bytes %}
     <div class="flex items-center gap-3 mb-2">
         <div class="flex-1">
-            <div class="w-full bg-gray-700 rounded-full h-2">
+            <div class="grm-progress">
                 {% widthratio snapshot.mem_used_bytes snapshot.mem_total_bytes 100 as mem_pct %}
-                <div class="h-2 rounded-full
-                    {% if mem_pct > 85 %}bg-red-500
-                    {% elif mem_pct > 70 %}bg-yellow-500
-                    {% else %}bg-blue-500{% endif %}"
+                <div class="grm-progress-fill
+                    {% if mem_pct > 85 %}grm-progress-fill-red
+                    {% elif mem_pct > 70 %}grm-progress-fill-yellow
+                    {% else %}grm-progress-fill-blue{% endif %}"
                     style="width: {{ mem_pct }}%"></div>
             </div>
         </div>
-        <span class="text-sm font-mono text-gray-300 w-14 text-right">{{ mem_pct }}%</span>
+        <span class="text-sm font-mono grm-text-light w-14 text-right">{{ mem_pct }}%</span>
     </div>
-    <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-400">
-        <span>Used: <span class="text-gray-300">{{ snapshot.mem_used_bytes|filesizeformat }}</span></span>
-        <span>Total: <span class="text-gray-300">{{ snapshot.mem_total_bytes|filesizeformat }}</span></span>
+    <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs grm-text-gray">
+        <span>Used: <span class="grm-text-light">{{ snapshot.mem_used_bytes|filesizeformat }}</span></span>
+        <span>Total: <span class="grm-text-light">{{ snapshot.mem_total_bytes|filesizeformat }}</span></span>
         {% if snapshot.mem_free_bytes %}
-        <span>Free: <span class="text-gray-300">{{ snapshot.mem_free_bytes|filesizeformat }}</span></span>
+        <span>Free: <span class="grm-text-light">{{ snapshot.mem_free_bytes|filesizeformat }}</span></span>
         {% endif %}
         {% if snapshot.mem_cached_bytes %}
-        <span>Cached: <span class="text-gray-300">{{ snapshot.mem_cached_bytes|filesizeformat }}</span></span>
+        <span>Cached: <span class="grm-text-light">{{ snapshot.mem_cached_bytes|filesizeformat }}</span></span>
         {% endif %}
     </div>
     {% if snapshot.swap_total_bytes %}
     <div class="mt-1 pt-1 border-t border-gray-700/50 text-xs text-gray-500">
         Swap:
-        <span class="text-gray-400">{{ snapshot.swap_used_bytes|filesizeformat }}</span> /
-        <span class="text-gray-400">{{ snapshot.swap_total_bytes|filesizeformat }}</span>
+        <span class="grm-text-gray">{{ snapshot.swap_used_bytes|filesizeformat }}</span> /
+        <span class="grm-text-gray">{{ snapshot.swap_total_bytes|filesizeformat }}</span>
         {% widthratio snapshot.swap_used_bytes snapshot.swap_total_bytes 100 as swap_pct %}
         <span class="text-gray-600">({{ swap_pct }}%)</span>
     </div>
@@ -176,32 +176,32 @@
 <!-- ════════════════════════════════════════════════════════════════ -->
 <!-- Storage (per device) -->
 <!-- ════════════════════════════════════════════════════════════════ -->
-<div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
-    <h3 class="text-gray-400 text-sm font-medium mb-2">
+<div class="grm-card">
+    <h3 class="grm-text-gray text-sm font-medium mb-2">
         Storage ({{ storage_metrics|length }})
         {% if is_data_stale %}
-        <span class="text-xs text-yellow-400 ml-1">(stale)</span>
+        <span class="text-xs grm-text-yellow ml-1">(stale)</span>
         {% endif %}
     </h3>
     {% if storage_metrics %}
         {% for disk in storage_metrics %}
         <div class="mb-3 pb-3 border-b border-gray-700/50 last:border-0 last:mb-0 last:pb-0">
             <div class="flex items-center justify-between mb-1">
-                <span class="text-sm font-medium text-gray-300">{{ disk.device|default:"unknown" }}</span>
+                <span class="text-sm font-medium grm-text-light">{{ disk.device|default:"unknown" }}</span>
                 <span class="text-xs text-gray-500">{{ disk.fstype|default:"" }} · {{ disk.mountpoint|default:"" }}</span>
             </div>
             <div class="flex items-center gap-3 mb-1">
                 <div class="flex-1">
-                    <div class="w-full bg-gray-700 rounded-full h-2">
-                        <div class="h-2 rounded-full
-                            {% if disk.usage_pct > 90 %}bg-red-500
-                            {% elif disk.usage_pct > 75 %}bg-yellow-500
-                            {% else %}bg-blue-500{% endif %}"
+                    <div class="grm-progress">
+                        <div class="grm-progress-fill
+                            {% if disk.usage_pct > 90 %}grm-progress-fill-red
+                            {% elif disk.usage_pct > 75 %}grm-progress-fill-yellow
+                            {% else %}grm-progress-fill-blue{% endif %}"
                             style="width: {% if disk.usage_pct != None %}{{ disk.usage_pct }}{% else %}0{% endif %}%">
                         </div>
                     </div>
                 </div>
-                <span class="text-sm font-mono text-gray-300 w-14 text-right">
+                <span class="text-sm font-mono grm-text-light w-14 text-right">
                     {% if disk.usage_pct != None %}{{ disk.usage_pct|floatformat:1 }}%{% else %}—{% endif %}
                 </span>
             </div>
@@ -213,7 +213,7 @@
                 <span>Temp: {{ disk.temp_c|floatformat:1 }}°C</span>
                 {% endif %}
                 {% if disk.smart_health %}
-                <span>SMART: <span class="{% if disk.smart_health == 'OK' %}text-green-400{% elif disk.smart_health == 'FAILING' %}text-red-400{% else %}text-gray-400{% endif %}">{{ disk.smart_health }}</span></span>
+                <span>SMART: <span class="{% if disk.smart_health == 'OK' %}grm-text-green{% elif disk.smart_health == 'FAILING' %}grm-text-red{% else %}grm-text-gray{% endif %}">{{ disk.smart_health }}</span></span>
                 {% endif %}
             </div>
             {# Disk I/O metrics row: total (cumulative) and delta (since last update) #}
@@ -222,27 +222,27 @@
                 {# Cumulative totals since boot #}
                 {% if disk.read_bytes_total != None or disk.write_bytes_total != None %}
                 <span class="text-gray-500">
-                    Total: Read <span class="text-gray-300">{{ disk.read_bytes_total|format_bytes_total }}</span>
-                    · Write <span class="text-gray-300">{{ disk.write_bytes_total|format_bytes_total }}</span>
+                    Total: Read <span class="grm-text-light">{{ disk.read_bytes_total|format_bytes_total }}</span>
+                    · Write <span class="grm-text-light">{{ disk.write_bytes_total|format_bytes_total }}</span>
                 </span>
                 {% endif %}
                 {# Deltas since last update + IOPS + utilization #}
                 <div class="flex items-center gap-3">
                     {% if disk.read_bytes_delta != None or disk.write_bytes_delta != None %}
-                    <span class="text-gray-400">
-                        Since last update — Read: <span class="text-gray-300">{{ disk.read_bytes_delta|format_throughput_mb }} MB</span>
-                        · Write: <span class="text-gray-300">{{ disk.write_bytes_delta|format_throughput_mb }} MB</span>
+                    <span class="grm-text-gray">
+                        Since last update — Read: <span class="grm-text-light">{{ disk.read_bytes_delta|format_throughput_mb }} MB</span>
+                        · Write: <span class="grm-text-light">{{ disk.write_bytes_delta|format_throughput_mb }} MB</span>
                     </span>
                     {% endif %}
                     {% if disk.read_iops_delta != None or disk.write_iops_delta != None %}
-                    <span class="text-gray-400">
-                        IOPS: <span class="text-gray-300">{{ disk.read_iops_delta|format_iops }} / {{ disk.write_iops_delta|format_iops }}</span>
+                    <span class="grm-text-gray">
+                        IOPS: <span class="grm-text-light">{{ disk.read_iops_delta|format_iops }} / {{ disk.write_iops_delta|format_iops }}</span>
                     </span>
                     {% endif %}
                     {% if disk.utilization_pct != None %}
-                    <span class="text-gray-400">
+                    <span class="grm-text-gray">
                         Util:
-                        <span class="{% if disk.utilization_pct >= 80 %}text-red-400{% elif disk.utilization_pct >= 60 %}text-orange-400{% elif disk.utilization_pct >= 40 %}text-yellow-400{% elif disk.utilization_pct >= 20 %}text-green-400{% else %}text-gray-500{% endif %}">
+                        <span class="{% if disk.utilization_pct >= 80 %}grm-text-red{% elif disk.utilization_pct >= 60 %}grm-text-orange{% elif disk.utilization_pct >= 40 %}grm-text-yellow{% elif disk.utilization_pct >= 20 %}grm-text-green{% else %}text-gray-500{% endif %}">
                             {{ disk.utilization_pct|floatformat:1 }}%
                         </span>
                     </span>
@@ -260,18 +260,18 @@
 <!-- ════════════════════════════════════════════════════════════════ -->
 <!-- GPU (per device) -->
 <!-- ════════════════════════════════════════════════════════════════ -->
-<div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
-    <h3 class="text-gray-400 text-sm font-medium mb-2">
+<div class="grm-card">
+    <h3 class="grm-text-gray text-sm font-medium mb-2">
         GPU ({{ gpu_metrics|length }})
         {% if is_data_stale %}
-        <span class="text-xs text-yellow-400 ml-1">(stale)</span>
+        <span class="text-xs grm-text-yellow ml-1">(stale)</span>
         {% endif %}
     </h3>
     {% if gpu_metrics %}
         {% for gpu in gpu_metrics %}
         <div class="mb-3 pb-3 border-b border-gray-700/50 last:border-0 last:mb-0 last:pb-0">
             <div class="flex items-center justify-between mb-1">
-                <span class="text-sm font-medium text-gray-300">
+                <span class="text-sm font-medium grm-text-light">
                     <span class="text-gray-500">GPU{{ gpu.gpu_index }}</span> {{ gpu.model|default:"Unknown GPU" }}
                 </span>
                 {% if gpu.gpu_uuid %}
@@ -281,36 +281,36 @@
             <div class="flex items-center gap-3 mb-1">
                 <span class="text-xs text-gray-500 w-16 text-right">Core</span>
                 <div class="flex-1">
-                    <div class="w-full bg-gray-700 rounded-full h-2">
-                        <div class="h-2 rounded-full
+                    <div class="grm-progress">
+                        <div class="grm-progress-fill
                             {% if gpu.gpu_util_pct != None %}
-                                {% if gpu.gpu_util_pct > 90 %}bg-red-500
-                                {% elif gpu.gpu_util_pct > 70 %}bg-yellow-500
-                                {% else %}bg-green-500{% endif %}
-                            {% else %}bg-gray-600{% endif %}"
+                                {% if gpu.gpu_util_pct > 90 %}grm-progress-fill-red
+                                {% elif gpu.gpu_util_pct > 70 %}grm-progress-fill-yellow
+                                {% else %}grm-progress-fill-green{% endif %}
+                            {% else %}grm-progress-fill-gray{% endif %}"
                             style="width: {% if gpu.gpu_util_pct != None %}{{ gpu.gpu_util_pct }}{% else %}0{% endif %}%">
                         </div>
                     </div>
                 </div>
-                <span class="text-sm font-mono text-gray-300 w-14 text-right">
+                <span class="text-sm font-mono grm-text-light w-14 text-right">
                     {% if gpu.gpu_util_pct != None %}{{ gpu.gpu_util_pct|floatformat:1 }}%{% else %}—{% endif %}
                 </span>
             </div>
             <div class="flex items-center gap-3 mb-1">
                 <span class="text-xs text-gray-500 w-16 text-right">Mem</span>
                 <div class="flex-1">
-                                <div class="w-full bg-gray-700 rounded-full h-2">
-                                    <div class="h-2 rounded-full
+                                <div class="grm-progress">
+                                    <div class="grm-progress-fill
                                         {% if gpu.mem_controller_util_pct != None %}
-                                            {% if gpu.mem_controller_util_pct > 90 %}bg-red-500
-                                            {% elif gpu.mem_controller_util_pct > 70 %}bg-yellow-500
-                                            {% else %}bg-green-500{% endif %}
-                                        {% else %}bg-gray-600{% endif %}"
+                                            {% if gpu.mem_controller_util_pct > 90 %}grm-progress-fill-red
+                                            {% elif gpu.mem_controller_util_pct > 70 %}grm-progress-fill-yellow
+                                            {% else %}grm-progress-fill-green{% endif %}
+                                        {% else %}grm-progress-fill-gray{% endif %}"
                                         style="width: {% if gpu.mem_controller_util_pct != None %}{{ gpu.mem_controller_util_pct }}{% else %}0{% endif %}%">
                                     </div>
                                 </div>
                             </div>
-                            <span class="text-sm font-mono text-gray-300 w-14 text-right">
+                            <span class="text-sm font-mono grm-text-light w-14 text-right">
                                 {% if gpu.mem_controller_util_pct != None %}{{ gpu.mem_controller_util_pct|floatformat:1 }}%{% else %}—{% endif %}
                             </span>
                         </div>
@@ -318,7 +318,7 @@
                 <span>
                     Temp:
                     {% if gpu.gpu_temp_c != None %}
-                        <span class="{% if gpu.gpu_temp_c > 80 %}text-red-400{% elif gpu.gpu_temp_c > 70 %}text-yellow-400{% else %}text-green-400{% endif %}">
+                        <span class="{% if gpu.gpu_temp_c > 80 %}grm-text-red{% elif gpu.gpu_temp_c > 70 %}grm-text-yellow{% else %}grm-text-green{% endif %}">
                             {{ gpu.gpu_temp_c|floatformat:1 }}°C
                         </span>
                     {% else %}—{% endif %}
@@ -336,12 +336,12 @@
             {% if gpu.mem_used_mb != None and gpu.mem_total_mb %}
             <div class="flex items-center gap-3 mb-1">
                 <div class="flex-1">
-                    <div class="w-full bg-gray-700 rounded-full h-1.5">
+                    <div class="grm-progress-thin">
                         {% widthratio gpu.mem_used_mb gpu.mem_total_mb 100 as vram_pct %}
                         <div class="bg-purple-500 h-1.5 rounded-full" style="width: {{ vram_pct }}%"></div>
                     </div>
                 </div>
-                <span class="text-xs font-mono text-gray-400 w-28 text-right">
+                <span class="text-xs font-mono grm-text-gray w-28 text-right">
                     {{ gpu.mem_used_mb }} / {{ gpu.mem_total_mb }} MB
                     {% if gpu.mem_util_pct != None %}({{ gpu.mem_util_pct|floatformat:1 }}%){% endif %}
                 </span>
@@ -353,7 +353,7 @@
                     <span>Power: {{ gpu.power_draw_w|floatformat:1 }}W{% if gpu.power_limit_w %} / {{ gpu.power_limit_w|floatformat:0 }}W{% endif %}</span>
                     {% endif %}
                     {% if gpu.pcie_current_gen != None and gpu.pcie_current_width != None %}
-                    <span>PCIe: {% if gpu.pcie_current_gen < gpu.pcie_max_gen or gpu.pcie_current_width < gpu.pcie_max_width %}<span class="text-red-400" title="Max: Gen{{ gpu.pcie_max_gen }} x{{ gpu.pcie_max_width }}">Gen{{ gpu.pcie_current_gen }} x{{ gpu.pcie_current_width }} ⚠</span>{% else %}<span class="text-green-400">Gen{{ gpu.pcie_current_gen }} x{{ gpu.pcie_current_width }} ✓</span>{% endif %}</span>
+                    <span>PCIe: {% if gpu.pcie_current_gen < gpu.pcie_max_gen or gpu.pcie_current_width < gpu.pcie_max_width %}<span class="grm-text-red" title="Max: Gen{{ gpu.pcie_max_gen }} x{{ gpu.pcie_max_width }}">Gen{{ gpu.pcie_current_gen }} x{{ gpu.pcie_current_width }} ⚠</span>{% else %}<span class="grm-text-green">Gen{{ gpu.pcie_current_gen }} x{{ gpu.pcie_current_width }} ✓</span>{% endif %}</span>
                     {% endif %}
                 </div>
                 {% endif %}
@@ -369,11 +369,11 @@
 <!-- GPU Processes (from nvidia-smi) -->
 <!-- ════════════════════════════════════════════════════════════════ -->
 {% if gpu_processes %}
-<div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
-    <h3 class="text-gray-400 text-sm font-medium mb-2">
+<div class="grm-card">
+    <h3 class="grm-text-gray text-sm font-medium mb-2">
         GPU Processes ({{ gpu_processes|length }})
         {% if is_data_stale %}
-        <span class="text-xs text-yellow-400 ml-1">(stale)</span>
+        <span class="text-xs grm-text-yellow ml-1">(stale)</span>
         {% endif %}
     </h3>
     <div class="space-y-1">
@@ -381,18 +381,18 @@
         <div class="flex items-center justify-between text-xs py-1 border-b border-gray-700/30 last:border-0">
             <div class="flex items-center gap-2 min-w-0">
                 <span class="text-gray-500 flex-shrink-0">GPU{{ proc.gpu_index }}</span>
-                <span class="truncate text-gray-300" title="{{ proc.process_name }}">{{ proc.process_name|default:"unknown" }}</span>
+                <span class="truncate grm-text-light" title="{{ proc.process_name }}">{{ proc.process_name|default:"unknown" }}</span>
             </div>
             <div class="flex items-center gap-2 flex-shrink-0">
                 <span class="px-1.5 py-0.5 rounded text-[10px]
-                    {% if proc.type == 'C' %}bg-blue-900/50 text-blue-300
-                    {% elif proc.type == 'G' %}bg-green-900/50 text-green-300
-                    {% elif 'C+G' in proc.type %}bg-yellow-900/50 text-yellow-300
-                    {% else %}bg-gray-700 text-gray-400{% endif %}">
+                    {% if proc.type == 'C' %}bg-blue-900/50 grm-text-blue-strong
+                    {% elif proc.type == 'G' %}bg-green-900/50 grm-text-green-strong
+                    {% elif 'C+G' in proc.type %}bg-yellow-900/50 grm-text-yellow-strong
+                    {% else %}bg-gray-700 grm-text-gray{% endif %}">
                     {{ proc.type|default:"?" }}
                 </span>
                 {% if proc.gpu_mem_mb != None %}
-                <span class="text-gray-400 w-16 text-right">{{ proc.gpu_mem_mb }} MB</span>
+                <span class="grm-text-gray w-16 text-right">{{ proc.gpu_mem_mb }} MB</span>
                 {% else %}
                 <span class="text-gray-600 w-16 text-right">N/A</span>
                 {% endif %}
@@ -406,11 +406,11 @@
 <!-- Top Processes (by CPU and Memory) -->
 <!-- ════════════════════════════════════════════════════════════════ -->
 {% if top_cpu_processes or top_mem_processes %}
-<div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
-    <h3 class="text-gray-400 text-sm font-medium mb-2">
+<div class="grm-card">
+    <h3 class="grm-text-gray text-sm font-medium mb-2">
         Top Processes{% if process_count %} ({{ process_count }} total){% endif %}
         {% if is_data_stale %}
-        <span class="text-xs text-yellow-400 ml-1">(stale)</span>
+        <span class="text-xs grm-text-yellow ml-1">(stale)</span>
         {% endif %}
     </h3>
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -427,12 +427,12 @@
                         <th class="text-left pb-1 font-medium">User</th>
                     </tr>
                 </thead>
-                <tbody class="text-gray-400">
+                <tbody class="grm-text-gray">
                     {% for proc in top_cpu_processes|slice:":10" %}
                     <tr class="border-b border-gray-700/30 last:border-0">
                         <td class="py-1 pr-3 font-mono text-gray-500">{{ proc.pid|default:"—" }}</td>
                         <td class="py-1 pr-3 truncate" title="{{ proc.cmdline|default:proc.name }}">{{ proc.name|default:"—"|truncatechars:24 }}</td>
-                        <td class="py-1 pr-3 text-right {% if proc.cpu_pct > 50 %}text-red-400{% elif proc.cpu_pct > 20 %}text-yellow-400{% endif %}">{{ proc.cpu_pct|floatformat:1 }}</td>
+                        <td class="py-1 pr-3 text-right {% if proc.cpu_pct > 50 %}grm-text-red{% elif proc.cpu_pct > 20 %}grm-text-yellow{% endif %}">{{ proc.cpu_pct|floatformat:1 }}</td>
                         <td class="py-1 pr-3 text-right">{{ proc.mem_pct|floatformat:1 }}</td>
                         <td class="py-1 text-gray-500 truncate">{{ proc.username|default:"—"|truncatechars:16 }}</td>
                     </tr>
@@ -454,13 +454,13 @@
                         <th class="text-left pb-1 font-medium">User</th>
                     </tr>
                 </thead>
-                <tbody class="text-gray-400">
+                <tbody class="grm-text-gray">
                     {% for proc in top_mem_processes|slice:":10" %}
                     <tr class="border-b border-gray-700/30 last:border-0">
                         <td class="py-1 pr-3 font-mono text-gray-500">{{ proc.pid|default:"—" }}</td>
                         <td class="py-1 pr-3 truncate" title="{{ proc.cmdline|default:proc.name }}">{{ proc.name|default:"—"|truncatechars:24 }}</td>
                         <td class="py-1 pr-3 text-right">{{ proc.cpu_pct|floatformat:1 }}</td>
-                        <td class="py-1 pr-3 text-right {% if proc.mem_pct > 10 %}text-red-400{% elif proc.mem_pct > 5 %}text-yellow-400{% endif %}">{{ proc.mem_pct|floatformat:1 }}</td>
+                        <td class="py-1 pr-3 text-right {% if proc.mem_pct > 10 %}grm-text-red{% elif proc.mem_pct > 5 %}grm-text-yellow{% endif %}">{{ proc.mem_pct|floatformat:1 }}</td>
                         <td class="py-1 text-gray-500 truncate">{{ proc.username|default:"—"|truncatechars:16 }}</td>
                     </tr>
                     {% endfor %}
@@ -475,10 +475,10 @@
 <!-- Process Details (top5 by CPU ∪ top5 by Mem, deduped by PID)     -->
 <!-- ════════════════════════════════════════════════════════════════ -->
 {% if process_details %}
-<div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
-    <h3 class="text-gray-400 text-sm font-medium mb-2">
+<div class="grm-card">
+    <h3 class="grm-text-gray text-sm font-medium mb-2">
         Process Details
-        {% if is_data_stale %}<span class="text-xs text-yellow-400 ml-1">(stale)</span>{% endif %}
+        {% if is_data_stale %}<span class="text-xs grm-text-yellow ml-1">(stale)</span>{% endif %}
     </h3>
     <table class="w-full text-xs">
         <thead class="text-gray-500 border-b border-gray-700">
@@ -488,12 +488,12 @@
                 <th class="text-left pb-1 font-medium">Command</th>
             </tr>
         </thead>
-        <tbody class="text-gray-300">
+        <tbody class="grm-text-light">
             {% for proc in process_details %}
             <tr class="border-b border-gray-700/30 last:border-0 align-top">
                 <td class="py-1 pr-3 font-mono text-gray-500 whitespace-nowrap">{{ proc.pid }}</td>
                 <td class="py-1 pr-3 break-words">{{ proc.name }}</td>
-                <td class="py-1 whitespace-pre-wrap break-all font-mono text-[11px] leading-snug text-gray-400">{{ proc.cmdline }}</td>
+                <td class="py-1 whitespace-pre-wrap break-all font-mono text-[11px] leading-snug grm-text-gray">{{ proc.cmdline }}</td>
             </tr>
             {% endfor %}
         </tbody>
@@ -503,11 +503,11 @@
 <!-- ════════════════════════════════════════════════════════════════ -->
 <!-- Network (per interface) -->
 <!-- ════════════════════════════════════════════════════════════════ -->
-<div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
-    <h3 class="text-gray-400 text-sm font-medium mb-2">
+<div class="grm-card">
+    <h3 class="grm-text-gray text-sm font-medium mb-2">
         Network ({{ network_metrics|length }})
         {% if is_data_stale %}
-        <span class="text-xs text-yellow-400 ml-1">(stale)</span>
+        <span class="text-xs grm-text-yellow ml-1">(stale)</span>
         {% endif %}
     </h3>
     {% if network_metrics %}
@@ -523,10 +523,10 @@
                     <th class="text-right pb-1 font-medium">Errors</th>
                 </tr>
             </thead>
-            <tbody class="text-gray-400">
+            <tbody class="grm-text-gray">
                 {% for iface in network_metrics %}
                 <tr class="border-b border-gray-700/30 last:border-0">
-                    <td class="py-1 text-gray-300">{{ iface.interface|default:"—" }}</td>
+                    <td class="py-1 grm-text-light">{{ iface.interface|default:"—" }}</td>
                     <td class="py-1 font-mono">{{ iface.ipv4|default:"—" }}</td>
                     <td class="py-1 text-right">
                         {% if iface.link_speed_mbps %}{{ iface.link_speed_mbps }} Mbps{% else %}—{% endif %}
@@ -535,9 +535,9 @@
                     <td class="py-1 text-right">{{ iface.tx_bytes|filesizeformat }}</td>
                     <td class="py-1 text-right">
                         {% if iface.rx_errors or iface.tx_errors %}
-                        <span class="text-yellow-400">↑{{ iface.rx_errors }} ↓{{ iface.tx_errors }}</span>
+                        <span class="grm-text-yellow">↑{{ iface.rx_errors }} ↓{{ iface.tx_errors }}</span>
                         {% else %}
-                        <span class="text-green-400">0</span>
+                        <span class="grm-text-green">0</span>
                         {% endif %}
                     </td>
                 </tr>
@@ -554,12 +554,12 @@
 <!-- Motherboard -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
 {% if snapshot.motherboard_json %}
-<div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
-    <h3 class="text-gray-400 text-sm font-medium mb-2">Motherboard</h3>
-    <div class="text-sm text-gray-300">
+<div class="grm-card">
+    <h3 class="grm-text-gray text-sm font-medium mb-2">Motherboard</h3>
+    <div class="text-sm grm-text-light">
         {{ snapshot.motherboard_json.manufacturer|default:"—" }}
     </div>
-    <div class="text-sm text-gray-400">
+    <div class="text-sm grm-text-gray">
         {{ snapshot.motherboard_json.model|default:"—" }}
         {% if snapshot.motherboard_json.bios_version %}
         <span class="text-gray-600"> · BIOS: {{ snapshot.motherboard_json.bios_version }}</span>
@@ -572,30 +572,30 @@
 <!-- Software / OS -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
 {% if snapshot.software_json %}
-<div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
-    <h3 class="text-gray-400 text-sm font-medium mb-2">Software</h3>
+<div class="grm-card">
+    <h3 class="grm-text-gray text-sm font-medium mb-2">Software</h3>
     <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
         <div class="text-gray-500">Hostname:</div>
-        <div class="text-gray-300">{{ snapshot.software_json.hostname|default:"—" }}</div>
+        <div class="grm-text-light">{{ snapshot.software_json.hostname|default:"—" }}</div>
         <div class="text-gray-500">OS:</div>
-        <div class="text-gray-300 truncate" title="{{ snapshot.software_json.os_distro }}">{{ snapshot.software_json.os_distro|default:"—" }}</div>
+        <div class="grm-text-light truncate" title="{{ snapshot.software_json.os_distro }}">{{ snapshot.software_json.os_distro|default:"—" }}</div>
         <div class="text-gray-500">Kernel:</div>
-        <div class="text-gray-300">{{ snapshot.software_json.kernel|default:"—" }}</div>
+        <div class="grm-text-light">{{ snapshot.software_json.kernel|default:"—" }}</div>
         {% if snapshot.software_json.uptime_s %}
         <div class="text-gray-500">Uptime:</div>
-        <div class="text-gray-300">{{ snapshot.software_json.uptime_s|time_since }}</div>
+        <div class="grm-text-light">{{ snapshot.software_json.uptime_s|time_since }}</div>
         {% endif %}
         {% if snapshot.software_json.nvidia_driver %}
         <div class="text-gray-500">NVIDIA Driver:</div>
-        <div class="text-gray-300">{{ snapshot.software_json.nvidia_driver }}</div>
+        <div class="grm-text-light">{{ snapshot.software_json.nvidia_driver }}</div>
         {% endif %}
         {% if snapshot.software_json.docker_version %}
         <div class="text-gray-500">Docker:</div>
-        <div class="text-gray-300">{{ snapshot.software_json.docker_version }}</div>
+        <div class="grm-text-light">{{ snapshot.software_json.docker_version }}</div>
         {% endif %}
         {% if snapshot.agent_version %}
         <div class="text-gray-500">Agent:</div>
-        <div class="text-gray-300">{{ snapshot.agent_version }}</div>
+        <div class="grm-text-light">{{ snapshot.agent_version }}</div>
         {% endif %}
     </div>
 </div>
@@ -604,8 +604,8 @@
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <!-- Docker Containers -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
-<div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
-    <h3 class="text-gray-400 text-sm font-medium mb-2">Docker{% if docker_metrics %} ({{ docker_metrics|length }}){% endif %}</h3>
+<div class="grm-card">
+    <h3 class="grm-text-gray text-sm font-medium mb-2">Docker{% if docker_metrics %} ({{ docker_metrics|length }}){% endif %}</h3>
     {% if docker_metrics %}
     <div class="overflow-x-auto">
         <table class="w-full text-xs">
@@ -623,11 +623,11 @@
                 {% for c in docker_metrics %}
                 <tr class="border-b border-gray-700/50">
                     <td class="py-1 pr-2">{% if c.status == 'running' %}🟢{% elif c.status == 'restarting' %}🟡{% else %}🔴{% endif %}</td>
-                    <td class="py-1 pr-2 text-gray-300 truncate max-w-[120px]" title="{{ c.name }}">{{ c.name }}</td>
-                    <td class="py-1 pr-2 text-gray-400 truncate max-w-[180px]" title="{{ c.image }}">{{ c.image|truncatechars:24 }}</td>
+                    <td class="py-1 pr-2 grm-text-light truncate max-w-[120px]" title="{{ c.name }}">{{ c.name }}</td>
+                    <td class="py-1 pr-2 grm-text-gray truncate max-w-[180px]" title="{{ c.image }}">{{ c.image|truncatechars:24 }}</td>
                     <td class="py-1 pr-2 text-gray-500 font-mono">{% if c.container_id %}{{ c.container_id|truncatechars:12 }}{% else %}—{% endif %}</td>
-                    <td class="py-1 pr-2 text-gray-400">{{ c.created|default:"—" }}</td>
-                    <td class="py-1 text-gray-400">{{ c.status_text|default:"—" }}</td>
+                    <td class="py-1 pr-2 grm-text-gray">{{ c.created|default:"—" }}</td>
+                    <td class="py-1 grm-text-gray">{{ c.status_text|default:"—" }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -643,17 +643,17 @@
     <!-- ════════════════════════════════════════════════════════════════ -->
     {% with running_containers=docker_metrics|filter_running %}
     {% if running_containers %}
-    <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
-        <h3 class="text-gray-400 text-sm font-medium mb-2">
+    <div class="grm-card">
+        <h3 class="grm-text-gray text-sm font-medium mb-2">
             Container Details ({{ running_containers|length }} running)
-            {% if is_data_stale %}<span class="text-xs text-yellow-400 ml-1">(stale)</span>{% endif %}
+            {% if is_data_stale %}<span class="text-xs grm-text-yellow ml-1">(stale)</span>{% endif %}
         </h3>
         <div class="space-y-4">
             {% for c in running_containers %}
             <div class="border border-gray-700 rounded p-3">
                 <!-- Container header -->
                 <div class="flex items-center gap-2 mb-2">
-                    <span class="text-xs px-2 py-0.5 rounded bg-green-900/50 text-green-300">Running</span>
+                    <span class="text-xs px-2 py-0.5 rounded bg-green-900/50 grm-text-green-strong">Running</span>
                     <span class="text-sm text-gray-200 font-medium">{{ c.name|default:"unnamed" }}</span>
                     <span class="text-xs text-gray-500 font-mono">{{ c.container_id|truncatechars:12 }}</span>
                 </div>
@@ -667,21 +667,21 @@
                         {% if c.manifest.image_tag %}
                         <div class="flex gap-2">
                             <dt class="text-gray-500 w-20 flex-shrink-0">Image:</dt>
-                            <dd class="text-gray-300 truncate">{{ c.manifest.image_tag }}</dd>
+                            <dd class="grm-text-light truncate">{{ c.manifest.image_tag }}</dd>
                         </div>
                         {% endif %}
                         
                         {% if c.manifest.digest %}
                         <div class="flex gap-2">
                             <dt class="text-gray-500 w-20 flex-shrink-0">Digest:</dt>
-                            <dd class="text-gray-400 font-mono truncate" title="{{ c.manifest.digest }}">{{ c.manifest.digest }}</dd>
+                            <dd class="grm-text-gray font-mono truncate" title="{{ c.manifest.digest }}">{{ c.manifest.digest }}</dd>
                         </div>
                         {% endif %}
                         
                         {% if c.manifest.platform %}
                         <div class="flex gap-2">
                             <dt class="text-gray-500 w-20 flex-shrink-0">Platform:</dt>
-                            <dd class="text-gray-300">
+                            <dd class="grm-text-light">
                                 {{ c.manifest.platform.architecture }}/{{ c.manifest.platform.os }}
                             </dd>
                         </div>
@@ -690,10 +690,10 @@
                         {% if c.manifest.state %}
                         <div class="flex gap-2">
                             <dt class="text-gray-500 w-20 flex-shrink-0">State:</dt>
-                            <dd class="text-gray-300">
+                            <dd class="grm-text-light">
                                 Started {{ c.manifest.state.started_at|default:"?" }}
-                                {% if c.manifest.state.oom_killed %}<span class="text-red-400 ml-1">OOM</span>{% endif %}
-                                {% if c.manifest.state.exit_code != 0 %}<span class="text-yellow-400 ml-1">Exit {{ c.manifest.state.exit_code }}</span>{% endif %}
+                                {% if c.manifest.state.oom_killed %}<span class="grm-text-red ml-1">OOM</span>{% endif %}
+                                {% if c.manifest.state.exit_code != 0 %}<span class="grm-text-yellow ml-1">Exit {{ c.manifest.state.exit_code }}</span>{% endif %}
                             </dd>
                         </div>
                         {% endif %}
@@ -701,7 +701,7 @@
                         {% if c.manifest.mounts %}
                         <div class="flex gap-2">
                             <dt class="text-gray-500 w-20 flex-shrink-0">Mounts:</dt>
-                            <dd class="text-gray-300">
+                            <dd class="grm-text-light">
                                 {% for m in c.manifest.mounts %}
                                 <div class="truncate">{{ m.source }} → {{ m.destination }} ({{ m.type }}{% if m.rw %}, rw{% endif %})</div>
                                 {% endfor %}
@@ -712,7 +712,7 @@
                         {% if c.manifest.networks %}
                         <div class="flex gap-2">
                             <dt class="text-gray-500 w-20 flex-shrink-0">Networks:</dt>
-                            <dd class="text-gray-300">
+                            <dd class="grm-text-light">
                                 {% for net_name, net_info in c.manifest.networks.items %}
                                 <div>{{ net_name }}: {{ net_info.ip }}{% if net_info.gateway %} via {{ net_info.gateway }}{% endif %}</div>
                                 {% endfor %}
@@ -723,7 +723,7 @@
                         {% if c.manifest.labels %}
                         <div class="flex gap-2">
                             <dt class="text-gray-500 w-20 flex-shrink-0">Labels:</dt>
-                            <dd class="text-gray-300">
+                            <dd class="grm-text-light">
                                 {% for k, v in c.manifest.labels.items %}
                                 <div class="truncate">{{ k }}: {{ v }}</div>
                                 {% endfor %}
@@ -734,7 +734,7 @@
                         {% if c.manifest.annotations %}
                         <div class="flex gap-2">
                             <dt class="text-gray-500 w-20 flex-shrink-0">Annotations:</dt>
-                            <dd class="text-gray-300">
+                            <dd class="grm-text-light">
                                 {% for k, v in c.manifest.annotations.items %}
                                 <div class="truncate">{{ k|cut:"org.opencontainers.image."|cut:"com.docker." }}: {{ v }}</div>
                                 {% endfor %}
@@ -754,7 +754,7 @@
                     {% if c.manifest.port_bindings %}
                     <div class="flex gap-2">
                         <dt class="text-gray-500 w-20 flex-shrink-0">Port Bindings:</dt>
-                        <dd class="text-gray-300">
+                        <dd class="grm-text-light">
                             {% for host_port, bindings in c.manifest.port_bindings.items %}
                             <div class="truncate">{{ host_port }} → {% for b in bindings %}{{ b.HostIp }}:{{ b.HostPort }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>
                             {% endfor %}
@@ -765,7 +765,7 @@
                     {% if c.manifest.resource_limits %}
                     <div class="flex gap-2">
                         <dt class="text-gray-500 w-20 flex-shrink-0">Resources:</dt>
-                        <dd class="text-gray-300">
+                        <dd class="grm-text-light">
                             {% for k, v in c.manifest.resource_limits.items %}
                             <div class="truncate">{{ k }}: {{ v }}</div>
                             {% endfor %}
@@ -776,7 +776,7 @@
                     {% if c.manifest.restart_policy %}
                     <div class="flex gap-2">
                         <dt class="text-gray-500 w-20 flex-shrink-0">Restart:</dt>
-                        <dd class="text-gray-300">
+                        <dd class="grm-text-light">
                             {{ c.manifest.restart_policy.name }}{% if c.manifest.restart_policy.max_retry > 0 %} (max {{ c.manifest.restart_policy.max_retry }}){% endif %}
                         </dd>
                     </div>
@@ -785,7 +785,7 @@
                     {% if c.manifest.resource_reservations %}
                     <div class="flex gap-2">
                         <dt class="text-gray-500 w-20 flex-shrink-0">Reservations:</dt>
-                        <dd class="text-gray-300">
+                        <dd class="grm-text-light">
                             {% for k, v in c.manifest.resource_reservations.items %}
                             <div class="truncate">{{ k }}: {{ v }}</div>
                             {% endfor %}
@@ -796,23 +796,23 @@
                     {% if c.manifest.restart_count is not none %}
                     <div class="flex gap-2">
                         <dt class="text-gray-500 w-20 flex-shrink-0">Restarts:</dt>
-                        <dd class="text-gray-300">{{ c.manifest.restart_count }}</dd>
+                        <dd class="grm-text-light">{{ c.manifest.restart_count }}</dd>
                     </div>
                     {% endif %}
                     
                     {% if c.manifest.created %}
                     <div class="flex gap-2">
                         <dt class="text-gray-500 w-20 flex-shrink-0">Created:</dt>
-                        <dd class="text-gray-300">{{ c.manifest.created }}</dd>
+                        <dd class="grm-text-light">{{ c.manifest.created }}</dd>
                     </div>
                     {% endif %}
                     
                     {% if c.manifest.exposed_ports %}
                     <div class="flex gap-2">
                         <dt class="text-gray-500 w-20 flex-shrink-0">Exposed:</dt>
-                        <dd class="text-gray-300">
+                        <dd class="grm-text-light">
                             {% for port in c.manifest.exposed_ports %}
-                            <span class="text-gray-300 mr-1">{{ port }}</span>
+                            <span class="grm-text-light mr-1">{{ port }}</span>
                             {% endfor %}
                         </dd>
                     </div>
@@ -821,42 +821,42 @@
                     {% if c.manifest.working_dir %}
                     <div class="flex gap-2">
                         <dt class="text-gray-500 w-20 flex-shrink-0">Workdir:</dt>
-                        <dd class="text-gray-300 truncate">{{ c.manifest.working_dir }}</dd>
+                        <dd class="grm-text-light truncate">{{ c.manifest.working_dir }}</dd>
                     </div>
                     {% endif %}
                     
                     {% if c.manifest.entrypoint %}
                     <div class="flex gap-2">
                         <dt class="text-gray-500 w-20 flex-shrink-0">Entrypoint:</dt>
-                        <dd class="text-gray-300 truncate">{{ c.manifest.entrypoint|join:" " }}</dd>
+                        <dd class="grm-text-light truncate">{{ c.manifest.entrypoint|join:" " }}</dd>
                     </div>
                     {% endif %}
                     
                     {% if c.manifest.cmd %}
                     <div class="flex gap-2">
                         <dt class="text-gray-500 w-20 flex-shrink-0">Cmd:</dt>
-                        <dd class="text-gray-300 truncate">{{ c.manifest.cmd|join:" " }}</dd>
+                        <dd class="grm-text-light truncate">{{ c.manifest.cmd|join:" " }}</dd>
                     </div>
                     {% endif %}
                     
                     {% if c.manifest.user %}
                     <div class="flex gap-2">
                         <dt class="text-gray-500 w-20 flex-shrink-0">User:</dt>
-                        <dd class="text-gray-300">{{ c.manifest.user }}</dd>
+                        <dd class="grm-text-light">{{ c.manifest.user }}</dd>
                     </div>
                     {% endif %}
                     
                     {% if c.manifest.healthcheck %}
                     <div class="flex gap-2">
                         <dt class="text-gray-500 w-20 flex-shrink-0">Healthcheck:</dt>
-                        <dd class="text-gray-300">{{ c.manifest.healthcheck.Test|join:" " }}</dd>
+                        <dd class="grm-text-light">{{ c.manifest.healthcheck.Test|join:" " }}</dd>
                     </div>
                     {% endif %}
                     
                     {% if c.manifest.security %}
                     <div class="flex gap-2">
                         <dt class="text-gray-500 w-20 flex-shrink-0">Security:</dt>
-                        <dd class="text-gray-300">
+                        <dd class="grm-text-light">
                             {% for k, v in c.manifest.security.items %}
                             <div class="truncate">{{ k }}: {{ v }}</div>
                             {% endfor %}
@@ -867,7 +867,7 @@
                     {% if c.manifest.dns %}
                     <div class="flex gap-2">
                         <dt class="text-gray-500 w-20 flex-shrink-0">DNS:</dt>
-                        <dd class="text-gray-300">
+                        <dd class="grm-text-light">
                             {% for k, v in c.manifest.dns.items %}
                             <div class="truncate">{{ k }}: {{ v }}</div>
                             {% endfor %}
@@ -878,9 +878,9 @@
                     {% if c.manifest.env %}
                     <div class="flex gap-2">
                         <dt class="text-gray-500 w-20 flex-shrink-0">Env:</dt>
-                        <dd class="text-gray-300 max-w-full overflow-x-auto">
+                        <dd class="grm-text-light max-w-full overflow-x-auto">
                             {% for k, v in c.manifest.env.items %}
-                            <div class="whitespace-nowrap"><span class="text-gray-500">{{ k }}</span>=<span class="text-green-300">{{ v }}</span></div>
+                            <div class="whitespace-nowrap"><span class="text-gray-500">{{ k }}</span>=<span class="grm-text-green-strong">{{ v }}</span></div>
                             {% endfor %}
                         </dd>
                     </div>
@@ -891,7 +891,7 @@
                 <div class="space-y-2 text-xs mt-4 pt-4 border-t border-gray-700">
                     <div class="text-gray-500 font-medium border-b border-gray-700 pb-1">Logs (last 100 lines)</div>
                     {% if c.logs %}
-                    <div class="bg-gray-800 rounded-lg p-3 font-mono text-[11px] leading-snug text-gray-300">
+                    <div class="bg-gray-800 rounded-lg p-3 font-mono text-[11px] leading-snug grm-text-light">
                         {% for line in c.logs %}
                         {% if line|trim %}
                         <div class="py-0.5">{{ line }}</div>
@@ -908,8 +908,8 @@
         </div>
     </div>
     {% else %}
-    <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
-        <h3 class="text-gray-400 text-sm font-medium mb-2">Container Details</h3>
+    <div class="grm-card">
+        <h3 class="grm-text-gray text-sm font-medium mb-2">Container Details</h3>
         <div class="text-gray-500 text-xs">No running containers</div>
     </div>
     {% endif %}
@@ -918,25 +918,25 @@
     <!-- ════════════════════════════════════════════════════════════════ -->
     <!-- Latest Errors (from Rig.latest_errors_json) -->
     <!-- ════════════════════════════════════════════════════════════════ -->
-    <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4 mt-4 max-w-full">
-    <h3 class="text-gray-400 text-sm font-medium mb-2">Latest Errors</h3>
+    <div class="grm-card mt-4 max-w-full">
+    <h3 class="grm-text-gray text-sm font-medium mb-2">Latest Errors</h3>
     {% if recent_errors %}
     <div class="flex items-center justify-between mb-2">
-        <div class="text-2xl font-bold text-red-400">{{ recent_errors|length }}</div>
+        <div class="text-2xl font-bold grm-text-red">{{ recent_errors|length }}</div>
         <span class="text-xs text-gray-500">Last 5 shown</span>
     </div>
     <div class="space-y-2">
         {% for err in recent_errors|slice:":5" %}
         <div class="text-xs">
             <div class="flex items-center gap-2 mb-0.5">
-                <span class="px-1.5 py-0.5 rounded bg-red-900/50 text-red-300 text-[10px]">{{ err.source|default:"unknown" }}</span>
+                <span class="px-1.5 py-0.5 rounded bg-red-900/50 grm-text-red-strong text-[10px]">{{ err.source|default:"unknown" }}</span>
                 <span class="text-gray-600">{{ err.timestamp|default:"" }}</span>
             </div>
-            <p class="text-gray-400 font-mono truncate max-w-full" title="{{ err.message }}">{{ err.message|truncatechars:120 }}</p>
+            <p class="grm-text-gray font-mono truncate max-w-full" title="{{ err.message }}">{{ err.message|truncatechars:120 }}</p>
         </div>
         {% endfor %}
     </div>
     {% else %}
-    <div class="text-green-400">✓ No errors</div>
+    <div class="grm-text-green">✓ No errors</div>
     {% endif %}
 </div>

@@ -6,7 +6,7 @@
 
     <!-- Filters -->
     <form class="flex flex-wrap gap-3 mb-4" method="get">
-        <select name="action" class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white">
+        <select name="action" class="grm-input">
             <option value="">All Actions</option>
             {% for action in actions %}
             <option value="{{ action }}" {% if action == action_filter %}selected{% endif %}>
@@ -15,14 +15,14 @@
             {% endfor %}
         </select>
         <input type="date" name="date_from" value="{{ date_from }}"
-               class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white">
+               class="grm-input">
         <input type="date" name="date_to" value="{{ date_to }}"
-               class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white">
-        <button type="submit" class="bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded text-sm text-white">Filter</button>
+               class="grm-input">
+        <button type="submit" class="grm-btn-primary px-3 py-1.5 text-sm">Filter</button>
     </form>
 
     <!-- Log entries -->
-    <div class="bg-gray-800 rounded-lg border border-gray-700">
+    <div class="grm-card-lg">
         {% for log in logs %}
         <div class="border-b border-gray-700 p-3 hover:bg-gray-750">
             <div class="flex items-start justify-between gap-4">
@@ -31,34 +31,34 @@
                     <div class="flex items-center gap-2 mb-1">
                         <!-- Action badge -->
                         <span class="px-1.5 py-0.5 rounded text-xs font-medium
-                            {% if 'deleted' in log.action %}bg-red-900 text-red-300
-                            {% elif 'created' in log.action %}bg-green-900 text-green-300
-                            {% elif 'login' in log.action %}bg-blue-900 text-blue-300
-                            {% elif 'failed' in log.action or 'denied' in log.action %}bg-red-900 text-red-300
-                            {% elif 'transferred' in log.action %}bg-yellow-900 text-yellow-300
-                            {% elif 'password' in log.action %}bg-purple-900 text-purple-300
-                            {% elif 'revoked' in log.action %}bg-orange-900 text-orange-300
-                            {% elif 'reactivated' in log.action %}bg-teal-900 text-teal-300
-                            {% else %}bg-gray-700 text-gray-300{% endif %}">
+                            {% if 'deleted' in log.action %}bg-red-900 grm-text-red-strong
+                            {% elif 'created' in log.action %}bg-green-900 grm-text-green-strong
+                            {% elif 'login' in log.action %}bg-blue-900 grm-text-blue-strong
+                            {% elif 'failed' in log.action or 'denied' in log.action %}bg-red-900 grm-text-red-strong
+                            {% elif 'transferred' in log.action %}bg-yellow-900 grm-text-yellow-strong
+                            {% elif 'password' in log.action %}bg-purple-900 grm-text-purple-strong
+                            {% elif 'revoked' in log.action %}bg-orange-900 grm-text-orange-strong
+                            {% elif 'reactivated' in log.action %}bg-teal-900 grm-text-teal-strong
+                            {% else %}bg-gray-700 grm-text-light{% endif %}">
                             {{ log.action }}
                         </span>
                         <!-- User who performed the action -->
                         {% if log.user %}
-                            <span class="text-xs text-gray-500">by user #{{ log.user.id }}</span>
+                            <span class="text-xs grm-text-muted">by user #{{ log.user.id }}</span>
                         {% else %}
-                            <span class="text-xs text-gray-500">by system</span>
+                            <span class="text-xs grm-text-muted">by system</span>
                         {% endif %}
                     </div>
 
                     <!-- Human-readable description -->
-                    <div class="text-sm text-gray-300">
+                    <div class="text-sm grm-text-light">
                         {% include "audit/_log_description.html" with log=log %}
                     </div>
                 </div>
 
                 <!-- Right: Timestamp and IP -->
                 <div class="text-right flex-shrink-0">
-                    <div class="text-xs text-gray-400 whitespace-nowrap">
+                    <div class="text-xs grm-text-gray whitespace-nowrap">
                         {{ log.timestamp|date:"Y-m-d H:i:s" }}
                     </div>
                     {% if log.ip_address %}
@@ -68,7 +68,7 @@
             </div>
         </div>
         {% empty %}
-        <div class="px-4 py-8 text-center text-gray-500">
+        <div class="px-4 py-8 text-center grm-text-muted">
             No audit log entries found.
         </div>
         {% endfor %}
@@ -81,7 +81,7 @@
             <a href="?page={{ logs.previous_page_number }}&action={{ action_filter }}&date_from={{ date_from }}&date_to={{ date_to }}"
                class="bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-sm">← Prev</a>
         {% endif %}
-        <span class="text-gray-400 text-sm">Page {{ logs.number }} of {{ logs.paginator.num_pages }}</span>
+        <span class="grm-text-gray text-sm">Page {{ logs.number }} of {{ logs.paginator.num_pages }}</span>
         {% if logs.has_next %}
             <a href="?page={{ logs.next_page_number }}&action={{ action_filter }}&date_from={{ date_from }}&date_to={{ date_to }}"
                class="bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-sm">Next →</a>

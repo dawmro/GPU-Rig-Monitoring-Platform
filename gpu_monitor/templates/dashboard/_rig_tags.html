@@ -15,10 +15,10 @@
     {% if user_tags %}
     <div class="relative">
         <button onclick="document.getElementById('tag-add-menu-{{ rig.uuid }}').classList.toggle('hidden')"
-                class="text-xs text-gray-500 hover:text-gray-300 px-2 py-0.5 rounded border border-dashed border-gray-600 hover:border-gray-400">
+                class="text-xs grm-text-muted hover:grm-text-light px-2 py-0.5 rounded border border-dashed border-gray-600 hover:border-gray-400">
             + Add tag
         </button>
-        <div id="tag-add-menu-{{ rig.uuid }}" class="hidden absolute top-full left-0 mt-1 bg-gray-800 border border-gray-700 rounded shadow-lg z-10 min-w-40 max-h-48 overflow-y-auto">
+        <div id="tag-add-menu-{{ rig.uuid }}" class="hidden absolute top-full left-0 mt-1 grm-card z-10 min-w-40 max-h-48 overflow-y-auto p-0">
             {% for tag in user_tags %}
             {% if tag not in rig.tags.all %}
             <form method="post" action="{% url 'dashboard:rig-toggle-tag' rig.uuid tag.id %}">

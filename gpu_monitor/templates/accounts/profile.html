@@ -6,73 +6,73 @@
 
     {% if messages %}
     {% for message in messages %}
-    <div class="{% if message.tags == 'success' %}bg-green-900/50 border-green-500 text-green-200{% else %}bg-red-900/50 border-red-500 text-red-200{% endif %} border px-4 py-2 rounded mb-4">{{ message }}</div>
+    <div class="{% if message.tags == 'success' %}grm-alert grm-alert-success{% else %}grm-alert grm-alert-error{% endif %}">{{ message }}</div>
     {% endfor %}
     {% endif %}
 
-    <div class="bg-gray-800 border border-gray-700 rounded-lg p-6 mb-6">
+    <div class="grm-card-lg mb-6">
         <h3 class="text-lg font-medium mb-4">Account Information</h3>
         <div class="grid grid-cols-2 gap-4 text-sm">
             <div>
-                <span class="text-gray-500">Email:</span>
-                <span class="text-gray-300 ml-2">{{ user.email }}</span>
+                <span class="grm-text-muted">Email:</span>
+                <span class="grm-text-light ml-2">{{ user.email }}</span>
             </div>
             <div>
-                <span class="text-gray-500">Role:</span>
-                <span class="text-gray-300 ml-2">{% if user.is_staff %}Admin{% else %}User{% endif %}</span>
+                <span class="grm-text-muted">Role:</span>
+                <span class="grm-text-light ml-2">{% if user.is_staff %}Admin{% else %}User{% endif %}</span>
             </div>
             <div>
-                <span class="text-gray-500">Rigs:</span>
-                <span class="text-gray-300 ml-2">{{ user.rigs.count }}</span>
+                <span class="grm-text-muted">Rigs:</span>
+                <span class="grm-text-light ml-2">{{ user.rigs.count }}</span>
             </div>
             <div>
-                <span class="text-gray-500">API Keys:</span>
-                <span class="text-gray-300 ml-2">{{ user.api_keys.count }}</span>
+                <span class="grm-text-muted">API Keys:</span>
+                <span class="grm-text-light ml-2">{{ user.api_keys.count }}</span>
             </div>
         </div>
     </div>
 
-    <div class="bg-gray-800 border border-gray-700 rounded-lg p-6 mb-6">
+    <div class="grm-card-lg mb-6">
         <h3 class="text-lg font-medium mb-4">Power Settings</h3>
-        <p class="text-sm text-gray-400 mb-4">Configure your electricity rate to estimate power consumption costs per rig.</p>
+        <p class="text-sm grm-text-gray mb-4">Configure your electricity rate to estimate power consumption costs per rig.</p>
         <form method="post" class="space-y-4">
             {% csrf_token %}
             <input type="hidden" name="action" value="update_power_settings">
             <div>
-                <label class="block text-sm text-gray-400 mb-1">Electricity Rate ($/kWh)</label>
+                <label class="block text-sm grm-text-gray mb-1">Electricity Rate ($/kWh)</label>
                 <input type="number" name="electricity_rate_kwh" step="0.0001" min="0" max="10"
                        value="{{ user.electricity_rate_kwh|default:'0.3300' }}"
-                       class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-500">
-                <p class="text-xs text-gray-500 mt-1">Your local electricity cost per kilowatt-hour. Used to estimate running costs.</p>
+                       class="w-full grm-input-lg">
+                <p class="text-xs grm-text-muted mt-1">Your local electricity cost per kilowatt-hour. Used to estimate running costs.</p>
             </div>
-            <button type="submit" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-white font-medium">
+            <button type="submit" class="grm-btn-primary">
                 Save Power Settings
             </button>
         </form>
     </div>
 
-    <div class="bg-gray-800 border border-gray-700 rounded-lg p-6">
+    <div class="grm-card-lg">
         <h3 class="text-lg font-medium mb-4">Change Password</h3>
         <form method="post" class="space-y-4">
             {% csrf_token %}
             <input type="hidden" name="action" value="change_password">
             <div>
-                <label class="block text-sm text-gray-400 mb-1">Current Password</label>
+                <label class="block text-sm grm-text-gray mb-1">Current Password</label>
                 <input type="password" name="current_password" required
-                       class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-500">
+                    class="w-full grm-input-lg">
             </div>
             <div>
-                <label class="block text-sm text-gray-400 mb-1">New Password</label>
+                <label class="block text-sm grm-text-gray mb-1">New Password</label>
                 <input type="password" name="new_password" required minlength="8"
-                       class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-500">
-                <p class="text-xs text-gray-500 mt-1">Minimum 8 characters</p>
+                    class="w-full grm-input-lg">
+                <p class="text-xs grm-text-muted mt-1">Minimum 8 characters</p>
             </div>
             <div>
-                <label class="block text-sm text-gray-400 mb-1">Confirm New Password</label>
+                <label class="block text-sm grm-text-gray mb-1">Confirm New Password</label>
                 <input type="password" name="confirm_password" required minlength="8"
-                       class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-500">
+                    class="w-full grm-input-lg">
             </div>
-            <button type="submit" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-white font-medium">
+            <button type="submit" class="grm-btn-primary">
                 Change Password
             </button>
         </form>

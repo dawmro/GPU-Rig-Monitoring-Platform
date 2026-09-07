@@ -7,6 +7,7 @@
     <link rel="icon" type="image/x-icon" href="{% static 'img/favicon.ico' %}">
     <link rel="icon" type="image/svg+xml" href="{% static 'img/favicon.svg' %}">
     <title>{% block title %}GPU Rig Monitor{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'css/app.css' %}">
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -27,17 +28,17 @@
         <div class="hidden md:flex items-center justify-between">
             <div class="flex items-center gap-6">
                 <a href="{% url 'dashboard:rig-list' %}" class="text-lg font-bold">🖥️ GPU Rig Monitor</a>
-                <a href="{% url 'dashboard:rig-list' %}" class="text-gray-400 hover:text-white">Fleet</a>
-                <a href="{% url 'accounts:tags' %}" class="text-gray-400 hover:text-white">Tags</a>
-                <a href="{% url 'accounts:api-keys' %}" class="text-gray-400 hover:text-white">API Keys</a>
-                <a href="{% url 'accounts:audit-log' %}" class="text-gray-400 hover:text-white">Activity</a>
+                <a href="{% url 'dashboard:rig-list' %}" class="grm-text-gray hover:text-white">Fleet</a>
+                <a href="{% url 'accounts:tags' %}" class="grm-text-gray hover:text-white">Tags</a>
+                <a href="{% url 'accounts:api-keys' %}" class="grm-text-gray hover:text-white">API Keys</a>
+                <a href="{% url 'accounts:audit-log' %}" class="grm-text-gray hover:text-white">Activity</a>
                 {% if user.is_staff %}
-                <a href="{% url 'accounts:admin-transfer-keys' %}" class="text-gray-400 hover:text-white">Transfer Keys</a>
+                <a href="{% url 'accounts:admin-transfer-keys' %}" class="grm-text-gray hover:text-white">Transfer Keys</a>
                 {% endif %}
             </div>
             <div class="flex items-center gap-4">
-                <a href="{% url 'accounts:profile' %}" class="text-gray-400 hover:text-white text-sm">{{ user.email }}</a>
-                <a href="{% url 'accounts:logout' %}" class="text-gray-400 hover:text-white text-sm">Logout</a>
+                <a href="{% url 'accounts:profile' %}" class="grm-text-gray hover:text-white text-sm">{{ user.email }}</a>
+                <a href="{% url 'accounts:logout' %}" class="grm-text-gray hover:text-white text-sm">Logout</a>
             </div>
         </div>
 
@@ -45,8 +46,8 @@
         <div class="flex md:hidden items-center justify-between">
             <a href="{% url 'dashboard:rig-list' %}" class="text-lg font-bold">🖥️ GPU Rig Monitor</a>
             <div class="flex items-center gap-3">
-                <a href="{% url 'accounts:profile' %}" class="text-gray-400 hover:text-white text-sm truncate max-w-[120px]">{{ user.email }}</a>
-                <button type="button" id="mobile-menu-btn" class="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-700 transition-colors" aria-label="Menu">
+                <a href="{% url 'accounts:profile' %}" class="grm-text-gray hover:text-white text-sm truncate max-w-[120px]">{{ user.email }}</a>
+                <button type="button" id="mobile-menu-btn" class="grm-text-gray hover:text-white p-1 rounded hover:bg-gray-700 transition-colors" aria-label="Menu">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
                 </button>
             </div>
@@ -55,15 +56,15 @@
         <!-- Mobile dropdown menu -->
         <div id="mobile-menu" class="hidden md:hidden mt-3 pb-3 border-t border-gray-700 pt-3">
             <div class="flex flex-col gap-1">
-                <a href="{% url 'dashboard:rig-list' %}" class="text-gray-400 hover:text-white hover:bg-gray-700 rounded px-3 py-2 text-sm">Fleet</a>
-                <a href="{% url 'accounts:tags' %}" class="text-gray-400 hover:text-white hover:bg-gray-700 rounded px-3 py-2 text-sm">Tags</a>
-                <a href="{% url 'accounts:api-keys' %}" class="text-gray-400 hover:text-white hover:bg-gray-700 rounded px-3 py-2 text-sm">API Keys</a>
-                <a href="{% url 'accounts:audit-log' %}" class="text-gray-400 hover:text-white hover:bg-gray-700 rounded px-3 py-2 text-sm">Activity</a>
+                <a href="{% url 'dashboard:rig-list' %}" class="grm-text-gray hover:text-white hover:bg-gray-700 rounded px-3 py-2 text-sm">Fleet</a>
+                <a href="{% url 'accounts:tags' %}" class="grm-text-gray hover:text-white hover:bg-gray-700 rounded px-3 py-2 text-sm">Tags</a>
+                <a href="{% url 'accounts:api-keys' %}" class="grm-text-gray hover:text-white hover:bg-gray-700 rounded px-3 py-2 text-sm">API Keys</a>
+                <a href="{% url 'accounts:audit-log' %}" class="grm-text-gray hover:text-white hover:bg-gray-700 rounded px-3 py-2 text-sm">Activity</a>
                 {% if user.is_staff %}
-                <a href="{% url 'accounts:admin-transfer-keys' %}" class="text-gray-400 hover:text-white hover:bg-gray-700 rounded px-3 py-2 text-sm">Transfer Keys</a>
+                <a href="{% url 'accounts:admin-transfer-keys' %}" class="grm-text-gray hover:text-white hover:bg-gray-700 rounded px-3 py-2 text-sm">Transfer Keys</a>
                 {% endif %}
                 <hr class="border-gray-700 my-1">
-                <a href="{% url 'accounts:logout' %}" class="text-red-400 hover:text-red-300 hover:bg-gray-700 rounded px-3 py-2 text-sm">Logout</a>
+                <a href="{% url 'accounts:logout' %}" class="grm-text-red hover:grm-text-red-light hover:bg-gray-700 rounded px-3 py-2 text-sm">Logout</a>
             </div>
         </div>
     </nav>

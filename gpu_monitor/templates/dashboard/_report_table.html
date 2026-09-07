@@ -2,17 +2,17 @@
 
 <!-- GPU Section (per-GPU) -->
 {% for gpu in gpu_devices %}
-<h3 class="text-sm font-medium text-gray-300 mt-4 mb-2">GPU {{ gpu.gpu_index }} — {{ gpu.model }}</h3>
+<h3 class="text-sm font-medium grm-text-light mt-4 mb-2">GPU {{ gpu.gpu_index }} — {{ gpu.model }}</h3>
 <div class="overflow-x-auto mb-4">
     <table class="w-full text-xs">
-        <thead class="text-gray-400 border-b border-gray-700">
+        <thead class="grm-text-gray border-b border-gray-700">
             <tr>
                 <th class="text-left py-1.5 pr-3 font-medium">Metric</th>
                 <th class="text-right py-1.5 px-2 font-medium">Average</th>
                 <th class="text-right py-1.5 px-2 font-medium">Max</th>
             </tr>
         </thead>
-        <tbody class="text-gray-300">
+        <tbody class="grm-text-light">
             <tr class="border-b border-gray-700/50">
                 <td class="py-1.5 pr-3">Temperature</td>
                 <td class="text-right py-1.5 px-2">{{ gpu.gpu_temp_c_avg|floatformat:1 }}°C</td>
@@ -59,17 +59,17 @@
 {% endfor %}
 
 <!-- CPU Section -->
-<h3 class="text-sm font-medium text-gray-300 mt-4 mb-2">CPU</h3>
+<h3 class="text-sm font-medium grm-text-light mt-4 mb-2">CPU</h3>
 <div class="overflow-x-auto mb-4">
     <table class="w-full text-xs">
-        <thead class="text-gray-400 border-b border-gray-700">
+        <thead class="grm-text-gray border-b border-gray-700">
             <tr>
                 <th class="text-left py-1.5 pr-3 font-medium">Metric</th>
                 <th class="text-right py-1.5 px-2 font-medium">Average</th>
                 <th class="text-right py-1.5 px-2 font-medium">Max</th>
             </tr>
         </thead>
-        <tbody class="text-gray-300">
+        <tbody class="grm-text-light">
             <tr class="border-b border-gray-700/50">
                 <td class="py-1.5 pr-3">Utilization</td>
                 <td class="text-right py-1.5 px-2">{{ cpu_utilization_pct_avg|floatformat:1 }}%</td>
@@ -95,17 +95,17 @@
 </div>
 
 <!-- Memory Section -->
-<h3 class="text-sm font-medium text-gray-300 mt-4 mb-2">Memory</h3>
+<h3 class="text-sm font-medium grm-text-light mt-4 mb-2">Memory</h3>
 <div class="overflow-x-auto mb-4">
     <table class="w-full text-xs">
-        <thead class="text-gray-400 border-b border-gray-700">
+        <thead class="grm-text-gray border-b border-gray-700">
             <tr>
                 <th class="text-left py-1.5 pr-3 font-medium">Metric</th>
                 <th class="text-right py-1.5 px-2 font-medium">Average</th>
                 <th class="text-right py-1.5 px-2 font-medium">Max</th>
             </tr>
         </thead>
-        <tbody class="text-gray-300">
+        <tbody class="grm-text-light">
             <tr class="border-b border-gray-700/50">
                 <td class="py-1.5 pr-3">Used</td>
                 <td class="text-right py-1.5 px-2">{{ mem_used_bytes_avg|filesizeformat }}</td>
@@ -121,18 +121,18 @@
 </div>
 
 <!-- Disk Section (per-device) -->
-<h3 class="text-sm font-medium text-gray-300 mt-4 mb-2">Disk</h3>
+<h3 class="text-sm font-medium grm-text-light mt-4 mb-2">Disk</h3>
 {% for disk in disk_devices %}
 <div class="overflow-x-auto mb-4">
-    <div class="text-xs text-gray-400 mb-1">{{ disk.device }} ({{ disk.mountpoint }})</div>
+    <div class="text-xs grm-text-gray mb-1">{{ disk.device }} ({{ disk.mountpoint }})</div>
     <table class="w-full text-xs">
-        <thead class="text-gray-400 border-b border-gray-700">
+        <thead class="grm-text-gray border-b border-gray-700">
             <tr>
                 <th class="text-left py-1.5 pr-3 font-medium">Metric</th>
                 <th class="text-right py-1.5 px-2 font-medium">Total / Peak</th>
             </tr>
         </thead>
-        <tbody class="text-gray-300">
+        <tbody class="grm-text-light">
             <tr class="border-b border-gray-700/50">
                 <td class="py-1.5 pr-3">Max Usage</td>
                 <td class="text-right py-1.5 px-2">{{ disk.disk_usage_pct_max|floatformat:1 }}%</td>
@@ -163,18 +163,18 @@
 {% endfor %}
 
 <!-- Network Section (per-interface) -->
-<h3 class="text-sm font-medium text-gray-300 mt-4 mb-2">Network</h3>
+<h3 class="text-sm font-medium grm-text-light mt-4 mb-2">Network</h3>
 {% for iface in net_interfaces %}
 <div class="overflow-x-auto mb-4">
-    <div class="text-xs text-gray-400 mb-1">{{ iface.interface }}</div>
+    <div class="text-xs grm-text-gray mb-1">{{ iface.interface }}</div>
     <table class="w-full text-xs">
-        <thead class="text-gray-400 border-b border-gray-700">
+        <thead class="grm-text-gray border-b border-gray-700">
             <tr>
                 <th class="text-left py-1.5 pr-3 font-medium">Metric</th>
                 <th class="text-right py-1.5 px-2 font-medium">Total</th>
             </tr>
         </thead>
-        <tbody class="text-gray-300">
+        <tbody class="grm-text-light">
             <tr class="border-b border-gray-700/50">
                 <td class="py-1.5 pr-3">Received</td>
                 <td class="text-right py-1.5 px-2">{{ iface.net_rx_bytes_sum|filesizeformat }}</td>
@@ -193,16 +193,16 @@
 {% endfor %}
 
 <!-- System Section -->
-<h3 class="text-sm font-medium text-gray-300 mt-4 mb-2">System</h3>
+<h3 class="text-sm font-medium grm-text-light mt-4 mb-2">System</h3>
 <div class="overflow-x-auto mb-4">
     <table class="w-full text-xs">
-        <thead class="text-gray-400 border-b border-gray-700">
+        <thead class="grm-text-gray border-b border-gray-700">
             <tr>
                 <th class="text-left py-1.5 pr-3 font-medium">Metric</th>
                 <th class="text-right py-1.5 px-2 font-medium">Value</th>
             </tr>
         </thead>
-        <tbody class="text-gray-300">
+        <tbody class="grm-text-light">
             <tr class="border-b border-gray-700/50">
                 <td class="py-1.5 pr-3">Avg Power</td>
                 <td class="text-right py-1.5 px-2">{{ total_system_power_w_avg|floatformat:1 }}W</td>
@@ -218,7 +218,7 @@
             {% if power_cost_estimate != None %}
             <tr class="border-b border-gray-700/50">
                 <td class="py-1.5 pr-3">Cost Estimate</td>
-                <td class="text-right py-1.5 px-2 text-green-400">${{ power_cost_estimate }}</td>
+                <td class="text-right py-1.5 px-2 grm-text-green">${{ power_cost_estimate }}</td>
             </tr>
             {% endif %}
             <tr class="border-b border-gray-700/50">

@@ -15,7 +15,7 @@
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
                     </button>
                     <button id="rig-delete-btn"
-                            class="opacity-0 group-hover:opacity-50 hover:!opacity-100 transition-opacity p-1 rounded hover:bg-red-900/30 text-red-400"
+                            class="opacity-0 group-hover:opacity-50 hover:!opacity-100 transition-opacity p-1 rounded hover:bg-red-900/30 grm-text-red"
                             title="Delete rig"
                             onclick="showDeleteModal()">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
@@ -29,11 +29,11 @@
                     {% csrf_token %}
                     <div class="flex items-center gap-2">
                         <input type="text" name="name" value="{{ rig.name }}"
-                               class="text-xl font-bold bg-gray-700 border border-gray-600 rounded px-2 py-1 w-64"
+                               class="text-xl font-bold grm-input-lg w-64"
                                maxlength="128"
                                required>
-                        <button type="submit" class="px-3 py-1 bg-blue-600 hover:bg-blue-500 rounded text-sm">Save</button>
-                        <button type="button" class="px-3 py-1 bg-gray-600 hover:bg-gray-500 rounded text-sm"
+                        <button type="submit" class="grm-btn-primary px-3 py-1 text-sm">Save</button>
+                        <button type="button" class="grm-btn-ghost px-3 py-1 text-sm"
                                 onclick="toggleRenameForm()">Cancel</button>
                     </div>
                 </form>
@@ -62,30 +62,30 @@
     <div class="border-b border-gray-700 mb-6">
         <nav class="flex gap-1 md:gap-6 overflow-x-auto">
             <button onclick="switchTab('metrics')" id="tab-metrics"
-                    class="tab-btn pb-3 px-1 md:px-2 border-b-2 border-blue-400 text-blue-400 font-medium flex items-center gap-1 md:gap-2 whitespace-nowrap">
+                    class="tab-btn pb-3 px-1 md:px-2 border-b-2 border-blue-400 grm-text-blue font-medium flex items-center gap-1 md:gap-2 whitespace-nowrap">
                 <span class="md:hidden text-base">📊</span>
                 <span class="hidden md:inline">Live Metrics</span>
             </button>
             <button onclick="switchTab('charts')" id="tab-charts"
-                    class="tab-btn pb-3 px-1 md:px-2 border-b-2 border-transparent text-gray-400 hover:text-gray-200 flex items-center gap-1 md:gap-2 whitespace-nowrap">
+                    class="tab-btn pb-3 px-1 md:px-2 border-b-2 border-transparent grm-text-gray hover:text-gray-200 flex items-center gap-1 md:gap-2 whitespace-nowrap">
                 <span class="md:hidden text-base">📈</span>
                 <span class="hidden md:inline flex items-center gap-2">Historical Charts
-                <span class="text-xs text-gray-500 hover:text-gray-300 cursor-pointer"
+                <span class="text-xs text-gray-500 hover:grm-text-light cursor-pointer"
                       onclick="event.stopPropagation(); loadCharts();"
                       title="Reload charts">↻</span></span>
             </button>
             <button onclick="switchTab('containers')" id="tab-containers"
-                    class="tab-btn pb-3 px-1 md:px-2 border-b-2 border-transparent text-gray-400 hover:text-gray-200 flex items-center gap-1 md:gap-2 whitespace-nowrap">
+                    class="tab-btn pb-3 px-1 md:px-2 border-b-2 border-transparent grm-text-gray hover:text-gray-200 flex items-center gap-1 md:gap-2 whitespace-nowrap">
                 <span class="md:hidden text-base">📦</span>
                 <span class="hidden md:inline">Containers</span>
             </button>
             <button onclick="switchTab('errors')" id="tab-errors"
-                    class="tab-btn pb-3 px-1 md:px-2 border-b-2 border-transparent text-gray-400 hover:text-gray-200 flex items-center gap-1 md:gap-2 whitespace-nowrap">
+                    class="tab-btn pb-3 px-1 md:px-2 border-b-2 border-transparent grm-text-gray hover:text-gray-200 flex items-center gap-1 md:gap-2 whitespace-nowrap">
                 <span class="md:hidden text-base">⚠️</span>
                 <span class="hidden md:inline">Errors</span>
             </button>
             <button onclick="switchTab('report')" id="tab-report"
-                    class="tab-btn pb-3 px-1 md:px-2 border-b-2 border-transparent text-gray-400 hover:text-gray-200 flex items-center gap-1 md:gap-2 whitespace-nowrap">
+                    class="tab-btn pb-3 px-1 md:px-2 border-b-2 border-transparent grm-text-gray hover:text-gray-200 flex items-center gap-1 md:gap-2 whitespace-nowrap">
                 <span class="md:hidden text-base">📋</span>
                 <span class="hidden md:inline">Report</span>
             </button>
@@ -93,9 +93,9 @@
                 <button onclick="setChartRange(24, 1)" id="btn-range-24h"
                         class="chart-range-btn px-2 py-0.5 rounded text-xs bg-blue-600 text-white">24h</button>
                 <button onclick="setChartRange(168, 60)" id="btn-range-7d"
-                        class="chart-range-btn px-2 py-0.5 rounded text-xs bg-gray-700 text-gray-400 hover:bg-gray-600">7d</button>
+                        class="chart-range-btn px-2 py-0.5 rounded text-xs bg-gray-700 grm-text-gray hover:bg-gray-600">7d</button>
                 <button onclick="setChartRange(720, 60)" id="btn-range-30d"
-                        class="chart-range-btn px-2 py-0.5 rounded text-xs bg-gray-700 text-gray-400 hover:bg-gray-600">30d</button>
+                        class="chart-range-btn px-2 py-0.5 rounded text-xs bg-gray-700 grm-text-gray hover:bg-gray-600">30d</button>
             </div>
         </nav>
     </div>
@@ -119,134 +119,134 @@
         <div class="space-y-6">
 
             <!-- GPU Temperature Chart (multi-GPU) -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">GPU Temperature (<span class="chart-timeframe-label">24h</span>)</h3>
+            <div class="grm-chart-card">
+                <h3 class="text-sm font-medium grm-text-light mb-3">GPU Temperature (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartGpuTemp"></canvas>
             </div>
 
             <!-- GPU Fan Speed Chart (multi-GPU) -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">GPU Fan Speed (<span class="chart-timeframe-label">24h</span>)</h3>
+            <div class="grm-chart-card">
+                <h3 class="text-sm font-medium grm-text-light mb-3">GPU Fan Speed (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartGpuFan"></canvas>
             </div>
 
             <!-- GPU Utilization Chart (multi-GPU) -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">GPU Utilization (<span class="chart-timeframe-label">24h</span>)</h3>
+            <div class="grm-chart-card">
+                <h3 class="text-sm font-medium grm-text-light mb-3">GPU Utilization (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartGpuUtil"></canvas>
             </div>
 
             <!-- GPU Memory Controller Util Chart (multi-GPU) -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">GPU Memory Controller Util (<span class="chart-timeframe-label">24h</span>)</h3>
+            <div class="grm-chart-card">
+                <h3 class="text-sm font-medium grm-text-light mb-3">GPU Memory Controller Util (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartGpuMemCtrlUtil"></canvas>
             </div>
 
             <!-- GPU Power Draw Chart (multi-GPU) -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">GPU Power Draw (<span class="chart-timeframe-label">24h</span>)</h3>
+            <div class="grm-chart-card">
+                <h3 class="text-sm font-medium grm-text-light mb-3">GPU Power Draw (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartGpuPower"></canvas>
             </div>
 
             <!-- GPU VRAM Usage Chart (multi-GPU) -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">GPU VRAM Usage (<span class="chart-timeframe-label">24h</span>)</h3>
+            <div class="grm-chart-card">
+                <h3 class="text-sm font-medium grm-text-light mb-3">GPU VRAM Usage (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartGpuMem"></canvas>
             </div>
 
             <!-- GPU Core Clock Chart (multi-GPU) -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">GPU Core Clock (<span class="chart-timeframe-label">24h</span>)</h3>
+            <div class="grm-chart-card">
+                <h3 class="text-sm font-medium grm-text-light mb-3">GPU Core Clock (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartGpuCoreClock"></canvas>
             </div>
 
             <!-- GPU Memory Clock Chart (multi-GPU) -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">GPU Memory Clock (<span class="chart-timeframe-label">24h</span>)</h3>
+            <div class="grm-chart-card">
+                <h3 class="text-sm font-medium grm-text-light mb-3">GPU Memory Clock (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartGpuMemClock"></canvas>
             </div>
 
             <!-- CPU Utilization Chart -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">CPU Utilization (<span class="chart-timeframe-label">24h</span>)</h3>
+            <div class="grm-chart-card">
+                <h3 class="text-sm font-medium grm-text-light mb-3">CPU Utilization (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartCpuUtil"></canvas>
             </div>
 
             <!-- CPU Temperature Chart -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">CPU Temperature (<span class="chart-timeframe-label">24h</span>)</h3>
+            <div class="grm-chart-card">
+                <h3 class="text-sm font-medium grm-text-light mb-3">CPU Temperature (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartCpuTemp"></canvas>
             </div>
 
             <!-- CPU Frequency Chart -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">CPU Frequency (<span class="chart-timeframe-label">24h</span>)</h3>
+            <div class="grm-chart-card">
+                <h3 class="text-sm font-medium grm-text-light mb-3">CPU Frequency (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartCpuFreq"></canvas>
             </div>
 
             <!-- CPU Power Chart -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">CPU Power (<span class="chart-timeframe-label">24h</span>)</h3>
+            <div class="grm-chart-card">
+                <h3 class="text-sm font-medium grm-text-light mb-3">CPU Power (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartCpuPower"></canvas>
             </div>
 
             <!-- CPU Load Average Chart -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">CPU Load Average (<span class="chart-timeframe-label">24h</span>)</h3>
+            <div class="grm-chart-card">
+                <h3 class="text-sm font-medium grm-text-light mb-3">CPU Load Average (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartCpuLoad"></canvas>
             </div>
 
             <!-- Disk Usage Chart (multi-disk) -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Disk Usage (<span class="chart-timeframe-label">24h</span>)</h3>
+            <div class="grm-chart-card">
+                <h3 class="text-sm font-medium grm-text-light mb-3">Disk Usage (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartDiskUsage"></canvas>
             </div>
 
             <!-- Disk Read/Write Throughput Chart (multi-disk) -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Disk Read/Write (<span class="chart-timeframe-label">24h</span>)</h3>
+            <div class="grm-chart-card">
+                <h3 class="text-sm font-medium grm-text-light mb-3">Disk Read/Write (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartDiskReadWriteThroughput"></canvas>
             </div>
 
             <!-- Disk Read/Write IOPS Chart (multi-disk) -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Disk Read/Write IOPS (<span class="chart-timeframe-label">24h</span>)</h3>
+            <div class="grm-chart-card">
+                <h3 class="text-sm font-medium grm-text-light mb-3">Disk Read/Write IOPS (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartDiskReadWriteIops"></canvas>
             </div>
 
             <!-- Disk Utilization Chart (multi-disk) -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Disk Utilization (<span class="chart-timeframe-label">24h</span>)</h3>
+            <div class="grm-chart-card">
+                <h3 class="text-sm font-medium grm-text-light mb-3">Disk Utilization (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartDiskUtilization"></canvas>
             </div>
 
             <!-- Total System Power Chart -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Total System Power (<span class="chart-timeframe-label">24h</span>)</h3>
+            <div class="grm-chart-card">
+                <h3 class="text-sm font-medium grm-text-light mb-3">Total System Power (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartTotalPower"></canvas>
             </div>
 
             <!-- Memory & Swap Combined Chart -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Memory & Swap (<span class="chart-timeframe-label">24h</span>)</h3>
+            <div class="grm-chart-card">
+                <h3 class="text-sm font-medium grm-text-light mb-3">Memory & Swap (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartMemSwap"></canvas>
             </div>
 
             <!-- Network Traffic Chart (multi-interface, combined RX/TX/Errors) -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[300px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Network Traffic (<span class="chart-timeframe-label">24h</span>)</h3>
+            <div class="grm-chart-card-tall">
+                <h3 class="text-sm font-medium grm-text-light mb-3">Network Traffic (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartNetCombined"></canvas>
             </div>
 
             <!-- Uptime Chart -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Uptime (<span class="chart-timeframe-label">24h</span>)</h3>
+            <div class="grm-chart-card">
+                <h3 class="text-sm font-medium grm-text-light mb-3">Uptime (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartUptime"></canvas>
             </div>
 
             <!-- Error Frequency Chart -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Error Frequency (<span class="chart-timeframe-label">24h</span>)</h3>
+            <div class="grm-chart-card">
+                <h3 class="text-sm font-medium grm-text-light mb-3">Error Frequency (<span class="chart-timeframe-label">24h</span>)</h3>
                 <canvas id="chartErrorFreq"></canvas>
             </div>
 
@@ -255,9 +255,9 @@
 
     <!-- Tab: Containers -->
     <div id="tab-content-containers" class="tab-content hidden">
-        <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+        <div class="grm-card">
             <div class="flex items-center justify-between mb-4">
-                <h3 class="text-sm font-medium text-gray-300">Container History</h3>
+                <h3 class="text-sm font-medium grm-text-light">Container History</h3>
                 {% if container_history %}
                 <span class="text-xs text-gray-500">{{ container_history|length }} state changes</span>
                 {% endif %}
@@ -268,13 +268,13 @@
                 <div class="py-2 border-b border-gray-700/50 last:border-0">
                     <div class="flex items-center gap-2 mb-1">
                         {% if c.status == 'running' %}
-                        <span class="text-xs px-2 py-0.5 rounded bg-green-900/50 text-green-300">{{ c.status }}</span>
+                        <span class="text-xs px-2 py-0.5 rounded bg-green-900/50 grm-text-green-strong">{{ c.status }}</span>
                         {% elif c.status == 'exited' %}
-                        <span class="text-xs px-2 py-0.5 rounded bg-red-900/50 text-red-300">{{ c.status }}</span>
+                        <span class="text-xs px-2 py-0.5 rounded bg-red-900/50 grm-text-red-strong">{{ c.status }}</span>
                         {% elif c.status == 'restarting' %}
-                        <span class="text-xs px-2 py-0.5 rounded bg-yellow-900/50 text-yellow-300">{{ c.status }}</span>
+                        <span class="text-xs px-2 py-0.5 rounded bg-yellow-900/50 grm-text-yellow-strong">{{ c.status }}</span>
                         {% else %}
-                        <span class="text-xs px-2 py-0.5 rounded bg-gray-700 text-gray-300">{{ c.status }}</span>
+                        <span class="text-xs px-2 py-0.5 rounded bg-gray-700 grm-text-light">{{ c.status }}</span>
                         {% endif %}
                         <span class="text-sm text-gray-200 font-medium">{{ c.name|default:"unnamed" }}</span>
                         <span class="text-xs text-gray-600 font-mono">{{ c.container_id|default:""|truncatechars:12 }}</span>
@@ -288,16 +288,16 @@
                 {% endfor %}
             </div>
             {% else %}
-            <p class="text-green-400 text-sm">✓ No container history recorded.</p>
+            <p class="grm-text-green text-sm">✓ No container history recorded.</p>
             {% endif %}
         </div>
     </div>
 
     <!-- Tab: Errors -->
     <div id="tab-content-errors" class="tab-content hidden">
-        <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+        <div class="grm-card">
             <div class="flex items-center justify-between mb-4">
-                <h3 class="text-sm font-medium text-gray-300">Error History</h3>
+                <h3 class="text-sm font-medium grm-text-light">Error History</h3>
                 {% if error_history %}
                 <span class="text-xs text-gray-500">{{ error_history|length }} errors</span>
                 {% endif %}
@@ -307,29 +307,29 @@
                 {% for err in error_history reversed %}
                 <div class="py-2 border-b border-gray-700/50 last:border-0">
                     <div class="flex items-center gap-2 mb-1">
-                        <span class="text-xs px-2 py-0.5 rounded bg-red-900/50 text-red-300">
+                        <span class="text-xs px-2 py-0.5 rounded bg-red-900/50 grm-text-red-strong">
                             {{ err.source|default:"unknown" }}
                         </span>
                         <span class="text-xs text-gray-500" title="{{ err.received_at|default:'' }}">
                             {{ err.timestamp|default:err.received_at|default:"unknown"|truncatechars:30 }}
                         </span>
                     </div>
-                    <p class="text-sm text-gray-400 font-mono break-all">{{ err.message|truncatechars:300 }}</p>
+                    <p class="text-sm grm-text-gray font-mono break-all">{{ err.message|truncatechars:300 }}</p>
                 </div>
                 {% endfor %}
             </div>
             {% else %}
-                <p class="text-green-400 text-sm">✓ No errors recorded.</p>
+                <p class="grm-text-green text-sm">✓ No errors recorded.</p>
             {% endif %}
         </div>
     </div>
 
     <!-- Tab: Report -->
     <div id="tab-content-report" class="tab-content hidden">
-        <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+        <div class="grm-card">
             <!-- Time range selector -->
             <div class="flex items-center gap-2 mb-4">
-                <span class="text-xs text-gray-400">Range:</span>
+                <span class="text-xs grm-text-gray">Range:</span>
                 <button hx-get="{% url 'dashboard:htmx-report' rig.uuid %}?range_hours=24"
                         hx-target="#report-table-container"
                         hx-swap="innerHTML"
@@ -341,13 +341,13 @@
                         hx-swap="innerHTML"
                         onclick="selectReportRange(168)"
                         id="report-range-168"
-                        class="report-range-btn px-3 py-1 rounded text-xs bg-gray-700 text-gray-400 hover:bg-gray-600">7d</button>
+                        class="report-range-btn px-3 py-1 rounded text-xs bg-gray-700 grm-text-gray hover:bg-gray-600">7d</button>
                 <button hx-get="{% url 'dashboard:htmx-report' rig.uuid %}?range_hours=720"
                         hx-target="#report-table-container"
                         hx-swap="innerHTML"
                         onclick="selectReportRange(720)"
                         id="report-range-720"
-                        class="report-range-btn px-3 py-1 rounded text-xs bg-gray-700 text-gray-400 hover:bg-gray-600">30d</button>
+                        class="report-range-btn px-3 py-1 rounded text-xs bg-gray-700 grm-text-gray hover:bg-gray-600">30d</button>
             </div>
 
             <!-- Report table container: only load when tab is opened -->
@@ -369,13 +369,13 @@
 function switchTab(tabName) {
     document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
     document.querySelectorAll('.tab-btn').forEach(el => {
-        el.classList.remove('border-blue-400', 'text-blue-400');
-        el.classList.add('border-transparent', 'text-gray-400');
+        el.classList.remove('border-blue-400', 'grm-text-blue');
+        el.classList.add('border-transparent', 'grm-text-gray');
     });
     document.getElementById('tab-content-' + tabName).classList.remove('hidden');
     var btn = document.getElementById('tab-' + tabName);
-    btn.classList.remove('border-transparent', 'text-gray-400');
-    btn.classList.add('border-blue-400', 'text-blue-400');
+    btn.classList.remove('border-transparent', 'grm-text-gray');
+    btn.classList.add('border-blue-400', 'grm-text-blue');
 
     // Lazy-load charts when tab is first opened
     if (tabName === 'charts' && !chartsLoaded) {
@@ -408,11 +408,11 @@ function selectReportRange(hours) {
         var btn = document.getElementById('report-range-' + ranges[i]);
         if (!btn) continue;
         if (ranges[i] === hours) {
-            btn.classList.remove('bg-gray-700', 'text-gray-400', 'hover:bg-gray-600');
+            btn.classList.remove('bg-gray-700', 'grm-text-gray', 'hover:bg-gray-600');
             btn.classList.add('bg-blue-600', 'text-white');
         } else {
             btn.classList.remove('bg-blue-600', 'text-white');
-            btn.classList.add('bg-gray-700', 'text-gray-400', 'hover:bg-gray-600');
+            btn.classList.add('bg-gray-700', 'grm-text-gray', 'hover:bg-gray-600');
         }
     }
 }
@@ -492,13 +492,13 @@ function setChartRange(rangeHours, bucketMinutes) {
     // Update button styles
     document.querySelectorAll('.chart-range-btn').forEach(function(btn) {
         btn.classList.remove('bg-blue-600', 'text-white');
-        btn.classList.add('bg-gray-700', 'text-gray-400');
+        btn.classList.add('bg-gray-700', 'grm-text-gray');
     });
     // Highlight active button
     var activeId = 'btn-range-' + (rangeHours === 24 ? '24h' : rangeHours === 168 ? '7d' : '30d');
     var activeBtn = document.getElementById(activeId);
     if (activeBtn) {
-        activeBtn.classList.remove('bg-gray-700', 'text-gray-400');
+        activeBtn.classList.remove('bg-gray-700', 'grm-text-gray');
         activeBtn.classList.add('bg-blue-600', 'text-white');
     }
     // Reload charts with new range
@@ -1406,17 +1406,17 @@ async function loadChartMultiKey(canvasId, metric, uuid, range, unit, multi_para
 
 <!-- Delete Confirmation Modal -->
 <div id="delete-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70">
-    <div class="bg-gray-800 rounded-lg border border-gray-700 p-6 max-w-md mx-4 shadow-2xl">
+    <div class="grm-card-lg max-w-md mx-4 shadow-2xl">
         <div class="flex items-center gap-3 mb-4">
             <div class="flex-shrink-0 w-10 h-10 rounded-full bg-red-900/30 flex items-center justify-center">
-                <svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
+                <svg class="w-5 h-5 grm-text-red" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
             </div>
             <h3 class="text-lg font-semibold text-white">Delete Rig</h3>
         </div>
-        <p class="text-gray-300 mb-2">
+        <p class="grm-text-light mb-2">
             Are you sure you want to delete <strong id="delete-modal-rig-name" class="text-white">{{ rig.name }}</strong>?
         </p>
-        <p class="text-red-400 text-sm mb-6">
+        <p class="grm-text-red text-sm mb-6">
             ⚠ This action will permanently remove the rig and all associated data from the database. This cannot be undone.
         </p>
         <form id="delete-form" method="post" action="{% url 'dashboard:rig-delete' rig.uuid %}">
@@ -1424,11 +1424,11 @@ async function loadChartMultiKey(canvasId, metric, uuid, range, unit, multi_para
             <div class="flex items-center justify-end gap-3">
                 <button type="button"
                         onclick="hideDeleteModal()"
-                        class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded text-sm">
+                        class="grm-btn-ghost">
                     Cancel
                 </button>
                 <button type="submit"
-                        class="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded text-sm font-medium">
+                        class="grm-btn-danger">
                     Delete Permanently
                 </button>
             </div>

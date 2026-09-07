@@ -415,12 +415,16 @@ class TierResolverTests(SimpleTestCase):
         self.assertEqual(gf._resolve_color(10, spec), "gray")
 
     def test_inverted_gpu_util(self):
-        # GPU util is inverted: high = good (green), low = bad (gray).
-        # Verify the ordering is correct.
+        # GPU util is inverted: high = good (green/yellow), low = bad
+        # (gray). The 4-tier scale distinguishes busy (>70% yellow) from
+        # fully maxed (>90% green) and from moderate (>40% blue).
+        # Regression for the Sept 2025 bug where 80% util rendered as
+        # gray (single threshold at 90% was too high for normal mining).
         spec = gf.DEFAULT_THRESHOLDS["gpu_util"]
         self.assertEqual(gf._resolve_color(95, spec), "green")
-        self.assertEqual(gf._resolve_color(60, spec), "gray")
-        self.assertEqual(gf._resolve_color(10, spec), "gray")
+        self.assertEqual(gf._resolve_color(80, spec), "yellow")  # busy
+        self.assertEqual(gf._resolve_color(60, spec), "blue")    # moderate
+        self.assertEqual(gf._resolve_color(30, spec), "gray")   # idle
 
 
 class TierFilterTests(SimpleTestCase):
@@ -1091,6 +1095,10 @@ class TierFilterTemplateIntegrationTests(SimpleTestCase):
             ("cpu_util", 50),
             ("cpu_util", 5),
             ("disk_util", 50),
+            # GPU util: 4-tier scale to distinguish busy from idle
+            ("gpu_util", 80),  # regression: must NOT be gray
+            ("gpu_util", 60),  # must NOT be gray
+            ("gpu_util", 30),  # this one SHOULD be gray (idle)
         ]
         for spec_name, value in cases:
             spec = gf.DEFAULT_THRESHOLDS[spec_name]
@@ -1102,3 +1110,35 @@ class TierFilterTemplateIntegrationTests(SimpleTestCase):
             self.assertRegex(result, r"^bg-[a-z]+-400$",
                 f"tier_fill({value}, {spec_name}) = {result!r} is not a valid "
                 f"Tailwind bg-X-400 class")
+
+    def test_gpu_util_80pct_is_yellow_not_gray(self):
+        """Regression for the Sept 2025 user report:
+
+        On the Fleet Overview table, GPU Util at 80% was rendering as
+        'gray' (no color distinction from 30%). This made it look like
+        the color coding was broken. Root cause: the gpu_util spec had
+        only a (90, "green") + (50, "gray") threshold, so any value
+        between 50-89% rendered as gray. Real mining rigs run at
+        80-95% most of the time, so the threshold was too high.
+
+        Fix: 4-tier scale (90 green, 70 yellow, 40 blue, <40 gray).
+        The 80% value is now 'yellow' — clearly different from 30%
+        'gray' so users can visually distinguish them.
+        """
+        spec = gf.DEFAULT_THRESHOLDS["gpu_util"]
+        # 80% util: should be yellow (busy) — NOT gray
+        result = gf.tier_fill(80, spec)
+        self.assertEqual(
+            result, "bg-yellow-400",
+            f"GPU util 80% should be 'bg-yellow-400' (busy), got {result!r}. "
+            f"If this is 'bg-gray-400', the gpu_util spec still has the "
+            f"old 2-tier (90 green, 50 gray) shape — miners running "
+            f"70-90% util would all show as gray."
+        )
+        # Cross-check via tier_text (text version of the same filter)
+        self.assertEqual(gf.tier_text(80, spec), "text-yellow-400")
+        # Cross-check the full 4-tier scale
+        self.assertEqual(gf._resolve_color(95, spec), "green")
+        self.assertEqual(gf._resolve_color(80, spec), "yellow")
+        self.assertEqual(gf._resolve_color(60, spec), "blue")
+        self.assertEqual(gf._resolve_color(30, spec), "gray")

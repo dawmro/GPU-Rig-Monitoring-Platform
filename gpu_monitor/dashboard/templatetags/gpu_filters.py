@@ -458,10 +458,20 @@ DEFAULT_THRESHOLDS = {
         (20, "green"),
         (None, "gray"),
     ],
-    # GPU utilization (%) — inverted (high = good for miners)
+    # GPU utilization (%) — INVERTED (high = good for miners)
+    # Miners want to see their GPUs working hard. The threshold of 90%
+    # was too high (real mining rigs run at 80-95% most of the time and
+    # would all show as "gray" = "no info"). Use a 4-tier scale:
+    #   >=90 green: fully maxed (good)
+    #   >=70 yellow: busy (good)
+    #   >=40 blue:   moderate (acceptable)
+    #   <40  gray:   idle (underutilized)
+    # This gives 80% util a clear "yellow/busy" indicator rather than
+    # making it look like the color coding was broken.
     "gpu_util": [
         (90, "green"),
-        (50, "gray"),
+        (70, "yellow"),
+        (40, "blue"),
         (None, "gray"),
     ],
     # GPU fan speed (%)

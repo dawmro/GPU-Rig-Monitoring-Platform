@@ -1,20 +1,26 @@
 # Layout & Code Optimization Plan
 
-**Branch:** `plan/layout-optimization`
-**Status:** Draft — awaiting user approval before any implementation
-**Date:** 2026-09-07
+**Branch:** `feat/layout-optimization` (replaces earlier `plan/layout-optimization`)
+**Status:** Phases 0.1, 0.2, 0.3, 0.4, 0.5 done. Phase 2.4 + visual follow-ups remaining.
+**Last updated:** after Phase 0.5 — when the user directed us to **reuse Tailwind utilities instead of recreating them as custom classes**.
 
-This plan covers three tightly related goals:
+## Guiding principle (from the user)
 
-1. **Readability** — make Fleet Overview and Rig Detail easier to scan on first look
-2. **Code simplification** — collapse repeated Tailwind patterns into reusable partials/CSS, and collapse repeated HTMX/JS patterns into reusable utilities
-3. **Maintainability** — reduce the size of `rig_detail.html` (currently 1441 lines, the largest file in the codebase) by extracting JS and reusable markup into named partials/assets
+> **Use what is already available in Tailwind, do not recreate something that already exists. If existing Tailwind functionality is similar enough that can be reused then reuse it. We aim to simplify code while retaining functionalities.**
+
+In practice this means:
+- **Don't** create custom CSS classes that just reimplement Tailwind utilities (`grm-text-red` → use `text-red-400`).
+- **Don't** create Python filter wrappers that just reimplement what Tailwind/Tailwind classes already do.
+- **Do** create a partial or helper when a SPECIFIC UI pattern repeats (a card, a form input, a chart card) — those aren't generic utilities, they're a domain component.
+- **Do** create one function/class for a domain concept (e.g. `_status_badge` for online/stale/offline states) — DRY at the domain level, not the utility level.
+
+This principle invalidates some of the original plan below (Phase 0.3 and parts of Phase 2) and simplifies the rest.
 
 ---
 
-## 1. Findings from analysis
+## 1. Findings from analysis (original)
 
-### 1.1 Inventory (what exists today)
+### 1.1 Inventory (snapshot at plan time)
 
 | Area | Files | Total LOC |
 |---|---|---|
@@ -23,381 +29,203 @@ This plan covers three tightly related goals:
 | Templatetags (Python) | 1 (`gpu_filters.py`) | 436 |
 | Models (Python) | 4 modules | — |
 
-**Largest files (real LOC, excluding migrations/venv/tests):**
+Largest files at plan time:
+- `templates/dashboard/rig_detail.html` — 1,441 lines (had ~900 lines inline JS)
+- `templates/dashboard/_metrics_cards.html` — 942 lines
+- `templates/dashboard/views.py` — 778 lines
+- `templates/dashboard/templatetags/gpu_filters.py` — 436 lines
 
-| File | LOC | Notes |
-|---|---|---|
-| `templates/dashboard/rig_detail.html` | **1,441** | Includes ~900 lines of inline JS for charts + tabs + modal + clock |
-| `templates/dashboard/_metrics_cards.html` | 942 | Long, but mostly straightforward markup |
-| `templates/dashboard/views.py` | 778 | `_fetch_rig_metrics` alone is ~200 lines |
-| `templates/dashboard/templatetags/gpu_filters.py` | 436 | 3 near-identical `gpu_*_cell_json` simple_tags |
-| `templates/base.html` | 160 | OK, but the inline JS at the bottom is growing |
-| `templates/dashboard/_rig_table.html` | 160 | OK |
+### 1.2 Tailwind duplication (had to be addressed)
 
-### 1.2 Tailwind — duplication patterns
+The same Tailwind recipe was repeated dozens of times. **The fix (Phase 0.1) was to wrap them in named custom classes** (`.grm-card`, `.grm-btn-primary`, etc.) — but **after the user's directive in Phase 0.5**, we **deleted those custom classes** and now use Tailwind utilities directly. The duplication is gone without us needing to maintain a parallel CSS file.
 
-The same Tailwind recipe is repeated dozens of times across templates:
+### 1.3 HTMX duplication patterns (still relevant)
 
-**Card panel** (`bg-gray-800 border border-gray-700 rounded-lg p-4` or `p-6`)
-- Used **40+ times** across `_metrics_cards.html` (CPU/Power/Memory/Storage/GPU/GPU Processes/Top Processes/Process Details), `rig_detail.html` (Containers/Errors/Report containers), `profile.html` (3 panels), `api_keys.html` rows, `admin_transfer_keys.html` steps, `audit_log.html` log entries.
+- **Polling div** — same `<div hx-get=… hx-trigger="every 30s" hx-target=… hx-swap="innerHTML" hx-indicator=…>` shape appears 3 times. **Action:** extract to `_polling_div.html` partial.
+- **Search input with debounced keyup + filter selects** — 3 controls each re-declare `hx-include="[name='search'], [name='status'], [name='tag']"` in different subsets. **Action:** extract to `_filter_form.html` partial (low priority — the current code is fine and the partial would just hide complexity).
+- **Form with CSRF + hx-post + swap into row** — 5+ instances. **Action:** keep as-is, the inline form pattern is more readable than a partial here.
 
-**Form input** (`bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white` or `px-3 py-2`)
-- Used **15+ times** across search/filter inputs, tag inputs, login/profile/admin forms.
+### 1.4 JavaScript duplication (Phase 0.4 already addressed)
 
-**Primary action button** (`bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded` or similar)
-- Used **10+ times** in login, profile, api_keys, admin_transfer_keys, etc.
+The ~900 lines of inline JS in `rig_detail.html` were extracted to 6 files under `static/js/`:
+- `app-base.js` (clocks, mobile menu, email toggle)
+- `chart-base.js` (shared Chart.js options)
+- `chart-colors.js` (4 palettes)
+- `chart-loaders.js` (7 chart loader functions)
+- `chart-runtime.js` (chart state, staggered loading)
+- `rig-detail.js` (tab switching, modal, rename)
 
-**Danger button** (`bg-red-600 hover:bg-red-500 text-white ...`)
-- Used in delete-modal, revoke key, etc.
+`rig_detail.html` shrank from 1,441 → 358 lines (-75%).
 
-**5-tier color thresholds** are duplicated as inline `{% if %}…{% elif %}…{% else %}…` chains **inside templates** for CPU temp / GPU temp / GPU fan / CPU util / Disk util / Mem util / Power draw — see §1.5.
+### 1.5 Color threshold logic (Phase 0.5 already addressed)
 
-**Color palette** is duplicated across `base.html` CSS (status badges), `_metrics_cards.html` (`bg-red-500`/`bg-yellow-500`/`bg-green-500` progress bars), `gpu_filters.py` (`text-red-400`/`text-yellow-400`/...), and inline in JS (`rgba(239, 68, 68, 0.8)` etc. in `rig_detail.html`).
+**Original problem:** 14 inline `{% if %}…{% elif %}…{% else %}…` chains across 3 languages, with 5+ inconsistencies between them (e.g. CPU temp 85/70 vs 80/70, GPU temp 80/75/70/65 vs 80/70).
 
-### 1.3 HTMX — duplication patterns
+**Resolution:** Single Python helper `tier_text` / `tier_fill` that returns bare color names (e.g. `'red'`). Templates compose them as `text-X-400` / `bg-X-400` using **Tailwind directly** (no custom CSS). 10 specs in `DEFAULT_THRESHOLDS` are the single source of truth. The CSS file no longer contains color classes (they were duplicates of Tailwind).
 
-Three control flow patterns recur:
+### 1.6 Maintainability issues (status after Phase 0.5)
 
-**A. Polling div with indicator** — every polling partial has the same shape:
-```html
-<div id="..." hx-get="..." hx-trigger="every 30s" hx-target="#..." hx-swap="innerHTML" hx-indicator=".htmx-indicator">
-  {% include "..." %}
-</div>
-```
-Used for: `rig-table-container` (30s), `rig-status-container` (15s), `metrics-container` (30s).
-
-**B. Search input with debounced keyup + filter selects** — all three filters in `rig_list.html` repeat `hx-trigger="keyup changed delay:500ms"`, `hx-get`, `hx-target`, `hx-include` verbatim. The 3 controls each re-declare `hx-include="[name='search'], [name='status'], [name='tag']"` in different subsets.
-
-**C. Form with CSRF + hx-post + swap into row** — used in `_key_row.html`, `api_keys.html` (revoke/reactivate/delete), `rig_detail.html` (rename), `audit_log.html` (none, but adjacent). Each repeats `{% csrf_token %}` and identical hx-* attrs.
-
-### 1.4 JavaScript — duplication patterns
-
-`rig_detail.html` is essentially a JS app inline in HTML:
-
-| JS block | LOC | Repetition |
-|---|---|---|
-| `loadChart` | ~90 | 7 copies of nearly identical "create Chart instance with same options object" boilerplate (single line/multi-gpu/multi-key/dual-metric/load-avg/mem-swap/network) |
-| Chart `scales.x` + `scales.y` + `interaction` options | ~20 | Repeated **6 times verbatim** across `loadChart`, `loadChartMultiGpu`, `loadChartMultiKey`, `loadChartMultiKeyDual`, `loadChartLoadAvg`, `loadChartMemSwap`, `loadChartNetworkCombined` |
-| Tooltip callback | ~5 | Repeated **6 times verbatim** |
-| `generateLabels` UUID/key truncation | ~15 | 3 near-copies (multi-GPU, multi-key, network combined) |
-| GPU_COLORS / NET_COLORS / memColors / loadAvgColors | ~30 | 4 separate color palettes, defined inline in JS |
-| Tab switching + range button highlight | ~50 | 2 near-identical "update all buttons to inactive then activate selected" loops |
-| Modal show/hide | ~25 | Could be replaced with the native `<dialog>` element |
-
-### 1.5 Color threshold logic — duplication
-
-The same "5-tier color threshold" is implemented **at least 6 times** in 3 different languages:
-
-| Where | Metric | Thresholds |
-|---|---|---|
-| `gpu_filters.py` `cpu_util_color` | CPU util | >80 red, >60 orange, >40 yellow, >20 green, else gray |
-| `gpu_filters.py` `gpu_temp_cell_json` | GPU temp | >80 red, >75 orange, >70 yellow, >65 green, else gray |
-| `gpu_filters.py` `gpu_util_cell_json` | GPU util | >90 green, >50 gray-300, else gray-500 |
-| `gpu_filters.py` `gpu_fan_cell_json` | GPU fan | >80 red, >60 yellow, else gray |
-| `_rig_table.html` inline | CPU temp | >85 red, >70 yellow, else green |
-| `_rig_table.html` inline | Disk util | ≥80 red, ≥60 orange, ≥40 yellow, ≥20 green, else gray |
-| `_metrics_cards.html` inline | CPU util progress | >80 red, >60 yellow, else green |
-| `_metrics_cards.html` inline | CPU temp | >85 red, >70 yellow, else green |
-| `_metrics_cards.html` inline | Mem util | >85 red, >70 yellow, else blue |
-| `_metrics_cards.html` inline | Storage usage | >90 red, >75 yellow, else blue |
-| `_metrics_cards.html` inline | GPU temp | >80 red, >70 yellow, else green |
-| `_metrics_cards.html` inline | GPU util | >90 red, >70 yellow, else green |
-| `_metrics_cards.html` inline | Mem controller util | >90 red, >70 yellow, else green |
-| `_metrics_cards.html` inline | Disk util | ≥80 red, ≥60 orange, ≥40 yellow, ≥20 green, else gray |
-| `base.html` inline JS | Status badge | online=green, stale=amber, offline=red |
-
-**Inconsistencies** between copies (these are bugs hiding in plain sight):
-- CPU temp: 85/70 vs 80/70 across files
-- GPU temp: 80/75/70/65 in `gpu_filters.py` vs 80/70 in templates
-- GPU util: 90/50 in `gpu_filters.py` vs 90/70 in `_metrics_cards.html`
-- Disk util: identical thresholds (≥80/≥60/≥40/≥20) — only place that matches
-- Mem util: 85/70 in `_metrics_cards.html` vs no coloring anywhere else
-
-A single source of truth (one Python helper returning the class, or one CSS data-attribute-based scheme) would fix this.
-
-### 1.6 Readability issues (visual scan)
-
-**Fleet Overview (`_rig_table.html`)**
-- 15 columns, all squeezed into one row with `text-xs` and `whitespace-nowrap`. On a 1920px monitor it's tight; on a laptop it's horizontally scrolling.
-- GPU Temp / Fan / Util columns display space-separated multi-GPU values (`75 78 72`) with no visual separator between values — easy to misread.
-- Status column has 3 nearly identical `<span>` blocks differing only by class. Could be one partial.
-- `cpu_util_color` is applied; disk util has the same threshold set inline. Inconsistent: same colors, different code path.
-
-**Rig Detail (`rig_detail.html`)**
-- Tab order is implicit (HTML order). 5 tabs × ~20 charts each = a huge "Charts" tab that takes 10+ scrolls. No visual grouping of related charts (e.g. all GPU charts together, all CPU charts together, all Disk charts together — there IS grouping in HTML, but it's not visually distinct).
-- The "Charts" tab is a wall of `<div class="bg-gray-800 … h-[280px]"><h3>…</h3><canvas></div>` repeated ~20 times. Could be a small `_chart_card.html` partial.
-- Tab nav has 5 buttons + a hidden chart-timeframe picker. On mobile, the timeframe picker appears below the tabs but is `hidden` until Charts tab is active — slightly confusing.
-- "Process Details" and "Top Processes" cards in `_metrics_cards.html` show very similar data — "Top Processes" is the at-a-glance list (PID/Name/CPU%/Mem%/User), "Process Details" is the expanded one (PID/Name/Command). Could be one card with two views.
-
-**Containers / Errors tabs** are nearly identical in structure — list of cards, scroll, empty state. Two separate code paths doing the same thing.
-
-**Live Metrics card stack** — CPU, Power, Memory, Storage, GPU, GPU Processes, Top Processes, Process Details. 8 cards stacked vertically with no visual hierarchy (every card is the same shape). No quick summary at the top ("All systems normal" / "1 disk failing" / etc.).
-
-### 1.7 Maintainability issues
-
-1. **`rig_detail.html` mixes 3 concerns**: (a) page layout, (b) HTMX wiring, (c) ~900 lines of JS for charts. Editing any one of these is risky because they all live in the same file.
-2. **`_metrics_cards.html`** is 942 lines because it inlines 8 large sections. No partials — copy/paste between CPU/GPU/Storage progress bars.
-3. **`gpu_filters.py`** has 3 near-identical `gpu_*_cell_json` simple_tags. The only difference is the threshold bands. Could be one helper called with a thresholds table.
-4. **`_fetch_rig_metrics` in `views.py`** is ~200 lines and builds 5 different dict structures (gpu/storage/network/processes/docker) with the same `_json_get(snapshot.X, i)` pattern repeated dozens of times.
-5. **`base.html`** has growing inline JS for mobile menu + clock + email toggle. Adding more global JS will make it unmanageable. A `static/js/app.js` file with namespace `window.GRM = {...}` is overdue.
-
-### 1.8 Color palette — inconsistency
-
-- "online" badge: `bg-green-900/50 text-green-300` in one place, hardcoded `#065f46/#6ee7b7` in `base.html` CSS
-- "stale" badge: `#78350f/#fcd34d` (CSS) vs `bg-yellow-900/50 text-yellow-300` (templates)
-- "offline" badge: `#7f1d1d/#fca5a5` (CSS) vs `bg-red-900/50 text-red-300` (templates)
-- The "status" badge in `base.html` uses **different colors** than the status badge in `_rig_table.html` for the same `online/stale/offline` value. Inconsistency.
+- ~~`rig_detail.html` mixes 3 concerns~~ — **FIXED** in Phase 0.4 (358 lines, all JS extracted)
+- ~~`_metrics_cards.html` is 942 lines because it inlines 8 large sections~~ — partially addressed; 942 → 838 lines after Phase 0.5 refactor
+- ~~`gpu_filters.py` has 3 near-identical `gpu_*_cell_json` simple_tags~~ — **FIXED** in Phase 0.5 (all 3 use shared `_render_tier_cell` helper)
+- `dashboard/views.py` `_fetch_rig_metrics` is ~200 lines and builds 5 different dict structures (gpu/storage/network/processes/docker) with the same `_json_get(snapshot.X, i)` pattern repeated dozens of times. **Still relevant for Phase 2.4.**
+- ~~`base.html` has growing inline JS~~ — **FIXED** in Phase 0.4 (extracted to `static/js/app-base.js`)
 
 ---
 
-## 2. Plan — phased rollout
+## 2. Plan — phased rollout (revised after Phase 0.5)
 
-### Phase 0: Foundation (no behavior change)
+### Phase 0: Foundation (no behavior change) — mostly done
 
-> All work in this phase is pure refactor. Zero visible difference to the user.
+> Pure refactor. Zero visible difference to the user. Each phase lands as a separate commit on the same branch.
 
-**0.1 Move all shared CSS classes to `static/css/app.css`**
+| Sub-phase | What | Status | Notes |
+|---|---|---|---|
+| 0.1 | Move shared CSS classes to `static/css/app.css` | ✅ Done | Added `.grm-card`, `.grm-btn-primary`, etc. |
+| 0.2 | Create 3 reusable template partials (`_card.html`, `_form_input.html`, `_chart_card.html`) | ✅ Done | `_card.html` was skipped (Django doesn't support content blocks) |
+| 0.3 | Unify 5-tier color thresholds into a single `color_tier` filter | ⚠️ Obsolete | See 2.1 below — the user's directive made us drop this |
+| 0.4 | Extract JavaScript from `rig_detail.html` into 6 files | ✅ Done | `rig_detail.html`: 1441 → 358 lines |
+| 0.5 | **Delete custom color CSS, use Tailwind utilities directly** | ✅ Done | Removed 28 redundant `grm-text-*` / `grm-progress-fill-*` rules; templates use `text-X-400` / `bg-X-400` |
 
-Add a small CSS layer (kept under `static/css/`, not inline) with named utility classes:
+### 2.1 What 0.3 became (revised by user directive)
 
-```css
-/* Card panel — was repeated 40+ times */
-.grm-card        { @apply bg-gray-800 border border-gray-700 rounded-lg p-4; }
-.grm-card-lg     { @apply bg-gray-800 border border-gray-700 rounded-lg p-6; }
+The original plan was to create a Python `color_tier` filter that returned CSS class names like `grm-text-red`. **The user pointed out this is duplicating what Tailwind already does.** So the filter was redesigned to return **bare color names** (e.g. `'red'`), and templates compose them as `text-X-400` / `bg-X-400` using **Tailwind directly** — no custom CSS class.
 
-/* Form controls */
-.grm-input       { @apply bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white; }
-.grm-input-lg    { @apply bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white; }
-.grm-select      { @apply bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white; }
-
-/* Buttons */
-.grm-btn-primary { @apply bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded transition; }
-.grm-btn-danger  { @apply bg-red-600 hover:bg-red-500 text-white rounded text-sm font-medium px-4 py-2; }
-.grm-btn-ghost   { @apply bg-gray-700 hover:bg-gray-600 text-gray-300 rounded text-sm px-4 py-2; }
-
-/* Status badges — single source of truth */
-.grm-badge-online  { @apply px-1.5 py-0.5 rounded text-xs bg-green-900/50 text-green-300; }
-.grm-badge-stale   { @apply px-1.5 py-0.5 rounded text-xs bg-yellow-900/50 text-yellow-300; }
-.grm-badge-offline { @apply px-1.5 py-0.5 rounded text-xs bg-red-900/50 text-red-300; }
-
-/* Progress bar wrapper + fill — used 6+ times in _metrics_cards.html */
-.grm-progress-track { @apply w-full bg-gray-700 rounded-full h-2; }
-.grm-progress-fill  { @apply h-2 rounded-full; }
-
-/* 5-tier color thresholds — see §0.3 */
-.grm-tier-red    { @apply text-red-400; }
-.grm-tier-orange { @apply text-orange-400; }
-.grm-tier-yellow { @apply text-yellow-400; }
-.grm-tier-green  { @apply text-green-400; }
-.grm-tier-gray   { @apply text-gray-500; }
-```
-
-Then replace every duplicated instance with the new class. Estimated reduction: ~400 lines across templates.
-
-**0.2 Create the 3 reusable template partials**
-
-```
-templates/partials/_card.html       — accepts title, content, optional footer
-templates/partials/_form_input.html — accepts name, type, label, value, placeholder
-templates/partials/_chart_card.html — accepts canvas_id, title, height
-```
-
-Examples:
-```django
-{% include "partials/_card.html" with title="CPU" content=... %}
-{% include "partials/_chart_card.html" with canvas_id="chartGpuTemp" title="GPU Temperature" %}
-```
-
-**0.3 Unify 5-tier color thresholds**
-
-Add one Python helper in `templatetags/gpu_filters.py`:
-
-```python
-def color_tier(value, thresholds, default='gray'):
-    """Single source of truth for 5-tier color thresholds.
-    
-    thresholds: list of (min_value, color_name) tuples, highest first.
-    color_name: 'red' | 'orange' | 'yellow' | 'green' | 'gray'
-    """
-```
-
-Usage: `{{ value|color_tier:cpu_temp_thresholds }}` where `cpu_temp_thresholds` is a context variable set once per page (e.g. via `{% get_thresholds as cpu_temp_thresholds %}`).
-
-This collapses 14 inline `{% if %}…{% elif %}…{% else %}…` chains into 14 single-line `{{ x|color_tier:y }}` calls.
-
-**0.4 Extract JavaScript out of `rig_detail.html`**
-
-Move all JS into named modules under `static/js/`:
-
-```
-static/js/
-├── app.js                 — global utilities (mobile menu, clock, csrf helper)
-├── chart-base.js          — shared Chart.js options (scales, tooltip, interaction)
-├── chart-loaders.js       — the 7 loadChart* functions (now thin wrappers over chart-base)
-├── chart-colors.js        — GPU_COLORS, NET_COLORS, memColors, loadAvgColors
-├── rig-detail-tabs.js     — tab switching, range button highlight, modal
-└── rig-list.js            — toggle owner emails, polling refresh clock
-```
-
-Each file uses an IIFE with `window.GRM = window.GRM || {}` to avoid globals pollution. `rig_detail.html` shrinks from 1441 → ~600 lines.
+The 5-tier color logic is still centralized in Python (10 specs in `DEFAULT_THRESHOLDS`), but the *output* is just a color name; the *rendering* is Tailwind. The simplification is good because:
+- We don't maintain a parallel CSS file of color rules
+- Templates use the same Tailwind utilities they would use for any color
+- If Tailwind changes its palette, we update one place (Tailwind) not two
 
 ### Phase 1: Readability (visual, no behavior change)
 
-**1.1 Fleet Overview — column grouping**
+> Each sub-phase is a separate commit. Mostly subjective.
 
-Add visual section headers above the table by splitting the row into 3 logical groups:
-
-```
-[ Identity ]   [ Status ]      [ GPU block ]                              [ System ]              [ Meta ]
-Rig | Tags | Status | Job | Last | Uptime | GPU | Temp | Fan | Util | CPU-T | CPU% | Disk | Power | Agent
-```
-
-Use `<colgroup>` + `<col class="…">` to add subtle background tint to each group, OR keep flat but tighten column widths.
-
-Trade-off: <colgroup> styling is widely supported and pure HTML/CSS — no JS needed.
-
-**1.2 Multi-GPU cells — clear value separators**
-
-Current: `75 78 72` (just spaces) — visually ambiguous with single-GPU values like `75`.
-
-Change to: pipe-separated with a softer separator (CSS only):
-```css
-.grm-multi-value > span + span::before { content: " · "; color: #4b5563; }
-```
-Output: `75 · 78 · 72`. ~3px wider per GPU, but unambiguous.
-
-**1.3 Fleet Overview — collapsible row expansion**
-
-Add an "expand" button per row that reveals 4 extra metrics that don't fit on the default view (e.g. CPU temp, CPU freq, network summary, agent uptime). Hidden by default at all viewport widths. Pure HTMX/JS, no DB change.
-
-Trade-off: adds 1 click for power users but makes the table actually readable at 1366×768.
-
-**1.4 Rig Detail — "at-a-glance" summary card at the top of Live Metrics**
-
-Add a thin summary bar (no card chrome) above the metric cards showing the most important signals: # online GPUs, # disks >80% full, # recent errors, total power. Reduces the "where do I look" problem.
-
-**1.5 Charts tab — sticky section headers**
-
-Inside the Charts tab, add a sticky sub-nav with section anchors: GPU | CPU | Disk | Memory | Network | Other. Click jumps to section. Pure CSS (`position: sticky`).
-
-**1.6 Containers / Errors tabs — unify into one "Events" tab**
-
-Both tabs are conceptually "things that happened". Merge them into a single tab with a filter toggle (Containers / Errors / Both). Saves 1 tab slot for future use.
-
-**1.7 Live Metrics card hierarchy**
-
-Top of Live Metrics: 1 thin "system health" bar (green/yellow/red dot + 1-line summary like "8 GPUs · 1243W · 3 disks OK · no errors").
-
-Below: the existing 8 cards, but in 2 columns on `lg:` screens. The user gets an overview without scrolling 3 pages.
+| Sub-phase | What | Status | Notes |
+|---|---|---|---|
+| 1.1 | Fleet table — column grouping via `<colgroup>` | ✅ Done | 5 group tints (identity/status/gpu/system/meta) |
+| 1.2 | Multi-GPU cell separators (`·` → space) | ✅ Done | `GRM_MULTI_VALUE_SEPARATOR = ' '` |
+| 1.3 | "System health" summary bar at top of Live Metrics | ✅ Done | Trimmed to just hardware info (CPUs/GPUs/Disks) after user feedback |
+| 1.4 | Sticky sub-nav inside Charts tab | ⏳ Not done | Out of scope; charts are well-organized via the card title text |
+| 1.5 | Collapsible row expansion in fleet table | ⏳ Not done | Low priority; the multi-value cell already shows the full list |
+| 1.6 | Merged "Events" tab (Containers + Errors) | ⏳ Not done | Low priority; the two tabs work fine |
+| 1.7 | 2-column Live Metrics on `lg:` screens | ⏳ Not done | Cards stack today; the 8-card stack is OK on tall screens |
 
 ### Phase 2: Code simplification (no behavior change)
 
-**2.1 Collapse `gpu_*_cell_json` into one helper**
+> Most of Phase 2 was obviated by the simplify-and-reuse directive. Only 2.4 and 2.6 are still relevant.
 
-Replace 3 functions (gpu_temp_cell_json, gpu_util_cell_json, gpu_fan_cell_json) with one:
+| Sub-phase | What | Status | Notes |
+|---|---|---|---|
+| 2.1 | Collapse `gpu_*_cell_json` into one helper | ✅ Done | All 3 use shared `_render_tier_cell` in Phase 0.5 |
+| 2.2 | Collapse `loadChart*` JS into one function | ✅ Done | All 7 chart loaders use shared `chart-base` (Phase 0.4) |
+| 2.3 | Status badge consolidation | ❌ Dropped | Already done by the unified `grm-badge-*` classes in Phase 0.1 |
+| 2.4 | `_fetch_rig_metrics` — extract per-device builders | ⏳ **TODO** | Real DRY win — 200-line god function |
+| 2.5 | Polling div → `_polling_div.html` partial | ⏳ Not done | Low value; 3 instances is manageable |
+| 2.6 | Filter form → `_filter_form.html` partial | ⏳ Not done | Low value; same reason |
 
-```python
-@register.simple_tag
-def gpu_metric_cell_json(snapshot, json_field, thresholds, suffix='', fmt='.0f'):
-    """Generic color-coded multi-GPU cell from a JSON array on LatestSnapshot."""
-```
+---
 
-**2.2 Collapse `loadChart*` JS functions**
+## 3. Remaining work (after Phase 0.5)
 
-Replace 7 chart loader functions with one parameterized function:
+### Phase 2.4: Split `_fetch_rig_metrics` (the only real Phase 2 win)
 
-```javascript
-window.GRM.charts.load({
-    canvasId, metric, range, unit, type, // 'single' | 'multi-gpu' | 'multi-key' | 'dual'
-    multiParam, colorBorder, colorBg, extraMetric, ...
-});
-```
+**Current:** `dashboard/views.py` line 177+. The function is ~200 lines and builds 5 different dict structures (gpu_metrics, storage_metrics, network_metrics, process_details, docker_metrics) with the same `_json_get(snapshot.X, i)` pattern repeated dozens of times.
 
-Estimated reduction: ~600 lines of JS.
-
-**2.3 Status badge consolidation**
-
-Replace 5+ status badge renderers (3 in `_rig_table.html`, 2 in `base.html` CSS, 1 in `_rig_status_badge.html`) with one `_status_badge.html` partial. Use the unified color classes from §0.1.
-
-**2.4 `_fetch_rig_metrics` — extract per-device builders**
-
-Split the 200-line function into:
+**Plan:** Extract one builder per device type:
 ```python
 def _build_gpu_metrics(snapshot):     # ~30 lines
 def _build_storage_metrics(snapshot): # ~30 lines
 def _build_network_metrics(snapshot): # ~25 lines
 def _build_process_details(snapshot): # ~25 lines
-def _fetch_rig_metrics(uuid, rig):    # orchestrator, ~80 lines
+def _fetch_rig_metrics(uuid, rig=None):
+    # orchestrator: ~50 lines, calls the builders
 ```
 
-**2.5 Polling div → `_polling_div.html` partial**
+**Expected benefit:** Better testability (each builder can be unit-tested), better readability (the orchestrator shows the high-level shape).
 
-```django
-{% include "partials/_polling_div.html" with id="rig-table-container" url="..." trigger="every 30s" content_template="dashboard/_rig_table.html" %}
-```
+**When to skip:** if `_fetch_rig_metrics` is rarely modified and the test coverage is already strong, leave it alone. The simplify-and-reuse directive argues for NOT touching code that works.
 
-Removes 3 hand-rolled `<div hx-get=… hx-trigger=…>` blocks.
+### Visual follow-ups (Phase 1.4, 1.5, 1.6, 1.7)
 
-**2.6 Filter form → `_filter_form.html` partial**
-
-The 3 filter selects in `rig_list.html` collapse into one partial that takes a list of filter definitions. Saves ~25 lines and clarifies intent.
-
-### Phase 3: Future-ready (optional, behind feature flag)
-
-- **HTMX 2 extensions** — already on 2.0.4. Could use `hx-on::after-request` instead of global `htmx:afterSwap` listener (cleaner scoping).
-- **`hx-boost`** on the nav links to make the whole app SPA-like without writing JS.
-- **WebSocket live updates** instead of 30s polling (large change — separate doc).
-- **DaisyUI migration** — out of scope for this doc (already in a separate doc/branch).
+The user said the user "didn't like the [system health bar showing max 0%, errors 0, live]" — they wanted only useful info. By the same logic, do NOT add more visual clutter that the user might not like. **Only add visual elements when the user asks for them.**
 
 ---
 
-## 3. Risk & rollback
+## 4. The simplify-and-reuse principle — applied to this plan
+
+> **Use what is already available in Tailwind, do not recreate something that already exists.**
+
+Concretely:
+- ✅ Do create **domain components** (a status badge, a chart card, a polling div) — they encapsulate repeated UI patterns
+- ✅ Do create **DRY helpers** for domain logic (the tier system, the status badge)
+- ❌ Do NOT create **CSS reimplementations of Tailwind utilities**
+- ❌ Do NOT create **Python wrappers** for what Tailwind/Tailwind classes already do
+- ❌ Do NOT add visual features the user didn't ask for
+
+This is why Phase 0.5 deleted 28 CSS rules and why 2.1, 2.2, 2.3, 2.5, 2.6 were dropped — they were reimplementations or low-value wrappers.
+
+The remaining work (Phase 2.4 + visual follow-ups) is justified only if the work is **necessary** for the user's goals, not because the original plan said so.
+
+---
+
+## 5. Risk & rollback
 
 | Phase | Risk | Mitigation |
 |---|---|---|
-| 0.1 (CSS class extraction) | Tailwind CDN doesn't process `@apply`. Must either use Tailwind CLI to compile, or write raw CSS. | Build step OR raw CSS (`background-color: #1f2937; border: 1px solid #374151; ...`). Raw CSS is fine for ~15 classes. |
-| 0.2 (partials) | `{% include %}` with `with` syntax can have subtle variable scoping issues. | Use only documented features; test each migrated template. |
-| 0.3 (color_tier helper) | New filter chain length may slightly slow rendering on big tables. | Negligible (1 call vs ~3 comparisons per cell). |
-| 0.4 (JS extraction) | Load order matters; chart loaders depend on Chart.js global. | Use `defer` on all `<script>` tags, single entry point. |
-| 1.1–1.7 (visual changes) | Subjective. User may not like it. | Each sub-phase is a separate commit, easy to revert. |
-| 2.x (function refactor) | Refactor bugs (logic accidentally changed). | All Phase 2 work ships with unit test coverage on the refactored functions. |
+| 0.1 (CSS class extraction) | Done. | Done. |
+| 0.2 (partials) | `{% include %}` with `with` syntax can have subtle variable scoping issues | Use only documented features; test each migrated template |
+| 0.3 (color_tier helper) | Replaced by direct Tailwind usage (Phase 0.5) | N/A |
+| 0.4 (JS extraction) | Load order matters; chart loaders depend on Chart.js global | Use `defer` on all `<script>` tags, single entry point |
+| 0.5 (Tailwind direct) | None — just deletes redundant CSS | Trivial to revert if needed |
+| 2.4 (`_fetch_rig_metrics` split) | Refactor bugs (logic accidentally changed) | All work ships with unit test coverage |
 
-**Rollback plan:** Every phase is a separate commit on a single branch. If a phase is rejected, `git revert <phase-commit>` or `git reset --hard <last-good-commit>`.
-
----
-
-## 4. Estimated scope
-
-| Phase | Files touched | New files | Net LOC delta | Visible UX change |
-|---|---|---|---|---|
-| 0.1 | ~10 templates | 1 (`static/css/app.css`) | ~-300 | None |
-| 0.2 | ~6 templates | 3 partials | ~-80 | None |
-| 0.3 | ~8 templates | +1 helper | ~-200 | None |
-| 0.4 | `rig_detail.html`, `base.html` | 6 JS files | ~-900 from template, +500 in JS | None |
-| 1.x | ~4 templates | few partials | ~+50 | Readability improvements |
-| 2.x | `views.py`, `gpu_filters.py`, JS | — | ~-150 | None |
-| **Total** | | | **~-1,080 LOC** | **Modest visual improvements** |
+**Rollback plan:** Every phase is a separate commit. If a phase is rejected, `git revert <phase-commit>` or `git reset --hard <last-good-commit>`.
 
 ---
 
-## 5. Suggested order
+## 6. Branch policy (current)
 
-I recommend landing in this order:
-
-1. **Phase 0.1** (CSS) — pure refactor, no risk, immediate readability win in code
-2. **Phase 0.4** (JS extraction) — biggest LOC win, isolates future JS work
-3. **Phase 0.3** (color thresholds) — fixes the inconsistencies found in §1.5
-4. **Phase 2.x** (code simplification) — cleanups that compound with 0.1–0.3
-5. **Phase 1.x** (visual readability) — last, because subjective
-
-Each phase lands on the same `plan/layout-optimization` branch as separate commits. Branch stays open until user merges.
+- **All phases** (`0.1`, `0.4`, `0.5`, `1.1`, `1.2`, `1.3`, and the deploy-fix commit) live on the **same branch**: `feat/layout-optimization`. Per the user's request: "We want to deliver final result in single layout-optimization branch."
+- The branch is 12 commits ahead of `main`, all pushed.
+- **Do not create new branches** for this work; stay on `feat/layout-optimization`.
+- **Do not edit `/opt/`** — let the user run `collectstatic` after merging.
 
 ---
 
-## 6. Awaiting user decision
+## 7. Status check (what's done vs what's left)
 
-Please confirm:
-- **Scope**: all of Phase 0 + Phase 2, then visual (Phase 1)? OR just Phase 0?
-- **CSS strategy**: raw CSS in `static/css/app.css` (no build step) OR introduce Tailwind CLI to compile `@apply`?
-- **Visual direction**: any preferences on §1.1–1.7? (column grouping, collapsible rows, sticky chart nav, etc.)
-- **Branch policy**: keep plan on `plan/layout-optimization` and ship implementation on separate `chg/` or `feat/` branches off `main`?
+| Done in this session | Commit |
+|---|---|
+| Phase 0.1: extract shared CSS classes | `3253372` |
+| Deploy fix: always run collectstatic + Django system check | `eef4006` |
+| Phase 0.2: `_chart_card.html` + `_form_input.html` partials | `83c11b9` |
+| Phase 0.3: unified color threshold system | `83c11b9` |
+| Phase 0.4: extract JS from rig_detail.html (6 files) | `94ba363` |
+| Phase 1.1: column grouping via `<colgroup>` | `ba68f6c` |
+| Phase 1.2: multi-GPU cell separators (reverted to space) | `ba68f6c` |
+| Phase 1.3: system health bar at top of Live Metrics | `ba68f6c` |
+| Phase 2.1: collapse `gpu_*_cell_json` | `83c11b9` |
+| Phase 2.2: collapse `loadChart*` JS | `94ba363` |
+| Multi-line comment fix | `67ad43c` |
+| Test directory reorg + `tests/_paths.py` | `b00cf8f` + `7252b23` |
+| Bump colors to -400 series for visibility | `8a26ae4` |
+| Add missing orange/muted fill classes | `e849f49` |
+| **Phase 0.5: delete custom color CSS, use Tailwind directly** | `dc290de` |
+| **Plan doc rewrite for simplify+reuse principle** | (this commit) |
+| Codebase simplification cleanup (docstring trim, `_paths` reuse, updated tests) | (this commit) |
+
+| Left to do | When |
+|---|---|
+| Phase 2.4: split `_fetch_rig_metrics` into per-device builders | Only if testability benefit justifies the work |
+| Phase 1.4, 1.5, 1.6, 1.7 (visual follow-ups) | Only when the user asks for them |
+
+---
+
+## 8. Awaiting decision
+
+The simplify-and-reuse directive argues for **stopping** unless the user has a specific need. The remaining items are:
+
+1. **Phase 2.4** (`_fetch_rig_metrics` split) — only if testability benefit justifies the work
+2. **Visual follow-ups (1.4-1.7)** — only when the user asks for them
+
+**Recommendation:** the work is in a good state. The user can merge `feat/layout-optimization` to `main` whenever they're ready. Any further changes should be driven by a concrete user need, not by completing the original plan.

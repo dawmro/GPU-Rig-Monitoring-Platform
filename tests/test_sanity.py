@@ -9,7 +9,7 @@ os.environ['DB_HOST']='127.0.0.1'
 os.environ['DB_PORT']='5432'
 # Add the tests/ directory to sys.path so we can import _paths
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _paths import PROJECT_ROOT, GPU_MONITOR_DIR
+from _paths import GPU_MONITOR_DIR
 # gpu_monitor/ needs to be on sys.path so Django imports work.
 sys.path.insert(0, str(GPU_MONITOR_DIR))
 os.environ['DJANGO_SETTINGS_MODULE']='gpu_monitor.settings'

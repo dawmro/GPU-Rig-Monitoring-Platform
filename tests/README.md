@@ -28,7 +28,7 @@ any checkout location.
 | Script | What it tests | When to run |
 |---|---|---|
 | `test_layout_smoke.py` | All 7 main pages return HTTP 200 after a UI change | After any template or view change |
-| `test_content_smoke.py` | Rendered HTML contains the expected `grm-` CSS classes; no old `text-red-400` / `bg-red-500` recipes remain | After CSS class changes |
+| `test_content_smoke.py` | Rendered HTML uses the expected Tailwind tier classes (`text-X-400`, `bg-X-400`); no deleted `grm-text-X` / `grm-progress-fill-X` classes remain | After CSS class / tier filter changes |
 | `test_sanity.py` | HTML tag balance (open/close), Django tag balance (if/endif) | After template changes |
 | `_paths.py` | Shared `PROJECT_ROOT` and `GPU_MONITOR_DIR` constants; imported by all scripts | n/a (helper) |
 | `test_chart_endpoints.py` | The chart-data API returns the right datasets and bucket counts for each metric | After chart-related view or model changes |

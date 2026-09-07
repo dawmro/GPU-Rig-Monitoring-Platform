@@ -414,47 +414,29 @@ def trim(value):
 
 
 # =====================================================================
-# 5-tier color threshold system (Phase 0.3)
-# =====================================================================
+# 5-tier color threshold system (Phase 0.3, simplified in 0.5)
+# ---------------------------------------------------------------------
 #
 # The fleet table, live metrics cards, and chart legends all need to
-# color a value (CPU temp, GPU temp, disk util, etc.) based on thresholds.
-# Before this module, each threshold chain was inlined in templates:
+# color a value (CPU temp, GPU temp, disk util, etc.) based on
+# thresholds. The previous inline chains were repeated 14+ times with
+# inconsistent thresholds and required editing 14 places to retune
+# one threshold.
 #
-#   <span class="{% if x > 85 %}grm-text-red{% elif x > 70 %}grm-text-yellow
-#                {% else %}grm-text-green{% endif %}">
-#
-# That code:
-#   - was repeated 14+ times across templates and 3 times in Python
-#     (the gpu_*_cell_json simple_tags)
-#   - was inconsistently written: some used `> X`, some `>= X`, some
-#     chained 3 thresholds, some 5, some mixed text-red-400 with
-#     grm-text-red within the same file
-#   - made it impossible to retune the system-wide "what counts as
-#     red" without editing 14 different places
-#
-# The color_tier / color_tier_thresholds system centralizes this:
+# This module centralizes the thresholds in DEFAULT_THRESHOLDS below.
+# The tier / tier_text / tier_fill filters return bare color names
+# (e.g. 'red'); templates compose them with Tailwind classes:
 #
 #   {% color_tier_thresholds "cpu_temp" as ct %}
-#   <span class="grm-text-{{ snapshot.cpu_temp_c|tier:ct }}">
+#   <span class="text-{{ snapshot.cpu_temp_c|tier:ct }}-400">
 #
-# Each threshold spec is a list of (min_value, color_name) pairs,
-# highest first. The first match wins. If no threshold matches, the
-# "default" color is used.
-#
-# Threshold specs can be defined:
-#   1. In a context variable (via the simple_tag below)
-#   2. Inline in a template literal (the `tier` filter accepts a string)
-#   3. As a constant below (DEFAULT_THRESHOLDS dict)
-#
-# Keeping threshold definitions in context variables lets multiple
-# tables on the same page share one spec, lets tests inspect them, and
-# lets ops retune them without touching templates.
+# Each spec is a list of (min_value, color_name) tuples, highest
+# first. First match wins. The last entry should be (None, color) to
+# set a default, or (None, None) for "no color override" (the cell
+# stays uncolored for very low values).
 
-# Built-in threshold specs. Keys are spec names; values are the list
-# of (min_value, color_name) tuples evaluated in order, highest first.
-# Add new specs here when you need a new metric; do NOT inline the
-# thresholds in templates.
+# Built-in threshold specs. Add new specs here when you need a new
+# metric; do NOT inline the thresholds in templates.
 DEFAULT_THRESHOLDS = {
     # CPU temperature (Celsius) — same in fleet table and live metrics
     "cpu_temp": [

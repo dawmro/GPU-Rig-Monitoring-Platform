@@ -39,16 +39,19 @@ class TokenizerTests(SimpleTestCase):
         self.assertEqual(tokens, ["grm-btn-primary"])
 
     def test_strips_django_variable_prefix(self):
-        """grm-text-{{ variable }} should NOT be reported as a missing class.
+        """text-{{ variable }}-400 should NOT be reported as a missing class.
 
         The variable {{ color }} is evaluated at render time to produce
         a value that becomes part of the class name. We can't statically
         know what it returns, so the prefix is treated as "intentional
         variable" and not validated.
+
+        (After Phase 0.5, the tier system composes Tailwind classes
+        like 'text-{{ color }}-400' rather than the old 'grm-text-{{ color }}'.)
         """
-        text = '<span class="grm-text-{{ snapshot.cpu_utilization_pct|tier_text:cpu_util_t }}">5%</span>'
+        text = '<span class="text-{{ snapshot.cpu_utilization_pct|tier_text:cpu_util_t }}-400">5%</span>'
         tokens = list(checks._all_class_tokens(text))
-        self.assertEqual(tokens, [], "grm-text- prefix before a Django variable should be skipped")
+        self.assertEqual(tokens, [], "text- prefix before a Django variable should be skipped")
 
     def test_strips_django_tag_with_class_branches(self):
         """{% if %} {% else %} {% endif %} in class attribute should be handled."""

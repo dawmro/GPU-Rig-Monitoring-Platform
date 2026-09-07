@@ -3,14 +3,13 @@ Standalone test runner that doesn't require DB connection.
 Verifies the logic of ChartDataView optimizations.
 """
 from pathlib import Path
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-# gpu_monitor/ is the Django project root (where manage.py lives).
-# Define once so all path joins below are clean Path expressions,
-# not str-converted mixed literals.
-GPU_MONITOR_DIR = PROJECT_ROOT / 'gpu_monitor'
-
+# Reuse the shared path constants so this script works the same as the
+# other 5 in tests/ (which use _paths.py). If you move this file, update
+# _paths.py instead.
 import sys
-import os
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _paths import GPU_MONITOR_DIR  # noqa: E402
+
 import unittest
 from collections import Counter
 from datetime import datetime, timezone, timedelta

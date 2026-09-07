@@ -210,11 +210,15 @@ def check_grm_css_classes(app_configs, **kwargs) -> list:
                 f"grm-* class referenced in template but not defined in app.css: "
                 f"{sample_str}{more_str}",
                 hint=(
-                    "Add the class to static/css/app.css, or fix the typo in "
-                    "the template. Common cause: CSS class was renamed/removed "
-                    "but the template was not updated. After fixing templates/CSS, "
-                    "run `python manage.py collectstatic --noinput --clear` to "
-                    "publish the new CSS to /opt/gpu_monitor/staticfiles/."
+                    "Either: (1) fix the typo in the template, or (2) if this is a "
+                    "NEW color utility, use the equivalent Tailwind class directly "
+                    "(e.g. 'text-red-400' instead of 'grm-text-red'). We deleted the "
+                    "custom grm-text-* and grm-progress-fill-* classes in Phase 0.5 "
+                    "because they duplicated Tailwind. The remaining grm-* classes "
+                    "in app.css are component classes (grm-card, grm-btn-primary, "
+                    "grm-badge, etc.) — those should be defined here if you add a "
+                    "new one. After fixing templates/CSS, run "
+                    "`python manage.py collectstatic --noinput --clear`."
                 ),
                 id="dashboard.W001",
                 obj=str(rel_path),

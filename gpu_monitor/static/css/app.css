@@ -242,61 +242,52 @@
     transition: width 200ms ease-out;
 }
 
-/* Threshold-tinted fills — see §0.3 (5-tier color thresholds)
-   ---------------------------------------------------------------------
-   Color choices: -400 series instead of -500 series, because the
-   fills sit on top of grm-card (gray-800 / #1f2937) and need to
-   read clearly. WCAG contrast vs #1f2937:
-     -500 series:  red 3.90  yellow 7.65  green 6.44  blue 3.99
-                   gray 1.94 (FAIL)
-     -400 series:  red 5.31  yellow 9.59  green 8.42  blue 5.77
-                   orange 6.49  gray 5.78
-                   muted 5.78  (all pass WCAG AA)
-   The gray-600 (1.94 ratio) was the worst offender — gray-on-gray
-   progress bars were effectively invisible. Bumping to gray-400
-   (5.78 ratio) makes them clearly visible.
-   The 5-tier cpu_util spec (red/orange/yellow/green/gray) is preserved
-   from the original Tailwind palette; the change is just saturation.
-   orange and muted were originally missing as fill classes (only
-   the text variants existed), so values that landed on those tiers
-   rendered as invisible bars. Added Nov 2025.
-   purple was removed (unused, no spec references it). */
-.grm-progress-fill-red    { background-color: #f87171; }   /* red-400 */
-.grm-progress-fill-yellow { background-color: #facc15; }   /* yellow-400 */
-.grm-progress-fill-green  { background-color: #4ade80; }   /* green-400 */
-.grm-progress-fill-blue   { background-color: #60a5fa; }   /* blue-400 */
-.grm-progress-fill-orange { background-color: #fb923c; }   /* orange-400 — for the 5-tier cpu_util / disk_util specs */
-.grm-progress-fill-gray   { background-color: #9ca3af; }   /* gray-400 (was -600) */
-.grm-progress-fill-muted  { background-color: #9ca3af; }   /* gray-400 — for "low" tier in gpu_util / disk_util specs; same color as gray but kept as a distinct class for semantic clarity (low vs moderate) */
-
-
 /* ---------------------------------------------------------------------
-   5-tier color text (used by gpu_filters.py and inline color logic)
-   Thresholds are documented in the plan §0.3. These are the actual
-   rendering colors — the threshold selection happens in Python or
-   in the template, not here.
+   Color utilities — DELETED in favor of Tailwind
+   ---------------------------------------------------------------------
+   The original Phase 0.1 implementation had custom CSS classes
+   (.grm-progress-fill-{red,yellow,green,blue,orange,gray,muted}
+   and .grm-text-{red,orange,yellow,green,blue,purple,cyan,gray,muted,light,red-light,yellow-light,green-light,blue-light,red-strong,yellow-strong,green-strong,blue-strong,purple-strong,teal-strong,orange-strong})
+   that simply reimplemented Tailwind's bg-{color}-{shade} and
+   text-{color}-{shade} utilities. This file kept them in sync, but
+   the duplication was a maintenance burden and made the source of
+   truth unclear (Tailwind vs us?).
+
+   Removed in Phase 0.5 (simplification). Templates now use Tailwind
+   classes directly. The tier system in gpu_filters.py returns bare
+   color names (red, yellow, etc.) which the template composes as
+   'bg-{color}-400' (for fills) or 'text-{color}-400' / 'text-{color}-300'
+   (for normal and strong text respectively).
+
+   Color choices for the tier system:
+     - Tier "normal"    (most common):  text/bg-{color}-400
+     - Tier "strong"   (on dark bg,    text/bg-{color}-300
+                        e.g. inside badges with -900/50 bg):
+     - Tier "gray-low"  (≤20% util):   bg-gray-400
+     - Translucent     (e.g. alerts):  bg-{color}-900/50 + text-{color}-300
+
+   The dark-mode shade choices (400 / 300) match the WCAG AA
+   contrast ratios we verified in Phase 0.4:
+     -400 vs #1f2937 (gray-800 card):  red 5.31  yellow 9.59
+                                       green 8.42  blue 5.77
+                                       orange 6.49  gray 5.78
+     -300 vs #1f2937: ~6-8 across the board (always AA)
+
+   The 'grm-progress-fill' and 'grm-progress-fill-thin' rules below
+   are kept (they define the FILL CONTAINER width/height, not the
+   fill color). The color of the fill inside is set by the template.
    --------------------------------------------------------------------- */
-.grm-text-red    { color: #f87171; }   /* text-red-400 */
-.grm-text-red-faded { color: rgba(252, 165, 165, 0.7); }  /* text-red-300/70 */
-.grm-text-red-light   { color: #fca5a5; }  /* text-red-300 — hover state for grm-text-red */
-.grm-text-orange { color: #fb923c; }   /* text-orange-400 */
-.grm-text-yellow { color: #facc15; }   /* text-yellow-400 */
-.grm-text-green  { color: #4ade80; }   /* text-green-400 */
-.grm-text-green-light { color: #86efac; }  /* text-green-300 — hover state for grm-text-green */
-.grm-text-blue   { color: #60a5fa; }   /* text-blue-400 */
-.grm-text-blue-light { color: #93c5fd; }  /* text-blue-300 — hover state for grm-text-blue */
-.grm-text-purple { color: #c084fc; }   /* text-purple-400 */
-.grm-text-cyan   { color: #22d3ee; }   /* text-cyan-400 */
-.grm-text-gray   { color: #d1d5db; }   /* text-gray-300 — secondary text on dark (bumped from gray-400 for better visibility against gray-800 card) */
-.grm-text-muted  { color: #9ca3af; }   /* text-gray-400 — dim/disabled text (bumped from gray-500; previous 3.04 ratio was AA-large only) */
-.grm-text-light  { color: #e5e7eb; }   /* text-gray-200 — primary data text on dark (bumped from gray-300 so it stays brighter than grm-text-gray) */
-.grm-text-red-strong    { color: #fca5a5; }  /* text-red-300 */
-.grm-text-yellow-strong { color: #fde047; }  /* text-yellow-300 */
-.grm-text-green-strong  { color: #86efac; }  /* text-green-300 */
-.grm-text-blue-strong   { color: #93c5fd; }  /* text-blue-300 */
-.grm-text-purple-strong { color: #d8b4fe; }  /* text-purple-300 */
-.grm-text-teal-strong   { color: #5eead4; }  /* text-teal-300 */
-.grm-text-orange-strong { color: #fdba74; }  /* text-orange-300 */
+.grm-progress-fill {
+    height: 100%;
+    border-radius: 9999px;
+    transition: width 200ms ease-out;
+}
+
+.grm-progress-fill-thin {
+    height: 100%;
+    border-radius: 9999px;
+    transition: width 200ms ease-out;
+}
 
 
 /* ---------------------------------------------------------------------

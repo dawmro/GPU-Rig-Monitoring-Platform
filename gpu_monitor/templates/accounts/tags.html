@@ -3,18 +3,18 @@
 {% block content %}
 <div class="max-w-3xl mx-auto">
     <h2 class="text-xl font-bold mb-4">Tags</h2>
-    <p class="grm-text-gray mb-4">Tags help you organize and filter your rigs in the fleet overview.</p>
+    <p class="text-gray-300 mb-4">Tags help you organize and filter your rigs in the fleet overview.</p>
 
     {# Create tag form — plain POST, no HTMX #}
     <form method="post" action="{% url 'accounts:create-tag' %}" class="flex gap-2 mb-6 items-end">
         {% csrf_token %}
         <div class="flex-1">
-            <label class="block text-xs grm-text-muted mb-1">Tag Name</label>
+            <label class="block text-xs text-gray-400 mb-1">Tag Name</label>
             <input type="text" name="name" placeholder="e.g., production, farm-01, a100-gpus" required
                    class="w-full grm-input-lg">
         </div>
         <div>
-            <label class="block text-xs grm-text-muted mb-1">Color</label>
+            <label class="block text-xs text-gray-400 mb-1">Color</label>
             <input type="color" name="color" value="#6B7280"
                    class="w-10 h-10 rounded cursor-pointer bg-transparent border-0">
         </div>
@@ -30,16 +30,16 @@
             <div class="flex items-center gap-3">
                 <span class="w-4 h-4 rounded-full flex-shrink-0" style="background: {{ tag.color }}"></span>
                 <span class="font-medium">{{ tag.name }}</span>
-                <span class="text-xs grm-text-muted">{{ tag.rigs.count }} rig{{ tag.rigs.count|pluralize }}</span>
+                <span class="text-xs text-gray-400">{{ tag.rigs.count }} rig{{ tag.rigs.count|pluralize }}</span>
             </div>
             <div class="flex items-center gap-2">
                 {# Edit button toggles inline edit form via JS #}
                 <button onclick="document.getElementById('tag-edit-{{ tag.id }}').classList.toggle('hidden')"
-                        class="grm-text-gray hover:text-white text-sm px-2 py-1 rounded hover:bg-gray-700">Edit</button>
+                        class="text-gray-300 hover:text-white text-sm px-2 py-1 rounded hover:bg-gray-700">Edit</button>
                 <form method="post" action="{% url 'accounts:delete-tag' tag.id %}"
                       onsubmit="return confirm('Delete tag &quot;{{ tag.name }}&quot;?')">
                     {% csrf_token %}
-                    <button type="submit" class="grm-text-red hover:grm-text-red-light text-sm px-2 py-1 rounded hover:bg-gray-700">Delete</button>
+                    <button type="submit" class="text-red-400 hover:text-red-300 text-sm px-2 py-1 rounded hover:bg-gray-700">Delete</button>
                 </form>
             </div>
 
@@ -48,12 +48,12 @@
                 <form method="post" action="{% url 'accounts:update-tag' tag.id %}" class="flex gap-2 items-end">
                     {% csrf_token %}
                     <div class="flex-1">
-                        <label class="block text-xs grm-text-muted mb-1">Name</label>
+                        <label class="block text-xs text-gray-400 mb-1">Name</label>
                         <input type="text" name="name" value="{{ tag.name }}" required
                                class="w-full grm-input">
                     </div>
                     <div>
-                        <label class="block text-xs grm-text-muted mb-1">Color</label>
+                        <label class="block text-xs text-gray-400 mb-1">Color</label>
                         <input type="color" name="color" value="{{ tag.color }}"
                                class="w-8 h-8 rounded cursor-pointer bg-transparent border-0">
                     </div>
@@ -64,7 +64,7 @@
             </div>
         </div>
         {% empty %}
-        <p class="grm-text-muted">No tags yet. Create one above.</p>
+        <p class="text-gray-400">No tags yet. Create one above.</p>
         {% endfor %}
     </div>
 </div>

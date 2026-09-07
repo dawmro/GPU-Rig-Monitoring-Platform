@@ -3,11 +3,11 @@
 {% block content %}
 <div class="max-w-4xl mx-auto">
     <h2 class="text-xl font-bold mb-4">Transfer API Keys</h2>
-    <p class="grm-text-gray mb-6">Transfer API keys and their enrolled rigs from one user to another.</p>
+    <p class="text-gray-300 mb-6">Transfer API keys and their enrolled rigs from one user to another.</p>
 
     <!-- Step 1: Select Source User -->
     <div class="grm-card mb-4">
-        <h3 class="text-sm font-medium grm-text-light mb-3">Step 1: Select Source User</h3>
+        <h3 class="text-sm font-medium text-gray-200 mb-3">Step 1: Select Source User</h3>
         <select name="source_user_id" required
                 class="w-full grm-input-lg"
                 onchange="window.location.href='?source_user_id='+this.value">
@@ -28,7 +28,7 @@
 
         <!-- Step 2: Select Keys -->
         <div class="grm-card mb-4">
-            <h3 class="text-sm font-medium grm-text-light mb-3">Step 2: Select Key(s) from {{ source_user.email }}</h3>
+            <h3 class="text-sm font-medium text-gray-200 mb-3">Step 2: Select Key(s) from {{ source_user.email }}</h3>
 
             {% if source_keys %}
             <div class="space-y-2 max-h-[400px] overflow-y-auto">
@@ -40,12 +40,12 @@
                         <div class="flex-1 min-w-0">
                             <div class="flex items-center gap-2">
                                 <span class="font-medium">{{ key.name }}</span>
-                                <span class="grm-text-muted text-sm">{% if key.is_active %}🟢 Active{% else %}🔴 Revoked{% endif %}</span>
-                                <span class="text-xs grm-text-muted">{{ key.rig_count }} rig{{ key.rig_count|pluralize }}</span>
+                                <span class="text-gray-400 text-sm">{% if key.is_active %}🟢 Active{% else %}🔴 Revoked{% endif %}</span>
+                                <span class="text-xs text-gray-400">{{ key.rig_count }} rig{{ key.rig_count|pluralize }}</span>
                             </div>
-                            <div class="text-xs grm-text-muted">Created: {{ key.created_at|date:"Y-m-d H:i" }}{% if key.revoked_at %} · Revoked: {{ key.revoked_at|date:"Y-m-d H:i" }}{% endif %}</div>
+                            <div class="text-xs text-gray-400">Created: {{ key.created_at|date:"Y-m-d H:i" }}{% if key.revoked_at %} · Revoked: {{ key.revoked_at|date:"Y-m-d H:i" }}{% endif %}</div>
                             {% if key.enrolled_rigs.all %}
-                            <div class="mt-2 text-xs grm-text-muted">
+                            <div class="mt-2 text-xs text-gray-400">
                                 Rigs: {% for rig in key.enrolled_rigs.all %}{{ rig.name|default:"Unnamed" }}{% if not forloop.last %}, {% endif %}{% endfor %}
                             </div>
                             {% endif %}
@@ -55,14 +55,14 @@
                 {% endfor %}
             </div>
             {% else %}
-            <p class="grm-text-muted">This user has no API keys.</p>
+            <p class="text-gray-400">This user has no API keys.</p>
             {% endif %}
         </div>
 
         <!-- Step 3: Select Target and Confirm -->
         {% if source_keys %}
         <div class="grm-card mb-4">
-            <h3 class="text-sm font-medium grm-text-light mb-3">Step 3: Select Target User</h3>
+            <h3 class="text-sm font-medium text-gray-200 mb-3">Step 3: Select Target User</h3>
 
             <div class="flex gap-3 mb-4">
                 <select name="target_user_id" required

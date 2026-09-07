@@ -15,14 +15,14 @@
 {#   {% include "partials/_chart_card.html" with #}
 {#      canvas_id="chartGpuTemp" title="GPU Temperature" %} #}
 {#   <div class="grm-chart-card"> #}
-{#     <h3 class="text-sm font-medium grm-text-light mb-3">GPU Temperature (<span class="chart-timeframe-label">24h</span>)</h3> #}
+{#     <h3 class="text-sm font-medium text-gray-200 mb-3">GPU Temperature (<span class="chart-timeframe-label">24h</span>)</h3> #}
 {#     <canvas id="chartGpuTemp"></canvas> #}
 {#   </div> #}
 
 <div class="{% if height == 'tall' %}grm-chart-card-tall{% else %}grm-chart-card{% endif %}">
-    <h3 class="text-sm font-medium grm-text-light mb-3">
+    <h3 class="text-sm font-medium text-gray-200 mb-3">
         {{ title }} (<span class="chart-timeframe-label">{{ timeframe_label|default:'24h' }}</span>)
     </h3>
     <canvas id="{{ canvas_id }}"></canvas>
-    {% if comment %}<div class="text-xs grm-text-muted mt-2">{{ comment }}</div>{% endif %}
+    {% if comment %}<div class="text-xs text-gray-400 mt-2">{{ comment }}</div>{% endif %}
 </div>

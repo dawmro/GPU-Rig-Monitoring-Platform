@@ -14,36 +14,36 @@
         <h3 class="text-lg font-medium mb-4">Account Information</h3>
         <div class="grid grid-cols-2 gap-4 text-sm">
             <div>
-                <span class="grm-text-muted">Email:</span>
-                <span class="grm-text-light ml-2">{{ user.email }}</span>
+                <span class="text-gray-400">Email:</span>
+                <span class="text-gray-200 ml-2">{{ user.email }}</span>
             </div>
             <div>
-                <span class="grm-text-muted">Role:</span>
-                <span class="grm-text-light ml-2">{% if user.is_staff %}Admin{% else %}User{% endif %}</span>
+                <span class="text-gray-400">Role:</span>
+                <span class="text-gray-200 ml-2">{% if user.is_staff %}Admin{% else %}User{% endif %}</span>
             </div>
             <div>
-                <span class="grm-text-muted">Rigs:</span>
-                <span class="grm-text-light ml-2">{{ user.rigs.count }}</span>
+                <span class="text-gray-400">Rigs:</span>
+                <span class="text-gray-200 ml-2">{{ user.rigs.count }}</span>
             </div>
             <div>
-                <span class="grm-text-muted">API Keys:</span>
-                <span class="grm-text-light ml-2">{{ user.api_keys.count }}</span>
+                <span class="text-gray-400">API Keys:</span>
+                <span class="text-gray-200 ml-2">{{ user.api_keys.count }}</span>
             </div>
         </div>
     </div>
 
     <div class="grm-card-lg mb-6">
         <h3 class="text-lg font-medium mb-4">Power Settings</h3>
-        <p class="text-sm grm-text-gray mb-4">Configure your electricity rate to estimate power consumption costs per rig.</p>
+        <p class="text-sm text-gray-300 mb-4">Configure your electricity rate to estimate power consumption costs per rig.</p>
         <form method="post" class="space-y-4">
             {% csrf_token %}
             <input type="hidden" name="action" value="update_power_settings">
             <div>
-                <label class="block text-sm grm-text-gray mb-1">Electricity Rate ($/kWh)</label>
+                <label class="block text-sm text-gray-300 mb-1">Electricity Rate ($/kWh)</label>
                 <input type="number" name="electricity_rate_kwh" step="0.0001" min="0" max="10"
                        value="{{ user.electricity_rate_kwh|default:'0.3300' }}"
                        class="w-full grm-input-lg">
-                <p class="text-xs grm-text-muted mt-1">Your local electricity cost per kilowatt-hour. Used to estimate running costs.</p>
+                <p class="text-xs text-gray-400 mt-1">Your local electricity cost per kilowatt-hour. Used to estimate running costs.</p>
             </div>
             <button type="submit" class="grm-btn-primary">
                 Save Power Settings
@@ -57,18 +57,18 @@
             {% csrf_token %}
             <input type="hidden" name="action" value="change_password">
             <div>
-                <label class="block text-sm grm-text-gray mb-1">Current Password</label>
+                <label class="block text-sm text-gray-300 mb-1">Current Password</label>
                 <input type="password" name="current_password" required
                     class="w-full grm-input-lg">
             </div>
             <div>
-                <label class="block text-sm grm-text-gray mb-1">New Password</label>
+                <label class="block text-sm text-gray-300 mb-1">New Password</label>
                 <input type="password" name="new_password" required minlength="8"
                     class="w-full grm-input-lg">
-                <p class="text-xs grm-text-muted mt-1">Minimum 8 characters</p>
+                <p class="text-xs text-gray-400 mt-1">Minimum 8 characters</p>
             </div>
             <div>
-                <label class="block text-sm grm-text-gray mb-1">Confirm New Password</label>
+                <label class="block text-sm text-gray-300 mb-1">Confirm New Password</label>
                 <input type="password" name="confirm_password" required minlength="8"
                     class="w-full grm-input-lg">
             </div>

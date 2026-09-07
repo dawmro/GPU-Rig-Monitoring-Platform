@@ -124,11 +124,11 @@ def gpu_compact_summary_json(snapshot):
 def gpu_temp_cell_json(snapshot):
     """Render color-coded GPU temperature values from LatestSnapshot JSON.
 
-    Each value gets the grm-text-{color} class from static/css/app.css.
+    Each value gets the text-{color}-400 class from Tailwind.
     The bare color name (red/orange/yellow/green/gray) is the filter output.
     Thresholds are centralized in DEFAULT_THRESHOLDS["gpu_temp"].
     """
-    return _render_tier_cell(snapshot, "gpu_temps_json", "gpu_temp", "grm-text-gray")
+    return _render_tier_cell(snapshot, "gpu_temps_json", "gpu_temp", "text-gray-400")
 
 
 @register.simple_tag
@@ -137,7 +137,7 @@ def gpu_util_cell_json(snapshot):
 
     Thresholds from DEFAULT_THRESHOLDS["gpu_util"] (inverted: high = good).
     """
-    return _render_tier_cell(snapshot, "gpu_utils_json", "gpu_util", "grm-text-muted")
+    return _render_tier_cell(snapshot, "gpu_utils_json", "gpu_util", "text-gray-400")
 
 
 @register.simple_tag
@@ -146,21 +146,21 @@ def gpu_fan_cell_json(snapshot):
 
     Thresholds from DEFAULT_THRESHOLDS["gpu_fan"].
     """
-    return _render_tier_cell(snapshot, "gpu_fans_json", "gpu_fan", "grm-text-gray")
+    return _render_tier_cell(snapshot, "gpu_fans_json", "gpu_fan", "text-gray-400")
 
 
 def _render_tier_cell(snapshot, json_field, threshold_name, no_data_class):
     """Helper: render a multi-GPU cell with tier-based coloring.
 
     Used by the gpu_*_cell_json simple_tags. Each value in the JSON
-    array becomes a <span class="grm-text-{color}"> value </span>.
-    Missing values get the no_data_class (e.g. grm-text-gray).
+    array becomes a `<span class="text-{color}-400">value</span>`.
+    Missing values get the no_data_class (e.g. "text-gray-400").
 
     Args:
         snapshot: LatestSnapshot instance.
         json_field: Name of the JSON list field (e.g. 'gpu_temps_json').
         threshold_name: Key in DEFAULT_THRESHOLDS to look up.
-        no_data_class: Full CSS class for missing values.
+        no_data_class: Full Tailwind class for missing values.
     """
     thresholds = DEFAULT_THRESHOLDS[threshold_name]
     values = getattr(snapshot, json_field, None) if snapshot else None
@@ -178,7 +178,11 @@ def _render_tier_cell(snapshot, json_field, threshold_name, no_data_class):
                 # Render as plain text, no color class
                 parts.append(f'<span>{_format_one(value)}</span>')
             else:
-                parts.append(f'<span class="grm-text-{color}">{_format_one(value)}</span>')
+                # Compose the Tailwind class. The tier system returns
+                # bare color names (red, yellow, etc.); templates compose
+                # them as `text-X-400` (Tailwind 400-series is the dark-mode
+                # shade that passes WCAG AA against the gray-800 card).
+                parts.append(f'<span class="text-{color}-400">{_format_one(value)}</span>')
     return mark_safe(GRM_MULTI_VALUE_SEPARATOR.join(parts))
 
 
@@ -476,7 +480,7 @@ DEFAULT_THRESHOLDS = {
     "gpu_util": [
         (90, "green"),
         (50, "gray"),
-        (None, "muted"),
+        (None, "gray"),
     ],
     # GPU fan speed (%)
     "gpu_fan": [
@@ -502,7 +506,7 @@ DEFAULT_THRESHOLDS = {
         (60, "orange"),
         (40, "yellow"),
         (20, "green"),
-        (None, "muted"),
+        (None, "gray"),
     ],
     # Top-process CPU % (in process list — lower thresholds since each
     # process can use a lot)
@@ -558,7 +562,7 @@ def _resolve_color(value, thresholds):
 
     Returns None if the value can't be coerced to a number (NaN-like
     inputs). The caller decides what to do with None — typically
-    substitute a default color like 'gray' or 'muted'.
+    substitute a default color like 'gray'.
     """
     if thresholds is None:
         return None
@@ -601,24 +605,28 @@ def tier(value, thresholds):
 
 @register.filter(name="tier_text")
 def tier_text(value, thresholds):
-    """Convenience filter: return the full grm-text-{color} class.
+    """Convenience filter: return the full Tailwind class.
 
     Use this when you don't need to compose the class with others:
         <span class="{{ x|tier_text:cpu_temp_thresholds }}">
 
-    Returns 'grm-text-{color}' for matching thresholds, or the empty
-    string '' if the spec says "no color override" (e.g. low process
-    CPU usage). Returns '' on bad input too (no class = no style).
+    Returns 'text-{color}-400' (Tailwind 400-series) for matching
+    thresholds, or the empty string '' if the spec says "no color
+    override" (e.g. low process CPU usage). Returns '' on bad input
+    too (no class = no style).
+
+    The 400 shade was chosen because it has WCAG AA contrast against
+    the gray-800 card background (#1f2937) for all colors we use.
     """
     color = _resolve_color(value, thresholds)
     if not color:
         return ""
-    return f"grm-text-{color}"
+    return f"text-{color}-400"
 
 
 @register.filter(name="tier_fill")
 def tier_fill(value, thresholds):
-    """Convenience filter: return the full grm-progress-fill-{color} class.
+    """Convenience filter: return the full Tailwind bg-{color}-400 class.
 
     Use this for progress bar fills:
         <div class="grm-progress">
@@ -626,8 +634,10 @@ def tier_fill(value, thresholds):
                style="width: {{ x }}%"></div>
         </div>
 
-    Returns 'grm-progress-fill-{color}' for matching thresholds, or the
-    empty string '' for "no color override". Note: progress bar fills
+    Returns 'bg-{color}-400' (Tailwind 400-series) for matching
+    thresholds, or the empty string '' for "no color override".
+
+    Note: progress bar fills
     typically have a default color (e.g. 'gray' for "no data"), so the
     spec should not return None for default unless the caller wants an
     invisible fill.
@@ -635,4 +645,4 @@ def tier_fill(value, thresholds):
     color = _resolve_color(value, thresholds)
     if not color:
         return ""
-    return f"grm-progress-fill-{color}"
+    return f"bg-{color}-400"

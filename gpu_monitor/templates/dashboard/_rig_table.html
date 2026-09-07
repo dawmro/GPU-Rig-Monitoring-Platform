@@ -30,7 +30,7 @@
             <col class="grm-col-system">
             <col class="grm-col-meta">
         </colgroup>
-        <thead class="bg-gray-750 grm-text-gray border-b border-gray-700">
+        <thead class="bg-gray-750 text-gray-300 border-b border-gray-700">
             <tr>
                 <th class="text-left px-3 py-2 font-medium">Rig Name</th>
                 <th class="text-left px-3 py-2 font-medium">Tags</th>
@@ -55,7 +55,7 @@
             <tr class="border-b border-gray-700/50 hover:bg-gray-750 {% if rig.status == 'offline' %}rig-offline{% endif %}">
                 <td class="px-3 py-2">
                     <a href="{% url 'dashboard:rig-detail' rig.uuid %}"
-                       class="grm-text-blue hover:grm-text-blue-light font-medium truncate inline-block max-w-[140px]"
+                       class="text-blue-400 hover:text-blue-300 font-medium truncate inline-block max-w-[140px]"
                        title="{{ rig.name }}">
                         {% if rig.name|length > 16 %}
                             {{ rig.name|slice:"16" }}…
@@ -91,7 +91,7 @@
                     <span class="w-3 h-3 rounded-full bg-red-400 inline-block" title="No active job"></span>
                     {% endif %}
                 </td>
-                <td class="px-3 py-2 grm-text-gray whitespace-nowrap">
+                <td class="px-3 py-2 text-gray-300 whitespace-nowrap">
                     {% if rig.last_seen %}
                         {{ rig.last_seen|last_seen_short }}
                     {% else %}
@@ -100,7 +100,7 @@
                 </td>
                 <td class="px-3 py-2 whitespace-nowrap">
                     {% if snapshot and snapshot.software_json.uptime_s %}
-                        <span class="grm-text-light font-medium">
+                        <span class="text-gray-200 font-medium">
                             {{ snapshot.software_json.uptime_s|time_since }}
                         </span>
                     {% else %}
@@ -142,7 +142,7 @@
                 {# CPU Temp column #}
                 <td class="px-2 py-2 whitespace-nowrap">
                     {% if snapshot and snapshot.cpu_temp_c != None %}
-                        <span class="{{ snapshot.cpu_temp_c|tier_text:cpu_temp_t }}">
+                        <span class="text-{{ snapshot.cpu_temp_c|tier_text:cpu_temp_t }}-400">
                             {{ snapshot.cpu_temp_c|floatformat:1 }}°C
                         </span>
                     {% else %}—{% endif %}
@@ -150,14 +150,14 @@
                 {# CPU Util column #}
                 <td class="px-2 py-2 whitespace-nowrap">
                     {% if snapshot and snapshot.cpu_utilization_pct != None %}
-                        <span class="grm-text-{{ snapshot.cpu_utilization_pct|tier_text:cpu_util_t }}">{{ snapshot.cpu_utilization_pct|floatformat:1 }}</span>
+                        <span class="text-{{ snapshot.cpu_utilization_pct|tier_text:cpu_util_t }}-400">{{ snapshot.cpu_utilization_pct|floatformat:1 }}</span>
                     {% else %}—{% endif %}
                 </td>
                 {# Disk Util column: max utilization across all disks #}
                 <td class="px-2 py-2 whitespace-nowrap">
                     {% if snapshot.storage_utilization_pcts_json %}
                         {% with max_util=snapshot.storage_utilization_pcts_json|max_disk_util %}
-                        <span class="{{ max_util|tier_text:disk_util_t }}">
+                        <span class="text-{{ max_util|tier_text:disk_util_t }}-400">
                             {{ max_util|floatformat:1 }}%
                         </span>
                         {% endwith %}
@@ -166,7 +166,7 @@
                 {# Power column: total system power #}
                 <td class="px-2 py-2 whitespace-nowrap">
                     {% if snapshot and snapshot.power_total_w != None %}
-                        <span class="grm-text-blue">{{ snapshot.power_total_w|floatformat:0 }}W</span>
+                        <span class="text-blue-400">{{ snapshot.power_total_w|floatformat:0 }}W</span>
                     {% else %}—{% endif %}
                 </td>
                 {# Agent version column #}

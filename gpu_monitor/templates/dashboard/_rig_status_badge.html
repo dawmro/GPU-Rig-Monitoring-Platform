@@ -8,6 +8,6 @@
     <span class="grm-badge grm-badge-offline px-3 py-1 text-sm">Offline</span>
     {% endif %}
 </span>
-<span class="grm-text-muted text-sm ml-3" id="rig-last-payload">
+<span class="text-gray-400 text-sm ml-3" id="rig-last-payload">
     {% if rig.last_seen %}Last payload: {{ rig.last_seen|last_seen_short }} ago{% else %}No payload{% endif %}
 </span>

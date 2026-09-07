@@ -12,14 +12,14 @@
         <form method="post" class="space-y-4">
             {% csrf_token %}
             <div>
-                <label class="block text-sm grm-text-gray mb-1">Email</label>
+                <label class="block text-sm text-gray-300 mb-1">Email</label>
                 <input type="email" name="email" required
                     class="w-full grm-input-lg">
             </div>
             <div>
                 <div class="flex items-center justify-between">
-                    <label class="block text-sm grm-text-gray mb-1">Password</label>
-                    <a href="{% url 'accounts:password-reset' %}" class="text-xs grm-text-blue hover:grm-text-blue-light">Forgot password?</a>
+                    <label class="block text-sm text-gray-300 mb-1">Password</label>
+                    <a href="{% url 'accounts:password-reset' %}" class="text-xs text-blue-400 hover:text-blue-300">Forgot password?</a>
                 </div>
                 <input type="password" name="password" required
                     class="w-full grm-input-lg">
@@ -28,9 +28,9 @@
                 Sign In
             </button>
         </form>
-        <p class="text-center grm-text-gray text-sm mt-6">
+        <p class="text-center text-gray-300 text-sm mt-6">
             Don't have an account?
-            <a href="{% url 'accounts:register' %}" class="grm-text-blue hover:grm-text-blue-light">Create Account</a>
+            <a href="{% url 'accounts:register' %}" class="text-blue-400 hover:text-blue-300">Create Account</a>
         </p>
     </div>
 </div>

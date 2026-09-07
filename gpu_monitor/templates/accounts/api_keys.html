@@ -3,8 +3,8 @@
 {% block content %}
 <div class="max-w-3xl mx-auto">
     <h2 class="text-xl font-bold mb-4">API Keys</h2>
-    <p class="grm-text-gray mb-4">API keys are used by the monitoring agent to authenticate with the server. Each key should ideally be used by only one rig for better security. A key can be used by multiple rigs, but this is not recommended — if the key is compromised, all rigs using it are affected.</p>
-    <p class="grm-text-gray mb-4">To transfer a rig to another user, the admin can transfer the API key (and all rigs enrolled by it) via the <strong>Transfer Keys</strong> page. The agent keeps working with the same key — no reconfiguration needed.</p>
+    <p class="text-gray-300 mb-4">API keys are used by the monitoring agent to authenticate with the server. Each key should ideally be used by only one rig for better security. A key can be used by multiple rigs, but this is not recommended — if the key is compromised, all rigs using it are affected.</p>
+    <p class="text-gray-300 mb-4">To transfer a rig to another user, the admin can transfer the API key (and all rigs enrolled by it) via the <strong>Transfer Keys</strong> page. The agent keeps working with the same key — no reconfiguration needed.</p>
 
     <form hx-post="{% url 'accounts:create-api-key' %}" hx-target="#key-list" hx-swap="afterbegin"
           class="flex gap-2 mb-6">
@@ -24,14 +24,14 @@
                     <div class="flex items-center gap-2">
                         <span class="font-medium">{{ key.name }}</span>
                         {% if key.transfer_count > 0 %}
-                        <span class="text-xs grm-text-muted" title="Transferred {{ key.transfer_count }} time(s)">↻ {{ key.transfer_count }}</span>
+                        <span class="text-xs text-gray-400" title="Transferred {{ key.transfer_count }} time(s)">↻ {{ key.transfer_count }}</span>
                         {% endif %}
                     </div>
                     <div class="flex items-center gap-2 mt-1">
-                        <span class="grm-text-muted text-sm">{% if key.is_active %}🟢 Active{% else %}🔴 Revoked{% endif %}</span>
-                        <span class="text-xs grm-text-muted">{{ key.rig_count }} rig{{ key.rig_count|pluralize }}</span>
+                        <span class="text-gray-400 text-sm">{% if key.is_active %}🟢 Active{% else %}🔴 Revoked{% endif %}</span>
+                        <span class="text-xs text-gray-400">{{ key.rig_count }} rig{{ key.rig_count|pluralize }}</span>
                     </div>
-                    <div class="text-xs grm-text-muted">Created: {{ key.created_at|date:"Y-m-d H:i" }}{% if key.revoked_at %} · Revoked: {{ key.revoked_at|date:"Y-m-d H:i" }}{% endif %}</div>
+                    <div class="text-xs text-gray-400">Created: {{ key.created_at|date:"Y-m-d H:i" }}{% if key.revoked_at %} · Revoked: {{ key.revoked_at|date:"Y-m-d H:i" }}{% endif %}</div>
                     {% if key.rig_count > 1 %}
                     <div class="mt-2 flex items-center gap-1.5 text-xs text-yellow-500">
                         <span>⚠️</span>
@@ -46,14 +46,14 @@
                     {% endif %}
                     {% if key.enrolled_rigs.all %}
                     <div class="mt-3 pt-3 border-t border-gray-700">
-                        <div class="text-xs grm-text-muted mb-2">Enrolled rigs:</div>
+                        <div class="text-xs text-gray-400 mb-2">Enrolled rigs:</div>
                         <div class="space-y-1">
                             {% for rig in key.enrolled_rigs.all %}
                             <div class="flex items-center gap-2 text-xs">
-                                <a href="{% url 'dashboard:rig-detail' rig.uuid %}" class="grm-text-blue hover:grm-text-blue-light font-mono truncate max-w-[200px]" title="{{ rig.name }}">{{ rig.name|default:"Unnamed" }}</a>
+                                <a href="{% url 'dashboard:rig-detail' rig.uuid %}" class="text-blue-400 hover:text-blue-300 font-mono truncate max-w-[200px]" title="{{ rig.name }}">{{ rig.name|default:"Unnamed" }}</a>
                                 <span class="text-gray-600 font-mono">{{ rig.uuid|truncatechars:12 }}</span>
                                 <span class="text-gray-600">·</span>
-                                <span class="grm-text-muted">{{ rig.status }}</span>
+                                <span class="text-gray-400">{{ rig.status }}</span>
                             </div>
                             {% endfor %}
                         </div>
@@ -64,23 +64,23 @@
                 {% if key.is_active %}
                 <form hx-post="{% url 'accounts:revoke-api-key' key.id %}" hx-target="closest .key-row" hx-swap="outerHTML">
                     {% csrf_token %}
-                    <button type="submit" class="grm-text-red hover:grm-text-red-light text-sm">Revoke</button>
+                    <button type="submit" class="text-red-400 hover:text-red-300 text-sm">Revoke</button>
                 </form>
                 {% else %}
                 <form hx-post="{% url 'accounts:reactivate-api-key' key.id %}" hx-target="closest .key-row" hx-swap="outerHTML">
                     {% csrf_token %}
-                    <button type="submit" class="grm-text-green hover:grm-text-green-light text-sm">Reactivate</button>
+                    <button type="submit" class="text-green-400 hover:text-green-300 text-sm">Reactivate</button>
                 </form>
                 <form hx-post="{% url 'accounts:delete-api-key' key.id %}" hx-target="closest .key-row" hx-swap="outerHTML">
                     {% csrf_token %}
-                    <button type="submit" class="grm-text-muted hover:grm-text-red text-sm">Delete</button>
+                    <button type="submit" class="text-gray-400 hover:text-red-400 text-sm">Delete</button>
                 </form>
                 {% endif %}
                 </div>
             </div>
         </div>
         {% empty %}
-        <p class="grm-text-muted">No API keys yet. Create one above.</p>
+        <p class="text-gray-400">No API keys yet. Create one above.</p>
         {% endfor %}
     </div>
 </div>

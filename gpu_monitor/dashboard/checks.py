@@ -375,6 +375,90 @@ def check_no_multiline_template_comments(app_configs, **kwargs) -> list:
 
 
 # =====================================================================
+# Template class name regression guard (Phase 0.5)
+# =====================================================================
+
+# Class names that were REMOVED in Phase 0.5 simplification.
+# Templates should use Tailwind utilities (bg-X-400, text-X-400, etc.)
+# directly instead of these custom classes.
+REMOVED_GRM_CLASSES = {
+    # Text color utilities (replaced by text-X-400 / text-X-300)
+    "grm-text-red", "grm-text-orange", "grm-text-yellow", "grm-text-green",
+    "grm-text-blue", "grm-text-purple", "grm-text-cyan", "grm-text-gray",
+    "grm-text-muted", "grm-text-light",
+    "grm-text-red-faded", "grm-text-red-light", "grm-text-yellow-light",
+    "grm-text-green-light", "grm-text-blue-light",
+    "grm-text-red-strong", "grm-text-yellow-strong", "grm-text-green-strong",
+    "grm-text-blue-strong", "grm-text-purple-strong", "grm-text-teal-strong",
+    "grm-text-orange-strong",
+    # Progress fill utilities (replaced by bg-X-400)
+    "grm-progress-fill-red", "grm-progress-fill-orange",
+    "grm-progress-fill-yellow", "grm-progress-fill-green",
+    "grm-progress-fill-blue", "grm-progress-fill-purple",
+    "grm-progress-fill-gray", "grm-progress-fill-muted",
+}
+
+
+@register(TAG_GRM_CSS)
+def check_no_removed_grm_class_names(app_configs, **kwargs) -> list:
+    """Verify templates don't use the class names removed in Phase 0.5.
+
+    In Phase 0.5 we deleted the .grm-text-{color} and .grm-progress-fill-
+    {color} CSS classes (they were just Tailwind reimplementations).
+    Templates should use Tailwind utilities directly: bg-X-400 for fills,
+    text-X-400 for normal text, text-X-300 for "strong" text.
+
+    This check catches any template that still references the old
+    classes — those would silently render as unstyled (no Tailwind
+    class by that name exists, and our app.css no longer defines
+    .grm-text-X / .grm-progress-fill-X).
+    """
+    import re
+    warnings = []
+    # Match class="..." or class='...' with one of the removed names.
+    # We tokenize on whitespace and look for exact matches.
+    pattern = re.compile(r'class=["\']([^"\']+)["\']')
+    for template_path in _all_template_files():
+        try:
+            text = template_path.read_text(encoding="utf-8")
+        except (FileNotFoundError, UnicodeDecodeError):
+            continue
+        for m in pattern.finditer(text):
+            classes = m.group(1).split()
+            removed_used = [c for c in classes if c in REMOVED_GRM_CLASSES]
+            if not removed_used:
+                continue
+            try:
+                rel_path = template_path.relative_to(settings.BASE_DIR)
+            except ValueError:
+                rel_path = template_path
+            line_no = text[: m.start()].count("\n") + 1
+            for removed_class in removed_used:
+                warnings.append(
+                    Warning(
+                        f"Template uses removed class '{removed_class}' "
+                        f"at {rel_path}:{line_no}. This class was deleted "
+                        f"in Phase 0.5 (it was a duplicate of a Tailwind "
+                        f"utility). Replace with the Tailwind class: "
+                        f"'bg-{removed_class.removeprefix('grm-text-')}-400' "
+                        f"for fills, "
+                        f"'text-{removed_class.removeprefix('grm-text-').removesuffix('-strong').removesuffix('-light')}-400' "
+                        f"for text.",
+                        hint=(
+                            f"Use 'text-X-400' (or 'text-X-300' for "
+                            f"strong/light variants) for text colors, "
+                            f"'bg-X-400' for progress fills. See "
+                            f"docs/LAYOUT_OPTIMIZATION_PLAN.md for the "
+                            f"color mapping."
+                        ),
+                        id="dashboard.W005",
+                        obj=str(rel_path),
+                    )
+                )
+    return warnings
+
+
+# =====================================================================
 # Static JS file checks (Phase 0.4)
 # =====================================================================
 

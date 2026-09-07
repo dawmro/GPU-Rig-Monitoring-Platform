@@ -7,18 +7,18 @@
         <!-- Line 1: Title + rig counts -->
         <div class="flex items-center gap-4 flex-shrink-0">
             <h1 class="text-2xl font-bold">Fleet Overview</h1>
-            <div class="flex items-center gap-2 text-sm grm-text-gray">
+            <div class="flex items-center gap-2 text-sm text-gray-300">
                 <span>{{ total_count }} rigs</span>
                 <span class="text-gray-600">|</span>
-                <span class="grm-text-green">{{ online_count }} online</span>
+                <span class="text-green-400">{{ online_count }} online</span>
                 <span class="text-gray-600">|</span>
-                <span class="grm-text-yellow">{{ stale_count }} stale</span>
+                <span class="text-yellow-400">{{ stale_count }} stale</span>
                 <span class="text-gray-600">|</span>
-                <span class="grm-text-red">{{ offline_count }} offline</span>
+                <span class="text-red-400">{{ offline_count }} offline</span>
             </div>
             {% if user.is_staff %}
             <button type="button" id="toggle-owner-emails" onclick="toggleAllOwnerEmails()"
-                    class="text-xs grm-text-muted hover:grm-text-light border border-gray-600 rounded px-2 py-1 flex items-center gap-1"
+                    class="text-xs text-gray-400 hover:text-gray-200 border border-gray-600 rounded px-2 py-1 flex items-center gap-1"
                     title="Toggle owner email visibility for all rows">
                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
                 <span>Show emails</span>
@@ -55,7 +55,7 @@
         </div>
     </div>
 
-    <div class="flex items-center gap-2 grm-text-muted text-xs mb-2">
+    <div class="flex items-center gap-2 text-gray-400 text-xs mb-2">
         <span id="rig-table-container-clock"></span>
     </div>
 

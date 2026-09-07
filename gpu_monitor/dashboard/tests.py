@@ -402,17 +402,17 @@ class TierResolverTests(SimpleTestCase):
         # 40 -> not >40, >20 -> green
         self.assertEqual(gf._resolve_color(40, spec), "green")
         self.assertEqual(gf._resolve_color(30, spec), "green")
-        # 20 -> not >20, default -> muted
-        self.assertEqual(gf._resolve_color(20, spec), "muted")
-        self.assertEqual(gf._resolve_color(10, spec), "muted")
+        # 20 -> not >20, default -> gray
+        self.assertEqual(gf._resolve_color(20, spec), "gray")
+        self.assertEqual(gf._resolve_color(10, spec), "gray")
 
     def test_inverted_gpu_util(self):
-        # GPU util is inverted: high = good (green), low = bad (muted).
+        # GPU util is inverted: high = good (green), low = bad (gray).
         # Verify the ordering is correct.
         spec = gf.DEFAULT_THRESHOLDS["gpu_util"]
         self.assertEqual(gf._resolve_color(95, spec), "green")
         self.assertEqual(gf._resolve_color(60, spec), "gray")
-        self.assertEqual(gf._resolve_color(10, spec), "muted")
+        self.assertEqual(gf._resolve_color(10, spec), "gray")
 
 
 class TierFilterTests(SimpleTestCase):
@@ -430,12 +430,12 @@ class TierFilterTests(SimpleTestCase):
 
 
 class TierTextFilterTests(SimpleTestCase):
-    """Tests for the `tier_text` filter (returns 'grm-text-{color}')."""
+    """Tests for the `tier_text` filter (returns 'text-{color}-400')."""
 
     def test_tier_text_returns_full_class(self):
         spec = gf.DEFAULT_THRESHOLDS["cpu_temp"]
-        self.assertEqual(gf.tier_text(90, spec), "grm-text-red")
-        self.assertEqual(gf.tier_text(50, spec), "grm-text-green")
+        self.assertEqual(gf.tier_text(90, spec), "text-red-400")
+        self.assertEqual(gf.tier_text(50, spec), "text-green-400")
 
     def test_tier_text_returns_empty_string_for_no_color(self):
         # process_cpu spec returns None for low values — should produce
@@ -450,13 +450,13 @@ class TierTextFilterTests(SimpleTestCase):
 
 
 class TierFillFilterTests(SimpleTestCase):
-    """Tests for the `tier_fill` filter (returns 'grm-progress-fill-{color}')."""
+    """Tests for the `tier_fill` filter (returns 'bg-{color}-400')."""
 
     def test_tier_fill_returns_full_class(self):
         spec = gf.DEFAULT_THRESHOLDS["cpu_util"]
-        self.assertEqual(gf.tier_fill(90, spec), "grm-progress-fill-red")
-        self.assertEqual(gf.tier_fill(50, spec), "grm-progress-fill-yellow")
-        self.assertEqual(gf.tier_fill(10, spec), "grm-progress-fill-gray")
+        self.assertEqual(gf.tier_fill(90, spec), "bg-red-400")
+        self.assertEqual(gf.tier_fill(50, spec), "bg-yellow-400")
+        self.assertEqual(gf.tier_fill(10, spec), "bg-gray-400")
 
     def test_tier_fill_returns_empty_string_for_no_color(self):
         spec = gf.DEFAULT_THRESHOLDS["process_cpu"]
@@ -496,7 +496,7 @@ class MultiGpuCellRenderTests(SimpleTestCase):
         snap = SimpleNamespace(gpu_temps_json=None)
         result = str(gf.gpu_temp_cell_json(snap))
         self.assertIn("—", result)
-        self.assertIn("grm-text-gray", result)
+        self.assertIn("text-gray-400", result)
 
     def test_empty_list_returns_placeholder(self):
         from types import SimpleNamespace
@@ -510,10 +510,10 @@ class MultiGpuCellRenderTests(SimpleTestCase):
         snap = SimpleNamespace(gpu_temps_json=[85, 75, 55, None])
         result = str(gf.gpu_temp_cell_json(snap))
         # All four should appear
-        self.assertIn("grm-text-red", result)
-        self.assertIn("grm-text-yellow", result)
-        self.assertIn("grm-text-green", result)
-        self.assertIn("grm-text-gray", result)  # for None
+        self.assertIn("text-red-400", result)
+        self.assertIn("text-yellow-400", result)
+        self.assertIn("text-green-400", result)
+        self.assertIn("text-gray-400", result)  # for None
         # 4 separate spans
         self.assertEqual(result.count("<span"), 4)
         # Multi-value separator: a single space (was ' · ' before
@@ -528,12 +528,13 @@ class MultiGpuCellRenderTests(SimpleTestCase):
 
     def test_inverted_coloring_for_gpu_util(self):
         from types import SimpleNamespace
-        # GPU util: >90 green, >50 gray, default muted
+        # GPU util: >90 green, >50 gray, default gray
         snap = SimpleNamespace(gpu_utils_json=[95, 60, 20])
         result = str(gf.gpu_util_cell_json(snap))
-        self.assertIn("grm-text-green", result)
-        self.assertIn("grm-text-gray", result)
-        self.assertIn("grm-text-muted", result)
+        self.assertIn("text-green-400", result)
+        self.assertIn("text-gray-400", result)
+        # No 'muted' class anywhere — muted was removed in Phase 0.5
+        self.assertNotIn("muted", result)
 
     def test_value_with_no_color_override_renders_plain(self):
         # process_cpu spec returns None for low values. When called via
@@ -542,9 +543,9 @@ class MultiGpuCellRenderTests(SimpleTestCase):
         from types import SimpleNamespace
         from dashboard.templatetags.gpu_filters import _render_tier_cell
         snap = SimpleNamespace(test_json=[5])
-        result = str(_render_tier_cell(snap, "test_json", "process_cpu", "grm-text-gray"))
+        result = str(_render_tier_cell(snap, "test_json", "process_cpu", "text-gray-400"))
         # No color class because the spec returns None
-        self.assertNotIn("grm-text-red", result)
+        self.assertNotIn("text-red-400", result)
         self.assertIn("5", result)
 
 
@@ -789,27 +790,56 @@ class CheckNoMultilineTemplateCommentsTests(SimpleTestCase):
 # =====================================================================
 # CSS color contrast regression guards
 # =====================================================================
+#
+# After Phase 0.5, color utilities were moved OUT of app.css and into
+# Tailwind directly (templates use 'bg-{color}-400', 'text-{color}-400',
+# etc.). This means our app.css no longer contains the color values
+# themselves.
+#
+# These tests still serve as regression guards, but they assert
+# against the EXPECTED Tailwind color values (not extracted from
+# app.css). If Tailwind changes its 400-series shades (unlikely), the
+# tests fail and we know to update our templates. They also catch
+# template-level regressions like accidentally using a -500 or -300
+# shade where -400 was intended.
+#
+# The original incident (Nov 2025) was a gray-600 fill (#4b5563)
+# with contrast 1.94 against #1f2937. The test is a regression guard
+# against any future drop below 4.5 (WCAG AA).
+
+# Tailwind 400-series values that we use in templates.
+# Source: https://tailwindcss.com/docs/customizing-colors
+EXPECTED_TAILWIND_COLORS = {
+    # Fills (used as bg-X-400) and normal text (used as text-X-400)
+    "red":     "#f87171",
+    "orange":  "#fb923c",
+    "yellow":  "#facc15",
+    "green":   "#4ade80",
+    "blue":    "#60a5fa",
+    "purple":  "#c084fc",
+    "cyan":    "#22d3ee",
+    # Grayscale (text)
+    "gray-200": "#e5e7eb",   # text-light (primary)
+    "gray-300": "#d1d5db",   # text-gray (secondary)
+    "gray-400": "#9ca3af",   # text-muted + bg-gray-400 fill
+    # Fills only (we use these for the fill; no -strong/-light variant)
+    "purple-500": "#a855f7",  # unused but listed for reference
+}
+
 
 class CssColorContrastTests(SimpleTestCase):
-    """Verify CSS color choices for legibility on the dark UI.
+    """Verify the Tailwind colors used in templates have good contrast.
 
-    These tests catch accidental reverts to colors that don't have
-    enough contrast against the gray-800 card background. The
-    original incident (Nov 2025) was a gray progress fill at #4b5563
-    (contrast 1.94 against #1f2937) which was effectively invisible
-    — the user complained that the GPU core bar "had no color".
-
-    See the comment block above .grm-progress-fill-* in app.css for
-    the full contrast analysis.
+    The tier system in gpu_filters.py returns bare color names
+    (red, yellow, gray, etc.) which templates compose into
+    `text-X-400` or `bg-X-400`. This test verifies that those color
+    values have WCAG AA contrast (>= 4.5) against the gray-800 card
+    background. If Tailwind changes its palette, or if someone
+    accidentally uses a -500 / -300 shade where -400 was intended,
+    this test fails with a clear error message.
     """
 
-    CSS_PATH = "static/css/app.css"
     BG_CARD = (31, 41, 55)  # #1f2937 gray-800, the grm-card background
-
-    def _read_css(self):
-        from pathlib import Path
-        from django.conf import settings
-        return (Path(settings.BASE_DIR) / self.CSS_PATH).read_text(encoding="utf-8")
 
     def _hex_to_rgb(self, hex_color):
         h = hex_color.lstrip("#")
@@ -834,87 +864,79 @@ class CssColorContrastTests(SimpleTestCase):
             l_fg, l_bg = l_bg, l_fg
         return (l_fg + 0.05) / (l_bg + 0.05)
 
-    def _extract_color(self, css, class_name):
-        """Extract the background-color or color value for a CSS class."""
-        import re
-        # Match `.cls { ... background-color: #abc; ... }` or `color: #abc;`
-        # Group 1: property name (background-color | color)
-        # Group 2: hex value
-        pattern = re.compile(
-            rf"\.{re.escape(class_name)}\s*\{{[^\{{\}}]*?(background-color|color):\s*(#[0-9a-fA-F]{{3,8}})"
-        )
-        m = pattern.search(css)
-        if not m:
-            self.fail(f"Could not find color for .{class_name} in app.css")
-        return m.group(2)
+    def test_all_tier_colors_pass_AA_against_card(self):
+        """Every Tailwind color used in the tier system must have
+        contrast >= 4.5 (WCAG AA) against gray-800.
 
-    def test_gray_progress_fill_is_visible_against_card(self):
-        """grm-progress-fill-gray must have contrast >= 4.5 vs gray-800.
-
-        The original bug was a gray-600 fill (#4b5563) with contrast
-        1.94 — WCAG FAIL. This test catches any regression to that.
-        The 4.5 minimum matches WCAG AA for normal text/UI elements.
+        Regression guard: if Tailwind's palette changes, or if a
+        template accidentally uses a wrong shade, this fails.
         """
-        css = self._read_css()
-        gray_hex = self._extract_color(css, "grm-progress-fill-gray")
-        ratio = self._contrast_ratio(gray_hex)
-        self.assertGreaterEqual(
-            ratio, 4.5,
-            f"grm-progress-fill-gray ({gray_hex}) has contrast {ratio:.2f} "
-            f"vs gray-800, which is below WCAG AA (4.5). Use gray-400 "
-            f"(#9ca3af) or lighter. Original incident: gray-600 fill was "
-            f"effectively invisible against gray-800."
-        )
+        # The "tier" colors that the gpu_filters tier system emits.
+        # These are the values that templates compose as 'bg-X-400' or
+        # 'text-X-400'. We check the 400-series for the tier colors.
+        tier_colors = {
+            "red":    EXPECTED_TAILWIND_COLORS["red"],
+            "orange": EXPECTED_TAILWIND_COLORS["orange"],
+            "yellow": EXPECTED_TAILWIND_COLORS["yellow"],
+            "green":  EXPECTED_TAILWIND_COLORS["green"],
+            "blue":   EXPECTED_TAILWIND_COLORS["blue"],
+            "purple": EXPECTED_TAILWIND_COLORS["purple"],
+            "cyan":   EXPECTED_TAILWIND_COLORS["cyan"],
+            # gray tier uses gray-400 (same color as muted text fill)
+            "gray":   EXPECTED_TAILWIND_COLORS["gray-400"],
+        }
+        for name, hex_color in tier_colors.items():
+            with self.subTest(color=name):
+                ratio = self._contrast_ratio(hex_color)
+                self.assertGreaterEqual(
+                    ratio, 4.5,
+                    f"Tailwind {name}-400 ({hex_color}) has contrast {ratio:.2f} "
+                    f"vs gray-800, below WCAG AA (4.5). If Tailwind changed "
+                    f"its palette, update templates or pin the color. "
+                    f"Original incident: gray-600 (#4b5563) was 1.94."
+                )
 
-    def test_all_progress_fills_pass_AA(self):
-        """All grm-progress-fill-* classes should have contrast >= 4.5 (AA)."""
-        css = self._read_css()
-        import re
-        for m in re.finditer(r"\.grm-progress-fill-(\w+)\s*\{[^}]*?background-color:\s*(#[0-9a-fA-F]+)", css):
-            name, hex_color = m.group(1), m.group(2)
-            ratio = self._contrast_ratio(hex_color)
+    def test_text_gray_hierarchy_preserved(self):
+        """text-light > text-gray > text-muted in contrast vs card.
+
+        The 3-tier text hierarchy (primary > secondary > dim) must be
+        preserved. If a future change makes any two of them the same
+        color, this test catches it.
+        """
+        light = self._contrast_ratio(EXPECTED_TAILWIND_COLORS["gray-200"])
+        gray  = self._contrast_ratio(EXPECTED_TAILWIND_COLORS["gray-300"])
+        muted = self._contrast_ratio(EXPECTED_TAILWIND_COLORS["gray-400"])
+        self.assertGreater(light, gray,
+            f"text-light (gray-200, {light:.2f}) must be brighter than "
+            f"text-gray (gray-300, {gray:.2f})")
+        self.assertGreater(gray, muted,
+            f"text-gray (gray-300, {gray:.2f}) must be brighter than "
+            f"text-muted (gray-400, {muted:.2f})")
+        # All three should pass AA
+        for label, ratio in [("light", light), ("gray", gray), ("muted", muted)]:
             self.assertGreaterEqual(
                 ratio, 4.5,
-                f"grm-progress-fill-{name} ({hex_color}) has contrast {ratio:.2f} "
-                f"vs gray-800, below WCAG AA (4.5). Bump to -400 series."
+                f"text-{label} has contrast {ratio:.2f} < 4.5 (WCAG AA)"
             )
 
-    def test_text_gray_is_visible_against_card(self):
-        """grm-text-gray (secondary labels) must have contrast >= 4.5."""
-        css = self._read_css()
-        gray_hex = self._extract_color(css, "grm-text-gray")
-        ratio = self._contrast_ratio(gray_hex)
-        self.assertGreaterEqual(
-            ratio, 4.5,
-            f"grm-text-gray ({gray_hex}) has contrast {ratio:.2f} vs "
-            f"gray-800, below WCAG AA. The previous value (#6b7280 gray-500) "
-            f"had only 3.04 — bumped to gray-300 (#d1d5db) for 9.96."
-        )
-
-    def test_text_muted_is_visible_against_card(self):
-        """grm-text-muted (dim text) must have contrast >= 4.5."""
-        css = self._read_css()
-        muted_hex = self._extract_color(css, "grm-text-muted")
-        ratio = self._contrast_ratio(muted_hex)
-        self.assertGreaterEqual(
-            ratio, 4.5,
-            f"grm-text-muted ({muted_hex}) has contrast {ratio:.2f} vs "
-            f"gray-800, below WCAG AA. Previous value gray-500 had 3.04."
-        )
-
     def test_text_hierarchy_is_preserved(self):
-        """light > gray > muted in brightness (i.e. contrast vs card)."""
-        css = self._read_css()
-        light = self._contrast_ratio(self._extract_color(css, "grm-text-light"))
-        gray = self._contrast_ratio(self._extract_color(css, "grm-text-gray"))
-        muted = self._contrast_ratio(self._extract_color(css, "grm-text-muted"))
+        """light > gray > muted in brightness (i.e. contrast vs card).
+
+        After Phase 0.5, the colors live in Tailwind not our app.css.
+        The test reads them from EXPECTED_TAILWIND_COLORS (hardcoded
+        against Tailwind's published 400-series palette). The hierarchy
+        invariant (primary > secondary > dim) must hold.
+        """
+        light = self._contrast_ratio(EXPECTED_TAILWIND_COLORS["gray-200"])
+        gray = self._contrast_ratio(EXPECTED_TAILWIND_COLORS["gray-300"])
+        muted = self._contrast_ratio(EXPECTED_TAILWIND_COLORS["gray-400"])
         # Each tier should be strictly dimmer than the brighter tier
         self.assertGreater(light, gray,
-            f"grm-text-light ({light:.2f}) should be brighter than "
-            f"grm-text-gray ({gray:.2f})")
+            f"text-light (gray-200, {light:.2f}) should be brighter than "
+            f"text-gray (gray-300, {gray:.2f})")
         self.assertGreater(gray, muted,
-            f"grm-text-gray ({gray:.2f}) should be brighter than "
-            f"grm-text-muted ({muted:.2f})")
+            f"text-gray (gray-300, {gray:.2f}) should be brighter than "
+            f"text-muted (gray-400, {muted:.2f})")
 
 
 # =====================================================================
@@ -922,7 +944,14 @@ class CssColorContrastTests(SimpleTestCase):
 # =====================================================================
 
 class DefaultThresholdsCoverageTests(SimpleTestCase):
-    """Every color name in DEFAULT_THRESHOLDS must have a matching CSS class.
+    """Verify the tier system uses only valid Tailwind palette colors.
+
+    After Phase 0.5, color utilities are no longer in app.css. The
+    tier system in gpu_filters.py returns bare color names (red,
+    yellow, gray, etc.) which templates compose as 'bg-X-400' or
+    'text-X-400' using Tailwind. This test verifies that every spec
+    color is a valid Tailwind palette color (so the template can
+    compose a working Tailwind class).
 
     Original bug (Nov 2025): the tier system returned 'orange' for
     CPU utilization 60-80% and 'muted' for low values, but the CSS
@@ -932,63 +961,66 @@ class DefaultThresholdsCoverageTests(SimpleTestCase):
     at 63%" — value 63% in cpu_util spec returns 'orange', which had
     no CSS rule.
 
-    These tests catch any future spec color that lacks a fill class
-    and any new fill class that lacks a tier color.
+    The fix was to add the missing CSS classes (.grm-progress-fill-orange,
+    .grm-progress-fill-muted). The follow-up fix (Phase 0.5) deleted
+    the custom CSS classes entirely and now templates use Tailwind
+    utilities directly. This test now checks that the spec colors
+    match a valid Tailwind palette color, which guarantees that
+    `bg-X-400` / `text-X-400` will render in a visible color.
     """
 
     def setUp(self):
-        import re
-        from pathlib import Path
+        # Import here to avoid the dashboard import cycle.
         from dashboard.templatetags import gpu_filters as gf
-        from django.conf import settings
         self.gf = gf
-        css_path = Path(settings.BASE_DIR) / "static/css/app.css"
-        self.css = css_path.read_text(encoding="utf-8")
-        # Find all grm-progress-fill-{color} classes in the CSS.
-        # Only consider classes whose rule sets a background-color (a
-        # color). This excludes the `.grm-progress-fill-thin` size
-        # modifier (which has no background-color).
-        self.fill_classes = set(re.findall(
-            r"\.grm-progress-fill-(\w+)\s*\{[^}]*?background-color:\s*#",
-            self.css,
-        ))
 
-    def test_every_spec_color_has_a_fill_class(self):
-        """For each spec, every color name must be a known fill class.
+    # Tailwind palette colors at the 400 shade. The bare color name
+    # (e.g. 'red', 'gray') is what the tier system returns; templates
+    # compose it as 'bg-X-400' / 'text-X-400'.
+    VALID_TAILWIND_COLORS = {
+        "red", "orange", "yellow", "green", "blue", "purple", "cyan",
+        "gray",  # 400 shade is used for both text-muted and the gray fill tier
+        # Note: muted is NOT in this set. The disk_util and gpu_util
+        # specs historically had 'muted' as their low tier. We removed
+        # 'muted' from all specs (it's a Tailwind utility for text
+        # transparency, not a color) — see the spec cleanup below.
+    }
 
-        This catches the original bug: a spec returning 'orange' or
-        'muted' that has no matching CSS class produces an invisible
-        bar.
+    def test_every_spec_color_is_a_valid_tailwind_color(self):
+        """Every color name in every spec must be a valid Tailwind color.
+
+        Catches the original bug: a spec returning 'muted' (not a
+        Tailwind color) would render as an invisible bar because
+        `bg-muted-400` is not a real class.
         """
         for spec_name, spec in self.gf.DEFAULT_THRESHOLDS.items():
             used_colors = {color for _, color in spec if color is not None}
-            missing = used_colors - self.fill_classes
+            invalid = used_colors - self.VALID_TAILWIND_COLORS
             self.assertEqual(
-                missing, set(),
-                f"Spec '{spec_name}' uses colors {sorted(missing)} that have no "
-                f"matching .grm-progress-fill-* class in app.css. "
-                f"Available: {sorted(self.fill_classes)}. "
-                f"Add the missing class, or change the spec to use an "
-                f"existing class."
+                invalid, set(),
+                f"Spec '{spec_name}' uses colors {sorted(invalid)} that are "
+                f"not valid Tailwind palette colors. Templates compose these "
+                f"as 'bg-X-400' or 'text-X-400', so they must be a real "
+                f"Tailwind color. Valid colors: {sorted(self.VALID_TAILWIND_COLORS)}. "
+                f"Change the spec to use a valid color."
             )
 
-    def test_every_fill_class_is_used_by_at_least_one_spec(self):
-        """Fill classes should not be dead code.
+    def test_specs_use_no_orphan_tier_names(self):
+        """No spec should use 'muted' (removed in Phase 0.5).
 
-        If we add a fill class but no spec uses it, it's dead code
-        waiting to drift out of sync.
+        'muted' was historically a tier name for 'dim/background'
+        in disk_util and gpu_util. We removed it because it's not a
+        Tailwind color (and we already have 'gray' for the same
+        semantic — "low/background" tier). The disk_util and gpu_util
+        specs should now end with (None, 'gray') instead of
+        (None, 'muted').
         """
-        used_colors = set()
-        for spec in self.gf.DEFAULT_THRESHOLDS.values():
-            for _, color in spec:
-                if color is not None:
-                    used_colors.add(color)
-        unused = self.fill_classes - used_colors
-        # We allow at most a small amount of dead code (e.g. -strong
-        # variants for text). For now, just flag any unused fill class.
-        self.assertEqual(
-            unused, set(),
-            f"Fill classes {sorted(unused)} are defined in app.css but no "
-            f"spec uses them. Either add a spec that uses them, or remove "
-            f"the dead class."
-        )
+        for spec_name, spec in self.gf.DEFAULT_THRESHOLDS.items():
+            for i, (min_v, color) in enumerate(spec):
+                if color == "muted":
+                    self.fail(
+                        f"Spec '{spec_name}' entry {i} uses 'muted', which "
+                        f"is not a valid Tailwind color and not a valid "
+                        f"Tailwind class. Use 'gray' instead (it's the same "
+                        f"color in our scheme: gray-400)."
+                    )

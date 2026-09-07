@@ -516,13 +516,15 @@ class MultiGpuCellRenderTests(SimpleTestCase):
         self.assertIn("grm-text-gray", result)  # for None
         # 4 separate spans
         self.assertEqual(result.count("<span"), 4)
-        # Multi-value separator: " · " (space-middle-dot-space) between
-        # values, making it visually distinct from a single value.
-        # (Phase 1.1: before this, separators were plain spaces and
-        # a single value like "75" was visually identical to "75 78 72".)
-        self.assertIn(" · ", result)
-        # Verify there are exactly 3 separators between 4 values
-        self.assertEqual(result.count(" · "), 3)
+        # Multi-value separator: a single space (was ' · ' before
+        # Phase 1.1 reverted to ' '). The dots were visually noisy
+        # in narrow fleet table columns. Values are still distinct
+        # because: per-GPU color coding + title attribute shows full
+        # breakdown + values are numeric.
+        # 3 separators between 4 values
+        self.assertEqual(result.count("</span> <span"), 3)
+        # Make sure no '·' sneaked back in
+        self.assertNotIn("·", result)
 
     def test_inverted_coloring_for_gpu_util(self):
         from types import SimpleNamespace
@@ -683,32 +685,54 @@ class GrmColGroupTests(SimpleTestCase):
 # =====================================================================
 
 class SystemHealthBarTests(SimpleTestCase):
-    """The Live Metrics template renders a system health summary bar
-    at the top. Verify it's present in _metrics_cards.html.
+    """The Live Metrics template renders a hardware summary bar
+    at the top. Verify the kept fields are present and the removed
+    fields are NOT present (the user explicitly trimmed the bar in
+    the layout-optimization phase).
     """
 
     TEMPLATE_PATH = "templates/dashboard/_metrics_cards.html"
 
-    def test_health_bar_block_exists(self):
+    # Kept fields (per user spec: only useful hardware summary info)
+    KEPT_LABELS = ["CPUs:", "GPUs:", "Disks:"]
+    # Removed fields (per user spec: "max 0%", "Errors: 0 recent",
+    # "● live" are not useful — they duplicate info shown lower on
+    # the page or in the page header)
+    REMOVED_PATTERNS = ["Errors:", "stale data", "● live", "max 0%", "max 100%"]
+
+    def test_health_bar_kept_labels_present(self):
         from pathlib import Path
         from django.conf import settings
         tpl_path = Path(settings.BASE_DIR) / self.TEMPLATE_PATH
         text = tpl_path.read_text(encoding="utf-8")
-        # The summary bar should be present somewhere in the template
-        # (not necessarily at the very top, since other threshold
-        # declarations come first).
-        self.assertIn("CPUs:", text, "System health bar should include CPUs: label")
-        self.assertIn("GPUs:", text, "System health bar should include GPUs: label")
-        self.assertIn("Disks:", text, "System health bar should include Disks: label")
-        self.assertIn("Errors:", text, "System health bar should include Errors: label")
+        for label in self.KEPT_LABELS:
+            with self.subTest(label=label):
+                self.assertIn(label, text, f"Hardware summary should include {label}")
+
+    def test_health_bar_removed_patterns_absent(self):
+        from pathlib import Path
+        from django.conf import settings
+        tpl_path = Path(settings.BASE_DIR) / self.TEMPLATE_PATH
+        text = tpl_path.read_text(encoding="utf-8")
+        for pattern in self.REMOVED_PATTERNS:
+            with self.subTest(pattern=pattern):
+                self.assertNotIn(
+                    pattern, text,
+                    f"{pattern!r} was removed from the health bar; "
+                    f"if you re-added it, make sure it's still useful."
+                )
 
     def test_health_bar_has_stale_indicator(self):
         from pathlib import Path
         from django.conf import settings
         tpl_path = Path(settings.BASE_DIR) / self.TEMPLATE_PATH
         text = tpl_path.read_text(encoding="utf-8")
-        # Stale-data indicator: "stale data" or "● live"
-        self.assertTrue("stale data" in text or "● live" in text)
+        # Stale-data indicator was removed from this bar; the same
+        # info is already in the rig status badge at the top of the
+        # page. We assert that the stale indicator is NOT in the
+        # health bar (as a sanity check on the contract).
+        self.assertNotIn("stale data", text)
+        self.assertNotIn("● live", text)
 
 
 # =====================================================================

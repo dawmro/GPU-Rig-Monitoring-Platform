@@ -17,19 +17,21 @@
 {% color_tier_thresholds "process_mem" as process_mem_t %}
 
 {% comment %}
-Phase 1.3: "System health" summary bar — a single thin row at the top of
-Live Metrics that gives the user an at-a-glance read of the rig's
-overall state. Sits above the first card (CPU) and below the page
-header. Shows the count of:
-  - GPUs (total, with avg util as a quick read)
-  - Disks (total, with max util)
-  - Recent errors (count from error_history)
-  - Stale-data indicator (already shown elsewhere; this is the
-    one place to look first)
+Phase 1.3: "Hardware summary" bar — a single thin row at the top of
+Live Metrics that gives the user a quick read of the rig's hardware
+configuration. Sits above the first card (CPU) and below the page
+header. Shows only the pieces of info that are useful at a glance:
+  - CPU cores
+  - GPU count
+  - Disk count
 
-Visual: a horizontal flex of stat chips, each with a small label
-and value. Subtle border between sections. Does not replace the
-detailed cards below — just orients the user before they scroll.
+We deliberately omit:
+  - Disk max utilization: visible per-disk in the Storage card below
+  - Recent error count: visible in the Latest Errors section below
+  - Stale/live indicator: already shown in the rig status badge in
+    the page header (right side)
+The summary bar should only show what isn't already visible lower
+on the page. This keeps the bar from being noise.
 {% endcomment %}
 {% if snapshot %}
 <div class="grm-card flex flex-wrap items-center gap-x-6 gap-y-2 mb-4 text-sm">
@@ -45,25 +47,6 @@ detailed cards below — just orients the user before they scroll.
     <div class="flex items-center gap-2">
         <span class="grm-text-muted">Disks:</span>
         <span class="font-medium">{{ snapshot.storage_count|default:0 }}</span>
-        {% if snapshot.storage_utilization_pcts_json %}
-        <span class="grm-text-muted text-xs">·</span>
-        <span class="font-medium grm-text-light">max</span>
-        <span class="font-medium {{ snapshot.storage_utilization_pcts_json|max_disk_util|tier_text:disk_util_t }}">
-            {{ snapshot.storage_utilization_pcts_json|max_disk_util|floatformat:0 }}%
-        </span>
-        {% endif %}
-    </div>
-    <div class="flex items-center gap-2">
-        <span class="grm-text-muted">Errors:</span>
-        <span class="font-medium">{{ recent_errors|length }}</span>
-        <span class="grm-text-muted text-xs">recent</span>
-    </div>
-    <div class="flex items-center gap-2 ml-auto">
-        {% if is_data_stale %}
-        <span class="grm-text-yellow">⚠ stale data</span>
-        {% else %}
-        <span class="grm-text-green">● live</span>
-        {% endif %}
     </div>
 </div>
 {% endif %}

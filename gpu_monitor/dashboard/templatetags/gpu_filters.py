@@ -5,10 +5,12 @@ from django.utils.safestring import mark_safe
 from datetime import timedelta
 
 # Separator between multi-GPU / multi-device values in a cell.
-# Space-around-middle-dot is visually unambiguous: a single value
-# "75" is distinct from a multi-value "75 · 78 · 72" because the
-# latter has a clear divider.
-GRM_MULTI_VALUE_SEPARATOR = ' · '
+# Single space (not '·') because the fleet table columns are narrow
+# and the dots add visual noise. The values are still distinct because:
+#   - Color coding is per-value (each GPU has its own color)
+#   - The title attribute shows the full per-GPU breakdown
+#   - The values are numeric and visually distinct anyway
+GRM_MULTI_VALUE_SEPARATOR = ' '
 
 register = template.Library()
 

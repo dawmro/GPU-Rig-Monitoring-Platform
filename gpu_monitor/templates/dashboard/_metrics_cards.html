@@ -72,7 +72,7 @@ on the page. This keeps the bar from being noise.
             <div class="grm-progress">
                 <div class="grm-progress-fill
                     {% if snapshot.cpu_utilization_pct != None %}
-                        bg-{{ snapshot.cpu_utilization_pct|tier_fill:cpu_util_t }}-400
+                        {{ snapshot.cpu_utilization_pct|tier_fill:cpu_util_t }}
                     {% else %}bg-gray-400{% endif %}"
                     style="width: {% if snapshot.cpu_utilization_pct != None %}{{ snapshot.cpu_utilization_pct }}{% else %}0{% endif %}%">
                 </div>
@@ -80,7 +80,7 @@ on the page. This keeps the bar from being noise.
         </div>
         <span class="text-sm font-mono w-14 text-right">
             {% if snapshot.cpu_utilization_pct != None %}
-            <span class="text-{{ snapshot.cpu_utilization_pct|tier_text:cpu_util_t }}-400">{{ snapshot.cpu_utilization_pct|floatformat:1 }}%</span>
+            <span class="{{ snapshot.cpu_utilization_pct|tier_text:cpu_util_t }}">{{ snapshot.cpu_utilization_pct|floatformat:1 }}%</span>
             {% else %}—{% endif %}
         </span>
     </div>
@@ -88,7 +88,7 @@ on the page. This keeps the bar from being noise.
         <span>
             Temp:
             {% if snapshot.cpu_temp_c != None %}
-                <span class="text-{{ snapshot.cpu_temp_c|tier_text:cpu_temp_t }}-400">
+                <span class="{{ snapshot.cpu_temp_c|tier_text:cpu_temp_t }}">
                     {{ snapshot.cpu_temp_c|floatformat:1 }}°C
                 </span>
             {% else %}—{% endif %}
@@ -118,7 +118,7 @@ on the page. This keeps the bar from being noise.
     {% elif snapshot %}
     <div class="text-sm text-gray-300 mb-2">
         Utilization: {% if snapshot.cpu_utilization_pct != None %}
-        <span class="text-{{ snapshot.cpu_utilization_pct|tier_text:cpu_util_t }}-400">{{ snapshot.cpu_utilization_pct|floatformat:1 }}%</span>
+        <span class="{{ snapshot.cpu_utilization_pct|tier_text:cpu_util_t }}">{{ snapshot.cpu_utilization_pct|floatformat:1 }}%</span>
         {% else %}—{% endif %}
     </div>
     {% else %}
@@ -188,7 +188,7 @@ on the page. This keeps the bar from being noise.
         <div class="flex-1">
             <div class="grm-progress">
                 {% widthratio snapshot.mem_used_bytes snapshot.mem_total_bytes 100 as mem_pct %}
-                <div class="grm-progress-fill bg-{{ mem_pct|tier_fill:mem_pct_t }}-400"
+                <div class="grm-progress-fill {{ mem_pct|tier_fill:mem_pct_t }}"
                     style="width: {{ mem_pct }}%">
                 </div>
             </div>
@@ -238,7 +238,7 @@ on the page. This keeps the bar from being noise.
             <div class="flex items-center gap-3 mb-1">
                 <div class="flex-1">
                     <div class="grm-progress">
-                        <div class="grm-progress-fill bg-{{ disk.usage_pct|tier_fill:storage_pct_t }}-400"
+                        <div class="grm-progress-fill {{ disk.usage_pct|tier_fill:storage_pct_t }}"
                             style="width: {% if disk.usage_pct != None %}{{ disk.usage_pct }}{% else %}0{% endif %}%">
                         </div>
                     </div>
@@ -284,7 +284,7 @@ on the page. This keeps the bar from being noise.
                     {% if disk.utilization_pct != None %}
                     <span class="text-gray-300">
                         Util:
-                        <span class="text-{{ disk.utilization_pct|tier_text:disk_util_t }}-400">
+                        <span class="{{ disk.utilization_pct|tier_text:disk_util_t }}">
                             {{ disk.utilization_pct|floatformat:1 }}%
                         </span>
                     </span>
@@ -326,7 +326,7 @@ on the page. This keeps the bar from being noise.
                     <div class="grm-progress">
                         <div class="grm-progress-fill
                             {% if gpu.gpu_util_pct != None %}
-                                bg-{{ gpu.gpu_util_pct|tier_fill:cpu_util_t }}-400
+                                {{ gpu.gpu_util_pct|tier_fill:cpu_util_t }}
                             {% else %}bg-gray-400{% endif %}"
                             style="width: {% if gpu.gpu_util_pct != None %}{{ gpu.gpu_util_pct }}{% else %}0{% endif %}%">
                         </div>
@@ -356,7 +356,7 @@ on the page. This keeps the bar from being noise.
                 <span>
                     Temp:
                     {% if gpu.gpu_temp_c != None %}
-                        <span class="text-{{ gpu.gpu_temp_c|tier_text:gpu_temp_t }}-400">
+                        <span class="{{ gpu.gpu_temp_c|tier_text:gpu_temp_t }}">
                             {{ gpu.gpu_temp_c|floatformat:1 }}°C
                         </span>
                     {% else %}—{% endif %}

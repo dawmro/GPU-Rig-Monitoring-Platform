@@ -39,19 +39,24 @@ class TokenizerTests(SimpleTestCase):
         self.assertEqual(tokens, ["grm-btn-primary"])
 
     def test_strips_django_variable_prefix(self):
-        """text-{{ variable }}-400 should NOT be reported as a missing class.
+        """{{ x|tier_text:t }} should NOT be reported as a missing class.
 
         The variable {{ color }} is evaluated at render time to produce
         a value that becomes part of the class name. We can't statically
         know what it returns, so the prefix is treated as "intentional
         variable" and not validated.
 
-        (After Phase 0.5, the tier system composes Tailwind classes
-        like 'text-{{ color }}-400' rather than the old 'grm-text-{{ color }}'.)
+        (After Phase 0.5, the tier filter returns the full Tailwind
+        class (e.g. 'text-red-400') and templates use it directly. The
+        variable is the color name portion; the wrapper is the filter's
+        concern.)
         """
-        text = '<span class="text-{{ snapshot.cpu_utilization_pct|tier_text:cpu_util_t }}-400">5%</span>'
+        text = '<span class="{{ snapshot.cpu_utilization_pct|tier_text:cpu_util_t }}">5%</span>'
         tokens = list(checks._all_class_tokens(text))
-        self.assertEqual(tokens, [], "text- prefix before a Django variable should be skipped")
+        # No class should be extracted — the whole thing is a Django
+        # expression. (The OLD pattern used 'grm-text-{{ var }}' which
+        # also had a Django expression; both are correctly skipped.)
+        self.assertEqual(tokens, [], "tier filter expression should not be parsed as a class")
 
     def test_strips_django_tag_with_class_branches(self):
         """{% if %} {% else %} {% endif %} in class attribute should be handled."""
@@ -1027,3 +1032,73 @@ class DefaultThresholdsCoverageTests(SimpleTestCase):
                         f"Tailwind class. Use 'gray' instead (it's the same "
                         f"color in our scheme: gray-400)."
                     )
+
+
+# =====================================================================
+# Regression test: tier filter output must be valid Tailwind classes
+# =====================================================================
+#
+# Original bug (Sept 2025): In Phase 0.5 (dc290de), the templates
+# were updated to use 'text-{{ x|tier_text:t }}-400' (option a:
+# template composes the class), but the filter was changed to return
+# the full class 'text-X-400' (option b: filter composes). The two
+# were inconsistent, producing 'text-text-X-400-400' — an invalid
+# Tailwind class, so NO color was applied. The user reported
+# "no color coded values in fleet overview, no color coded bars in
+# live metrics." Fixed in this commit by dropping the 'text-' prefix
+# and '-400' suffix from templates.
+
+class TierFilterTemplateIntegrationTests(SimpleTestCase):
+    """The tier filter output must be a valid Tailwind class on its own.
+
+    Regression test for the Sept 2025 bug where templates wrapped the
+    filter output with 'text-' prefix and '-400' suffix, producing
+    'text-text-X-400-400' (an invalid Tailwind class). The fix: the
+    filter returns the full class (e.g. 'text-red-400') and the
+    template uses it directly without modification.
+    """
+
+    def test_tier_text_output_is_a_valid_tailwind_class(self):
+        """The tier_text filter output should be a usable Tailwind class
+        on its own (no template-level wrapping required)."""
+        # (spec_name, threshold_value) pairs to test
+        cases = [
+            ("cpu_temp", 50),    # 50°C -> yellow tier
+            ("cpu_util", 50),    # 50% -> yellow tier
+            ("cpu_util", 5),     # 5% -> gray tier
+            ("disk_util", 75),   # 75% -> yellow tier
+            ("mem_pct", 50),     # 50% -> yellow tier
+        ]
+        for spec_name, value in cases:
+            spec = gf.DEFAULT_THRESHOLDS[spec_name]
+            result = gf.tier_text(value, spec)
+            # The result must NOT contain double prefixes like 'text-text-'
+            # or doubled suffixes like '-400-400'.
+            self.assertNotIn("text-text-", result,
+                f"tier_text({value}, {spec_name}) = {result!r} has 'text-text-' "
+                f"(template is double-prefixing the filter output)")
+            self.assertFalse(result.endswith("-400-400"),
+                f"tier_text({value}, {spec_name}) = {result!r} ends with '-400-400' "
+                f"(template is double-suffixing the filter output)")
+            # The result must be a real Tailwind class shape
+            self.assertRegex(result, r"^text-[a-z]+-400$",
+                f"tier_text({value}, {spec_name}) = {result!r} is not a valid "
+                f"Tailwind text-X-400 class")
+
+    def test_tier_fill_output_is_a_valid_tailwind_class(self):
+        """The tier_fill filter output should be a usable Tailwind class."""
+        cases = [
+            ("cpu_util", 50),
+            ("cpu_util", 5),
+            ("disk_util", 50),
+        ]
+        for spec_name, value in cases:
+            spec = gf.DEFAULT_THRESHOLDS[spec_name]
+            result = gf.tier_fill(value, spec)
+            self.assertNotIn("bg-bg-", result,
+                f"tier_fill({value}, {spec_name}) = {result!r} has 'bg-bg-'")
+            self.assertFalse(result.endswith("-400-400"),
+                f"tier_fill({value}, {spec_name}) = {result!r} ends with '-400-400'")
+            self.assertRegex(result, r"^bg-[a-z]+-400$",
+                f"tier_fill({value}, {spec_name}) = {result!r} is not a valid "
+                f"Tailwind bg-X-400 class")

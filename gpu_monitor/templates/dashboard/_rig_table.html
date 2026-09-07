@@ -142,7 +142,7 @@
                 {# CPU Temp column #}
                 <td class="px-2 py-2 whitespace-nowrap">
                     {% if snapshot and snapshot.cpu_temp_c != None %}
-                        <span class="text-{{ snapshot.cpu_temp_c|tier_text:cpu_temp_t }}-400">
+                        <span class="{{ snapshot.cpu_temp_c|tier_text:cpu_temp_t }}">
                             {{ snapshot.cpu_temp_c|floatformat:1 }}°C
                         </span>
                     {% else %}—{% endif %}
@@ -150,14 +150,14 @@
                 {# CPU Util column #}
                 <td class="px-2 py-2 whitespace-nowrap">
                     {% if snapshot and snapshot.cpu_utilization_pct != None %}
-                        <span class="text-{{ snapshot.cpu_utilization_pct|tier_text:cpu_util_t }}-400">{{ snapshot.cpu_utilization_pct|floatformat:1 }}</span>
+                        <span class="{{ snapshot.cpu_utilization_pct|tier_text:cpu_util_t }}">{{ snapshot.cpu_utilization_pct|floatformat:1 }}</span>
                     {% else %}—{% endif %}
                 </td>
                 {# Disk Util column: max utilization across all disks #}
                 <td class="px-2 py-2 whitespace-nowrap">
                     {% if snapshot.storage_utilization_pcts_json %}
                         {% with max_util=snapshot.storage_utilization_pcts_json|max_disk_util %}
-                        <span class="text-{{ max_util|tier_text:disk_util_t }}-400">
+                        <span class="{{ max_util|tier_text:disk_util_t }}">
                             {{ max_util|floatformat:1 }}%
                         </span>
                         {% endwith %}

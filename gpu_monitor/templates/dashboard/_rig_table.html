@@ -5,13 +5,14 @@
 {% color_tier_thresholds "disk_util" as disk_util_t %}
 <div class="bg-gray-800 rounded-lg border border-gray-700 overflow-x-auto">
     <table class="w-full text-xs">
-        {# Phase 1.2: Column group tints. Each <col> applies a subtle
-           background-color to all cells in that column. Groups:
-             identity (blue)  - Rig Name, Tags
-             status   (gray)  - Status, Job, Last Seen, Uptime
-             gpu      (purple) - GPU, GPU Temp, GPU Fan, GPU Util
-             system   (green) - CPU Temp, CPU %, Disk Util, Power
-             meta     (amber) - Agent #}
+        {# Phase 1.2: Column group tints. #}
+        {# Each <col> applies a subtle background-color to all cells. #}
+        {# Groups: #}
+        {#   identity (blue)  - Rig Name, Tags #}
+        {#   status   (gray)  - Status, Job, Last Seen, Uptime #}
+        {#   gpu      (purple) - GPU, GPU Temp, GPU Fan, GPU Util #}
+        {#   system   (green) - CPU Temp, CPU %, Disk Util, Power #}
+        {#   meta     (amber) - Agent #}
         <colgroup>
             <col class="grm-col-identity">
             <col class="grm-col-identity">

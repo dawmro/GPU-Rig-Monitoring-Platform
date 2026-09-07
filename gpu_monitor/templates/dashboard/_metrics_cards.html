@@ -2,10 +2,11 @@
 {# Polled every 30s via HTMX #}
 {% load gpu_filters %}
 
-{# Color threshold specs (Phase 0.3). These map a numeric value to a
-   color name via the tier/tier_text/tier_fill filters. Define once
-   here, use throughout the file. See DEFAULT_THRESHOLDS in
-   dashboard/templatetags/gpu_filters.py for the threshold values. #}
+{# Color threshold specs (Phase 0.3). #}
+{# These map a numeric value to a color name via the #}
+{# tier/tier_text/tier_fill filters. Define once here, use #}
+{# throughout the file. See DEFAULT_THRESHOLDS in #}
+{# dashboard/templatetags/gpu_filters.py for the threshold values. #}
 {% color_tier_thresholds "cpu_temp" as cpu_temp_t %}
 {% color_tier_thresholds "gpu_temp" as gpu_temp_t %}
 {% color_tier_thresholds "cpu_util" as cpu_util_t %}

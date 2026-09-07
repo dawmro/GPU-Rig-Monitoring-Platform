@@ -709,3 +709,54 @@ class SystemHealthBarTests(SimpleTestCase):
         text = tpl_path.read_text(encoding="utf-8")
         # Stale-data indicator: "stale data" or "● live"
         self.assertTrue("stale data" in text or "● live" in text)
+
+
+# =====================================================================
+# W004: Multi-line template comment check
+# =====================================================================
+
+class CheckNoMultilineTemplateCommentsTests(SimpleTestCase):
+    """Verify the W004 check catches multi-line {# ... #} comments."""
+
+    def test_passes_when_all_comments_single_line(self):
+        # The real templates should now be all single-line (we just
+        # fixed them in this commit). Empty result.
+        results = dc.check_no_multiline_template_comments([])
+        self.assertEqual(results, [],
+                         f"Expected no multi-line comments but got: {results}")
+
+    def test_fires_on_multiline_comment(self):
+        # Inject a multi-line comment into a temp file and verify
+        # the check catches it.
+        from unittest.mock import patch as mpatch
+        from pathlib import Path
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False) as f:
+            f.write("{# A multi-line\n   comment that spans lines #}\n")
+            f.flush()
+            tmppath = Path(f.name)
+        try:
+            with mpatch.object(dc, "_all_template_files",
+                              return_value=[tmppath]):
+                results = dc.check_no_multiline_template_comments([])
+            self.assertEqual(len(results), 1)
+            self.assertEqual(results[0].id, "dashboard.W004")
+            self.assertIsInstance(results[0], Warning)
+        finally:
+            import os
+            os.unlink(tmppath)
+
+    def test_passes_on_single_line_comment(self):
+        from unittest.mock import patch as mpatch
+        from pathlib import Path
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False) as f:
+            f.write("{# single line comment #}\n")
+            f.flush()
+            tmppath = Path(f.name)
+        try:
+            with mpatch.object(dc, "_all_template_files",
+                              return_value=[tmppath]):
+                results = dc.check_no_multiline_template_comments([])
+            self.assertEqual(results, [])
+        finally:
+            import os
+            os.unlink(tmppath)

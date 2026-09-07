@@ -248,20 +248,26 @@
    fills sit on top of grm-card (gray-800 / #1f2937) and need to
    read clearly. WCAG contrast vs #1f2937:
      -500 series:  red 3.90  yellow 7.65  green 6.44  blue 3.99
-                   purple 3.71  gray 1.94 (FAIL)
+                   gray 1.94 (FAIL)
      -400 series:  red 5.31  yellow 9.59  green 8.42  blue 5.77
-                   purple 5.56  gray 5.78  (all pass WCAG AA)
+                   orange 6.49  gray 5.78
+                   muted 5.78  (all pass WCAG AA)
    The gray-600 (1.94 ratio) was the worst offender — gray-on-gray
    progress bars were effectively invisible. Bumping to gray-400
    (5.78 ratio) makes them clearly visible.
-   The 3-tier cpu_util spec (red/orange/yellow/green/gray) is preserved
-   from the original Tailwind palette; the change is just saturation. */
+   The 5-tier cpu_util spec (red/orange/yellow/green/gray) is preserved
+   from the original Tailwind palette; the change is just saturation.
+   orange and muted were originally missing as fill classes (only
+   the text variants existed), so values that landed on those tiers
+   rendered as invisible bars. Added Nov 2025.
+   purple was removed (unused, no spec references it). */
 .grm-progress-fill-red    { background-color: #f87171; }   /* red-400 */
 .grm-progress-fill-yellow { background-color: #facc15; }   /* yellow-400 */
 .grm-progress-fill-green  { background-color: #4ade80; }   /* green-400 */
 .grm-progress-fill-blue   { background-color: #60a5fa; }   /* blue-400 */
-.grm-progress-fill-purple { background-color: #c084fc; }   /* purple-400 */
+.grm-progress-fill-orange { background-color: #fb923c; }   /* orange-400 — for the 5-tier cpu_util / disk_util specs */
 .grm-progress-fill-gray   { background-color: #9ca3af; }   /* gray-400 (was -600) */
+.grm-progress-fill-muted  { background-color: #9ca3af; }   /* gray-400 — for "low" tier in gpu_util / disk_util specs; same color as gray but kept as a distinct class for semantic clarity (low vs moderate) */
 
 
 /* ---------------------------------------------------------------------

@@ -849,20 +849,21 @@ class CssColorContrastTests(SimpleTestCase):
         return m.group(2)
 
     def test_gray_progress_fill_is_visible_against_card(self):
-        """grm-progress-fill-gray must have contrast >= 3.0 vs gray-800.
+        """grm-progress-fill-gray must have contrast >= 4.5 vs gray-800.
 
         The original bug was a gray-600 fill (#4b5563) with contrast
         1.94 — WCAG FAIL. This test catches any regression to that.
+        The 4.5 minimum matches WCAG AA for normal text/UI elements.
         """
         css = self._read_css()
         gray_hex = self._extract_color(css, "grm-progress-fill-gray")
         ratio = self._contrast_ratio(gray_hex)
         self.assertGreaterEqual(
-            ratio, 3.0,
+            ratio, 4.5,
             f"grm-progress-fill-gray ({gray_hex}) has contrast {ratio:.2f} "
-            f"vs gray-800, which is below the 3.0 minimum for non-text UI. "
-            f"Use gray-400 (#9ca3af) or lighter. Original incident: gray-600 "
-            f"fill was effectively invisible against gray-800."
+            f"vs gray-800, which is below WCAG AA (4.5). Use gray-400 "
+            f"(#9ca3af) or lighter. Original incident: gray-600 fill was "
+            f"effectively invisible against gray-800."
         )
 
     def test_all_progress_fills_pass_AA(self):
@@ -914,3 +915,80 @@ class CssColorContrastTests(SimpleTestCase):
         self.assertGreater(gray, muted,
             f"grm-text-gray ({gray:.2f}) should be brighter than "
             f"grm-text-muted ({muted:.2f})")
+
+
+# =====================================================================
+# Spec coverage tests (Phase 0.3 tier system)
+# =====================================================================
+
+class DefaultThresholdsCoverageTests(SimpleTestCase):
+    """Every color name in DEFAULT_THRESHOLDS must have a matching CSS class.
+
+    Original bug (Nov 2025): the tier system returned 'orange' for
+    CPU utilization 60-80% and 'muted' for low values, but the CSS
+    only had .grm-progress-fill-red/yellow/green/blue/purple/gray.
+    The result: any value that landed on 'orange' or 'muted' produced
+    an invisible bar. The user reported "GPU core bar is not visible
+    at 63%" — value 63% in cpu_util spec returns 'orange', which had
+    no CSS rule.
+
+    These tests catch any future spec color that lacks a fill class
+    and any new fill class that lacks a tier color.
+    """
+
+    def setUp(self):
+        import re
+        from pathlib import Path
+        from dashboard.templatetags import gpu_filters as gf
+        from django.conf import settings
+        self.gf = gf
+        css_path = Path(settings.BASE_DIR) / "static/css/app.css"
+        self.css = css_path.read_text(encoding="utf-8")
+        # Find all grm-progress-fill-{color} classes in the CSS.
+        # Only consider classes whose rule sets a background-color (a
+        # color). This excludes the `.grm-progress-fill-thin` size
+        # modifier (which has no background-color).
+        self.fill_classes = set(re.findall(
+            r"\.grm-progress-fill-(\w+)\s*\{[^}]*?background-color:\s*#",
+            self.css,
+        ))
+
+    def test_every_spec_color_has_a_fill_class(self):
+        """For each spec, every color name must be a known fill class.
+
+        This catches the original bug: a spec returning 'orange' or
+        'muted' that has no matching CSS class produces an invisible
+        bar.
+        """
+        for spec_name, spec in self.gf.DEFAULT_THRESHOLDS.items():
+            used_colors = {color for _, color in spec if color is not None}
+            missing = used_colors - self.fill_classes
+            self.assertEqual(
+                missing, set(),
+                f"Spec '{spec_name}' uses colors {sorted(missing)} that have no "
+                f"matching .grm-progress-fill-* class in app.css. "
+                f"Available: {sorted(self.fill_classes)}. "
+                f"Add the missing class, or change the spec to use an "
+                f"existing class."
+            )
+
+    def test_every_fill_class_is_used_by_at_least_one_spec(self):
+        """Fill classes should not be dead code.
+
+        If we add a fill class but no spec uses it, it's dead code
+        waiting to drift out of sync.
+        """
+        used_colors = set()
+        for spec in self.gf.DEFAULT_THRESHOLDS.values():
+            for _, color in spec:
+                if color is not None:
+                    used_colors.add(color)
+        unused = self.fill_classes - used_colors
+        # We allow at most a small amount of dead code (e.g. -strong
+        # variants for text). For now, just flag any unused fill class.
+        self.assertEqual(
+            unused, set(),
+            f"Fill classes {sorted(unused)} are defined in app.css but no "
+            f"spec uses them. Either add a spec that uses them, or remove "
+            f"the dead class."
+        )

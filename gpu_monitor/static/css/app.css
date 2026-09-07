@@ -72,8 +72,7 @@
                        px-3 py-1.5 text-sm text-white">
    Used 15+ times in search/filter inputs, login/profile/admin forms
    --------------------------------------------------------------------- */
-.grm-input,
-.grm-select {
+.grm-input {
     background-color: #374151;   /* bg-gray-700 */
     border: 1px solid #4b5563;   /* border-gray-600 */
     border-radius: 0.25rem;      /* rounded */
@@ -83,8 +82,7 @@
     padding: 0.375rem 0.75rem;   /* px-3 py-1.5 */
 }
 
-.grm-input:focus,
-.grm-select:focus {
+.grm-input:focus {
     outline: none;
     border-color: #3b82f6;       /* focus:border-blue-500 */
 }

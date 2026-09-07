@@ -424,11 +424,11 @@ def trim(value):
 # one threshold.
 #
 # This module centralizes the thresholds in DEFAULT_THRESHOLDS below.
-# The tier / tier_text / tier_fill filters return bare color names
-# (e.g. 'red'); templates compose them with Tailwind classes:
+# The tier_text / tier_fill filters return the full Tailwind class
+# (e.g. 'text-red-400'); templates use them directly:
 #
 #   {% color_tier_thresholds "cpu_temp" as ct %}
-#   <span class="text-{{ snapshot.cpu_temp_c|tier:ct }}-400">
+#   <span class="{{ snapshot.cpu_temp_c|tier_text:ct }}">
 #
 # Each spec is a list of (min_value, color_name) tuples, highest
 # first. First match wins. The last entry should be (None, color) to
@@ -574,25 +574,6 @@ def _resolve_color(value, thresholds):
     # matched (shouldn't happen if DEFAULT_THRESHOLDS is well-formed).
     # Return the last color as a safe fallback.
     return thresholds[-1][1]
-
-
-@register.filter(name="tier")
-def tier(value, thresholds):
-    """Return the bare color name for `value` based on `thresholds`.
-
-    Use this when you want to compose the class yourself:
-        <span class="grm-text-{{ x|tier:cpu_temp_thresholds }}">
-
-    The `thresholds` argument is a list of (min_value, color_name)
-    pairs, highest first. Usually created by the `color_tier_thresholds`
-    simple_tag from DEFAULT_THRESHOLDS. Can also be passed inline as
-    a list literal (rare).
-
-    Returns the color name string ('red', 'yellow', etc.) or None if
-    the value can't be coerced. None for "no color override" is
-    returned when the spec explicitly has a (None, None) entry.
-    """
-    return _resolve_color(value, thresholds)
 
 
 @register.filter(name="tier_text")

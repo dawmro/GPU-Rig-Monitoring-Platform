@@ -427,20 +427,6 @@ class TierResolverTests(SimpleTestCase):
         self.assertEqual(gf._resolve_color(30, spec), "gray")   # idle
 
 
-class TierFilterTests(SimpleTestCase):
-    """Tests for the `tier` filter (returns bare color name)."""
-
-    def test_tier_returns_color_name(self):
-        spec = gf.DEFAULT_THRESHOLDS["cpu_temp"]
-        self.assertEqual(gf.tier(90, spec), "red")
-        self.assertEqual(gf.tier(50, spec), "green")
-
-    def test_tier_returns_none_for_bad_input(self):
-        spec = gf.DEFAULT_THRESHOLDS["cpu_temp"]
-        self.assertIsNone(gf.tier(None, spec))
-        self.assertIsNone(gf.tier("foo", spec))
-
-
 class TierTextFilterTests(SimpleTestCase):
     """Tests for the `tier_text` filter (returns 'text-{color}-400')."""
 

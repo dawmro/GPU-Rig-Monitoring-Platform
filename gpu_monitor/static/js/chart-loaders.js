@@ -42,12 +42,6 @@
         });
     }
 
-    // Helper: handle a chart that has no datasets — show "No data" and
-    // exit. The fetch may have returned 200 but with empty datasets.
-    function bailNoData(ctx) {
-        ctx.parentElement.innerHTML = Base.noDataMessage();
-    }
-
     // Convert a metric name (snake_case) to a display label.
     // "cpu_utilization_pct" -> "Cpu Utilization Pct"
     // The original loadChart did this inline; consolidated here.
@@ -68,8 +62,7 @@
         if (!ctx) return Promise.resolve();
         chartType = chartType || 'line';
 
-        var url = '/api/v1/rigs/' + uuid + '/chart-data/?metric=' + metric +
-                  '&range=' + range + '&bucket_minutes=' + window.GRM.ChartRuntime.bucketMinutes;
+        var url = Base.buildChartUrl(uuid, range, { metric: metric });
 
         return fetchChartData(url).then(function (data) {
             if (!data || !data.datasets || !data.datasets[0] || !data.datasets[0].data) {
@@ -107,8 +100,7 @@
         var ctx = document.getElementById(canvasId);
         if (!ctx) return Promise.resolve();
 
-        var url = '/api/v1/rigs/' + uuid + '/chart-data/?metric=cpu_load_avg' +
-                  '&range=' + range + '&bucket_minutes=' + window.GRM.ChartRuntime.bucketMinutes;
+        var url = Base.buildChartUrl(uuid, range, { metric: 'cpu_load_avg' });
 
         return fetchChartData(url).then(function (data) {
             Base.safeDestroy(canvasId, window.GRM.ChartRuntime.instances);
@@ -135,10 +127,7 @@
                 },
                 options: Base.baseOptions({
                     unit: 'Load',
-                    legend: {
-                        display: true,
-                        labels: { color: Base.STYLE.tickColor, boxWidth: 12, padding: 8, font: { size: 11 } },
-                    },
+                    legend: Base.legendOptions(),
                     tooltip: Base.tooltipMulti(function (y, label) {
                         return label + ': ' + (y !== null ? y.toFixed(2) : '—');
                     }),
@@ -160,13 +149,11 @@
         var ctx = document.getElementById(canvasId);
         if (!ctx) return Promise.resolve();
 
-        var url = '/api/v1/rigs/' + uuid + '/chart-data/?metric=mem_used_bytes' +
-                  '&range=' + range + '&bucket_minutes=' + window.GRM.ChartRuntime.bucketMinutes +
-                  '&multi_mem=true';
+        var url = Base.buildChartUrl(uuid, range, { metric: 'mem_used_bytes', extra: { multi_mem: 'true' } });
 
         return fetchChartData(url).then(function (data) {
             if (!data || !data.datasets || data.datasets.length === 0) {
-                bailNoData(ctx);
+                ctx.parentElement.innerHTML = Base.noDataMessage();
                 return;
             }
             Base.safeDestroy(canvasId, window.GRM.ChartRuntime.instances);
@@ -193,10 +180,7 @@
                 },
                 options: Base.baseOptions({
                     unit: 'GB',
-                    legend: {
-                        display: true,
-                        labels: { color: Base.STYLE.tickColor, boxWidth: 12, padding: 8, font: { size: 11 } },
-                    },
+                    legend: Base.legendOptions(),
                     tooltip: Base.tooltipMulti(function (y, label) {
                         return label + ': ' + (y !== null ? y.toFixed(2) + ' GB' : '—');
                     }),
@@ -217,13 +201,10 @@
         var ctx = document.getElementById(canvasId);
         if (!ctx) return Promise.resolve();
 
-        var bucket = window.GRM.ChartRuntime.bucketMinutes;
-        var rxUrl = '/api/v1/rigs/' + uuid + '/chart-data/?metric=net_rx_bytes_delta' +
-                    '&range=' + range + '&bucket_minutes=' + bucket + '&multi_iface=true';
-        var txUrl = '/api/v1/rigs/' + uuid + '/chart-data/?metric=net_tx_bytes_delta' +
-                    '&range=' + range + '&bucket_minutes=' + bucket + '&multi_iface=true';
-        var errUrl = '/api/v1/rigs/' + uuid + '/chart-data/?metric=net_rx_errors' +
-                     '&range=' + range + '&bucket_minutes=' + bucket + '&multi_iface=true';
+        var ifaceExtra = { multi_iface: 'true' };
+        var rxUrl = Base.buildChartUrl(uuid, range, { metric: 'net_rx_bytes_delta', extra: ifaceExtra });
+        var txUrl = Base.buildChartUrl(uuid, range, { metric: 'net_tx_bytes_delta', extra: ifaceExtra });
+        var errUrl = Base.buildChartUrl(uuid, range, { metric: 'net_rx_errors', extra: ifaceExtra });
 
         return Promise.all([fetch(rxUrl), fetch(txUrl), fetch(errUrl)])
             .then(function (responses) {
@@ -302,33 +283,28 @@
                     data: { labels: labels, datasets: datasets },
                     options: Base.baseOptions({
                         unit: 'MB',
-                        legend: {
-                            display: true,
-                            labels: {
-                                color: Base.STYLE.tickColor,
-                                boxWidth: 12,
-                                padding: 6,
-                                font: { size: 10 },
-                                // Shorten interface labels: "ens33 192.168.1.10 RX"
-                                // → "ens33 … RX" (truncate the IP part)
-                                generateLabels: function (chart) {
-                                    var original = Chart.defaults.plugins.legend.labels.generateLabels(chart);
-                                    return original.map(function (label) {
-                                        if (!label.text) return label;
-                                        var spaceIdx = label.text.indexOf(' ');
-                                        if (spaceIdx <= 0) return label;
-                                        var ifacePart = label.text.substring(0, spaceIdx);
-                                        var dirPart = label.text.substring(spaceIdx + 1);
-                                        var parts = ifacePart.split(' ');
-                                        if (parts[0].length > 8) {
-                                            label.text = parts[0].substring(0, 8) + '…' +
-                                                         (parts[1] ? ' ' + parts[1] : '') + ' ' + dirPart;
-                                        }
-                                        return label;
-                                    });
-                                },
+                        legend: Base.legendOptions({
+                            padding: 6,
+                            fontSize: 10,
+                            // Shorten interface labels: "ens33 192.168.1.10 RX"
+                            // → "ens33 … RX" (truncate the IP part)
+                            generateLabels: function (chart) {
+                                var original = Chart.defaults.plugins.legend.labels.generateLabels(chart);
+                                return original.map(function (label) {
+                                    if (!label.text) return label;
+                                    var spaceIdx = label.text.indexOf(' ');
+                                    if (spaceIdx <= 0) return label;
+                                    var ifacePart = label.text.substring(0, spaceIdx);
+                                    var dirPart = label.text.substring(spaceIdx + 1);
+                                    var parts = ifacePart.split(' ');
+                                    if (parts[0].length > 8) {
+                                        label.text = parts[0].substring(0, 8) + '…' +
+                                                     (parts[1] ? ' ' + parts[1] : '') + ' ' + dirPart;
+                                    }
+                                    return label;
+                                });
                             },
-                        },
+                        }),
                         tooltip: {
                             mode: 'index',
                             intersect: false,
@@ -373,13 +349,13 @@
         var ctx = document.getElementById(canvasId);
         if (!ctx) return Promise.resolve();
 
-        var url = '/api/v1/rigs/' + uuid + '/chart-data/?metric=' + metric +
-                  '&range=' + range + '&bucket_minutes=' + window.GRM.ChartRuntime.bucketMinutes +
-                  '&' + multiParam + '=true';
+        var extra = {};
+        extra[multiParam] = 'true';
+        var url = Base.buildChartUrl(uuid, range, { metric: metric, extra: extra });
 
         return fetchChartData(url).then(function (data) {
             if (!data || !data.datasets || data.datasets.length === 0) {
-                bailNoData(ctx);
+                ctx.parentElement.innerHTML = Base.noDataMessage();
                 return;
             }
             Base.safeDestroy(canvasId, window.GRM.ChartRuntime.instances);
@@ -406,16 +382,11 @@
                 },
                 options: Base.baseOptions({
                     unit: unit,
-                    legend: {
-                        display: true,
-                        labels: {
-                            color: Base.STYLE.tickColor,
-                            boxWidth: 12,
-                            padding: 8,
-                            font: { size: 10 },
-                            // Truncate long label (e.g. "sda /boot") to
-                            // first 16 chars + ellipsis
-                            generateLabels: function (chart) {
+                    legend: Base.legendOptions({
+                        fontSize: 10,
+                        // Truncate long label (e.g. "sda /boot") to
+                        // first 16 chars + ellipsis
+                        generateLabels: function (chart) {
                                 var original = Chart.defaults.plugins.legend.labels.generateLabels(chart);
                                 return original.map(function (label) {
                                     if (!label.text) return label;
@@ -431,9 +402,8 @@
                                     }
                                     return label;
                                 });
-                            },
-                        },
-                    },
+                        }
+                    }),
                     tooltip: Base.tooltipMulti(function (y, label) {
                         return label + ': ' + (y !== null ? y.toFixed(1) + unit : '—');
                     }),
@@ -455,18 +425,17 @@
         var ctx = document.getElementById(canvasId);
         if (!ctx) return Promise.resolve();
 
-        var bucket = window.GRM.ChartRuntime.bucketMinutes;
-        var readUrl = '/api/v1/rigs/' + uuid + '/chart-data/?metric=' + metricRead +
-                       '&range=' + range + '&bucket_minutes=' + bucket + '&' + multiParam + '=true';
-        var writeUrl = '/api/v1/rigs/' + uuid + '/chart-data/?metric=' + metricWrite +
-                        '&range=' + range + '&bucket_minutes=' + bucket + '&' + multiParam + '=true';
+        var extra = {};
+        extra[multiParam] = 'true';
+        var readUrl = Base.buildChartUrl(uuid, range, { metric: metricRead, extra: extra });
+        var writeUrl = Base.buildChartUrl(uuid, range, { metric: metricWrite, extra: extra });
 
         return Promise.all([fetchChartData(readUrl), fetchChartData(writeUrl)])
             .then(function (results) {
                 var dataRead = results[0];
                 var dataWrite = results[1];
                 if (!dataRead.datasets || !dataWrite.datasets || dataRead.datasets.length === 0) {
-                    bailNoData(ctx);
+                    ctx.parentElement.innerHTML = Base.noDataMessage();
                     return;
                 }
                 Base.safeDestroy(canvasId, window.GRM.ChartRuntime.instances);
@@ -508,15 +477,7 @@
                     data: { labels: labels, datasets: datasets },
                     options: Base.baseOptions({
                         unit: unit,
-                        legend: {
-                            display: true,
-                            labels: {
-                                color: Base.STYLE.tickColor,
-                                boxWidth: 12,
-                                padding: 8,
-                                font: { size: 10 },
-                            },
-                        },
+                        legend: Base.legendOptions({ fontSize: 10 }),
                         tooltip: Base.tooltipMulti(function (y, label) {
                             return label + ': ' + (y !== null ? y.toFixed(1) + unit : '—');
                         }),
@@ -539,9 +500,7 @@
         var ctx = document.getElementById(canvasId);
         if (!ctx) return Promise.resolve();
 
-        var url = '/api/v1/rigs/' + uuid + '/chart-data/?metric=' + metric +
-                  '&range=' + range + '&bucket_minutes=' + window.GRM.ChartRuntime.bucketMinutes +
-                  '&multi_gpu=true';
+        var url = Base.buildChartUrl(uuid, range, { metric: metric, extra: { multi_gpu: 'true' } });
 
         return fetchChartData(url).then(function (data) {
             Base.safeDestroy(canvasId, window.GRM.ChartRuntime.instances);
@@ -568,35 +527,29 @@
                 },
                 options: Base.baseOptions({
                     unit: unit,
-                    legend: {
-                        display: true,
-                        labels: {
-                            color: Base.STYLE.tickColor,
-                            boxWidth: 12,
-                            padding: 8,
-                            font: { size: 10 },
-                            // Label format: "GPU-a322cff7-...-b676c04a38aa RTX 3060"
-                            // Result:      "GPU-a322cff… RTX 3060"
-                            // (truncate the UUID part to 12 chars)
-                            generateLabels: function (chart) {
-                                var original = Chart.defaults.plugins.legend.labels.generateLabels(chart);
-                                return original.map(function (label) {
-                                    if (!label.text) return label;
-                                    var spaceIdx = label.text.indexOf(' ');
-                                    if (spaceIdx > 0) {
-                                        var uuidPart = label.text.substring(0, spaceIdx);
-                                        var modelPart = label.text.substring(spaceIdx + 1);
-                                        if (uuidPart.length > 12) {
-                                            label.text = uuidPart.substring(0, 12) + '… ' + modelPart;
-                                        }
-                                    } else if (label.text.length > 12) {
-                                        label.text = label.text.substring(0, 12) + '…';
+                    legend: Base.legendOptions({
+                        fontSize: 10,
+                        // Label format: "GPU-a322cff7-...-b676c04a38aa RTX 3060"
+                        // Result:      "GPU-a322cff… RTX 3060"
+                        // (truncate the UUID part to 12 chars)
+                        generateLabels: function (chart) {
+                            var original = Chart.defaults.plugins.legend.labels.generateLabels(chart);
+                            return original.map(function (label) {
+                                if (!label.text) return label;
+                                var spaceIdx = label.text.indexOf(' ');
+                                if (spaceIdx > 0) {
+                                    var uuidPart = label.text.substring(0, spaceIdx);
+                                    var modelPart = label.text.substring(spaceIdx + 1);
+                                    if (uuidPart.length > 12) {
+                                        label.text = uuidPart.substring(0, 12) + '… ' + modelPart;
                                     }
-                                    return label;
-                                });
-                            },
-                        },
-                    },
+                                } else if (label.text.length > 12) {
+                                    label.text = label.text.substring(0, 12) + '…';
+                                }
+                                return label;
+                            });
+                        }
+                    }),
                     tooltip: {
                         mode: 'index',
                         intersect: false,

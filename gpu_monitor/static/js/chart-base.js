@@ -112,6 +112,49 @@
         };
     }
 
+    // Common legend config: visible legend with dark theme colors.
+    // `opts` may include:
+    //   - padding: int (default 8) — space between legend items
+    //   - fontSize: int (default 11) — legend label font size
+    //   - generateLabels: function(chart) — optional custom label
+    //     processor (used by NetworkCombined for truncating IPs, and by
+    //     MultiGpu for truncating GPU UUIDs).
+    function legendOptions(opts) {
+        opts = opts || {};
+        var labels = {
+            color: STYLE.tickColor,
+            boxWidth: 12,
+            padding: opts.padding || 8,
+            font: { size: opts.fontSize || 11 },
+        };
+        if (opts.generateLabels) {
+            labels.generateLabels = opts.generateLabels;
+        }
+        return {
+            display: true,
+            labels: labels,
+        };
+    }
+
+    // Build a chart-data API URL for the given uuid/range. Optional
+    // `params.metric` adds "?metric=..."; optional `params.extra` adds
+    // arbitrary key=value pairs. Centralized so the bucketMinutes and
+    // route format are kept consistent across all 7 loaders.
+    function buildChartUrl(uuid, range, params) {
+        params = params || {};
+        var url = '/api/v1/rigs/' + uuid + '/chart-data/?range=' + range +
+                  '&bucket_minutes=' + window.GRM.ChartRuntime.bucketMinutes;
+        if (params.metric) {
+            url += '&metric=' + params.metric;
+        }
+        if (params.extra) {
+            Object.keys(params.extra).forEach(function (k) {
+                url += '&' + k + '=' + params.extra[k];
+            });
+        }
+        return url;
+    }
+
     // Tooltip formatter for single-dataset charts.
     // Shows: "<unit><value>" (e.g. "°C75")
     function tooltipSingle(unit) {
@@ -203,6 +246,8 @@
         xAxisOptions: xAxisOptions,
         yAxisOptions: yAxisOptions,
         interactionOptions: interactionOptions,
+        legendOptions: legendOptions,
+        buildChartUrl: buildChartUrl,
         tooltipSingle: tooltipSingle,
         tooltipMulti: tooltipMulti,
         noDataMessage: noDataMessage,

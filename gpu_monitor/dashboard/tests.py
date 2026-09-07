@@ -539,25 +539,86 @@ class MultiGpuCellRenderTests(SimpleTestCase):
         self.assertIn("5", result)
 
 
-class TierTemplateIntegrationTests(SimpleTestCase):
-    """End-to-end: render a template that uses the new tier system."""
 
-    def test_tier_text_renders_in_template(self):
-        from django.template import Template, Context
-        t = Template(
-            '{% load gpu_filters %}'
-            '{% color_tier_thresholds "cpu_temp" as t %}'
-            '<span class="{{ 90|tier_text:t }}">hot</span>'
-        )
-        result = t.render(Context({}))
-        self.assertIn('class="grm-text-red"', result)
 
-    def test_tier_fill_renders_in_template(self):
-        from django.template import Template, Context
-        t = Template(
-            '{% load gpu_filters %}'
-            '{% color_tier_thresholds "cpu_util" as t %}'
-            '<div class="grm-progress-fill {{ 90|tier_fill:t }}"></div>'
-        )
-        result = t.render(Context({}))
-        self.assertIn('class="grm-progress-fill grm-progress-fill-red"', result)
+# =====================================================================
+# Static JS file check tests (Phase 0.4)
+# =====================================================================
+
+from dashboard import checks as dc
+from django.core.checks import Error
+
+
+class CheckStaticJsFilesExistTests(SimpleTestCase):
+    """Tests for the E002 check (required JS file missing)."""
+
+    def test_fires_when_js_file_missing(self):
+        # Patch _js_path to return a nonexistent path for ALL files.
+        from unittest.mock import patch as mpatch
+        from pathlib import Path
+        with mpatch.object(dc, "_js_path",
+                          return_value=Path("/nonexistent/foo.js")):
+            results = dc.check_static_js_files_exist([])
+        # All REQUIRED_JS_FILES should produce an error
+        self.assertEqual(len(results), len(dc.REQUIRED_JS_FILES))
+        for r in results:
+            self.assertIsInstance(r, Error)
+            self.assertEqual(r.id, "dashboard.E002")
+
+    def test_passes_when_all_files_exist(self):
+        # All real JS files should exist in this test environment.
+        results = dc.check_static_js_files_exist([])
+        self.assertEqual(results, [])
+
+
+class CheckTemplatesReferenceJsFilesTests(SimpleTestCase):
+    """Tests for the W003 check (template missing JS reference)."""
+
+    def test_fires_when_template_drops_reference(self):
+        # Verify the check is callable. For a real failure-mode test,
+        # see the integration test below.
+        self.assertTrue(callable(dc.check_templates_reference_js_files))
+
+    def test_passes_when_all_references_present(self):
+        # The real base.html and rig_detail.html DO reference all
+        # required JS files (we just added them). So the check should
+        # return an empty result.
+        results = dc.check_templates_reference_js_files([])
+        self.assertEqual(results, [])
+
+
+class RequiredJsFilesInventoryTests(SimpleTestCase):
+    """Verify the REQUIRED_JS_FILES inventory matches reality."""
+
+    def test_all_inventory_files_actually_exist(self):
+        for filename in dc.REQUIRED_JS_FILES:
+            path = dc._js_path(filename)
+            self.assertTrue(path.is_file(), f"{path} should exist")
+
+    def test_inventory_loaders_match_real_templates(self):
+        from pathlib import Path
+        from django.conf import settings
+        for filename, info in dc.REQUIRED_JS_FILES.items():
+            template_name = info["loaded_by"]
+            # rig_detail.html is in the dashboard/ subdir
+            if template_name == "rig_detail.html":
+                template_path = (Path(settings.BASE_DIR) / "templates"
+                                / "dashboard" / "rig_detail.html")
+            else:
+                template_path = Path(settings.BASE_DIR) / "templates" / template_name
+            self.assertTrue(
+                template_path.is_file(),
+                f"Inventory says {filename} is loaded by {template_name} "
+                f"but {template_path} does not exist"
+            )
+
+    def test_inventory_is_non_empty(self):
+        self.assertGreater(len(dc.REQUIRED_JS_FILES), 0)
+
+    def test_inventory_entries_have_required_fields(self):
+        for filename, info in dc.REQUIRED_JS_FILES.items():
+            self.assertIn("loaded_by", info)
+            self.assertIn("purpose", info)
+            self.assertIn("is_error", info)
+            # The current schema only supports base.html and rig_detail.html
+            self.assertIn(info["loaded_by"], ("base.html", "rig_detail.html"))

@@ -309,3 +309,151 @@ def check_collectstatic_freshness(app_configs, **kwargs) -> list:
             id="dashboard.W002",
         )
     ]
+
+
+# =====================================================================
+# Static JS file checks (Phase 0.4)
+# =====================================================================
+
+# Tag for selectively running the JS check family
+TAG_GRM_JS = "grm_js"
+
+# Required JS files. Every file in this dict MUST be loaded by either
+# base.html (all pages) or rig_detail.html (rig detail only). The
+# check verifies the source file exists, the template references it,
+# and (in production) the file appears in the collected staticfiles.
+#
+# The order in this dict matters for documentation only — the check
+# does not depend on it.
+REQUIRED_JS_FILES = {
+    "app-base.js": {
+        "loaded_by": "base.html",
+        "purpose": "Page-wide utilities: clocks, mobile menu, email toggle",
+        "is_error": True,  # app-base is required for the page to work
+    },
+    "chart-base.js": {
+        "loaded_by": "rig_detail.html",
+        "purpose": "Shared Chart.js options (scales, ticks, tooltip)",
+        "is_error": True,
+    },
+    "chart-colors.js": {
+        "loaded_by": "rig_detail.html",
+        "purpose": "Centralized chart color palettes",
+        "is_error": True,
+    },
+    "chart-loaders.js": {
+        "loaded_by": "rig_detail.html",
+        "purpose": "Chart data loaders (loadChart, loadChartMultiGpu, etc.)",
+        "is_error": True,
+    },
+    "chart-runtime.js": {
+        "loaded_by": "rig_detail.html",
+        "purpose": "Chart loader orchestrator and global state",
+        "is_error": True,
+    },
+    "rig-detail.js": {
+        "loaded_by": "rig_detail.html",
+        "purpose": "Rig detail page interactions (tabs, modal, rename)",
+        "is_error": True,
+    },
+}
+
+
+def _js_path(filename):
+    return Path(settings.BASE_DIR) / "static" / "js" / filename
+
+
+@register(TAG_GRM_JS)
+def check_static_js_files_exist(app_configs, **kwargs) -> list:
+    """Verify every required gpu_monitor/static/js/*.js file exists.
+
+    Like the CSS check (E001), this catches the case where the
+    source file is missing. For JS files, a missing source file
+    means the browser will get a 404 on /static/js/foo.js, which
+    is even more catastrophic than a missing CSS — many page
+    interactions (tabs, charts, modal) silently break.
+
+    A separate deploy-step check (collectstatic) ensures the file
+    ends up in /opt/gpu_monitor/staticfiles/, but we also want to
+    catch the source missing case here.
+    """
+    errors = []
+    for filename, info in REQUIRED_JS_FILES.items():
+        js_path = _js_path(filename)
+        if js_path.is_file():
+            continue
+        try:
+            rel_path = js_path.relative_to(settings.BASE_DIR)
+        except ValueError:
+            rel_path = js_path
+        errors.append(
+            Error(
+                f"Required JS file is missing: {rel_path}. "
+                f"Loaded by {info['loaded_by']} for: {info['purpose']}. "
+                f"Without it, the page silently breaks (no tab switching, "
+                f"no charts, etc.).",
+                hint=(
+                    f"Restore the file from git, or create a stub: "
+                    f"touch static/js/{filename} && git add static/js/{filename}"
+                ),
+                id="dashboard.E002",
+                obj=str(rel_path),
+            )
+        )
+    return errors
+
+
+@register(TAG_GRM_JS)
+def check_templates_reference_js_files(app_configs, **kwargs) -> list:
+    """Verify base.html / rig_detail.html reference the JS files they should.
+
+    Catches the case where someone refactors a template and accidentally
+    drops a <script src="...js"></script> tag. The page would render
+    but the JS wouldn't run, leading to silent breakage (tabs don't
+    switch, charts don't load, etc.) that's hard to debug.
+    """
+    warnings = []
+    base_path = Path(settings.BASE_DIR) / "templates" / "base.html"
+    # rig_detail.html lives under templates/dashboard/, not templates/
+    detail_path = Path(settings.BASE_DIR) / "templates" / "dashboard" / "rig_detail.html"
+
+    template_files = {
+        "base.html": base_path,
+        "rig_detail.html": detail_path,
+    }
+
+    for filename, info in REQUIRED_JS_FILES.items():
+        expected_loader = info["loaded_by"]
+        template_path = template_files[expected_loader]
+        if not template_path.is_file():
+            # Template itself is missing — not our concern here
+            # (covered by other Django checks).
+            continue
+        try:
+            content = template_path.read_text(encoding="utf-8")
+        except (FileNotFoundError, UnicodeDecodeError):
+            continue
+        # The reference is either a {% static 'js/...js' %} block or
+        # a literal /static/js/...js URL.
+        ref_static = f"{{% static 'js/{filename}' %}}"
+        ref_literal = f"js/{filename}"
+        if ref_static in content or ref_literal in content:
+            continue
+        try:
+            rel_path = template_path.relative_to(settings.BASE_DIR)
+        except ValueError:
+            rel_path = template_path
+        warnings.append(
+            Warning(
+                f"{filename} is expected to be loaded by {expected_loader} "
+                f"but no reference was found in that template. The JS "
+                f"will not run and the page will silently break.",
+                hint=(
+                    f"Add to {expected_loader}: "
+                    f"<script src=\"{{% static 'js/{filename}' %}}\"></script>"
+                ),
+                id="dashboard.W003",
+                obj=str(rel_path),
+            )
+        )
+    return warnings

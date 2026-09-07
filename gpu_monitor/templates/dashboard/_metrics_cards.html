@@ -15,6 +15,57 @@
 {% color_tier_thresholds "process_cpu" as process_cpu_t %}
 {% color_tier_thresholds "process_mem" as process_mem_t %}
 
+{% comment %}
+Phase 1.3: "System health" summary bar — a single thin row at the top of
+Live Metrics that gives the user an at-a-glance read of the rig's
+overall state. Sits above the first card (CPU) and below the page
+header. Shows the count of:
+  - GPUs (total, with avg util as a quick read)
+  - Disks (total, with max util)
+  - Recent errors (count from error_history)
+  - Stale-data indicator (already shown elsewhere; this is the
+    one place to look first)
+
+Visual: a horizontal flex of stat chips, each with a small label
+and value. Subtle border between sections. Does not replace the
+detailed cards below — just orients the user before they scroll.
+{% endcomment %}
+{% if snapshot %}
+<div class="grm-card flex flex-wrap items-center gap-x-6 gap-y-2 mb-4 text-sm">
+    <div class="flex items-center gap-2">
+        <span class="grm-text-muted">CPUs:</span>
+        <span class="font-medium">{{ snapshot.cpu_physical_cores|default:"?" }}</span>
+        <span class="grm-text-muted text-xs">cores</span>
+    </div>
+    <div class="flex items-center gap-2">
+        <span class="grm-text-muted">GPUs:</span>
+        <span class="font-medium">{{ snapshot.gpu_count|default:0 }}</span>
+    </div>
+    <div class="flex items-center gap-2">
+        <span class="grm-text-muted">Disks:</span>
+        <span class="font-medium">{{ snapshot.storage_count|default:0 }}</span>
+        {% if snapshot.storage_utilization_pcts_json %}
+        <span class="grm-text-muted text-xs">·</span>
+        <span class="font-medium grm-text-light">max</span>
+        <span class="font-medium {{ snapshot.storage_utilization_pcts_json|max_disk_util|tier_text:disk_util_t }}">
+            {{ snapshot.storage_utilization_pcts_json|max_disk_util|floatformat:0 }}%
+        </span>
+        {% endif %}
+    </div>
+    <div class="flex items-center gap-2">
+        <span class="grm-text-muted">Errors:</span>
+        <span class="font-medium">{{ recent_errors|length }}</span>
+        <span class="grm-text-muted text-xs">recent</span>
+    </div>
+    <div class="flex items-center gap-2 ml-auto">
+        {% if is_data_stale %}
+        <span class="grm-text-yellow">⚠ stale data</span>
+        {% else %}
+        <span class="grm-text-green">● live</span>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
 <!-- ════════════════════════════════════════════════════════════════ -->
 <!-- CPU -->
 <!-- ════════════════════════════════════════════════════════════════ -->
@@ -45,7 +96,7 @@
         </div>
         <span class="text-sm font-mono w-14 text-right">
             {% if snapshot.cpu_utilization_pct != None %}
-            <span class="grm-text-{{ snapshot.cpu_utilization_pct|cpu_util_color }}">{{ snapshot.cpu_utilization_pct|floatformat:1 }}%</span>
+            <span class="grm-text-{{ snapshot.cpu_utilization_pct|tier_text:cpu_util_t }}">{{ snapshot.cpu_utilization_pct|floatformat:1 }}%</span>
             {% else %}—{% endif %}
         </span>
     </div>
@@ -83,7 +134,7 @@
     {% elif snapshot %}
     <div class="text-sm grm-text-gray mb-2">
         Utilization: {% if snapshot.cpu_utilization_pct != None %}
-        <span class="grm-text-{{ snapshot.cpu_utilization_pct|cpu_util_color }}">{{ snapshot.cpu_utilization_pct|floatformat:1 }}%</span>
+        <span class="grm-text-{{ snapshot.cpu_utilization_pct|tier_text:cpu_util_t }}">{{ snapshot.cpu_utilization_pct|floatformat:1 }}%</span>
         {% else %}—{% endif %}
     </div>
     {% else %}

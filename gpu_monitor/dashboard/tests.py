@@ -39,14 +39,14 @@ class TokenizerTests(SimpleTestCase):
         self.assertEqual(tokens, ["grm-btn-primary"])
 
     def test_strips_django_variable_prefix(self):
-        """grm-text-{{ color }} should NOT be reported as a missing class.
+        """grm-text-{{ variable }} should NOT be reported as a missing class.
 
         The variable {{ color }} is evaluated at render time to produce
         a value that becomes part of the class name. We can't statically
         know what it returns, so the prefix is treated as "intentional
         variable" and not validated.
         """
-        text = '<span class="grm-text-{{ snapshot.cpu_utilization_pct|cpu_util_color }}">5%</span>'
+        text = '<span class="grm-text-{{ snapshot.cpu_utilization_pct|tier_text:cpu_util_t }}">5%</span>'
         tokens = list(checks._all_class_tokens(text))
         self.assertEqual(tokens, [], "grm-text- prefix before a Django variable should be skipped")
 
@@ -516,6 +516,13 @@ class MultiGpuCellRenderTests(SimpleTestCase):
         self.assertIn("grm-text-gray", result)  # for None
         # 4 separate spans
         self.assertEqual(result.count("<span"), 4)
+        # Multi-value separator: " · " (space-middle-dot-space) between
+        # values, making it visually distinct from a single value.
+        # (Phase 1.1: before this, separators were plain spaces and
+        # a single value like "75" was visually identical to "75 78 72".)
+        self.assertIn(" · ", result)
+        # Verify there are exactly 3 separators between 4 values
+        self.assertEqual(result.count(" · "), 3)
 
     def test_inverted_coloring_for_gpu_util(self):
         from types import SimpleNamespace
@@ -622,3 +629,83 @@ class RequiredJsFilesInventoryTests(SimpleTestCase):
             self.assertIn("is_error", info)
             # The current schema only supports base.html and rig_detail.html
             self.assertIn(info["loaded_by"], ("base.html", "rig_detail.html"))
+
+
+# =====================================================================
+# Phase 1.2: column group CSS classes
+# =====================================================================
+
+class GrmColGroupTests(SimpleTestCase):
+    """Verify the grm-col-* column group classes are defined in app.css.
+
+    These are used by <col class="grm-col-{group}"> in _rig_table.html
+    to apply subtle background tints to logical column groups
+    (identity, status, gpu, system, meta). The check verifies the CSS
+    is still defined (so the fleet table's column tints still work).
+    """
+
+    CSS_PATH = 'static/css/app.css'
+
+    def _read_css(self):
+        from pathlib import Path
+        from django.conf import settings
+        css_path = Path(settings.BASE_DIR) / self.CSS_PATH
+        return css_path.read_text(encoding="utf-8")
+
+    def test_all_col_groups_defined(self):
+        css = self._read_css()
+        for group in ["identity", "status", "gpu", "system", "meta"]:
+            with self.subTest(group=group):
+                self.assertIn(
+                    f".grm-col-{group}",
+                    css,
+                    f".grm-col-{group} should be defined in app.css"
+                )
+
+    def test_col_groups_have_background_color(self):
+        # Each col group should set a background-color (the tint)
+        css = self._read_css()
+        import re
+        for group in ["identity", "status", "gpu", "system", "meta"]:
+            with self.subTest(group=group):
+                pattern = re.compile(
+                    rf"\.grm-col-{group}\s*\{{[^}}]*background-color",
+                    re.DOTALL,
+                )
+                self.assertIsNotNone(
+                    pattern.search(css),
+                    f".grm-col-{group} should set background-color"
+                )
+
+
+# =====================================================================
+# Phase 1.3: System health summary bar
+# =====================================================================
+
+class SystemHealthBarTests(SimpleTestCase):
+    """The Live Metrics template renders a system health summary bar
+    at the top. Verify it's present in _metrics_cards.html.
+    """
+
+    TEMPLATE_PATH = "templates/dashboard/_metrics_cards.html"
+
+    def test_health_bar_block_exists(self):
+        from pathlib import Path
+        from django.conf import settings
+        tpl_path = Path(settings.BASE_DIR) / self.TEMPLATE_PATH
+        text = tpl_path.read_text(encoding="utf-8")
+        # The summary bar should be present somewhere in the template
+        # (not necessarily at the very top, since other threshold
+        # declarations come first).
+        self.assertIn("CPUs:", text, "System health bar should include CPUs: label")
+        self.assertIn("GPUs:", text, "System health bar should include GPUs: label")
+        self.assertIn("Disks:", text, "System health bar should include Disks: label")
+        self.assertIn("Errors:", text, "System health bar should include Errors: label")
+
+    def test_health_bar_has_stale_indicator(self):
+        from pathlib import Path
+        from django.conf import settings
+        tpl_path = Path(settings.BASE_DIR) / self.TEMPLATE_PATH
+        text = tpl_path.read_text(encoding="utf-8")
+        # Stale-data indicator: "stale data" or "● live"
+        self.assertTrue("stale data" in text or "● live" in text)

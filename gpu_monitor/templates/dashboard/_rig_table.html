@@ -1,9 +1,34 @@
 {% load gpu_filters %}
 {# Color threshold specs (Phase 0.3) — see gpu_filters.py DEFAULT_THRESHOLDS #}
 {% color_tier_thresholds "cpu_temp" as cpu_temp_t %}
+{% color_tier_thresholds "cpu_util" as cpu_util_t %}
 {% color_tier_thresholds "disk_util" as disk_util_t %}
 <div class="bg-gray-800 rounded-lg border border-gray-700 overflow-x-auto">
     <table class="w-full text-xs">
+        {# Phase 1.2: Column group tints. Each <col> applies a subtle
+           background-color to all cells in that column. Groups:
+             identity (blue)  - Rig Name, Tags
+             status   (gray)  - Status, Job, Last Seen, Uptime
+             gpu      (purple) - GPU, GPU Temp, GPU Fan, GPU Util
+             system   (green) - CPU Temp, CPU %, Disk Util, Power
+             meta     (amber) - Agent #}
+        <colgroup>
+            <col class="grm-col-identity">
+            <col class="grm-col-identity">
+            <col class="grm-col-status">
+            <col class="grm-col-status">
+            <col class="grm-col-status">
+            <col class="grm-col-status">
+            <col class="grm-col-gpu">
+            <col class="grm-col-gpu">
+            <col class="grm-col-gpu">
+            <col class="grm-col-gpu">
+            <col class="grm-col-system">
+            <col class="grm-col-system">
+            <col class="grm-col-system">
+            <col class="grm-col-system">
+            <col class="grm-col-meta">
+        </colgroup>
         <thead class="bg-gray-750 grm-text-gray border-b border-gray-700">
             <tr>
                 <th class="text-left px-3 py-2 font-medium">Rig Name</th>
@@ -124,7 +149,7 @@
                 {# CPU Util column #}
                 <td class="px-2 py-2 whitespace-nowrap">
                     {% if snapshot and snapshot.cpu_utilization_pct != None %}
-                        <span class="grm-text-{{ snapshot.cpu_utilization_pct|cpu_util_color }}">{{ snapshot.cpu_utilization_pct|floatformat:1 }}</span>
+                        <span class="grm-text-{{ snapshot.cpu_utilization_pct|tier_text:cpu_util_t }}">{{ snapshot.cpu_utilization_pct|floatformat:1 }}</span>
                     {% else %}—{% endif %}
                 </td>
                 {# Disk Util column: max utilization across all disks #}

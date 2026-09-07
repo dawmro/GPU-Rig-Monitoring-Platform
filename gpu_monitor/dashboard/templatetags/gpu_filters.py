@@ -4,6 +4,12 @@ from django.utils import timezone
 from django.utils.safestring import mark_safe
 from datetime import timedelta
 
+# Separator between multi-GPU / multi-device values in a cell.
+# Space-around-middle-dot is visually unambiguous: a single value
+# "75" is distinct from a multi-value "75 · 78 · 72" because the
+# latter has a clear divider.
+GRM_MULTI_VALUE_SEPARATOR = ' · '
+
 register = template.Library()
 
 
@@ -171,7 +177,7 @@ def _render_tier_cell(snapshot, json_field, threshold_name, no_data_class):
                 parts.append(f'<span>{_format_one(value)}</span>')
             else:
                 parts.append(f'<span class="grm-text-{color}">{_format_one(value)}</span>')
-    return mark_safe(' '.join(parts))
+    return mark_safe(GRM_MULTI_VALUE_SEPARATOR.join(parts))
 
 
 def _format_one(value):
@@ -388,39 +394,6 @@ def filter_running(containers):
     if not containers:
         return []
     return [c for c in containers if c.get('status') == 'running']
-
-
-@register.filter
-def cpu_util_color(value):
-    """Return bare color name (e.g. 'red', 'yellow') for CPU utilization percentage.
-
-    Used as a class suffix: grm-text-{{ x|cpu_util_color }}
-    See static/css/app.css for the actual color values.
-
-    Thresholds (matching Disk Util and Live Metrics progress bar):
-        > 80%  -> red
-        > 60%  -> orange
-        > 40%  -> yellow
-        > 20%  -> green
-        <= 20% -> gray
-
-    Usage: <span class="grm-text-{{ cpu_util|cpu_util_color }}">{{ cpu_util }}</span>
-    """
-    if value is None:
-        return 'gray'
-    try:
-        v = float(value)
-    except (ValueError, TypeError):
-        return 'gray'
-    if v > 80:
-        return 'red'
-    elif v > 60:
-        return 'orange'
-    elif v > 40:
-        return 'yellow'
-    elif v > 20:
-        return 'green'
-    return 'gray'
 
 
 @register.filter

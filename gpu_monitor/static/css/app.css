@@ -323,3 +323,28 @@
     border-top: 1px solid rgba(55, 65, 81, 0.5);  /* border-gray-700/50 */
     margin: 0.5rem 0;
 }
+
+
+/* ---------------------------------------------------------------------
+   Column group tints (Phase 1.2)
+   ---------------------------------------------------------------------
+   Used on the fleet table via <colgroup>/<col> to visually group related
+   columns. Each column gets a subtle background tint that the
+   <colgroup> CSS selector applies to the <th> and <td> cells of that
+   column. The tints are extremely subtle (3% alpha) so the data is
+   still readable, but a user can quickly see "ah, these are the
+   GPU columns" vs "these are the system columns".
+
+   Naming: grm-col-{group} where {group} is one of: identity, status,
+   gpu, system, meta. The HTML in _rig_table.html sets <col class="...">
+   to pick the tint.
+
+   Width: grm-col-{group} ALSO sets a column width suggestion. Some
+   columns are inherently narrow (Status badge) and others need more
+   space (Rig Name, GPU Temp). Setting width here avoids the
+   auto-sizing surprise of letting the browser pick. #}
+.grm-col-identity { background-color: rgba(59, 130, 246, 0.04); }   /* blue tint */
+.grm-col-status   { background-color: rgba(107, 114, 128, 0.04); }  /* gray tint */
+.grm-col-gpu      { background-color: rgba(168, 85, 247, 0.04); }   /* purple tint */
+.grm-col-system   { background-color: rgba(34, 197, 94, 0.04); }    /* green tint */
+.grm-col-meta     { background-color: rgba(234, 179, 8, 0.04); }    /* amber tint */

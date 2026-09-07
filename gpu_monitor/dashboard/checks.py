@@ -63,11 +63,11 @@ RE_CLASS_ATTR = re.compile(
 # render time to produce class names. We tokenize around them.
 #
 # Examples that should be treated as "variable" placeholders (skipped):
-#   {{ x }}                -> variable
-#   {{ x|cpu_util_color }} -> variable with filter (the FILTER itself
-#                             may produce a class name; but we can't
-#                             statically know which color it returns.
-#                             Conservatively, treat whole thing as placeholder.)
+#   {{ x }}                  -> variable
+#   {{ x|tier_text:spec }}   -> variable with filter (the FILTER itself
+#                               may produce a class name; but we can't
+#                               statically know which color it returns.
+#                               Conservatively, treat whole thing as placeholder.)
 #   {% if foo %}grm-card{% else %}grm-card-lg{% endif %}
 #                            -> either branch is valid
 RE_DJANGO_VAR = re.compile(r"\{\{[^}]*\}\}")
@@ -82,7 +82,7 @@ RE_DJANGO_TAG = re.compile(r"\{%[^%]*%\}")
 #
 # Examples:
 #   grm-text-{{ color }}                  -> skipped
-#   grm-text-{{ x|cpu_util_color }}       -> skipped
+#   grm-text-{{ x|tier_text:spec }}       -> skipped
 #   grm-text-{{ color }}-suffix           -> skipped
 #   grm-text-{{ color }}suffix            -> suffix token reported (grm-? no, plain "suffix")
 #   grm-card (no variable)                -> not matched, normal token

@@ -4,6 +4,10 @@ Verifies the logic of ChartDataView optimizations.
 """
 from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# gpu_monitor/ is the Django project root (where manage.py lives).
+# Define once so all path joins below are clean Path expressions,
+# not str-converted mixed literals.
+GPU_MONITOR_DIR = PROJECT_ROOT / 'gpu_monitor'
 
 import sys
 import os
@@ -700,7 +704,7 @@ def test_fleet_table_template_efficiency():
     The template should access item.gpu_*_title directly without
     iterating JSON lists.
     """
-    template = open(str(PROJECT_ROOT / 'gpu_monitor/templates/dashboard/_rig_table.html')).read()
+    template = open(GPU_MONITOR_DIR / 'templates/dashboard/_rig_table.html').read()
 
     # Count inline `{% for %}` loops in title attributes (should be 0 after fix)
     # Note: tag loop is OK, but title loops in multi-GPU cells should be pre-computed
@@ -740,7 +744,7 @@ def test_disk_utilization_fallback_in_view():
     Server-side fallback to usage_pct restores the chart.
     """
     # The view must contain the fallback helper
-    src = open(str(PROJECT_ROOT / 'gpu_monitor/metrics_app/views.py')).read()
+    src = open(GPU_MONITOR_DIR / 'metrics_app/views.py').read()
     assert '_maybe_fallback_disk_utilization' in src, \
         'Missing _maybe_fallback_disk_utilization helper'
     assert "metric == 'disk_utilization_pct'" in src, \
@@ -760,8 +764,8 @@ def test_chart_cache_version_invalidation():
     every heartbeat. The view embeds this version in the cache key, so
     bumping makes all old keys unreachable without enumerating them.
     """
-    view_src = open(str(PROJECT_ROOT / 'gpu_monitor/metrics_app/views.py')).read()
-    ser_src = open(str(PROJECT_ROOT / 'gpu_monitor/metrics_app/serializers.py')).read()
+    view_src = open(GPU_MONITOR_DIR / 'metrics_app/views.py').read()
+    ser_src = open(GPU_MONITOR_DIR / 'metrics_app/serializers.py').read()
 
     # View must read the version
     assert "chart_v_{uuid}" in view_src, \
@@ -783,16 +787,16 @@ def test_chart_cache_version_invalidation():
 
 def test_gpu_process_metric_table_dropped():
     """Verify GPUProcessMetric model is removed and migration exists."""
-    models_src = open(str(PROJECT_ROOT / 'gpu_monitor/metrics_app/models.py')).read()
+    models_src = open(GPU_MONITOR_DIR / 'metrics_app/models.py').read()
     assert 'class GPUProcessMetric' not in models_src, \
         'GPUProcessMetric class should be removed from models.py'
 
-    views_src = open(str(PROJECT_ROOT / 'gpu_monitor/dashboard/views.py')).read()
+    views_src = open(GPU_MONITOR_DIR / 'dashboard/views.py').read()
     assert 'GPUProcessMetric' not in views_src, \
         'GPUProcessMetric references should be removed from views.py'
 
     # Migration exists
-    migration_path = str(PROJECT_ROOT / 'gpu_monitor/metrics_app/migrations/0047_drop_gpu_process_metric_table.py')
+    migration_path = GPU_MONITOR_DIR / 'metrics_app/migrations/0047_drop_gpu_process_metric_table.py'
     with open(migration_path) as f:
         migration = f.read()
     assert 'DeleteModel' in migration, \
@@ -808,15 +812,15 @@ def test_power_reading_table_dropped():
     and GPUMetric.power_draw_w. PowerReading was used only as a sentinel
     for throttling; no view ever queried it.
     """
-    models_src = open(str(PROJECT_ROOT / 'gpu_monitor/metrics_app/models.py')).read()
+    models_src = open(GPU_MONITOR_DIR / 'metrics_app/models.py').read()
     assert 'class PowerReading' not in models_src, \
         'PowerReading class should be removed from models.py'
 
-    views_src = open(str(PROJECT_ROOT / 'gpu_monitor/metrics_app/views.py')).read()
+    views_src = open(GPU_MONITOR_DIR / 'metrics_app/views.py').read()
     assert 'PowerReading' not in views_src, \
         'PowerReading import should be removed from views.py'
 
-    ser_src = open(str(PROJECT_ROOT / 'gpu_monitor/metrics_app/serializers.py')).read()
+    ser_src = open(GPU_MONITOR_DIR / 'metrics_app/serializers.py').read()
     # The serializer should not have any active PowerReading code references
     # (comments mentioning PowerReading for context are fine)
     import re
@@ -831,7 +835,7 @@ def test_power_reading_table_dropped():
         'Serializer should not import PowerReading'
 
     # Migration exists
-    migration_path = str(PROJECT_ROOT / 'gpu_monitor/metrics_app/migrations/0048_drop_power_reading_table.py')
+    migration_path = GPU_MONITOR_DIR / 'metrics_app/migrations/0048_drop_power_reading_table.py'
     with open(migration_path) as f:
         migration = f.read()
     assert 'DeleteModel' in migration, \
@@ -856,14 +860,14 @@ def test_storage_cumulative_counters_removed():
     reads them for delta calculation).
     """
     # Model must not have these fields
-    models_src = open(str(PROJECT_ROOT / 'gpu_monitor/metrics_app/models.py')).read()
+    models_src = open(GPU_MONITOR_DIR / 'metrics_app/models.py').read()
     for field in ['read_bytes = models', 'write_bytes = models', 'read_iops = models',
                   'write_iops = models', 'busy_time_ms = models']:
         assert field not in models_src, \
             f'StorageMetric.{field.split(" = ")[0]} should be removed from models.py'
 
     # Serializer must not write these to StorageMetric
-    ser_src = open(str(PROJECT_ROOT / 'gpu_monitor/metrics_app/serializers.py')).read()
+    ser_src = open(GPU_MONITOR_DIR / 'metrics_app/serializers.py').read()
     code_lines = [l for l in ser_src.split('\n') if not l.strip().startswith('#')]
     code_only = '\n'.join(code_lines)
     # These must not be in StorageMetric update_or_create defaults
@@ -881,7 +885,7 @@ def test_storage_cumulative_counters_removed():
         'LatestSnapshot.storage_busy_time_ms_total_json should still exist'
 
     # Migration exists with the right content
-    migration_path = str(PROJECT_ROOT / 'gpu_monitor/metrics_app/migrations/0049_drop_storage_cumulative_counters.py')
+    migration_path = GPU_MONITOR_DIR / 'metrics_app/migrations/0049_drop_storage_cumulative_counters.py'
     with open(migration_path) as f:
         migration = f.read()
     for field in ['read_bytes', 'write_bytes', 'read_iops', 'write_iops', 'busy_time_ms']:
@@ -889,7 +893,7 @@ def test_storage_cumulative_counters_removed():
             f'Migration must remove {field}'
 
     # compact_data no longer aggregates the removed fields
-    compact_src = open(str(PROJECT_ROOT / 'gpu_monitor/metrics_app/management/commands/compact_data.py')).read()
+    compact_src = open(GPU_MONITOR_DIR / 'metrics_app/management/commands/compact_data.py').read()
     # These lines should be gone from the storagemetric config
     for field in ["'read_bytes': 'last'", "'write_bytes': 'last'",
                   "'read_iops': 'last'", "'write_iops': 'last'",
@@ -898,7 +902,7 @@ def test_storage_cumulative_counters_removed():
             f'compact_data should not aggregate {field} for storagemetric'
 
     # Verify chart views still use the delta fields (no functional regression)
-    views_src = open(str(PROJECT_ROOT / 'gpu_monitor/metrics_app/views.py')).read()
+    views_src = open(GPU_MONITOR_DIR / 'metrics_app/views.py').read()
     assert "'disk_read_bytes_delta': 'read_bytes_delta'" in views_src, \
         'disk_read_bytes_delta chart must still be defined'
     assert "'disk_write_bytes_delta': 'write_bytes_delta'" in views_src, \
@@ -912,7 +916,7 @@ def test_latest_docker_container_bulk_create():
     New pattern: 1 DELETE + 1 bulk_create INSERT (1 query total).
     Saves (N-1) queries per heartbeat per rig.
     """
-    ser_src = open(str(PROJECT_ROOT / 'gpu_monitor/metrics_app/serializers.py')).read()
+    ser_src = open(GPU_MONITOR_DIR / 'metrics_app/serializers.py').read()
     code_lines = [l for l in ser_src.split('\n') if not l.strip().startswith('#')]
     code_only = '\n'.join(code_lines)
 
@@ -932,7 +936,7 @@ def test_docker_container_short_circuit():
     New: 1 quick .exists() check, then 1 query only if containers exist
     Saves 1 query for non-Docker rigs (common case for many rigs).
     """
-    views_src = open(str(PROJECT_ROOT / 'gpu_monitor/dashboard/views.py')).read()
+    views_src = open(GPU_MONITOR_DIR / 'dashboard/views.py').read()
     assert 'LatestDockerContainer.objects.filter(rig_uuid=str(uuid)).exists()' in views_src, \
         'Should short-circuit with .exists() check before fetching containers'
 
@@ -945,13 +949,13 @@ def test_network_static_fields_removed():
     time-series table.
     """
     # Model must not have these fields
-    models_src = open(str(PROJECT_ROOT / 'gpu_monitor/metrics_app/models.py')).read()
+    models_src = open(GPU_MONITOR_DIR / 'metrics_app/models.py').read()
     for field in ['ipv4 = models', 'link_speed_mbps = models']:
         assert field not in models_src, \
             f'NetworkMetric.{field.split(" = ")[0]} should be removed from models.py'
 
     # Serializer must not write these to NetworkMetric
-    ser_src = open(str(PROJECT_ROOT / 'gpu_monitor/metrics_app/serializers.py')).read()
+    ser_src = open(GPU_MONITOR_DIR / 'metrics_app/serializers.py').read()
     code_lines = [l for l in ser_src.split('\n') if not l.strip().startswith('#')]
     code_only = '\n'.join(code_lines)
     for field in ["'ipv4': iface.get", "'link_speed_mbps': iface.get"]:
@@ -959,7 +963,7 @@ def test_network_static_fields_removed():
             f'Serializer should not write {field} to NetworkMetric'
 
     # compact_data no longer aggregates the removed fields
-    compact_src = open(str(PROJECT_ROOT / 'gpu_monitor/metrics_app/management/commands/compact_data.py')).read()
+    compact_src = open(GPU_MONITOR_DIR / 'metrics_app/management/commands/compact_data.py').read()
     for field in ["'link_speed_mbps': 'last'", "'ipv4': 'last'"]:
         assert field not in compact_src, \
             f'compact_data should not aggregate {field} for networkmetric'
@@ -971,7 +975,7 @@ def test_network_static_fields_removed():
         'LatestSnapshot.network_speeds_json should still exist'
 
     # Migration exists with the right content
-    migration_path = str(PROJECT_ROOT / 'gpu_monitor/metrics_app/migrations/0050_drop_network_static_fields.py')
+    migration_path = GPU_MONITOR_DIR / 'metrics_app/migrations/0050_drop_network_static_fields.py'
     with open(migration_path) as f:
         migration = f.read()
     for field in ['ipv4', 'link_speed_mbps']:
@@ -979,7 +983,7 @@ def test_network_static_fields_removed():
             f'Migration must remove {field}'
 
     # Verify chart views still use the dynamic fields
-    chart_src = open(str(PROJECT_ROOT / 'gpu_monitor/metrics_app/views.py')).read()
+    chart_src = open(GPU_MONITOR_DIR / 'metrics_app/views.py').read()
     assert "'net_rx_bytes_delta': 'rx_bytes_delta'" in chart_src, \
         'net_rx_bytes_delta chart must still be defined'
 
@@ -990,7 +994,7 @@ def test_get_rig_light_cached_includes_error_history():
     Regression test for: SimpleNamespace didn't have these fields, so htmx_metrics
     failed with AttributeError when it tried to read rig.error_history_json.
     """
-    src = open(str(PROJECT_ROOT / 'gpu_monitor/dashboard/views.py')).read()
+    src = open(GPU_MONITOR_DIR / 'dashboard/views.py').read()
 
     # Must reference all 6 fields in the SimpleNamespace
     required_fields = [
@@ -1003,7 +1007,7 @@ def test_get_rig_light_cached_includes_error_history():
 
 def test_fleet_table_template_uses_with():
     """Verify the template uses {% with %} to alias item.rig and item.snapshot."""
-    template = open(str(PROJECT_ROOT / 'gpu_monitor/templates/dashboard/_rig_table.html')).read()
+    template = open(GPU_MONITOR_DIR / 'templates/dashboard/_rig_table.html').read()
 
     # Should have {% with rig=item.rig snapshot=item.snapshot %}
     assert '{% with rig=item.rig snapshot=item.snapshot %}' in template, \

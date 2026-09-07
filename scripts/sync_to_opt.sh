@@ -235,9 +235,21 @@ if python manage.py migrate --check 2>/dev/null; then
 else
     echo "  Applying..."
     python manage.py migrate
-    echo "  Collecting static files..."
-    python manage.py collectstatic --noinput
 fi
+
+# ── Always run collectstatic after sync ──────────────────────────────
+# collectstatic must run on EVERY deploy, not just when migrations change.
+# A deploy can be: code-only (no migration), template-only, static-file-only,
+# or any combination. staticfiles/ is what nginx actually serves in
+# production, and it must mirror the source static/ directory at all times.
+# Skipping this is the #1 cause of "404 on /static/css/app.css" after a
+# CSS-only commit.
+#
+# --clear: remove stale files from staticfiles/ that no longer exist in
+# source. Without this, renaming a CSS file leaves the old copy in place
+# and nginx keeps serving it forever.
+echo "--- Collecting static files ---"
+python manage.py collectstatic --noinput --clear
 
 # ── Step 9: Restart Gunicorn ───────────────────────────────────────
 echo "--- Restarting Gunicorn ---"

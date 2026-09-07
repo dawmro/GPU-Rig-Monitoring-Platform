@@ -1,0 +1,28 @@
+{# Reusable chart card: card chrome + canvas + title. #}
+{# #}
+{# Required context: #}
+{#   canvas_id: id of the <canvas> element (matches the JS chart loader) #}
+{#   title: chart title text (e.g. "GPU Temperature") #}
+{# #}
+{# Optional context: #}
+{#   timeframe_label: short label shown in parentheses after the title #}
+{#                    (e.g. "24h", "7d", "30d"). Defaults to "24h". #}
+{#                    Used by the JS to update the label on range change. #}
+{#   height: "default" (280px) or "tall" (300px). Defaults to "default". #}
+{#   comment: optional comment shown as the chart card body (rarely used) #}
+{# #}
+{# Example: #}
+{#   {% include "partials/_chart_card.html" with #}
+{#      canvas_id="chartGpuTemp" title="GPU Temperature" %} #}
+{#   <div class="grm-chart-card"> #}
+{#     <h3 class="text-sm font-medium grm-text-light mb-3">GPU Temperature (<span class="chart-timeframe-label">24h</span>)</h3> #}
+{#     <canvas id="chartGpuTemp"></canvas> #}
+{#   </div> #}
+
+<div class="{% if height == 'tall' %}grm-chart-card-tall{% else %}grm-chart-card{% endif %}">
+    <h3 class="text-sm font-medium grm-text-light mb-3">
+        {{ title }} (<span class="chart-timeframe-label">{{ timeframe_label|default:'24h' }}</span>)
+    </h3>
+    <canvas id="{{ canvas_id }}"></canvas>
+    {% if comment %}<div class="text-xs grm-text-muted mt-2">{{ comment }}</div>{% endif %}
+</div>

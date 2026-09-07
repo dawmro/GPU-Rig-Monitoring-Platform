@@ -1,6 +1,20 @@
 {# Live Metrics — Detailed Display #}
 {# Polled every 30s via HTMX #}
 {% load gpu_filters %}
+
+{# Color threshold specs (Phase 0.3). These map a numeric value to a
+   color name via the tier/tier_text/tier_fill filters. Define once
+   here, use throughout the file. See DEFAULT_THRESHOLDS in
+   dashboard/templatetags/gpu_filters.py for the threshold values. #}
+{% color_tier_thresholds "cpu_temp" as cpu_temp_t %}
+{% color_tier_thresholds "gpu_temp" as gpu_temp_t %}
+{% color_tier_thresholds "cpu_util" as cpu_util_t %}
+{% color_tier_thresholds "mem_pct" as mem_pct_t %}
+{% color_tier_thresholds "storage_pct" as storage_pct_t %}
+{% color_tier_thresholds "disk_util" as disk_util_t %}
+{% color_tier_thresholds "process_cpu" as process_cpu_t %}
+{% color_tier_thresholds "process_mem" as process_mem_t %}
+
 <!-- ════════════════════════════════════════════════════════════════ -->
 <!-- CPU -->
 <!-- ════════════════════════════════════════════════════════════════ -->
@@ -23,9 +37,7 @@
             <div class="grm-progress">
                 <div class="grm-progress-fill
                     {% if snapshot.cpu_utilization_pct != None %}
-                        {% if snapshot.cpu_utilization_pct > 80 %}grm-progress-fill-red
-                        {% elif snapshot.cpu_utilization_pct > 60 %}grm-progress-fill-yellow
-                        {% else %}grm-progress-fill-green{% endif %}
+                        {{ snapshot.cpu_utilization_pct|tier_fill:cpu_util_t }}
                     {% else %}grm-progress-fill-gray{% endif %}"
                     style="width: {% if snapshot.cpu_utilization_pct != None %}{{ snapshot.cpu_utilization_pct }}{% else %}0{% endif %}%">
                 </div>
@@ -41,7 +53,7 @@
         <span>
             Temp:
             {% if snapshot.cpu_temp_c != None %}
-                <span class="{% if snapshot.cpu_temp_c > 85 %}grm-text-red{% elif snapshot.cpu_temp_c > 70 %}grm-text-yellow{% else %}grm-text-green{% endif %}">
+                <span class="{{ snapshot.cpu_temp_c|tier_text:cpu_temp_t }}">
                     {{ snapshot.cpu_temp_c|floatformat:1 }}°C
                 </span>
             {% else %}—{% endif %}
@@ -141,11 +153,9 @@
         <div class="flex-1">
             <div class="grm-progress">
                 {% widthratio snapshot.mem_used_bytes snapshot.mem_total_bytes 100 as mem_pct %}
-                <div class="grm-progress-fill
-                    {% if mem_pct > 85 %}grm-progress-fill-red
-                    {% elif mem_pct > 70 %}grm-progress-fill-yellow
-                    {% else %}grm-progress-fill-blue{% endif %}"
-                    style="width: {{ mem_pct }}%"></div>
+                <div class="grm-progress-fill {{ mem_pct|tier_fill:mem_pct_t }}"
+                    style="width: {{ mem_pct }}%">
+                </div>
             </div>
         </div>
         <span class="text-sm font-mono grm-text-light w-14 text-right">{{ mem_pct }}%</span>
@@ -193,10 +203,7 @@
             <div class="flex items-center gap-3 mb-1">
                 <div class="flex-1">
                     <div class="grm-progress">
-                        <div class="grm-progress-fill
-                            {% if disk.usage_pct > 90 %}grm-progress-fill-red
-                            {% elif disk.usage_pct > 75 %}grm-progress-fill-yellow
-                            {% else %}grm-progress-fill-blue{% endif %}"
+                        <div class="grm-progress-fill {{ disk.usage_pct|tier_fill:storage_pct_t }}"
                             style="width: {% if disk.usage_pct != None %}{{ disk.usage_pct }}{% else %}0{% endif %}%">
                         </div>
                     </div>
@@ -242,7 +249,7 @@
                     {% if disk.utilization_pct != None %}
                     <span class="grm-text-gray">
                         Util:
-                        <span class="{% if disk.utilization_pct >= 80 %}grm-text-red{% elif disk.utilization_pct >= 60 %}grm-text-orange{% elif disk.utilization_pct >= 40 %}grm-text-yellow{% elif disk.utilization_pct >= 20 %}grm-text-green{% else %}text-gray-500{% endif %}">
+                        <span class="{{ disk.utilization_pct|tier_text:disk_util_t }}">
                             {{ disk.utilization_pct|floatformat:1 }}%
                         </span>
                     </span>
@@ -284,9 +291,7 @@
                     <div class="grm-progress">
                         <div class="grm-progress-fill
                             {% if gpu.gpu_util_pct != None %}
-                                {% if gpu.gpu_util_pct > 90 %}grm-progress-fill-red
-                                {% elif gpu.gpu_util_pct > 70 %}grm-progress-fill-yellow
-                                {% else %}grm-progress-fill-green{% endif %}
+                                {{ gpu.gpu_util_pct|tier_fill:cpu_util_t }}
                             {% else %}grm-progress-fill-gray{% endif %}"
                             style="width: {% if gpu.gpu_util_pct != None %}{{ gpu.gpu_util_pct }}{% else %}0{% endif %}%">
                         </div>
@@ -302,9 +307,7 @@
                                 <div class="grm-progress">
                                     <div class="grm-progress-fill
                                         {% if gpu.mem_controller_util_pct != None %}
-                                            {% if gpu.mem_controller_util_pct > 90 %}grm-progress-fill-red
-                                            {% elif gpu.mem_controller_util_pct > 70 %}grm-progress-fill-yellow
-                                            {% else %}grm-progress-fill-green{% endif %}
+                                            {{ gpu.mem_controller_util_pct|tier_fill:cpu_util_t }}
                                         {% else %}grm-progress-fill-gray{% endif %}"
                                         style="width: {% if gpu.mem_controller_util_pct != None %}{{ gpu.mem_controller_util_pct }}{% else %}0{% endif %}%">
                                     </div>
@@ -318,7 +321,7 @@
                 <span>
                     Temp:
                     {% if gpu.gpu_temp_c != None %}
-                        <span class="{% if gpu.gpu_temp_c > 80 %}grm-text-red{% elif gpu.gpu_temp_c > 70 %}grm-text-yellow{% else %}grm-text-green{% endif %}">
+                        <span class="{{ gpu.gpu_temp_c|tier_text:gpu_temp_t }}">
                             {{ gpu.gpu_temp_c|floatformat:1 }}°C
                         </span>
                     {% else %}—{% endif %}
@@ -432,7 +435,7 @@
                     <tr class="border-b border-gray-700/30 last:border-0">
                         <td class="py-1 pr-3 font-mono text-gray-500">{{ proc.pid|default:"—" }}</td>
                         <td class="py-1 pr-3 truncate" title="{{ proc.cmdline|default:proc.name }}">{{ proc.name|default:"—"|truncatechars:24 }}</td>
-                        <td class="py-1 pr-3 text-right {% if proc.cpu_pct > 50 %}grm-text-red{% elif proc.cpu_pct > 20 %}grm-text-yellow{% endif %}">{{ proc.cpu_pct|floatformat:1 }}</td>
+                        <td class="py-1 pr-3 text-right {{ proc.cpu_pct|tier_text:process_cpu_t }}">{{ proc.cpu_pct|floatformat:1 }}</td>
                         <td class="py-1 pr-3 text-right">{{ proc.mem_pct|floatformat:1 }}</td>
                         <td class="py-1 text-gray-500 truncate">{{ proc.username|default:"—"|truncatechars:16 }}</td>
                     </tr>
@@ -460,7 +463,7 @@
                         <td class="py-1 pr-3 font-mono text-gray-500">{{ proc.pid|default:"—" }}</td>
                         <td class="py-1 pr-3 truncate" title="{{ proc.cmdline|default:proc.name }}">{{ proc.name|default:"—"|truncatechars:24 }}</td>
                         <td class="py-1 pr-3 text-right">{{ proc.cpu_pct|floatformat:1 }}</td>
-                        <td class="py-1 pr-3 text-right {% if proc.mem_pct > 10 %}grm-text-red{% elif proc.mem_pct > 5 %}grm-text-yellow{% endif %}">{{ proc.mem_pct|floatformat:1 }}</td>
+                        <td class="py-1 pr-3 text-right {{ proc.mem_pct|tier_text:process_mem_t }}">{{ proc.mem_pct|floatformat:1 }}</td>
                         <td class="py-1 text-gray-500 truncate">{{ proc.username|default:"—"|truncatechars:16 }}</td>
                     </tr>
                     {% endfor %}
@@ -901,7 +904,6 @@
                     {% else %}
                     <div class="bg-gray-800 rounded-lg p-3 text-center text-gray-500 text-xs">No logs (non-json-file driver or unreadable)</div>
                     {% endif %}
-                </div>
                 </div>
             </div>
             {% endfor %}

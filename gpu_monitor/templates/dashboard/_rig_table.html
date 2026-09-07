@@ -1,4 +1,7 @@
 {% load gpu_filters %}
+{# Color threshold specs (Phase 0.3) — see gpu_filters.py DEFAULT_THRESHOLDS #}
+{% color_tier_thresholds "cpu_temp" as cpu_temp_t %}
+{% color_tier_thresholds "disk_util" as disk_util_t %}
 <div class="bg-gray-800 rounded-lg border border-gray-700 overflow-x-auto">
     <table class="w-full text-xs">
         <thead class="bg-gray-750 grm-text-gray border-b border-gray-700">
@@ -113,7 +116,7 @@
                 {# CPU Temp column #}
                 <td class="px-2 py-2 whitespace-nowrap">
                     {% if snapshot and snapshot.cpu_temp_c != None %}
-                        <span class="{% if snapshot.cpu_temp_c > 85 %}grm-text-red{% elif snapshot.cpu_temp_c > 70 %}grm-text-yellow{% else %}grm-text-green{% endif %}">
+                        <span class="{{ snapshot.cpu_temp_c|tier_text:cpu_temp_t }}">
                             {{ snapshot.cpu_temp_c|floatformat:1 }}°C
                         </span>
                     {% else %}—{% endif %}
@@ -128,7 +131,7 @@
                 <td class="px-2 py-2 whitespace-nowrap">
                     {% if snapshot.storage_utilization_pcts_json %}
                         {% with max_util=snapshot.storage_utilization_pcts_json|max_disk_util %}
-                        <span class="{% if max_util >= 80 %}grm-text-red{% elif max_util >= 60 %}grm-text-orange{% elif max_util >= 40 %}grm-text-yellow{% elif max_util >= 20 %}grm-text-green{% else %}grm-text-muted{% endif %}">
+                        <span class="{{ max_util|tier_text:disk_util_t }}">
                             {{ max_util|floatformat:1 }}%
                         </span>
                         {% endwith %}

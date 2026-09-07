@@ -304,3 +304,260 @@ class CheckGrmCssClassesIntegrationTests(SimpleTestCase):
                 "manage.py check found issues — the grm-* class check "
                 "may be detecting real bugs. Run it manually to see."
             )
+
+
+# =====================================================================
+# Color tier filter tests (Phase 0.3)
+# =====================================================================
+
+from dashboard.templatetags import gpu_filters as gf
+
+
+class TierResolverTests(SimpleTestCase):
+    """Tests for the _resolve_color function — the heart of tier/tier_text/tier_fill."""
+
+    def test_returns_default_for_value_below_lowest_threshold(self):
+        # cpu_temp spec: >85 red, >70 yellow, default green
+        spec = gf.DEFAULT_THRESHOLDS["cpu_temp"]
+        self.assertEqual(gf._resolve_color(50, spec), "green")
+        self.assertEqual(gf._resolve_color(0, spec), "green")
+        self.assertEqual(gf._resolve_color(70, spec), "green")  # boundary: not >70
+
+    def test_returns_higher_color_for_higher_value(self):
+        spec = gf.DEFAULT_THRESHOLDS["cpu_temp"]
+        self.assertEqual(gf._resolve_color(86, spec), "red")
+        self.assertEqual(gf._resolve_color(71, spec), "yellow")
+        self.assertEqual(gf._resolve_color(86.5, spec), "red")
+
+    def test_boundary_strict_greater_than(self):
+        # Thresholds use `>` (strict greater than), not `>=`.
+        # So value == 85 should NOT match the red threshold (>85).
+        spec = gf.DEFAULT_THRESHOLDS["cpu_temp"]
+        self.assertEqual(gf._resolve_color(85, spec), "yellow")
+        self.assertEqual(gf._resolve_color(85.0001, spec), "red")
+
+    def test_returns_none_for_none_value(self):
+        spec = gf.DEFAULT_THRESHOLDS["cpu_temp"]
+        self.assertIsNone(gf._resolve_color(None, spec))
+
+    def test_returns_none_for_uncoercible_value(self):
+        spec = gf.DEFAULT_THRESHOLDS["cpu_temp"]
+        self.assertIsNone(gf._resolve_color("not a number", spec))
+        self.assertIsNone(gf._resolve_color([], spec))
+        self.assertIsNone(gf._resolve_color({}, spec))
+
+    def test_returns_none_for_none_spec(self):
+        # Defensive: a missing thresholds object returns None (caller decides
+        # what to do, not the resolver).
+        self.assertIsNone(gf._resolve_color(50, None))
+
+    def test_returns_spec_default_color(self):
+        # When the spec has (None, color) as its last entry, that color
+        # is returned when no earlier threshold matches (i.e. value is
+        # below all the explicit thresholds).
+        spec = [(10, "red"), (None, "yellow")]
+        self.assertEqual(gf._resolve_color(5, spec), "yellow")   # below all -> default
+        self.assertEqual(gf._resolve_color(11, spec), "red")     # above 10 -> red
+        self.assertEqual(gf._resolve_color(100, spec), "red")    # above 10 -> red
+
+    def test_default_color_not_returned_when_earlier_threshold_matches(self):
+        # Verifies the default is ONLY used when no earlier threshold
+        # matches. If a value is above any threshold, the color of
+        # THAT threshold wins (not the default).
+        # Spec ordered highest-to-lowest? No — we use first-match-wins,
+        # so spec entries must be ordered LOWEST-to-HIGHEST for layered
+        # thresholds to work. cpu_util spec is (80,red), (60,orange), ...
+        # which is wrong by this convention; the actual spec is built
+        # correctly. For this test, use a low-to-high spec.
+        spec = [(10, "red"), (20, "orange"), (None, "yellow")]
+        # value 5: not > 10, not > 20, default yellow
+        self.assertEqual(gf._resolve_color(5, spec), "yellow")
+        # value 15: > 10 -> red (first match wins)
+        self.assertEqual(gf._resolve_color(15, spec), "red")
+        # value 25: > 10 -> red (first match wins; we don't reach orange)
+        self.assertEqual(gf._resolve_color(25, spec), "red")
+
+    def test_handles_explicit_none_color_in_spec(self):
+        # A spec can have (min, None) to mean "no color override" for
+        # that bucket — used by process_cpu to suppress color for low
+        # values.
+        spec = [(50, "red"), (None, None)]
+        self.assertEqual(gf._resolve_color(60, spec), "red")
+        self.assertIsNone(gf._resolve_color(5, spec))
+
+    def test_5_tier_disk_util(self):
+        # Disk util has 5 tiers — verify all of them
+        # Spec uses `>` (strict greater than), so the boundary value
+        # matches the LOWER tier, not the upper.
+        spec = gf.DEFAULT_THRESHOLDS["disk_util"]
+        # 81 -> >80 -> red
+        self.assertEqual(gf._resolve_color(95, spec), "red")
+        self.assertEqual(gf._resolve_color(81, spec), "red")
+        # 80 -> not >80, >60 -> orange
+        self.assertEqual(gf._resolve_color(80, spec), "orange")
+        self.assertEqual(gf._resolve_color(70, spec), "orange")
+        # 60 -> not >60, >40 -> yellow
+        self.assertEqual(gf._resolve_color(60, spec), "yellow")
+        self.assertEqual(gf._resolve_color(50, spec), "yellow")
+        # 40 -> not >40, >20 -> green
+        self.assertEqual(gf._resolve_color(40, spec), "green")
+        self.assertEqual(gf._resolve_color(30, spec), "green")
+        # 20 -> not >20, default -> muted
+        self.assertEqual(gf._resolve_color(20, spec), "muted")
+        self.assertEqual(gf._resolve_color(10, spec), "muted")
+
+    def test_inverted_gpu_util(self):
+        # GPU util is inverted: high = good (green), low = bad (muted).
+        # Verify the ordering is correct.
+        spec = gf.DEFAULT_THRESHOLDS["gpu_util"]
+        self.assertEqual(gf._resolve_color(95, spec), "green")
+        self.assertEqual(gf._resolve_color(60, spec), "gray")
+        self.assertEqual(gf._resolve_color(10, spec), "muted")
+
+
+class TierFilterTests(SimpleTestCase):
+    """Tests for the `tier` filter (returns bare color name)."""
+
+    def test_tier_returns_color_name(self):
+        spec = gf.DEFAULT_THRESHOLDS["cpu_temp"]
+        self.assertEqual(gf.tier(90, spec), "red")
+        self.assertEqual(gf.tier(50, spec), "green")
+
+    def test_tier_returns_none_for_bad_input(self):
+        spec = gf.DEFAULT_THRESHOLDS["cpu_temp"]
+        self.assertIsNone(gf.tier(None, spec))
+        self.assertIsNone(gf.tier("foo", spec))
+
+
+class TierTextFilterTests(SimpleTestCase):
+    """Tests for the `tier_text` filter (returns 'grm-text-{color}')."""
+
+    def test_tier_text_returns_full_class(self):
+        spec = gf.DEFAULT_THRESHOLDS["cpu_temp"]
+        self.assertEqual(gf.tier_text(90, spec), "grm-text-red")
+        self.assertEqual(gf.tier_text(50, spec), "grm-text-green")
+
+    def test_tier_text_returns_empty_string_for_no_color(self):
+        # process_cpu spec returns None for low values — should produce
+        # empty string, not the literal "grm-text-None".
+        spec = gf.DEFAULT_THRESHOLDS["process_cpu"]
+        self.assertEqual(gf.tier_text(5, spec), "")
+        self.assertEqual(gf.tier_text(None, spec), "")
+
+    def test_tier_text_returns_empty_string_for_bad_input(self):
+        spec = gf.DEFAULT_THRESHOLDS["cpu_temp"]
+        self.assertEqual(gf.tier_text("not a number", spec), "")
+
+
+class TierFillFilterTests(SimpleTestCase):
+    """Tests for the `tier_fill` filter (returns 'grm-progress-fill-{color}')."""
+
+    def test_tier_fill_returns_full_class(self):
+        spec = gf.DEFAULT_THRESHOLDS["cpu_util"]
+        self.assertEqual(gf.tier_fill(90, spec), "grm-progress-fill-red")
+        self.assertEqual(gf.tier_fill(50, spec), "grm-progress-fill-yellow")
+        self.assertEqual(gf.tier_fill(10, spec), "grm-progress-fill-gray")
+
+    def test_tier_fill_returns_empty_string_for_no_color(self):
+        spec = gf.DEFAULT_THRESHOLDS["process_cpu"]
+        self.assertEqual(gf.tier_fill(5, spec), "")
+
+
+class ColorTierThresholdsTagTests(SimpleTestCase):
+    """Tests for the color_tier_thresholds simple_tag."""
+
+    def test_returns_spec_for_known_name(self):
+        spec = gf.color_tier_thresholds("cpu_temp")
+        self.assertEqual(spec, gf.DEFAULT_THRESHOLDS["cpu_temp"])
+
+    def test_raises_for_unknown_name(self):
+        with self.assertRaises(KeyError) as cm:
+            gf.color_tier_thresholds("nonexistent_metric")
+        self.assertIn("nonexistent_metric", str(cm.exception))
+        self.assertIn("Known specs", str(cm.exception))
+
+    def test_all_default_specs_have_valid_structure(self):
+        # Sanity check: every spec has at least one entry and the
+        # last entry is the default (min_value is None).
+        for name, spec in gf.DEFAULT_THRESHOLDS.items():
+            with self.subTest(spec=name):
+                self.assertGreater(len(spec), 0, f"spec {name} is empty")
+                self.assertIsNone(
+                    spec[-1][0],
+                    f"spec {name} must end with a (None, color) default entry"
+                )
+
+
+class MultiGpuCellRenderTests(SimpleTestCase):
+    """Tests for _render_tier_cell and the gpu_*_cell_json simple_tags."""
+
+    def test_empty_json_returns_placeholder(self):
+        from types import SimpleNamespace
+        snap = SimpleNamespace(gpu_temps_json=None)
+        result = str(gf.gpu_temp_cell_json(snap))
+        self.assertIn("—", result)
+        self.assertIn("grm-text-gray", result)
+
+    def test_empty_list_returns_placeholder(self):
+        from types import SimpleNamespace
+        snap = SimpleNamespace(gpu_temps_json=[])
+        result = str(gf.gpu_temp_cell_json(snap))
+        self.assertIn("—", result)
+
+    def test_renders_color_coded_values(self):
+        from types import SimpleNamespace
+        # Mixed temps: 85 (red), 75 (yellow), 55 (green), None (—)
+        snap = SimpleNamespace(gpu_temps_json=[85, 75, 55, None])
+        result = str(gf.gpu_temp_cell_json(snap))
+        # All four should appear
+        self.assertIn("grm-text-red", result)
+        self.assertIn("grm-text-yellow", result)
+        self.assertIn("grm-text-green", result)
+        self.assertIn("grm-text-gray", result)  # for None
+        # 4 separate spans
+        self.assertEqual(result.count("<span"), 4)
+
+    def test_inverted_coloring_for_gpu_util(self):
+        from types import SimpleNamespace
+        # GPU util: >90 green, >50 gray, default muted
+        snap = SimpleNamespace(gpu_utils_json=[95, 60, 20])
+        result = str(gf.gpu_util_cell_json(snap))
+        self.assertIn("grm-text-green", result)
+        self.assertIn("grm-text-gray", result)
+        self.assertIn("grm-text-muted", result)
+
+    def test_value_with_no_color_override_renders_plain(self):
+        # process_cpu spec returns None for low values. When called via
+        # the GPU util cell, this doesn't apply (GPU util always has a
+        # color), but verify the helper handles it.
+        from types import SimpleNamespace
+        from dashboard.templatetags.gpu_filters import _render_tier_cell
+        snap = SimpleNamespace(test_json=[5])
+        result = str(_render_tier_cell(snap, "test_json", "process_cpu", "grm-text-gray"))
+        # No color class because the spec returns None
+        self.assertNotIn("grm-text-red", result)
+        self.assertIn("5", result)
+
+
+class TierTemplateIntegrationTests(SimpleTestCase):
+    """End-to-end: render a template that uses the new tier system."""
+
+    def test_tier_text_renders_in_template(self):
+        from django.template import Template, Context
+        t = Template(
+            '{% load gpu_filters %}'
+            '{% color_tier_thresholds "cpu_temp" as t %}'
+            '<span class="{{ 90|tier_text:t }}">hot</span>'
+        )
+        result = t.render(Context({}))
+        self.assertIn('class="grm-text-red"', result)
+
+    def test_tier_fill_renders_in_template(self):
+        from django.template import Template, Context
+        t = Template(
+            '{% load gpu_filters %}'
+            '{% color_tier_thresholds "cpu_util" as t %}'
+            '<div class="grm-progress-fill {{ 90|tier_fill:t }}"></div>'
+        )
+        result = t.render(Context({}))
+        self.assertIn('class="grm-progress-fill grm-progress-fill-red"', result)

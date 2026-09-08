@@ -56,11 +56,11 @@ resp = client.get(f'/dashboard/rigs/{rig.uuid}/htmx-metrics/')
 body = resp.content.decode('utf-8', errors='replace')
 
 checks = [
-    # Component classes (still in app.css)
-    ('grm-card', 'Card class present'),
-    ('grm-progress', 'Progress bar container class present'),
-    ('grm-progress-fill ', 'Progress fill (layout) class present'),
-    # Tier system (composed as Tailwind 400-series) — verify at least
+    # Component classes (now inlined as Tailwind utilities)
+    ('bg-gray-800 border border-gray-700 rounded-lg p-4', 'Card class present (Tailwind)'),
+    ('w-full bg-gray-700 rounded-full h-2 overflow-hidden', 'Progress bar container class present (Tailwind)'),
+    ('h-full rounded-full transition-all duration-200 ease-out', 'Progress fill (layout) class present (Tailwind)'),
+    # Tier system classes (composed as Tailwind 400-series) — verify at least
     # one tier color is used. Specific tier classes depend on the
     # current data (e.g. if CPU is 80% you get bg-red-400; if it's 5%
     # you get bg-gray-400). So we check for the "bg-X-400" / "text-X-400"
@@ -104,8 +104,8 @@ forbidden = [
     ('bg-red-500', 'Old bg-red-500 (should be bg-red-400)'),
     ('bg-yellow-500', 'Old bg-yellow-500 (should be bg-yellow-400)'),
     ('bg-blue-500', 'Old bg-blue-500 (should be bg-blue-400)'),
-    # Pre-Phase 0.1 raw card recipe
-    ('bg-gray-800 border border-gray-700 rounded-lg p-4', 'Old card recipe'),
+    # Old custom card class (grm-card) should be gone
+    ('grm-card', 'Old card class (should be replaced with Tailwind utilities)'),
     # text-gray-500 IS a valid Tailwind class (dim secondary text in
     # audit log and similar). It's NOT a remnant of the deleted
     # grm-text-muted. Removed from forbidden list.

@@ -18,7 +18,7 @@
             <input type="color" name="color" value="#6B7280"
                    class="w-10 h-10 rounded cursor-pointer bg-transparent border-0">
         </div>
-        <button type="submit" class="grm-btn-primary">
+        <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded transition-colors duration-150">
             Create
         </button>
     </form>
@@ -26,7 +26,7 @@
     {# Tag list — plain loop, no HTMX #}
     <div class="space-y-2">
         {% for tag in tags %}
-        <div class="grm-card flex items-center justify-between">
+        <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 flex items-center justify-between">
             <div class="flex items-center gap-3">
                 <span class="w-4 h-4 rounded-full flex-shrink-0" style="background: {{ tag.color }}"></span>
                 <span class="font-medium">{{ tag.name }}</span>
@@ -57,9 +57,9 @@
                         <input type="color" name="color" value="{{ tag.color }}"
                                class="w-8 h-8 rounded cursor-pointer bg-transparent border-0">
                     </div>
-                    <button type="submit" class="grm-btn-primary text-sm px-3 py-1.5">Save</button>
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded transition-colors duration-150 "text-sm px-3 py-1.5">Save</button>
                     <button type="button" onclick="document.getElementById('tag-edit-{{ tag.id }}').classList.add('hidden')"
-                            class="grm-btn-ghost text-sm px-3 py-1.5">Cancel</button>
+                            class="bg-gray-700 hover:bg-gray-600 text-gray-300 px-4 py-2 rounded transition-colors duration-150 "text-sm px-3 py-1.5">Cancel</button>
                 </form>
             </div>
         </div>

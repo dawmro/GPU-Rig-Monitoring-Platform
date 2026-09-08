@@ -10,7 +10,7 @@
     {% endfor %}
     {% endif %}
 
-    <div class="grm-card-lg mb-6">
+    <div class="bg-gray-800 border border-gray-700 rounded-lg p-6 "mb-6">
         <h3 class="text-lg font-medium mb-4">Account Information</h3>
         <div class="grid grid-cols-2 gap-4 text-sm">
             <div>
@@ -32,7 +32,7 @@
         </div>
     </div>
 
-    <div class="grm-card-lg mb-6">
+    <div class="bg-gray-800 border border-gray-700 rounded-lg p-6 "mb-6">
         <h3 class="text-lg font-medium mb-4">Power Settings</h3>
         <p class="text-sm text-gray-300 mb-4">Configure your electricity rate to estimate power consumption costs per rig.</p>
         <form method="post" class="space-y-4">
@@ -45,13 +45,13 @@
                        class="w-full grm-input-lg">
                 <p class="text-xs text-gray-400 mt-1">Your local electricity cost per kilowatt-hour. Used to estimate running costs.</p>
             </div>
-            <button type="submit" class="grm-btn-primary">
+            <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded transition-colors duration-150">
                 Save Power Settings
             </button>
         </form>
     </div>
 
-    <div class="grm-card-lg">
+    <div class="bg-gray-800 border border-gray-700 rounded-lg p-6">
         <h3 class="text-lg font-medium mb-4">Change Password</h3>
         <form method="post" class="space-y-4">
             {% csrf_token %}
@@ -72,7 +72,7 @@
                 <input type="password" name="confirm_password" required minlength="8"
                     class="w-full grm-input-lg">
             </div>
-            <button type="submit" class="grm-btn-primary">
+            <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded transition-colors duration-150">
                 Change Password
             </button>
         </form>

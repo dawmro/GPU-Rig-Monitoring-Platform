@@ -6,7 +6,7 @@
     <p class="text-gray-300 mb-6">Transfer API keys and their enrolled rigs from one user to another.</p>
 
     <!-- Step 1: Select Source User -->
-    <div class="grm-card mb-4">
+    <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
         <h3 class="text-sm font-medium text-gray-200 mb-3">Step 1: Select Source User</h3>
         <select name="source_user_id" required
                 class="w-full grm-input-lg"
@@ -27,13 +27,13 @@
         <input type="hidden" name="source_user_id" value="{{ source_user.id }}">
 
         <!-- Step 2: Select Keys -->
-        <div class="grm-card mb-4">
+        <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
             <h3 class="text-sm font-medium text-gray-200 mb-3">Step 2: Select Key(s) from {{ source_user.email }}</h3>
 
             {% if source_keys %}
             <div class="space-y-2 max-h-[400px] overflow-y-auto">
                 {% for key in source_keys %}
-                <div class="grm-card">
+                <div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
                     <label class="flex items-start gap-3 cursor-pointer">
                         <input type="checkbox" name="key_ids" value="{{ key.id }}"
                                class="mt-1 w-4 h-4 rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-500 focus:ring-offset-0">
@@ -61,7 +61,7 @@
 
         <!-- Step 3: Select Target and Confirm -->
         {% if source_keys %}
-        <div class="grm-card mb-4">
+        <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
             <h3 class="text-sm font-medium text-gray-200 mb-3">Step 3: Select Target User</h3>
 
             <div class="flex gap-3 mb-4">
@@ -77,14 +77,14 @@
             </div>
 
             <!-- Warning -->
-            <div class="grm-alert grm-alert-warning mb-4">
+            <div class="border p-4 py-3 rounded mb-4 "grm-alert-warning mb-4">
                 <p>
                     ⚠️ This will transfer the selected key(s) and all their enrolled rigs to the target user.
                     Rig tags will be cleared (tags are per-user). This action cannot be undone.
                 </p>
             </div>
 
-            <button type="submit" class="grm-btn-warning">
+            <button type="submit" class="bg-yellow-600 hover:bg-yellow-700 text-white font-medium px-4 py-2 rounded transition-colors duration-150">
                 Transfer Selected Keys
             </button>
         </div>

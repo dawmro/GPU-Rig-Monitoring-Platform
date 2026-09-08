@@ -34,7 +34,7 @@ The summary bar should only show what isn't already visible lower
 on the page. This keeps the bar from being noise.
 {% endcomment %}
 {% if snapshot %}
-<div class="grm-card flex flex-wrap items-center gap-x-6 gap-y-2 mb-4 text-sm">
+<div class="bg-gray-800 border border-gray-700 rounded-lg p-4 flex flex-wrap items-center gap-x-6 gap-y-2 mb-4 text-sm">
     <div class="flex items-center gap-2">
         <span class="text-gray-400">CPUs:</span>
         <span class="font-medium">{{ snapshot.cpu_physical_cores|default:"?" }}</span>
@@ -53,7 +53,7 @@ on the page. This keeps the bar from being noise.
 <!-- ════════════════════════════════════════════════════════════════ -->
 <!-- CPU -->
 <!-- ════════════════════════════════════════════════════════════════ -->
-<div class="grm-card">
+<div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
     <h3 class="text-gray-300 text-sm font-medium mb-2">
         CPU
         {% if is_data_stale %}
@@ -69,8 +69,8 @@ on the page. This keeps the bar from being noise.
     </div>
     <div class="flex items-center gap-3 mb-2">
         <div class="flex-1">
-            <div class="grm-progress">
-                <div class="grm-progress-fill
+            <div class="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
+                <div class="h-full rounded-full transition-all duration-200 ease-out
                     {% if snapshot.cpu_utilization_pct != None %}
                         {{ snapshot.cpu_utilization_pct|tier_fill:cpu_util_t }}
                     {% else %}bg-gray-400{% endif %}"
@@ -129,7 +129,7 @@ on the page. This keeps the bar from being noise.
 <!-- ════════════════════════════════════════════════════════════════ -->
 <!-- Power Consumption -->
 <!-- ════════════════════════════════════════════════════════════════ -->
-<div class="grm-card">
+<div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
     <h3 class="text-gray-300 text-sm font-medium mb-2">
         Power Consumption
         {% if is_data_stale %}
@@ -176,7 +176,7 @@ on the page. This keeps the bar from being noise.
 
 <!-- ════════════════════════════════════════════════════════════════ -->
 <!-- Memory -->
-<div class="grm-card">
+<div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
     <h3 class="text-gray-300 text-sm font-medium mb-2">
         Memory
         {% if is_data_stale %}
@@ -186,9 +186,9 @@ on the page. This keeps the bar from being noise.
     {% if snapshot.mem_total_bytes %}
     <div class="flex items-center gap-3 mb-2">
         <div class="flex-1">
-            <div class="grm-progress">
+            <div class="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
                 {% widthratio snapshot.mem_used_bytes snapshot.mem_total_bytes 100 as mem_pct %}
-                <div class="grm-progress-fill {{ mem_pct|tier_fill:mem_pct_t }}"
+                <div class="h-full rounded-full transition-all duration-200 ease-out "{{ mem_pct|tier_fill:mem_pct_t }}"
                     style="width: {{ mem_pct }}%">
                 </div>
             </div>
@@ -221,7 +221,7 @@ on the page. This keeps the bar from being noise.
 <!-- ════════════════════════════════════════════════════════════════ -->
 <!-- Storage (per device) -->
 <!-- ════════════════════════════════════════════════════════════════ -->
-<div class="grm-card">
+<div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
     <h3 class="text-gray-300 text-sm font-medium mb-2">
         Storage ({{ storage_metrics|length }})
         {% if is_data_stale %}
@@ -237,8 +237,8 @@ on the page. This keeps the bar from being noise.
             </div>
             <div class="flex items-center gap-3 mb-1">
                 <div class="flex-1">
-                    <div class="grm-progress">
-                        <div class="grm-progress-fill {{ disk.usage_pct|tier_fill:storage_pct_t }}"
+                    <div class="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
+                        <div class="h-full rounded-full transition-all duration-200 ease-out "{{ disk.usage_pct|tier_fill:storage_pct_t }}"
                             style="width: {% if disk.usage_pct != None %}{{ disk.usage_pct }}{% else %}0{% endif %}%">
                         </div>
                     </div>
@@ -302,7 +302,7 @@ on the page. This keeps the bar from being noise.
 <!-- ════════════════════════════════════════════════════════════════ -->
 <!-- GPU (per device) -->
 <!-- ════════════════════════════════════════════════════════════════ -->
-<div class="grm-card">
+<div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
     <h3 class="text-gray-300 text-sm font-medium mb-2">
         GPU ({{ gpu_metrics|length }})
         {% if is_data_stale %}
@@ -323,8 +323,8 @@ on the page. This keeps the bar from being noise.
             <div class="flex items-center gap-3 mb-1">
                 <span class="text-xs text-gray-500 w-16 text-right">Core</span>
                 <div class="flex-1">
-                    <div class="grm-progress">
-                        <div class="grm-progress-fill
+                    <div class="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
+                        <div class="h-full rounded-full transition-all duration-200 ease-out
                             {% if gpu.gpu_util_pct != None %}
                                 {{ gpu.gpu_util_pct|tier_fill:cpu_util_t }}
                             {% else %}bg-gray-400{% endif %}"
@@ -339,8 +339,8 @@ on the page. This keeps the bar from being noise.
             <div class="flex items-center gap-3 mb-1">
                 <span class="text-xs text-gray-500 w-16 text-right">Mem</span>
                 <div class="flex-1">
-                                <div class="grm-progress">
-                                    <div class="grm-progress-fill
+                                <div class="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
+                                    <div class="h-full rounded-full transition-all duration-200 ease-out
                                         {% if gpu.mem_controller_util_pct != None %}
                                             {{ gpu.mem_controller_util_pct|tier_fill:cpu_util_t }}
                                         {% else %}bg-gray-400{% endif %}"
@@ -374,7 +374,7 @@ on the page. This keeps the bar from being noise.
             {% if gpu.mem_used_mb != None and gpu.mem_total_mb %}
             <div class="flex items-center gap-3 mb-1">
                 <div class="flex-1">
-                    <div class="grm-progress-thin">
+                    <div class="w-full bg-gray-700 rounded-full h-1.5 overflow-hidden">
                         {% widthratio gpu.mem_used_mb gpu.mem_total_mb 100 as vram_pct %}
                         <div class="bg-purple-500 h-1.5 rounded-full" style="width: {{ vram_pct }}%"></div>
                     </div>
@@ -407,7 +407,7 @@ on the page. This keeps the bar from being noise.
 <!-- GPU Processes (from nvidia-smi) -->
 <!-- ════════════════════════════════════════════════════════════════ -->
 {% if gpu_processes %}
-<div class="grm-card">
+<div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
     <h3 class="text-gray-300 text-sm font-medium mb-2">
         GPU Processes ({{ gpu_processes|length }})
         {% if is_data_stale %}
@@ -444,7 +444,7 @@ on the page. This keeps the bar from being noise.
 <!-- Top Processes (by CPU and Memory) -->
 <!-- ════════════════════════════════════════════════════════════════ -->
 {% if top_cpu_processes or top_mem_processes %}
-<div class="grm-card">
+<div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
     <h3 class="text-gray-300 text-sm font-medium mb-2">
         Top Processes{% if process_count %} ({{ process_count }} total){% endif %}
         {% if is_data_stale %}
@@ -513,7 +513,7 @@ on the page. This keeps the bar from being noise.
 <!-- Process Details (top5 by CPU ∪ top5 by Mem, deduped by PID)     -->
 <!-- ════════════════════════════════════════════════════════════════ -->
 {% if process_details %}
-<div class="grm-card">
+<div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
     <h3 class="text-gray-300 text-sm font-medium mb-2">
         Process Details
         {% if is_data_stale %}<span class="text-xs text-yellow-400 ml-1">(stale)</span>{% endif %}
@@ -541,7 +541,7 @@ on the page. This keeps the bar from being noise.
 <!-- ════════════════════════════════════════════════════════════════ -->
 <!-- Network (per interface) -->
 <!-- ════════════════════════════════════════════════════════════════ -->
-<div class="grm-card">
+<div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
     <h3 class="text-gray-300 text-sm font-medium mb-2">
         Network ({{ network_metrics|length }})
         {% if is_data_stale %}
@@ -592,7 +592,7 @@ on the page. This keeps the bar from being noise.
 <!-- Motherboard -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
 {% if snapshot.motherboard_json %}
-<div class="grm-card">
+<div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
     <h3 class="text-gray-300 text-sm font-medium mb-2">Motherboard</h3>
     <div class="text-sm text-gray-200">
         {{ snapshot.motherboard_json.manufacturer|default:"—" }}
@@ -610,7 +610,7 @@ on the page. This keeps the bar from being noise.
 <!-- Software / OS -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
 {% if snapshot.software_json %}
-<div class="grm-card">
+<div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
     <h3 class="text-gray-300 text-sm font-medium mb-2">Software</h3>
     <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
         <div class="text-gray-500">Hostname:</div>
@@ -642,7 +642,7 @@ on the page. This keeps the bar from being noise.
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <!-- Docker Containers -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
-<div class="grm-card">
+<div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
     <h3 class="text-gray-300 text-sm font-medium mb-2">Docker{% if docker_metrics %} ({{ docker_metrics|length }}){% endif %}</h3>
     {% if docker_metrics %}
     <div class="overflow-x-auto">
@@ -681,7 +681,7 @@ on the page. This keeps the bar from being noise.
     <!-- ════════════════════════════════════════════════════════════════ -->
     {% with running_containers=docker_metrics|filter_running %}
     {% if running_containers %}
-    <div class="grm-card">
+    <div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
         <h3 class="text-gray-300 text-sm font-medium mb-2">
             Container Details ({{ running_containers|length }} running)
             {% if is_data_stale %}<span class="text-xs text-yellow-400 ml-1">(stale)</span>{% endif %}
@@ -945,7 +945,7 @@ on the page. This keeps the bar from being noise.
         </div>
     </div>
     {% else %}
-    <div class="grm-card">
+    <div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
         <h3 class="text-gray-300 text-sm font-medium mb-2">Container Details</h3>
         <div class="text-gray-500 text-xs">No running containers</div>
     </div>
@@ -955,7 +955,7 @@ on the page. This keeps the bar from being noise.
     <!-- ════════════════════════════════════════════════════════════════ -->
     <!-- Latest Errors (from Rig.latest_errors_json) -->
     <!-- ════════════════════════════════════════════════════════════════ -->
-    <div class="grm-card mt-4 max-w-full">
+    <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mt-4 max-w-full">
     <h3 class="text-gray-300 text-sm font-medium mb-2">Latest Errors</h3>
     {% if recent_errors %}
     <div class="flex items-center justify-between mb-2">

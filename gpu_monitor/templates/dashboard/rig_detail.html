@@ -33,8 +33,8 @@
                                class="text-xl font-bold grm-input-lg w-64"
                                maxlength="128"
                                required>
-                        <button type="submit" class="grm-btn-primary px-3 py-1 text-sm">Save</button>
-                        <button type="button" class="grm-btn-ghost px-3 py-1 text-sm"
+                        <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded transition-colors duration-150 "px-3 py-1 text-sm">Save</button>
+                        <button type="button" class="bg-gray-700 hover:bg-gray-600 text-gray-300 px-4 py-2 rounded transition-colors duration-150 "px-3 py-1 text-sm"
                                 onclick="toggleRenameForm()">Cancel</button>
                     </div>
                 </form>
@@ -190,7 +190,7 @@
 
     <!-- Tab: Containers -->
     <div id="tab-content-containers" class="tab-content hidden">
-        <div class="grm-card">
+        <div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
             <div class="flex items-center justify-between mb-4">
                 <h3 class="text-sm font-medium text-gray-200">Container History</h3>
                 {% if container_history %}
@@ -230,7 +230,7 @@
 
     <!-- Tab: Errors -->
     <div id="tab-content-errors" class="tab-content hidden">
-        <div class="grm-card">
+        <div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
             <div class="flex items-center justify-between mb-4">
                 <h3 class="text-sm font-medium text-gray-200">Error History</h3>
                 {% if error_history %}
@@ -261,7 +261,7 @@
 
     <!-- Tab: Report -->
     <div id="tab-content-report" class="tab-content hidden">
-        <div class="grm-card">
+        <div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
             <!-- Time range selector -->
             <div class="flex items-center gap-2 mb-4">
                 <span class="text-xs text-gray-300">Range:</span>
@@ -323,7 +323,7 @@ window.GRM.RigState = {
 
 <!-- Delete Confirmation Modal -->
 <div id="delete-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70">
-    <div class="grm-card-lg max-w-md mx-4 shadow-2xl">
+    <div class="bg-gray-800 border border-gray-700 rounded-lg p-6 "max-w-md mx-4 shadow-2xl">
         <div class="flex items-center gap-3 mb-4">
             <div class="flex-shrink-0 w-10 h-10 rounded-full bg-red-900/30 flex items-center justify-center">
                 <svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
@@ -341,11 +341,11 @@ window.GRM.RigState = {
             <div class="flex items-center justify-end gap-3">
                 <button type="button"
                         onclick="hideDeleteModal()"
-                        class="grm-btn-ghost">
+                        class="bg-gray-700 hover:bg-gray-600 text-gray-300 px-4 py-2 rounded transition-colors duration-150">
                     Cancel
                 </button>
                 <button type="submit"
-                        class="grm-btn-danger">
+                        class="bg-red-600 hover:bg-red-700 text-white font-medium px-4 py-2 rounded transition-colors duration-150">
                     Delete Permanently
                 </button>
             </div>

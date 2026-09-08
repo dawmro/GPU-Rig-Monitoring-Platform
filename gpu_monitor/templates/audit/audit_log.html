@@ -6,7 +6,7 @@
 
     <!-- Filters -->
     <form class="flex flex-wrap gap-3 mb-4" method="get">
-        <select name="action" class="grm-input">
+        <select name="action" class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white">
             <option value="">All Actions</option>
             {% for action in actions %}
             <option value="{{ action }}" {% if action == action_filter %}selected{% endif %}>
@@ -15,14 +15,14 @@
             {% endfor %}
         </select>
         <input type="date" name="date_from" value="{{ date_from }}"
-               class="grm-input">
+               class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white">
         <input type="date" name="date_to" value="{{ date_to }}"
-               class="grm-input">
-        <button type="submit" class="grm-btn-primary px-3 py-1.5 text-sm">Filter</button>
+               class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white">
+        <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded transition-colors duration-150 "px-3 py-1.5 text-sm">Filter</button>
     </form>
 
     <!-- Log entries -->
-    <div class="grm-card-lg">
+    <div class="bg-gray-800 border border-gray-700 rounded-lg p-6">
         {% for log in logs %}
         <div class="border-b border-gray-700 p-3 hover:bg-gray-750">
             <div class="flex items-start justify-between gap-4">

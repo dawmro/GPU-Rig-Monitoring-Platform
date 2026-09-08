@@ -522,7 +522,7 @@ def color_tier_thresholds(name, varname=None):
 
     Usage:
         {% color_tier_thresholds "cpu_temp" as cpu_temp_thresholds %}
-        <span class="grm-text-{{ val|tier:cpu_temp_thresholds }}">
+        <span class="{{ val|tier_text:cpu_temp_thresholds }}">
 
     Or, to set in the context and not assign to a variable:
         {% color_tier_thresholds "cpu_temp" %}

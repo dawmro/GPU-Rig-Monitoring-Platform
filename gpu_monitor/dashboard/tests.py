@@ -16,11 +16,24 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from django.core.checks import Error, Warning
-from django.test import SimpleTestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
 
 from dashboard import checks
+
+from dashboard.views import (
+    _build_gpu_metrics,
+    _build_storage_metrics,
+    _build_network_metrics,
+    _build_docker_metrics,
+    _build_process_details,
+    _derive_primary_ip,
+    _fetch_rig_metrics,
+)
+from dashboard.templatetags import gpu_filters as gf
 
 
 class TokenizerTests(SimpleTestCase):
@@ -1128,3 +1141,431 @@ class TierFilterTemplateIntegrationTests(SimpleTestCase):
         self.assertEqual(gf._resolve_color(80, spec), "yellow")
         self.assertEqual(gf._resolve_color(60, spec), "blue")
         self.assertEqual(gf._resolve_color(30, spec), "gray")
+
+
+# =====================================================================
+# Phase 2.4: Per-device metric builder tests
+# =====================================================================
+
+class BuildGpuMetricsTests(SimpleTestCase):
+    """Tests for _build_gpu_metrics builder."""
+
+    def test_build_gpu_metrics_with_complete_snapshot(self):
+        snap = SimpleNamespace(
+            gpu_count=2,
+            gpu_uuids_json=["gpu-1", "gpu-2"],
+            gpu_models_json=["RTX 3080", "RTX 3090"],
+            gpu_temps_json=[65, 72],
+            gpu_utils_json=[95, 88],
+            gpu_fans_json=[60, 65],
+            gpu_core_clocks_json=[1800, 1750],
+            gpu_mem_clocks_json=[9500, 9750],
+            gpu_mem_used_json=[8192, 16384],
+            gpu_mem_total_json=[10240, 24576],
+            gpu_mem_util_pcts_json=[80, 66],
+            gpu_mem_controller_utils_json=[75, 70],
+            gpu_mem_free_json=[2048, 8192],
+            gpu_power_draws_json=[250, 320],
+            gpu_power_limits_json=[320, 350],
+            gpu_pcie_gen_json=[4, 4],
+            gpu_pcie_max_gen_json=[4, 4],
+            gpu_pcie_width_json=[16, 16],
+            gpu_pcie_max_width_json=[16, 16],
+        )
+        result = _build_gpu_metrics(snap)
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["gpu_uuid"], "gpu-1")
+        self.assertEqual(result[0]["model"], "RTX 3080")
+        self.assertEqual(result[0]["gpu_temp_c"], 65)
+        self.assertEqual(result[0]["gpu_util_pct"], 95)
+        self.assertEqual(result[0]["fan_speed_pct"], 60)
+        self.assertEqual(result[1]["model"], "RTX 3090")
+        self.assertEqual(result[1]["gpu_temp_c"], 72)
+
+    def test_build_gpu_metrics_with_no_gpus(self):
+        snap = SimpleNamespace(gpu_count=0)
+        self.assertEqual(_build_gpu_metrics(snap), [])
+
+    def test_build_gpu_metrics_handles_null_snapshot(self):
+        self.assertEqual(_build_gpu_metrics(None), [])
+
+    def test_build_gpu_metrics_handles_missing_json(self):
+        snap = SimpleNamespace(
+            gpu_count=1,
+            gpu_uuids_json=None,
+            gpu_models_json=None,
+            gpu_temps_json=None,
+            gpu_utils_json=None,
+            gpu_fans_json=None,
+            gpu_core_clocks_json=None,
+            gpu_mem_clocks_json=None,
+            gpu_mem_used_json=None,
+            gpu_mem_total_json=None,
+            gpu_mem_util_pcts_json=None,
+            gpu_mem_controller_utils_json=None,
+            gpu_mem_free_json=None,
+            gpu_power_draws_json=None,
+            gpu_power_limits_json=None,
+            gpu_pcie_gen_json=None,
+            gpu_pcie_max_gen_json=None,
+            gpu_pcie_width_json=None,
+            gpu_pcie_max_width_json=None,
+        )
+        result = _build_gpu_metrics(snap)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["gpu_uuid"], "")
+        self.assertEqual(result[0]["model"], "")
+
+
+class BuildStorageMetricsTests(SimpleTestCase):
+    """Tests for _build_storage_metrics builder."""
+
+    def test_build_storage_metrics_with_complete_snapshot(self):
+        snap = SimpleNamespace(
+            storage_count=1,
+            storage_devices_json=["nvme0n1"],
+            storage_fstypes_json=["ext4"],
+            storage_mountpoints_json=["/"],
+            storage_capacities_json=[1000000000000],
+            storage_usage_pcts_json=[45],
+            storage_temps_json=[35],
+            storage_smart_json=["PASSED"],
+            storage_read_bytes_delta_json=[1024000],
+            storage_write_bytes_delta_json=[512000],
+            storage_read_iops_delta_json=[120],
+            storage_write_iops_delta_json=[80],
+            storage_utilization_pcts_json=[15],
+            storage_read_bytes_total_json=[500000000000],
+            storage_write_bytes_total_json=[250000000000],
+            storage_read_iops_total_json=[60000000],
+            storage_write_iops_total_json=[40000000],
+        )
+        result = _build_storage_metrics(snap)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["device"], "nvme0n1")
+        self.assertEqual(result[0]["fstype"], "ext4")
+        self.assertEqual(result[0]["mountpoint"], "/")
+        self.assertEqual(result[0]["usage_pct"], 45)
+        self.assertEqual(result[0]["temp_c"], 35)
+        self.assertEqual(result[0]["smart_health"], "PASSED")
+
+    def test_build_storage_metrics_with_no_storage(self):
+        snap = SimpleNamespace(storage_count=0)
+        self.assertEqual(_build_storage_metrics(snap), [])
+
+    def test_build_storage_metrics_handles_null_snapshot(self):
+        self.assertEqual(_build_storage_metrics(None), [])
+
+
+class BuildNetworkMetricsTests(SimpleTestCase):
+    """Tests for _build_network_metrics builder."""
+
+    def test_build_network_metrics_with_complete_snapshot(self):
+        snap = SimpleNamespace(
+            network_count=2,
+            network_interfaces_json=["eth0", "eth1"],
+            network_ipv4s_json=["192.168.1.10", "10.0.0.5"],
+            network_speeds_json=[1000, 1000],
+            network_rx_bytes_json=[1000000, 500000],
+            network_tx_bytes_json=[500000, 200000],
+            network_rx_errors_json=[0, 0],
+            network_tx_errors_json=[0, 1],
+        )
+        result = _build_network_metrics(snap)
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["interface"], "eth0")
+        self.assertEqual(result[0]["ipv4"], "192.168.1.10")
+        self.assertEqual(result[0]["rx_bytes"], 1000000)
+        self.assertEqual(result[1]["ipv4"], "10.0.0.5")
+        self.assertEqual(result[1]["tx_errors"], 1)
+
+    def test_build_network_metrics_with_no_network(self):
+        snap = SimpleNamespace(network_count=0)
+        self.assertEqual(_build_network_metrics(snap), [])
+
+    def test_build_network_metrics_handles_null_snapshot(self):
+        self.assertEqual(_build_network_metrics(None), [])
+
+
+class BuildDockerMetricsTests(SimpleTestCase):
+    """Tests for _build_docker_metrics builder."""
+
+    @patch("dashboard.views.LatestDockerContainer.objects.filter")
+    def test_build_docker_metrics_with_containers(self, mock_filter):
+        mock_filter.return_value.exists.return_value = True
+        mock_filter.return_value.order_by.return_value.distinct.return_value = [
+            SimpleNamespace(
+                container_id="abc123",
+                name="rig-monitor",
+                image="ghcr.io/user/rig-monitor:latest",
+                status="running",
+                created="2024-01-15T10:00:00Z",
+                status_text="Up 5 days",
+                manifest_json={"Config": {"Env": ["FOO=bar"]}},
+                logs_json="Starting up...\nReady",
+            ),
+        ]
+        result = _build_docker_metrics("test-uuid")
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["container_id"], "abc123")
+        self.assertEqual(result[0]["name"], "rig-monitor")
+        self.assertEqual(result[0]["image"], "ghcr.io/user/rig-monitor:latest")
+        # Called once for exists() and once for the query
+        self.assertEqual(mock_filter.call_count, 2)
+        mock_filter.assert_any_call(rig_uuid="test-uuid")
+
+    @patch("dashboard.views.LatestDockerContainer.objects.filter")
+    def test_build_docker_metrics_no_containers(self, mock_filter):
+        mock_filter.return_value.exists.return_value = False
+        self.assertEqual(_build_docker_metrics("test-uuid"), [])
+
+    @patch("dashboard.views.LatestDockerContainer.objects.filter")
+    def test_build_docker_metrics_deduplicates(self, mock_filter):
+        mock_filter.return_value.exists.return_value = True
+        mock_filter.return_value.order_by.return_value.distinct.return_value = [
+            SimpleNamespace(
+                container_id="abc123",
+                name="container1",
+                image="img1",
+                status="running",
+                created="2024-01-15T10:00:00Z",
+                status_text="Up",
+                manifest_json={},
+                logs_json="",
+            ),
+            SimpleNamespace(
+                container_id="def456",
+                name="container2",
+                image="img2",
+                status="exited",
+                created="2024-01-15T11:00:00Z",
+                status_text="Exited",
+                manifest_json={},
+                logs_json="",
+            ),
+        ]
+        result = _build_docker_metrics("test-uuid")
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["container_id"], "abc123")
+        self.assertEqual(result[1]["container_id"], "def456")
+
+
+class BuildProcessDetailsTests(SimpleTestCase):
+    """Tests for _build_process_details builder."""
+
+    def test_build_process_details_merges_top_cpu_and_mem(self):
+        snap = SimpleNamespace(
+            top_cpu_processes_json=[
+                {"pid": 100, "name": "proc1", "cmdline": "proc1 --arg", "cpu_pct": 50.0, "mem_pct": 10.0},
+                {"pid": 101, "name": "proc2", "cmdline": "proc2", "cpu_pct": 40.0, "mem_pct": 5.0},
+            ],
+            top_mem_processes_json=[
+                {"pid": 100, "name": "proc1", "cmdline": "proc1 --arg", "cpu_pct": 50.0, "mem_pct": 10.0},
+                {"pid": 102, "name": "proc3", "cmdline": "proc3", "cpu_pct": 5.0, "mem_pct": 30.0},
+            ],
+        )
+        result = _build_process_details(snap)
+        self.assertEqual(len(result), 3)
+        pids = {p["pid"] for p in result}
+        self.assertEqual(pids, {100, 101, 102})
+        self.assertEqual(result[0]["pid"], 100)
+        self.assertEqual(result[1]["pid"], 101)
+        self.assertEqual(result[2]["pid"], 102)
+
+    def test_build_process_details_omits_no_cmdline(self):
+        snap = SimpleNamespace(
+            top_cpu_processes_json=[
+                {"pid": 100, "name": "kernel", "cmdline": None, "cpu_pct": 5.0, "mem_pct": 1.0},
+                {"pid": 101, "name": "userproc", "cmdline": "userproc", "cpu_pct": 3.0, "mem_pct": 2.0},
+            ],
+            top_mem_processes_json=[],
+        )
+        result = _build_process_details(snap)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["pid"], 101)
+
+    def test_build_process_details_handles_null_snapshot(self):
+        self.assertEqual(_build_process_details(None), [])
+
+    def test_build_process_details_limits_to_top_10_each(self):
+        cpu_procs = [{"pid": i, "name": f"cpu{i}", "cmdline": f"cpu{i}", "cpu_pct": 100-i, "mem_pct": 1} for i in range(15)]
+        mem_procs = [{"pid": 100+i, "name": f"mem{i}", "cmdline": f"mem{i}", "cpu_pct": 1, "mem_pct": 100-i} for i in range(15)]
+        snap = SimpleNamespace(top_cpu_processes_json=cpu_procs, top_mem_processes_json=mem_procs)
+        result = _build_process_details(snap)
+        self.assertEqual(len(result), 20)
+        self.assertEqual(result[0]["pid"], 0)
+
+
+class DerivePrimaryIpTests(SimpleTestCase):
+    """Tests for _derive_primary_ip builder."""
+
+    def test_picks_first_physical_nic(self):
+        network_metrics = [
+            {"interface": "eth0", "ipv4": "192.168.1.10"},
+            {"interface": "eth1", "ipv4": "10.0.0.5"},
+        ]
+        self.assertEqual(_derive_primary_ip(network_metrics), "192.168.1.10")
+
+    def test_skips_loopback(self):
+        network_metrics = [
+            {"interface": "lo", "ipv4": "127.0.0.1"},
+            {"interface": "eth0", "ipv4": "192.168.1.10"},
+        ]
+        self.assertEqual(_derive_primary_ip(network_metrics), "192.168.1.10")
+
+    def test_skips_virtual_interfaces(self):
+        network_metrics = [
+            {"interface": "docker0", "ipv4": "172.17.0.1"},
+            {"interface": "veth123", "ipv4": "192.168.100.1"},
+            {"interface": "br-abc123", "ipv4": "172.18.0.1"},
+            {"interface": "eth0", "ipv4": "192.168.1.10"},
+        ]
+        self.assertEqual(_derive_primary_ip(network_metrics), "192.168.1.10")
+
+    def test_fallback_to_first_non_loopback_if_all_virtual(self):
+        network_metrics = [
+            {"interface": "docker0", "ipv4": "172.17.0.1"},
+            {"interface": "veth123", "ipv4": "192.168.100.1"},
+        ]
+        self.assertEqual(_derive_primary_ip(network_metrics), "172.17.0.1")
+
+    def test_returns_empty_for_empty_list(self):
+        self.assertEqual(_derive_primary_ip([]), "")
+
+    def test_returns_empty_for_no_valid_ips(self):
+        network_metrics = [
+            {"interface": "lo", "ipv4": "127.0.0.1"},
+            {"interface": "eth0", "ipv4": "—"},
+        ]
+        self.assertEqual(_derive_primary_ip(network_metrics), "")
+
+
+# =====================================================================
+# Phase 2.4: _fetch_rig_metrics orchestrator integration test
+# =====================================================================
+
+class FetchRigMetricsIntegrationTests(TestCase):
+    """Integration tests for the refactored _fetch_rig_metrics orchestrator."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="tester", password="pass")
+        self.rig = Rig.objects.create(
+            uuid="test-uuid-123",
+            name="Test Rig",
+            owner=self.user,
+            status="online",
+        )
+        self.client.force_login(self.user)
+
+    def test_fetch_rig_metrics_returns_all_keys(self):
+        snap = LatestSnapshot.objects.create(
+            rig_uuid=self.rig.uuid,
+            gpu_count=0,
+            storage_count=0,
+            network_count=0,
+        )
+        with patch("dashboard.views.cache") as mock_cache:
+            mock_cache.get.return_value = None
+            mock_cache.set.return_value = None
+            with patch("dashboard.views.LatestSnapshot.objects.get") as mock_get:
+                mock_get.return_value = snap
+                result = _fetch_rig_metrics(self.rig.uuid, self.rig)
+        
+        expected_keys = {
+            "snapshot", "gpu_metrics", "storage_metrics", "network_metrics",
+            "docker_metrics", "process_details", "recent_errors",
+            "error_history", "container_history", "primary_ip",
+            "top_cpu_processes", "top_mem_processes", "process_count",
+            "gpu_processes",
+        }
+        self.assertEqual(set(result.keys()), expected_keys)
+        self.assertEqual(result["gpu_metrics"], [])
+        self.assertEqual(result["storage_metrics"], [])
+        self.assertEqual(result["network_metrics"], [])
+        self.assertEqual(result["docker_metrics"], [])
+        self.assertEqual(result["process_details"], [])
+        self.assertEqual(result["primary_ip"], "")
+        self.assertEqual(result["recent_errors"], [])
+        self.assertEqual(result["error_history"], [])
+        self.assertEqual(result["container_history"], [])
+        self.assertEqual(result["gpu_processes"], [])
+        self.assertEqual(result["top_cpu_processes"], [])
+        self.assertEqual(result["top_mem_processes"], [])
+        self.assertEqual(result["process_count"], 0)
+
+    def test_fetch_rig_metrics_with_gpu_data(self):
+        snap = LatestSnapshot.objects.create(
+            rig_uuid=self.rig.uuid,
+            gpu_count=1,
+            gpu_uuids_json=["gpu-001"],
+            gpu_models_json=["RTX 4090"],
+            gpu_temps_json=[70],
+            gpu_utils_json=[92],
+            gpu_fans_json=[75],
+            gpu_core_clocks_json=[2100],
+            gpu_mem_clocks_json=[1313],
+            gpu_mem_used_json=[16384],
+            gpu_mem_total_json=[24576],
+            gpu_mem_util_pcts_json=[66],
+            gpu_mem_controller_utils_json=[60],
+            gpu_mem_free_json=[8192],
+            gpu_power_draws_json=[350],
+            gpu_power_limits_json=[450],
+            gpu_pcie_gen_json=[4],
+            gpu_pcie_max_gen_json=[4],
+            gpu_pcie_width_json=[16],
+            gpu_pcie_max_width_json=[16],
+            storage_count=0,
+            network_count=0,
+        )
+        with patch("dashboard.views.cache") as mock_cache:
+            mock_cache.get.return_value = None
+            with patch("dashboard.views.LatestSnapshot.objects.get") as mock_get:
+                mock_get.return_value = snap
+                result = _fetch_rig_metrics(self.rig.uuid, self.rig)
+        
+        self.assertEqual(len(result["gpu_metrics"]), 1)
+        self.assertEqual(result["gpu_metrics"][0]["model"], "RTX 4090")
+        self.assertEqual(result["gpu_metrics"][0]["gpu_temp_c"], 70)
+        self.assertEqual(result["gpu_metrics"][0]["gpu_util_pct"], 92)
+
+    def test_fetch_rig_metrics_caches_snapshot(self):
+        snap = LatestSnapshot.objects.create(
+            rig_uuid=self.rig.uuid,
+            gpu_count=0,
+            storage_count=0,
+            network_count=0,
+        )
+        with patch("dashboard.views.cache") as mock_cache:
+            mock_cache.get.return_value = snap
+            with patch("dashboard.views.LatestSnapshot.objects.get") as mock_get:
+                result = _fetch_rig_metrics(self.rig.uuid, self.rig)
+        
+        mock_get.assert_not_called()
+        self.assertIs(result["snapshot"], snap)
+
+
+# =====================================================================
+# Stale docstring fix test (ensures color_tier_thresholds example is correct)
+# =====================================================================
+
+class ColorTierThresholdsDocstringTests(SimpleTestCase):
+    """Verify the color_tier_thresholds docstring uses correct examples."""
+
+    def test_docstring_uses_tier_text_not_tier(self):
+        """The docstring example should use tier_text, not the deleted tier filter."""
+        import inspect
+        from dashboard.templatetags import gpu_filters as gf
+        doc = inspect.getdoc(gf.color_tier_thresholds)
+        self.assertIn("tier_text", doc, "Docstring should show tier_text filter")
+        self.assertNotIn("|tier:", doc, "Docstring should NOT use deleted tier filter")
+
+    def test_docstring_uses_tailwind_directly(self):
+        """The docstring example should use Tailwind class directly."""
+        import inspect
+        from dashboard.templatetags import gpu_filters as gf
+        doc = inspect.getdoc(gf.color_tier_thresholds)
+        # Should NOT contain the deleted grm-text- prefix
+        self.assertNotIn("grm-text-", doc)
+        # Should show the tier_text filter (which produces Tailwind classes)
+        self.assertIn("tier_text", doc)

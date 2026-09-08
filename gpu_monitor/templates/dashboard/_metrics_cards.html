@@ -70,10 +70,7 @@ on the page. This keeps the bar from being noise.
     <div class="flex items-center gap-3 mb-2">
         <div class="flex-1">
             <div class="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
-                <div class="h-full rounded-full transition-all duration-200 ease-out
-                    {% if snapshot.cpu_utilization_pct != None %}
-                        {{ snapshot.cpu_utilization_pct|tier_fill:cpu_util_t }}
-                    {% else %}bg-gray-400{% endif %}"
+                <div class="h-full rounded-full transition-all duration-200 ease-out {{ snapshot.cpu_utilization_pct|tier_fill:cpu_util_t|default:"bg-gray-400" }}"
                     style="width: {% if snapshot.cpu_utilization_pct != None %}{{ snapshot.cpu_utilization_pct }}{% else %}0{% endif %}%">
                 </div>
             </div>
@@ -188,8 +185,8 @@ on the page. This keeps the bar from being noise.
         <div class="flex-1">
             <div class="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
                 {% widthratio snapshot.mem_used_bytes snapshot.mem_total_bytes 100 as mem_pct %}
-                <div class="h-full rounded-full transition-all duration-200 ease-out "{{ mem_pct|tier_fill:mem_pct_t }}"
-                    style="width: {{ mem_pct }}%">
+                <div class="h-full rounded-full transition-all duration-200 ease-out {{ mem_pct|tier_fill:mem_pct_t }}"
+                                    style="width: {{ mem_pct }}%">
                 </div>
             </div>
         </div>
@@ -238,7 +235,7 @@ on the page. This keeps the bar from being noise.
             <div class="flex items-center gap-3 mb-1">
                 <div class="flex-1">
                     <div class="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
-                        <div class="h-full rounded-full transition-all duration-200 ease-out "{{ disk.usage_pct|tier_fill:storage_pct_t }}"
+                        <div class="h-full rounded-full transition-all duration-200 ease-out {{ disk.usage_pct|tier_fill:storage_pct_t }}"
                             style="width: {% if disk.usage_pct != None %}{{ disk.usage_pct }}{% else %}0{% endif %}%">
                         </div>
                     </div>
@@ -324,10 +321,7 @@ on the page. This keeps the bar from being noise.
                 <span class="text-xs text-gray-500 w-16 text-right">Core</span>
                 <div class="flex-1">
                     <div class="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
-                        <div class="h-full rounded-full transition-all duration-200 ease-out
-                            {% if gpu.gpu_util_pct != None %}
-                                {{ gpu.gpu_util_pct|tier_fill:cpu_util_t }}
-                            {% else %}bg-gray-400{% endif %}"
+                        <div class="h-full rounded-full transition-all duration-200 ease-out {{ gpu.gpu_util_pct|tier_fill:cpu_util_t|default:"bg-gray-400" }}"
                             style="width: {% if gpu.gpu_util_pct != None %}{{ gpu.gpu_util_pct }}{% else %}0{% endif %}%">
                         </div>
                     </div>
@@ -340,10 +334,7 @@ on the page. This keeps the bar from being noise.
                 <span class="text-xs text-gray-500 w-16 text-right">Mem</span>
                 <div class="flex-1">
                                 <div class="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
-                                    <div class="h-full rounded-full transition-all duration-200 ease-out
-                                        {% if gpu.mem_controller_util_pct != None %}
-                                            {{ gpu.mem_controller_util_pct|tier_fill:cpu_util_t }}
-                                        {% else %}bg-gray-400{% endif %}"
+                                    <div class="h-full rounded-full transition-all duration-200 ease-out {{ gpu.mem_controller_util_pct|tier_fill:cpu_util_t|default:"bg-gray-400" }}"
                                         style="width: {% if gpu.mem_controller_util_pct != None %}{{ gpu.mem_controller_util_pct }}{% else %}0{% endif %}%">
                                     </div>
                                 </div>

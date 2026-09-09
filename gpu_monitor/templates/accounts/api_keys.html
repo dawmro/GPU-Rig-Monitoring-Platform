@@ -10,7 +10,7 @@
           class="flex gap-2 mb-6">
         {% csrf_token %}
         <input type="text" name="name" placeholder="Key name (e.g., rig-farm-1)" required
-               class="flex-1 grm-input-lg">
+               class="flex-1 bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white-lg">
         <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded transition-colors duration-150">
             Create Key
         </button>
@@ -18,7 +18,7 @@
 
     <div id="key-list" class="space-y-2">
         {% for key in keys %}
-        <div class="key-row grm-card">
+        <div class="key-row bg-gray-800 border border-gray-700 rounded-lg p-4">
             <div class="flex items-start justify-between">
                 <div class="flex-1 min-w-0">
                     <div class="flex items-center gap-2">

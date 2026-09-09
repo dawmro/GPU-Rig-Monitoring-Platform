@@ -9,7 +9,7 @@
     <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
         <h3 class="text-sm font-medium text-gray-200 mb-3">Step 1: Select Source User</h3>
         <select name="source_user_id" required
-                class="w-full grm-input-lg"
+                class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white-lg"
                 onchange="window.location.href='?source_user_id='+this.value">
             <option value="">Select user...</option>
             {% for u in all_users %}
@@ -66,7 +66,7 @@
 
             <div class="flex gap-3 mb-4">
                 <select name="target_user_id" required
-                        class="flex-1 grm-input-lg">
+                        class="flex-1 bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white-lg">
                     <option value="">Select target user...</option>
                     {% for u in all_users %}
                     {% if u != source_user %}
@@ -77,7 +77,7 @@
             </div>
 
             <!-- Warning -->
-            <div class="border p-4 py-3 rounded mb-4 "grm-alert-warning mb-4">
+            <div class="border p-4 py-3 rounded mb-4 "border p-4 py-3 rounded mb-4 bg-yellow-900/30 border-yellow-700 text-yellow-200 mb-4">
                 <p>
                     ⚠️ This will transfer the selected key(s) and all their enrolled rigs to the target user.
                     Rig tags will be cleared (tags are per-user). This action cannot be undone.

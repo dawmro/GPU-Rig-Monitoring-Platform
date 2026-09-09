@@ -5,10 +5,10 @@
     <h2 class="text-xl font-bold mb-4">Profile</h2>
 
     {% if messages %}
-    {% for message in messages %}
-    <div class="{% if message.tags == 'success' %}grm-alert grm-alert-success{% else %}grm-alert grm-alert-error{% endif %}">{{ message }}</div>
-    {% endfor %}
-    {% endif %}
+        {% for message in messages %}
+        <div class="border p-4 py-3 rounded mb-4 bg-red-900/50 border-red-500 text-red-200">{{ message }}</div>
+        {% endfor %}
+        {% endif %}
 
     <div class="bg-gray-800 border border-gray-700 rounded-lg p-6 "mb-6">
         <h3 class="text-lg font-medium mb-4">Account Information</h3>
@@ -42,7 +42,7 @@
                 <label class="block text-sm text-gray-300 mb-1">Electricity Rate ($/kWh)</label>
                 <input type="number" name="electricity_rate_kwh" step="0.0001" min="0" max="10"
                        value="{{ user.electricity_rate_kwh|default:'0.3300' }}"
-                       class="w-full grm-input-lg">
+                       class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white-lg">
                 <p class="text-xs text-gray-400 mt-1">Your local electricity cost per kilowatt-hour. Used to estimate running costs.</p>
             </div>
             <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded transition-colors duration-150">
@@ -59,18 +59,18 @@
             <div>
                 <label class="block text-sm text-gray-300 mb-1">Current Password</label>
                 <input type="password" name="current_password" required
-                    class="w-full grm-input-lg">
+                    class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white-lg">
             </div>
             <div>
                 <label class="block text-sm text-gray-300 mb-1">New Password</label>
                 <input type="password" name="new_password" required minlength="8"
-                    class="w-full grm-input-lg">
+                    class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white-lg">
                 <p class="text-xs text-gray-400 mt-1">Minimum 8 characters</p>
             </div>
             <div>
                 <label class="block text-sm text-gray-300 mb-1">Confirm New Password</label>
                 <input type="password" name="confirm_password" required minlength="8"
-                    class="w-full grm-input-lg">
+                    class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white-lg">
             </div>
             <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded transition-colors duration-150">
                 Change Password

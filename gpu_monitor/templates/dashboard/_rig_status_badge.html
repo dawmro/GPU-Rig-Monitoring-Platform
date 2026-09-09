@@ -1,11 +1,11 @@
 {% load gpu_filters %}
 <span id="rig-status-badge">
     {% if rig.status == 'online' %}
-    <span class="inline-block px-1.5 py-0.5 rounded text-xs font-medium "grm-badge-online px-3 py-1 text-sm">Online</span>
+    <span class="inline-block px-1.5 py-0.5 rounded text-xs font-medium "inline-block px-1.5 py-0.5 rounded text-xs font-medium bg-green-900/50 text-green-300 px-3 py-1 text-sm">Online</span>
     {% elif rig.status == 'stale' %}
-    <span class="inline-block px-1.5 py-0.5 rounded text-xs font-medium "grm-badge-stale px-3 py-1 text-sm">Stale</span>
+    <span class="inline-block px-1.5 py-0.5 rounded text-xs font-medium "inline-block px-1.5 py-0.5 rounded text-xs font-medium bg-yellow-900/50 text-yellow-300 px-3 py-1 text-sm">Stale</span>
     {% else %}
-    <span class="inline-block px-1.5 py-0.5 rounded text-xs font-medium "grm-badge-offline px-3 py-1 text-sm">Offline</span>
+    <span class="inline-block px-1.5 py-0.5 rounded text-xs font-medium "inline-block px-1.5 py-0.5 rounded text-xs font-medium bg-red-900/50 text-red-300 px-3 py-1 text-sm">Offline</span>
     {% endif %}
 </span>
 <span class="text-gray-400 text-sm ml-3" id="rig-last-payload">

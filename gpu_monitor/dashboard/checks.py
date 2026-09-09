@@ -29,7 +29,6 @@ from django.core.checks import Error, Warning, register
 # Tag for selectively running this check family
 TAG_GRM_CSS = "grm_css"
 
-
 # Path to the app's static dir (relative to settings.BASE_DIR)
 # BASE_DIR is the project root (gpu_monitor/), so static files live at
 # BASE_DIR/static/css/ (NOT BASE_DIR/gpu_monitor/static/).
@@ -225,156 +224,10 @@ def check_grm_css_classes(app_configs, **kwargs) -> list:
     return warnings
 
 
-@register(TAG_GRM_CSS)
-def check_static_css_file_exists(app_configs, **kwargs) -> list:
-    """Verify gpu_monitor/static/css/app.css exists.
-
-    This is the file nginx tries to serve at /static/css/app.css. If it's
-    missing, every element styled by a grm-* class loses its formatting
-    (404 on the CSS file). A separate deploy-step check (collectstatic)
-    ensures the file ends up in /opt/gpu_monitor/staticfiles/, but we
-    also want to catch the case where the SOURCE file is missing —
-    which would break local dev (runserver) too.
-    """
-    css_path = _css_path()
-    if css_path.is_file():
-        return []
-
-    try:
-        rel_path = css_path.relative_to(settings.BASE_DIR)
-    except ValueError:
-        rel_path = css_path
-
-    return [
-        Error(
-            f"Required CSS file is missing: {rel_path}. "
-            f"This file is loaded by base.html and styles every grm-* class. "
-            f"Without it, the entire UI loses its formatting (404 on the "
-            f"stylesheet, default unstyled white-on-white text).",
-            hint=(
-                "Restore the file from git, or create it as a stub: "
-                "touch static/css/app.css && git add static/css/app.css"
-            ),
-            id="dashboard.E001",
-            obj=str(rel_path),
-        )
-    ]
-
-
-@register(TAG_GRM_CSS)
-def check_collectstatic_freshness(app_configs, **kwargs) -> list:
-    """
-    Verify /opt/gpu_monitor/staticfiles/ matches gpu_monitor/static/ on production.
-
-    This check only runs in production (DEBUG=False), since local dev doesn't
-    use collectstatic — runserver serves static files directly from the source.
-
-    The check compares the mtime of /opt/gpu_monitor/staticfiles/css/app.css
-    (collected copy) against /opt/gpu_monitor/static/css/app.css (source).
-    If the source is newer than the collected copy, the deployed CSS is stale
-    and the next browser request for /static/css/app.css may return stale CSS
-    (or a 404 if the file was added since last collectstatic).
-
-    This is a WARNING (not Error) because:
-      - The fix is one command: collectstatic
-      - We don't want to block production startup if collectstatic itself
-        is failing for some other reason
-    """
-    if settings.DEBUG:
-        return []
-
-    opt_staticfiles = Path("/opt/gpu_monitor/staticfiles/css/app.css")
-    opt_source = Path("/opt/gpu_monitor/static/css/app.css")
-
-    # If either path is missing, the other checks will catch it. Don't
-    # double-report here.
-    if not opt_staticfiles.is_file() or not opt_source.is_file():
-        return []
-
-    try:
-        if opt_source.stat().st_mtime <= opt_staticfiles.stat().st_mtime:
-            return []
-    except OSError:
-        return []
-
-    return [
-        Warning(
-            "Source /opt/gpu_monitor/static/css/app.css is newer than "
-            "/opt/gpu_monitor/staticfiles/css/app.css. The deployed CSS "
-            "is stale. Browsers may receive outdated styles (or 404 on "
-            "newly-added files).",
-            hint=(
-                "Run: cd /opt/gpu_monitor && source venv/bin/activate && "
-                "python manage.py collectstatic --noinput --clear. "
-                "Or run scripts/sync_to_opt.sh which does this automatically."
-            ),
-            id="dashboard.W002",
-        )
-    ]
-
-
-@register(TAG_GRM_CSS)
-def check_no_multiline_template_comments(app_configs, **kwargs) -> list:
-    """Verify all Django template comments {# ... #} are single-line.
-
-    Django's template comment syntax {# ... #} is documented to be
-    single-line. In practice it tolerates newlines inside a single
-    block, but mixing a multi-line comment with surrounding template
-    tags is fragile and not portable. The Django docs say:
-
-        "{% comment %}{% endcomment %}"  # multi-line official form
-        "{# #}"                           # single-line inline form
-
-    Anything that needs more than one line should use {% comment %}.
-
-    This check catches the pattern of a single {# ... #} that spans
-    multiple lines and warns. We don't make it an Error because the
-    template still works at runtime, but it's a code-smell that the
-    team should fix in follow-up commits.
-
-    Implementation note: this is the regex I tried first; turns out
-    Django's parser is permissive enough that the original code
-    worked. But the next person to edit those comments might
-    accidentally break the template, so we surface the issue here
-    rather than waiting for it to break.
-    """
-    import re
-
-    multiline_pattern = re.compile(r"\{#(.*?)#\}", re.DOTALL)
-    warnings = []
-    for template_path in _all_template_files():
-        try:
-            text = template_path.read_text(encoding="utf-8")
-        except (FileNotFoundError, UnicodeDecodeError):
-            continue
-        for m in multiline_pattern.finditer(text):
-            body = m.group(1)
-            if "\n" not in body:
-                continue
-            line_no = text[: m.start()].count("\n") + 1
-            try:
-                rel_path = template_path.relative_to(settings.BASE_DIR)
-            except ValueError:
-                rel_path = template_path
-            warnings.append(
-                Warning(
-                    f"Multi-line {{# ... #}} comment in {rel_path}:{line_no}. "
-                    f"Django template comments should be single-line. "
-                    f"Split into multiple single-line {{# #}} comments, or "
-                    f"convert to {{% comment %}} ... {{% endcomment %}}.",
-                    hint=(
-                        "Each line of the comment should be its own "
-                        "{# ... #} block. Example:\n"
-                        "  {# Line 1 #}\n"
-                        "  {# Line 2 #}\n"
-                        "  {# Line 3 #}"
-                    ),
-                    id="dashboard.W004",
-                    obj=str(rel_path),
-                )
-            )
-    return warnings
-
+# Note: check_static_css_file_exists (dashboard.E001) and check_collectstatic_freshness (dashboard.W002)
+# were removed because app.css is no longer needed — all grm-* classes have been replaced with
+# Tailwind utilities and the CSS link was removed from base.html.
+# The static JS checks (TAG_GRM_JS) remain active.
 
 # =====================================================================
 # Static JS file checks (Phase 0.4)
@@ -437,6 +290,10 @@ def check_static_js_files_exist(app_configs, **kwargs) -> list:
     means the browser will get a 404 on /static/js/foo.js, which
     is even more catastrophic than a missing CSS — many page
     interactions (tabs, charts, modal) silently break.
+
+    A separate deploy-step check (collectstatic) ensures the file
+    ends up in /opt/gpu_monitor/staticfiles/, but we also want to
+    catch the source missing case here.
 
     A separate deploy-step check (collectstatic) ensures the file
     ends up in /opt/gpu_monitor/staticfiles/, but we also want to

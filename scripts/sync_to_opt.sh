@@ -200,6 +200,12 @@ if [[ "$NO_MIGRATE" == "false" ]]; then
         # from trying to manage it.
         for mig_dir in "$OPT/gpu_monitor/"*/migrations/; do
             [ -d "$mig_dir" ] || continue
+            # Stale auto-generated removal of has_active_job (opposite of intended feature)
+            for f in "$mig_dir"*_remove_metricsnapshot_has_active_job*.py; do
+                [ -f "$f" ] || continue
+                echo "  Removing bad removal migration: $(basename "$f")"
+                rm -f "$f"
+            done
             for f in "$mig_dir"*_erroreventoccurrence*.py; do
                 [ -f "$f" ] || continue
                 echo "  Removing stale migration: $(basename "$f")"

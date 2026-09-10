@@ -174,6 +174,175 @@ def _build_gpu_title(values, default_value='N/A', suffix='', fmt=None):
     return ' | '.join(parts)
 
 
+# =====================================================================
+# Phase 2.4: Per-device metric builders (extracted from _fetch_rig_metrics)
+# =====================================================================
+
+def _build_gpu_metrics(snapshot):
+    """Build GPU metrics list from LatestSnapshot JSON arrays.
+    
+    Args:
+        snapshot: LatestSnapshot instance (or None)
+    
+    Returns:
+        List of dicts with keys matching the template's expected format
+        (gpu_index, gpu_uuid, model, gpu_temp_c, gpu_util_pct, etc.)
+    """
+    if not snapshot or not snapshot.gpu_count:
+        return []
+    
+    metrics = []
+    for i in range(snapshot.gpu_count):
+        metrics.append({
+            'gpu_index': i,
+            'gpu_uuid': _json_get(snapshot.gpu_uuids_json, i, ''),
+            'model': _json_get(snapshot.gpu_models_json, i, ''),
+            'gpu_temp_c': _json_get(snapshot.gpu_temps_json, i),
+            'gpu_util_pct': _json_get(snapshot.gpu_utils_json, i),
+            'fan_speed_pct': _json_get(snapshot.gpu_fans_json, i),
+            'gpu_core_clock_mhz': _json_get(snapshot.gpu_core_clocks_json, i),
+            'gpu_mem_clock_mhz': _json_get(snapshot.gpu_mem_clocks_json, i),
+            'mem_used_mb': _json_get(snapshot.gpu_mem_used_json, i),
+            'mem_total_mb': _json_get(snapshot.gpu_mem_total_json, i),
+            'mem_util_pct': _json_get(snapshot.gpu_mem_util_pcts_json, i),
+            'mem_controller_util_pct': _json_get(snapshot.gpu_mem_controller_utils_json, i),
+            'mem_free_mb': _json_get(snapshot.gpu_mem_free_json, i),
+            'power_draw_w': _json_get(snapshot.gpu_power_draws_json, i),
+            'power_limit_w': _json_get(snapshot.gpu_power_limits_json, i),
+            'pcie_current_gen': _json_get(snapshot.gpu_pcie_gen_json, i),
+            'pcie_max_gen': _json_get(snapshot.gpu_pcie_max_gen_json, i),
+            'pcie_current_width': _json_get(snapshot.gpu_pcie_width_json, i),
+            'pcie_max_width': _json_get(snapshot.gpu_pcie_max_width_json, i),
+        })
+    return metrics
+
+
+def _build_storage_metrics(snapshot):
+    """Build storage metrics list from LatestSnapshot JSON arrays."""
+    if not snapshot or not snapshot.storage_count:
+        return []
+    
+    metrics = []
+    for i in range(snapshot.storage_count):
+        metrics.append({
+            'device': _json_get(snapshot.storage_devices_json, i, ''),
+            'fstype': _json_get(snapshot.storage_fstypes_json, i, ''),
+            'mountpoint': _json_get(snapshot.storage_mountpoints_json, i, ''),
+            'capacity_bytes': _json_get(snapshot.storage_capacities_json, i),
+            'usage_pct': _json_get(snapshot.storage_usage_pcts_json, i),
+            'temp_c': _json_get(snapshot.storage_temps_json, i),
+            'smart_health': _json_get(snapshot.storage_smart_json, i, ''),
+            # Disk I/O metrics — deltas (since last sample) and cumulative totals (since boot)
+            'read_bytes_delta': _json_get(snapshot.storage_read_bytes_delta_json, i),
+            'write_bytes_delta': _json_get(snapshot.storage_write_bytes_delta_json, i),
+            'read_iops_delta': _json_get(snapshot.storage_read_iops_delta_json, i),
+            'write_iops_delta': _json_get(snapshot.storage_write_iops_delta_json, i),
+            'utilization_pct': _json_get(snapshot.storage_utilization_pcts_json, i),
+            'read_bytes_total': _json_get(snapshot.storage_read_bytes_total_json, i),
+            'write_bytes_total': _json_get(snapshot.storage_write_bytes_total_json, i),
+            'read_iops_total': _json_get(snapshot.storage_read_iops_total_json, i),
+            'write_iops_total': _json_get(snapshot.storage_write_iops_total_json, i),
+        })
+    return metrics
+
+
+def _build_network_metrics(snapshot):
+    """Build network metrics list from LatestSnapshot JSON arrays."""
+    if not snapshot or not snapshot.network_count:
+        return []
+    
+    metrics = []
+    for i in range(snapshot.network_count):
+        metrics.append({
+            'interface': _json_get(snapshot.network_interfaces_json, i, ''),
+            'ipv4': _json_get(snapshot.network_ipv4s_json, i, ''),
+            'link_speed_mbps': _json_get(snapshot.network_speeds_json, i),
+            'rx_bytes': _json_get(snapshot.network_rx_bytes_json, i),
+            'tx_bytes': _json_get(snapshot.network_tx_bytes_json, i),
+            'rx_errors': _json_get(snapshot.network_rx_errors_json, i, 0),
+            'tx_errors': _json_get(snapshot.network_tx_errors_json, i, 0),
+        })
+    return metrics
+
+
+def _build_docker_metrics(uuid):
+    """Fetch docker container metrics via ORM (no snapshot needed)."""
+    if not LatestDockerContainer.objects.filter(rig_uuid=str(uuid)).exists():
+        return []
+    
+    metrics = []
+    # Deduplicate by container_id at query level (defense-in-depth)
+    latest_containers = (
+        LatestDockerContainer.objects
+        .filter(rig_uuid=str(uuid))
+        .order_by('container_id')
+        .distinct('container_id')
+    )
+    for lc in latest_containers:
+        metrics.append({
+            'container_id': lc.container_id,
+            'name': lc.name,
+            'image': lc.image,
+            'status': lc.status,
+            'created': lc.created,
+            'status_text': lc.status_text,
+            'manifest': lc.manifest_json,
+            'logs': lc.logs_json,
+        })
+    return metrics
+
+
+def _build_process_details(snapshot):
+    """Build process details from top CPU + top memory processes."""
+    if not snapshot:
+        return []
+    
+    seen_pids = set()
+    details = []
+    for proc in ((snapshot.top_cpu_processes_json or [])[:10] +
+                 (snapshot.top_mem_processes_json or [])[:10]):
+        pid = proc.get('pid')
+        if pid in seen_pids:
+            continue
+        if not proc.get('cmdline'):
+            continue  # omit kernel/system pseudo-processes without a command line
+        seen_pids.add(pid)
+        details.append({
+            'pid': pid,
+            'name': proc.get('name') or '—',
+            'cmdline': proc.get('cmdline'),
+            'cpu_pct': proc.get('cpu_pct') or 0.0,
+            'mem_pct': proc.get('mem_pct') or 0.0,
+        })
+    details.sort(key=lambda p: (-p['cpu_pct'], -p['mem_pct']))
+    return details
+
+
+def _derive_primary_ip(network_metrics):
+    """Find the first non-loopback, non-virtual interface IP."""
+    if not network_metrics:
+        return ''
+    
+    virtual_prefixes = ('vmware', 'virtual', 'vbox', 'hyper-v',
+                        'docker', 'tun', 'tap', 'br-', 'veth')
+    
+    for iface in network_metrics:
+        ip = iface.get('ipv4', '')
+        if not ip or ip == '—' or ip.startswith('127.'):
+            continue
+        name = iface.get('interface', '').lower()
+        if any(prefix in name for prefix in virtual_prefixes):
+            continue
+        return ip
+    
+    # Fallback: first non-loopback
+    for iface in network_metrics:
+        ip = iface.get('ipv4', '')
+        if ip and ip != '—' and not ip.startswith('127.'):
+            return ip
+    return ''
+
+
 def _fetch_rig_metrics(uuid, rig=None):
     """Fetch the latest rig metrics for Live Metrics display.
 
@@ -193,172 +362,27 @@ def _fetch_rig_metrics(uuid, rig=None):
             else:
                 cache.set(cache_key, snapshot, 50)
 
-    # GPU data: read from LatestSnapshot JSON arrays instead of querying
-    # the GPUMetric timeseries table. This avoids the expensive DISTINCT ON
-    # query on 2.1M+ rows. Build a list of dicts matching the template's
-    # expected format (mimicking GPUMetric objects).
-    gpu_metrics = []
-    if snapshot and snapshot.gpu_count:
-        for i in range(snapshot.gpu_count):
-            gpu_metrics.append({
-                'gpu_index': i,
-                'gpu_uuid': _json_get(snapshot.gpu_uuids_json, i, ''),
-                'model': _json_get(snapshot.gpu_models_json, i, ''),
-                'gpu_temp_c': _json_get(snapshot.gpu_temps_json, i),
-                'gpu_util_pct': _json_get(snapshot.gpu_utils_json, i),
-                'fan_speed_pct': _json_get(snapshot.gpu_fans_json, i),
-                'gpu_core_clock_mhz': _json_get(snapshot.gpu_core_clocks_json, i),
-                'gpu_mem_clock_mhz': _json_get(snapshot.gpu_mem_clocks_json, i),
-                'mem_used_mb': _json_get(snapshot.gpu_mem_used_json, i),
-                'mem_total_mb': _json_get(snapshot.gpu_mem_total_json, i),
-                'mem_util_pct': _json_get(snapshot.gpu_mem_util_pcts_json, i),
-                'mem_controller_util_pct': _json_get(snapshot.gpu_mem_controller_utils_json, i),
-                'mem_free_mb': _json_get(snapshot.gpu_mem_free_json, i),
-                'power_draw_w': _json_get(snapshot.gpu_power_draws_json, i),
-                'power_limit_w': _json_get(snapshot.gpu_power_limits_json, i),
-                'pcie_current_gen': _json_get(snapshot.gpu_pcie_gen_json, i),
-                'pcie_max_gen': _json_get(snapshot.gpu_pcie_max_gen_json, i),
-                'pcie_current_width': _json_get(snapshot.gpu_pcie_width_json, i),
-                'pcie_max_width': _json_get(snapshot.gpu_pcie_max_width_json, i),
-            })
+    # Delegate to per-device builders (Phase 2.4)
+    gpu_metrics = _build_gpu_metrics(snapshot)
+    storage_metrics = _build_storage_metrics(snapshot)
+    network_metrics = _build_network_metrics(snapshot)
+    docker_metrics = _build_docker_metrics(uuid)
+    process_details = _build_process_details(snapshot)
+    primary_ip = _derive_primary_ip(network_metrics)
 
-    # Storage: read from LatestSnapshot JSON arrays instead of querying
-    # the StorageMetric timeseries table. Build list of dicts matching
-    # the template's expected format (mimicking StorageMetric objects).
-    storage_metrics = []
-    if snapshot and snapshot.storage_count:
-        for i in range(snapshot.storage_count):
-            storage_metrics.append({
-                'device': _json_get(snapshot.storage_devices_json, i, ''),
-                'fstype': _json_get(snapshot.storage_fstypes_json, i, ''),
-                'mountpoint': _json_get(snapshot.storage_mountpoints_json, i, ''),
-                'capacity_bytes': _json_get(snapshot.storage_capacities_json, i),
-                'usage_pct': _json_get(snapshot.storage_usage_pcts_json, i),
-                'temp_c': _json_get(snapshot.storage_temps_json, i),
-                'smart_health': _json_get(snapshot.storage_smart_json, i, ''),
-                # Disk I/O metrics — deltas (since last sample) and cumulative totals (since boot)
-                'read_bytes_delta': _json_get(snapshot.storage_read_bytes_delta_json, i),
-                'write_bytes_delta': _json_get(snapshot.storage_write_bytes_delta_json, i),
-                'read_iops_delta': _json_get(snapshot.storage_read_iops_delta_json, i),
-                'write_iops_delta': _json_get(snapshot.storage_write_iops_delta_json, i),
-                'utilization_pct': _json_get(snapshot.storage_utilization_pcts_json, i),
-                'read_bytes_total': _json_get(snapshot.storage_read_bytes_total_json, i),
-                'write_bytes_total': _json_get(snapshot.storage_write_bytes_total_json, i),
-                'read_iops_total': _json_get(snapshot.storage_read_iops_total_json, i),
-                'write_iops_total': _json_get(snapshot.storage_write_iops_total_json, i),
-            })
-
-    # Network: read from LatestSnapshot JSON arrays instead of querying
-    # the NetworkMetric timeseries table. Build list of dicts matching
-    # the template's expected format (mimicking NetworkMetric objects).
-    network_metrics = []
-    if snapshot and snapshot.network_count:
-        for i in range(snapshot.network_count):
-            network_metrics.append({
-                'interface': _json_get(snapshot.network_interfaces_json, i, ''),
-                'ipv4': _json_get(snapshot.network_ipv4s_json, i, ''),
-                'link_speed_mbps': _json_get(snapshot.network_speeds_json, i),
-                'rx_bytes': _json_get(snapshot.network_rx_bytes_json, i),
-                'tx_bytes': _json_get(snapshot.network_tx_bytes_json, i),
-                'rx_errors': _json_get(snapshot.network_rx_errors_json, i, 0),
-                'tx_errors': _json_get(snapshot.network_tx_errors_json, i, 0),
-            })
-
-    # Docker containers: LatestDockerContainer has all needed fields.
-    # Short-circuit: skip the query entirely if the rig has no containers.
-    # The serializer delete-then-insert pattern keeps the table clean,
-    # so an empty query result is the common case for non-Docker rigs.
-    docker_metrics = []
-    if LatestDockerContainer.objects.filter(rig_uuid=str(uuid)).exists():
-        # Deduplicate by container_id at query level (defense-in-depth)
-        latest_containers = (
-            LatestDockerContainer.objects
-            .filter(rig_uuid=str(uuid))
-            .order_by('container_id')
-            .distinct('container_id')
-        )
-
-        for lc in latest_containers:
-            docker_metrics.append({
-                'container_id': lc.container_id,
-                'name': lc.name,
-                'image': lc.image,
-                'status': lc.status,
-                'created': lc.created,
-                'status_text': lc.status_text,
-                'manifest': lc.manifest_json,
-                'logs': lc.logs_json,
-            })
-
-    # Recent errors — last 10 from error_history (for Live Metrics card)
+    # Derived fields
     error_history = rig.error_history_json if rig else []
     recent_errors = list(reversed(error_history[-10:])) if error_history else []
-
-    # Rolling container history (for rig detail page)
     container_history = rig.container_history_json if rig else []
-
-    # GPU processes: read from LatestSnapshot denormalized field
-    # This is always the CURRENT snapshot's processes (not historical).
-    # GPU processes are transient live state — historical time-series
-    # was removed in migration 0047 because no historical query was ever
-    # performed (processes change every minute; old data is meaningless).
     gpu_processes = snapshot.gpu_processes_json if snapshot else []
-
-    # Derive primary IP from the first non-loopback, non-virtual interface
-    # (for rig header display). Prefers physical NICs over virtual adapters.
-    primary_ip = ''
-    for iface in network_metrics:
-        ip = iface.get('ipv4', '')
-        if not ip or ip == '—':
-            continue
-        # Skip loopback
-        if ip.startswith('127.'):
-            continue
-        # Skip common virtual adapter prefixes
-        name = iface.get('interface', '').lower()
-        if any(prefix in name for prefix in ('vmware', 'virtual', 'vbox', 'hyper-v', 'docker', 'tun', 'tap', 'br-', 'veth')):
-            continue
-        primary_ip = ip
-        break
-    # Fallback: if all interfaces were filtered, use the first non-loopback IP
-    if not primary_ip:
-        for iface in network_metrics:
-            ip = iface.get('ipv4', '')
-            if ip and ip != '—' and not ip.startswith('127.'):
-                primary_ip = ip
-                break
-
-    # Process Details: union of top-10 by CPU and top-10 by memory,
-    # deduplicated by PID, entries without a command line omitted
-    # (kernel/system pseudo-processes), sorted by cpu_pct desc then
-    # mem_pct desc. Rendered by the "Process Details" card
-    # (_metrics_cards.html).
-    seen_pids = set()
-    process_details = []
-    for proc in ((snapshot.top_cpu_processes_json if snapshot else [])[:10]
-                 + (snapshot.top_mem_processes_json if snapshot else [])[:10]):
-        pid = proc.get('pid')
-        if pid in seen_pids:
-            continue
-        if not proc.get('cmdline'):
-            continue  # omit kernel/system pseudo-processes without a command line
-        seen_pids.add(pid)
-        process_details.append({
-            'pid': pid,
-            'name': proc.get('name') or '—',
-            'cmdline': proc.get('cmdline'),
-            'cpu_pct': proc.get('cpu_pct') or 0.0,
-            'mem_pct': proc.get('mem_pct') or 0.0,
-        })
-    process_details.sort(key=lambda p: (-p['cpu_pct'], -p['mem_pct']))
 
     return {
         'snapshot': snapshot,
         'gpu_metrics': gpu_metrics,
-        'gpu_processes': gpu_processes,
         'storage_metrics': storage_metrics,
         'network_metrics': network_metrics,
         'docker_metrics': docker_metrics,
+        'process_details': process_details,
         'recent_errors': recent_errors,
         'error_history': error_history,
         'container_history': container_history,
@@ -366,7 +390,7 @@ def _fetch_rig_metrics(uuid, rig=None):
         'top_cpu_processes': snapshot.top_cpu_processes_json if snapshot else [],
         'top_mem_processes': snapshot.top_mem_processes_json if snapshot else [],
         'process_count': snapshot.process_count if snapshot else 0,
-        'process_details': process_details,
+        'gpu_processes': gpu_processes,
     }
 
 

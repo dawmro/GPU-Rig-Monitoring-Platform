@@ -27,17 +27,17 @@
         <div class="hidden md:flex items-center justify-between">
             <div class="flex items-center gap-6">
                 <a href="{% url 'dashboard:rig-list' %}" class="text-lg font-bold">🖥️ GPU Rig Monitor</a>
-                <a href="{% url 'dashboard:rig-list' %}" class="text-gray-400 hover:text-white">Fleet</a>
-                <a href="{% url 'accounts:tags' %}" class="text-gray-400 hover:text-white">Tags</a>
-                <a href="{% url 'accounts:api-keys' %}" class="text-gray-400 hover:text-white">API Keys</a>
-                <a href="{% url 'accounts:audit-log' %}" class="text-gray-400 hover:text-white">Activity</a>
+                <a href="{% url 'dashboard:rig-list' %}" class="text-gray-300 hover:text-white">Fleet</a>
+                <a href="{% url 'accounts:tags' %}" class="text-gray-300 hover:text-white">Tags</a>
+                <a href="{% url 'accounts:api-keys' %}" class="text-gray-300 hover:text-white">API Keys</a>
+                <a href="{% url 'accounts:audit-log' %}" class="text-gray-300 hover:text-white">Activity</a>
                 {% if user.is_staff %}
-                <a href="{% url 'accounts:admin-transfer-keys' %}" class="text-gray-400 hover:text-white">Transfer Keys</a>
+                <a href="{% url 'accounts:admin-transfer-keys' %}" class="text-gray-300 hover:text-white">Transfer Keys</a>
                 {% endif %}
             </div>
             <div class="flex items-center gap-4">
-                <a href="{% url 'accounts:profile' %}" class="text-gray-400 hover:text-white text-sm">{{ user.email }}</a>
-                <a href="{% url 'accounts:logout' %}" class="text-gray-400 hover:text-white text-sm">Logout</a>
+                <a href="{% url 'accounts:profile' %}" class="text-gray-300 hover:text-white text-sm">{{ user.email }}</a>
+                <a href="{% url 'accounts:logout' %}" class="text-gray-300 hover:text-white text-sm">Logout</a>
             </div>
         </div>
 
@@ -45,8 +45,8 @@
         <div class="flex md:hidden items-center justify-between">
             <a href="{% url 'dashboard:rig-list' %}" class="text-lg font-bold">🖥️ GPU Rig Monitor</a>
             <div class="flex items-center gap-3">
-                <a href="{% url 'accounts:profile' %}" class="text-gray-400 hover:text-white text-sm truncate max-w-[120px]">{{ user.email }}</a>
-                <button type="button" id="mobile-menu-btn" class="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-700 transition-colors" aria-label="Menu">
+                <a href="{% url 'accounts:profile' %}" class="text-gray-300 hover:text-white text-sm truncate max-w-[120px]">{{ user.email }}</a>
+                <button type="button" id="mobile-menu-btn" class="text-gray-300 hover:text-white p-1 rounded hover:bg-gray-700 transition-colors" aria-label="Menu">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
                 </button>
             </div>
@@ -55,12 +55,12 @@
         <!-- Mobile dropdown menu -->
         <div id="mobile-menu" class="hidden md:hidden mt-3 pb-3 border-t border-gray-700 pt-3">
             <div class="flex flex-col gap-1">
-                <a href="{% url 'dashboard:rig-list' %}" class="text-gray-400 hover:text-white hover:bg-gray-700 rounded px-3 py-2 text-sm">Fleet</a>
-                <a href="{% url 'accounts:tags' %}" class="text-gray-400 hover:text-white hover:bg-gray-700 rounded px-3 py-2 text-sm">Tags</a>
-                <a href="{% url 'accounts:api-keys' %}" class="text-gray-400 hover:text-white hover:bg-gray-700 rounded px-3 py-2 text-sm">API Keys</a>
-                <a href="{% url 'accounts:audit-log' %}" class="text-gray-400 hover:text-white hover:bg-gray-700 rounded px-3 py-2 text-sm">Activity</a>
+                <a href="{% url 'dashboard:rig-list' %}" class="text-gray-300 hover:text-white hover:bg-gray-700 rounded px-3 py-2 text-sm">Fleet</a>
+                <a href="{% url 'accounts:tags' %}" class="text-gray-300 hover:text-white hover:bg-gray-700 rounded px-3 py-2 text-sm">Tags</a>
+                <a href="{% url 'accounts:api-keys' %}" class="text-gray-300 hover:text-white hover:bg-gray-700 rounded px-3 py-2 text-sm">API Keys</a>
+                <a href="{% url 'accounts:audit-log' %}" class="text-gray-300 hover:text-white hover:bg-gray-700 rounded px-3 py-2 text-sm">Activity</a>
                 {% if user.is_staff %}
-                <a href="{% url 'accounts:admin-transfer-keys' %}" class="text-gray-400 hover:text-white hover:bg-gray-700 rounded px-3 py-2 text-sm">Transfer Keys</a>
+                <a href="{% url 'accounts:admin-transfer-keys' %}" class="text-gray-300 hover:text-white hover:bg-gray-700 rounded px-3 py-2 text-sm">Transfer Keys</a>
                 {% endif %}
                 <hr class="border-gray-700 my-1">
                 <a href="{% url 'accounts:logout' %}" class="text-red-400 hover:text-red-300 hover:bg-gray-700 rounded px-3 py-2 text-sm">Logout</a>
@@ -72,88 +72,10 @@
         {% block content %}{% endblock %}
     </main>
 
+    <script src="{% static 'js/app-base.js' %}"></script>
     <script>
-    // Initialize clocks on page load with "Loaded @"
-    document.addEventListener('DOMContentLoaded', function() {
-        var d = new Date();
-        var ts = String(d.getHours()).padStart(2,'0') + ':' +
-                 String(d.getMinutes()).padStart(2,'0') + ':' +
-                 String(d.getSeconds()).padStart(2,'0');
-        var loadedText = 'Loaded @ ' + ts;
-        
-        // Initialize all known clock elements
-        var clocks = [
-            'global-refresh-clock',           // Rig detail header
-            'rig-table-container-clock',      // Fleet Overview table
-        ];
-        clocks.forEach(function(id) {
-            var el = document.getElementById(id);
-            if (el) el.textContent = loadedText;
-        });
-    });
-
-    // HTMX refresh clock — update on any HTMX swap with "Refreshed @"
-    document.body.addEventListener('htmx:afterSwap', function(evt) {
-        var targetId = evt.detail && evt.detail.target && evt.detail.target.id;
-        if (!targetId) return;
-        var d = new Date();
-        var ts = String(d.getHours()).padStart(2,'0') + ':' +
-                 String(d.getMinutes()).padStart(2,'0') + ':' +
-                 String(d.getSeconds()).padStart(2,'0');
-        var clock = document.getElementById('global-refresh-clock');
-        if (clock) clock.textContent = 'Refreshed @ ' + ts;
-        var fc = document.getElementById('rig-table-container-clock');
-        if (fc) fc.textContent = 'Refreshed @ ' + ts;
-    });
-
-    // Toggle all owner emails in fleet overview
-    function toggleAllOwnerEmails() {
-        var btn = document.getElementById('toggle-owner-emails');
-        var showEmails = btn.querySelector('span').textContent === 'Show emails';
-        
-        document.querySelectorAll('.owner-row').forEach(function(row) {
-            var safe = row.querySelector('.owner-safe');
-            var email = row.querySelector('.owner-email');
-            if (showEmails) {
-                safe.classList.add('hidden');
-                email.classList.remove('hidden');
-            } else {
-                safe.classList.remove('hidden');
-                email.classList.add('hidden');
-            }
-        });
-        
-        btn.querySelector('span').textContent = showEmails ? 'Hide emails' : 'Show emails';
-    }
-
-    // Mobile menu toggle
-    (function() {
-        var btn = document.getElementById('mobile-menu-btn');
-        var menu = document.getElementById('mobile-menu');
-        if (!btn || !menu) return;
-        btn.addEventListener('click', function(e) {
-            e.stopPropagation();
-            menu.classList.toggle('hidden');
-        });
-        // Close on click outside
-        document.addEventListener('click', function(e) {
-            if (!menu.classList.contains('hidden') && !menu.contains(e.target) && !btn.contains(e.target)) {
-                menu.classList.add('hidden');
-            }
-        });
-        // Close on Escape
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape' && !menu.classList.contains('hidden')) {
-                menu.classList.add('hidden');
-            }
-        });
-        // Close on link click (page will navigate)
-        menu.querySelectorAll('a').forEach(function(link) {
-            link.addEventListener('click', function() {
-                menu.classList.add('hidden');
-            });
-        });
-    })();
+    // Initialize the page utilities loaded from app-base.js
+    window.GRM.AppBase.init();
     </script>
 {% block extra_js %}{% endblock %}
 </body>

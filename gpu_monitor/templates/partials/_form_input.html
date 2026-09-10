@@ -1,0 +1,41 @@
+{# Reusable form input: <label> + <input> pair. #}
+{# #}
+{# Required context: #}
+{#   name: form field name (used as id and name attribute) #}
+{#   label: visible label text #}
+{# #}
+{# Optional context: #}
+{#   type: input type (default "text") #}
+{#   value: current value #}
+{#   placeholder: placeholder text #}
+{#   required: boolean (default False) #}
+{#   autocomplete: autocomplete attribute (default off) #}
+{#   help_text: small help text below the input #}
+{#   size: "sm" (default, bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white) or "lg" (bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white-lg) #}
+{#   extra_class: extra classes appended to the input #}
+{#   error: error message string (shown in text-red-400) #}
+{# #}
+{# Example: #}
+{#   {% include "partials/_form_input.html" with #}
+{#      name="email" label="Email" type="email" required=True #}
+{#      help_text="We'll never share your email." %} #}
+
+<div class="mb-2">
+    <label for="{{ name }}" class="block text-sm text-gray-300 mb-1">{{ label }}</label>
+    <input
+        type="{{ type|default:'text' }}"
+        name="{{ name }}"
+        id="{{ name }}"
+        value="{{ value|default:'' }}"
+        {% if placeholder %}placeholder="{{ placeholder }}"{% endif %}
+        {% if required %}required{% endif %}
+        {% if autocomplete %}autocomplete="{{ autocomplete }}"{% else %}autocomplete="off"{% endif %}
+        class="{% if size == 'lg' %}bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white-lg{% else %}bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white{% endif %} w-full {{ extra_class|default:'' }}"
+    >
+    {% if help_text %}
+    <p class="text-xs text-gray-400 mt-1">{{ help_text }}</p>
+    {% endif %}
+    {% if error %}
+    <p class="text-red-400 text-xs mt-1">{{ error }}</p>
+    {% endif %}
+</div>

@@ -1,3 +1,4 @@
+from pathlib import Path
 """
 Test the chart endpoints to find why charts show no data.
 """
@@ -7,7 +8,11 @@ import django
 import traceback
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'gpu_monitor.settings')
-sys.path.insert(0, '/home/qrv/workspace/GPU-Rig-Monitoring-Platform/gpu_monitor')
+# Add the tests/ directory to sys.path so we can import _paths
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _paths import GPU_MONITOR_DIR
+# gpu_monitor/ needs to be on sys.path so Django imports work.
+sys.path.insert(0, str(GPU_MONITOR_DIR))
 os.environ['DB_NAME'] = 'gpu_monitor'
 os.environ['DB_USER'] = 'gpu_monitor'
 os.environ['DB_PASSWORD'] = 'local_dev_password'

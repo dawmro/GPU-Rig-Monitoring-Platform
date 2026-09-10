@@ -4,6 +4,14 @@ from django.utils import timezone
 from django.utils.safestring import mark_safe
 from datetime import timedelta
 
+# Separator between multi-GPU / multi-device values in a cell.
+# Single space (not '·') because the fleet table columns are narrow
+# and the dots add visual noise. The values are still distinct because:
+#   - Color coding is per-value (each GPU has its own color)
+#   - The title attribute shows the full per-GPU breakdown
+#   - The values are numeric and visually distinct anyway
+GRM_MULTI_VALUE_SEPARATOR = ' '
+
 register = template.Library()
 
 
@@ -114,81 +122,80 @@ def gpu_compact_summary_json(snapshot):
 
 @register.simple_tag
 def gpu_temp_cell_json(snapshot):
-    """Render color-coded GPU temperature values from LatestSnapshot JSON."""
-    if not snapshot or not snapshot.gpu_temps_json:
-        return mark_safe('<span class="text-gray-600">—</span>')
+    """Render color-coded GPU temperature values from LatestSnapshot JSON.
 
-    parts = []
-    for temp in snapshot.gpu_temps_json:
-        if temp is None:
-            parts.append('<span class="text-gray-600">—</span>')
-        else:
-            try:
-                t = float(temp)
-            except (ValueError, TypeError):
-                parts.append('<span class="text-gray-600">—</span>')
-                continue
-            if t > 80:
-                parts.append(f'<span class="text-red-400 font-medium">{t:.0f}</span>')
-            elif t > 75:
-                parts.append(f'<span class="text-orange-400 font-medium">{t:.0f}</span>')
-            elif t > 70:
-                parts.append(f'<span class="text-yellow-400">{t:.0f}</span>')
-            elif t > 65:
-                parts.append(f'<span class="text-green-400">{t:.0f}</span>')
-            else:
-                parts.append(f'<span class="text-gray-400">{t:.0f}</span>')
-    return mark_safe(' '.join(parts))
+    Each value gets the text-{color}-400 class from Tailwind.
+    The bare color name (red/orange/yellow/green/gray) is the filter output.
+    Thresholds are centralized in DEFAULT_THRESHOLDS["gpu_temp"].
+    """
+    return _render_tier_cell(snapshot, "gpu_temps_json", "gpu_temp", "text-gray-400")
 
 
 @register.simple_tag
 def gpu_util_cell_json(snapshot):
-    """Render color-coded GPU utilization values from LatestSnapshot JSON."""
-    if not snapshot or not snapshot.gpu_utils_json:
-        return mark_safe('<span class="text-gray-600">—</span>')
+    """Render color-coded GPU utilization values from LatestSnapshot JSON.
 
-    parts = []
-    for util in snapshot.gpu_utils_json:
-        if util is None:
-            parts.append('<span class="text-gray-600">—</span>')
-        else:
-            try:
-                u = float(util)
-            except (ValueError, TypeError):
-                parts.append('<span class="text-gray-600">—</span>')
-                continue
-            if u > 90:
-                parts.append(f'<span class="text-green-400 font-medium">{u:.0f}</span>')
-            elif u > 50:
-                parts.append(f'<span class="text-gray-300">{u:.0f}</span>')
-            else:
-                parts.append(f'<span class="text-gray-500">{u:.0f}</span>')
-    return mark_safe(' '.join(parts))
+    Thresholds from DEFAULT_THRESHOLDS["gpu_util"] (inverted: high = good).
+    """
+    return _render_tier_cell(snapshot, "gpu_utils_json", "gpu_util", "text-gray-400")
 
 
 @register.simple_tag
 def gpu_fan_cell_json(snapshot):
-    """Render color-coded GPU fan speed values from LatestSnapshot JSON."""
-    if not snapshot or not snapshot.gpu_fans_json:
-        return mark_safe('<span class="text-gray-600">—</span>')
+    """Render color-coded GPU fan speed values from LatestSnapshot JSON.
+
+    Thresholds from DEFAULT_THRESHOLDS["gpu_fan"].
+    """
+    return _render_tier_cell(snapshot, "gpu_fans_json", "gpu_fan", "text-gray-400")
+
+
+def _render_tier_cell(snapshot, json_field, threshold_name, no_data_class):
+    """Helper: render a multi-GPU cell with tier-based coloring.
+
+    Used by the gpu_*_cell_json simple_tags. Each value in the JSON
+    array becomes a `<span class="text-{color}-400">value</span>`.
+    Missing values get the no_data_class (e.g. "text-gray-400").
+
+    Args:
+        snapshot: LatestSnapshot instance.
+        json_field: Name of the JSON list field (e.g. 'gpu_temps_json').
+        threshold_name: Key in DEFAULT_THRESHOLDS to look up.
+        no_data_class: Full Tailwind class for missing values.
+    """
+    thresholds = DEFAULT_THRESHOLDS[threshold_name]
+    values = getattr(snapshot, json_field, None) if snapshot else None
+    if not values:
+        return mark_safe(f'<span class="{no_data_class}">—</span>')
 
     parts = []
-    for fan in snapshot.gpu_fans_json:
-        if fan is None:
-            parts.append('<span class="text-gray-600">—</span>')
+    for value in values:
+        if value is None:
+            parts.append(f'<span class="{no_data_class}">—</span>')
         else:
-            try:
-                f = float(fan)
-            except (ValueError, TypeError):
-                parts.append('<span class="text-gray-600">—</span>')
-                continue
-            if f > 80:
-                parts.append(f'<span class="text-red-400 font-medium">{f:.0f}</span>')
-            elif f > 60:
-                parts.append(f'<span class="text-yellow-400">{f:.0f}</span>')
+            color = _resolve_color(value, thresholds)
+            if not color:
+                # Threshold returned None (e.g. "no color override" spec)
+                # Render as plain text, no color class
+                parts.append(f'<span>{_format_one(value)}</span>')
             else:
-                parts.append(f'<span class="text-gray-400">{f:.0f}</span>')
-    return mark_safe(' '.join(parts))
+                # Compose the Tailwind class. The tier system returns
+                # bare color names (red, yellow, etc.); templates compose
+                # them as `text-X-400` (Tailwind 400-series is the dark-mode
+                # shade that passes WCAG AA against the gray-800 card).
+                parts.append(f'<span class="text-{color}-400">{_format_one(value)}</span>')
+    return mark_safe(GRM_MULTI_VALUE_SEPARATOR.join(parts))
+
+
+def _format_one(value):
+    """Format a single value for the multi-GPU cell.
+
+    The gpu_*_cell_json simple_tags historically rendered values as
+    ".0f" (no decimals). Keep that behavior for consistency.
+    """
+    try:
+        return f"{float(value):.0f}"
+    except (ValueError, TypeError):
+        return "—"
 
 
 @register.filter
@@ -396,41 +403,219 @@ def filter_running(containers):
 
 
 @register.filter
-def cpu_util_color(value):
-    """Return Tailwind color class for CPU utilization percentage.
-    
-    Thresholds (matching Disk Util and Live Metrics progress bar):
-        > 80%  -> text-red-400
-        > 60%  -> text-orange-400
-        > 40%  -> text-yellow-400
-        > 20%  -> text-green-400
-        <= 20% -> text-gray-400
-    
-    Usage: <span class="{{ cpu_util|cpu_util_color }}">{{ cpu_util }}</span>
-    """
-    if value is None:
-        return 'text-gray-400'
-    try:
-        v = float(value)
-    except (ValueError, TypeError):
-        return 'text-gray-400'
-    if v > 80:
-        return 'text-red-400'
-    elif v > 60:
-        return 'text-orange-400'
-    elif v > 40:
-        return 'text-yellow-400'
-    elif v > 20:
-        return 'text-green-400'
-    return 'text-gray-400'
-
-
-@register.filter
 def trim(value):
     """Strip leading and trailing whitespace from a string.
-    
+
     Usage: {% if line|trim %}...{% endif %}
     """
     if value is None:
         return ''
     return value.strip()
+
+
+# =====================================================================
+# 5-tier color threshold system (Phase 0.3, simplified in 0.5)
+# ---------------------------------------------------------------------
+#
+# The fleet table, live metrics cards, and chart legends all need to
+# color a value (CPU temp, GPU temp, disk util, etc.) based on
+# thresholds. The previous inline chains were repeated 14+ times with
+# inconsistent thresholds and required editing 14 places to retune
+# one threshold.
+#
+# This module centralizes the thresholds in DEFAULT_THRESHOLDS below.
+# The tier_text / tier_fill filters return the full Tailwind class
+# (e.g. 'text-red-400'); templates use them directly:
+#
+#   {% color_tier_thresholds "cpu_temp" as ct %}
+#   <span class="{{ snapshot.cpu_temp_c|tier_text:ct }}">
+#
+# Each spec is a list of (min_value, color_name) tuples, highest
+# first. First match wins. The last entry should be (None, color) to
+# set a default, or (None, None) for "no color override" (the cell
+# stays uncolored for very low values).
+
+# Built-in threshold specs. Add new specs here when you need a new
+# metric; do NOT inline the thresholds in templates.
+DEFAULT_THRESHOLDS = {
+    # CPU temperature (Celsius) — same in fleet table and live metrics
+    "cpu_temp": [
+        (85, "red"),
+        (70, "yellow"),
+        (None, "green"),  # default for values below the lowest threshold
+    ],
+    # GPU temperature (Celsius) — slightly tighter thresholds than CPU
+    "gpu_temp": [
+        (80, "red"),
+        (70, "yellow"),
+        (None, "green"),
+    ],
+    # CPU utilization (%) — 5-tier matching disk util
+    "cpu_util": [
+        (80, "red"),
+        (60, "orange"),
+        (40, "yellow"),
+        (20, "green"),
+        (None, "gray"),
+    ],
+    # GPU utilization (%) — INVERTED (high = good for miners)
+    # Miners want to see their GPUs working hard. The threshold of 90%
+    # was too high (real mining rigs run at 80-95% most of the time and
+    # would all show as "gray" = "no info"). Use a 4-tier scale:
+    #   >=90 green: fully maxed (good)
+    #   >=70 yellow: busy (good)
+    #   >=40 blue:   moderate (acceptable)
+    #   <40  gray:   idle (underutilized)
+    # This gives 80% util a clear "yellow/busy" indicator rather than
+    # making it look like the color coding was broken.
+    "gpu_util": [
+        (90, "green"),
+        (70, "yellow"),
+        (40, "blue"),
+        (None, "gray"),
+    ],
+    # GPU fan speed (%)
+    "gpu_fan": [
+        (80, "red"),
+        (60, "yellow"),
+        (None, "gray"),
+    ],
+    # Memory usage (%)
+    "mem_pct": [
+        (85, "red"),
+        (70, "yellow"),
+        (None, "blue"),
+    ],
+    # Storage usage (%)
+    "storage_pct": [
+        (90, "red"),
+        (75, "yellow"),
+        (None, "blue"),
+    ],
+    # Disk utilization (%) — 5-tier like cpu_util
+    "disk_util": [
+        (80, "red"),
+        (60, "orange"),
+        (40, "yellow"),
+        (20, "green"),
+        (None, "gray"),
+    ],
+    # Top-process CPU % (in process list — lower thresholds since each
+    # process can use a lot)
+    "process_cpu": [
+        (50, "red"),
+        (20, "yellow"),
+        (None, None),  # no color (default text)
+    ],
+    # Top-process memory %
+    "process_mem": [
+        (10, "red"),
+        (5, "yellow"),
+        (None, None),
+    ],
+}
+
+
+@register.simple_tag
+def color_tier_thresholds(name, varname=None):
+    """Define a named threshold spec as a context variable.
+
+    Usage:
+        {% color_tier_thresholds "cpu_temp" as cpu_temp_thresholds %}
+        <span class="{{ val|tier_text:cpu_temp_thresholds }}">
+
+    Or, to set in the context and not assign to a variable:
+        {% color_tier_thresholds "cpu_temp" %}
+
+    The `name` must be a key in DEFAULT_THRESHOLDS. Custom specs can
+    be added by extending DEFAULT_THRESHOLDS (in a settings module or
+    in a tests file).
+
+    Returns the spec list so the simple_tag form can be assigned to
+    a variable via `as`.
+    """
+    if name not in DEFAULT_THRESHOLDS:
+        raise KeyError(
+            f"Unknown threshold spec '{name}'. Known specs: "
+            f"{', '.join(sorted(DEFAULT_THRESHOLDS.keys()))}. "
+            f"Add the spec to DEFAULT_THRESHOLDS in "
+            f"dashboard/templatetags/gpu_filters.py."
+        )
+    return DEFAULT_THRESHOLDS[name]
+
+
+def _resolve_color(value, thresholds):
+    """Apply a threshold spec to a numeric value.
+
+    `thresholds` is a list of (min_value, color_name) pairs, highest
+    first. The first pair where `min_value` is None OR `value > min_value`
+    determines the returned color. If `color_name` is None, the function
+    returns None (signaling "no color override").
+
+    Returns None if the value can't be coerced to a number (NaN-like
+    inputs). The caller decides what to do with None — typically
+    substitute a default color like 'gray'.
+    """
+    if thresholds is None:
+        return None
+    if value is None:
+        return None
+    try:
+        v = float(value)
+    except (ValueError, TypeError):
+        return None
+    for min_value, color in thresholds:
+        if min_value is None:
+            # Default color (must be last entry)
+            return color
+        if v > min_value:
+            return color
+    # If we get here, all thresholds had a non-None min_value but none
+    # matched (shouldn't happen if DEFAULT_THRESHOLDS is well-formed).
+    # Return the last color as a safe fallback.
+    return thresholds[-1][1]
+
+
+@register.filter(name="tier_text")
+def tier_text(value, thresholds):
+    """Convenience filter: return the full Tailwind class.
+
+    Use this when you don't need to compose the class with others:
+        <span class="{{ x|tier_text:cpu_temp_thresholds }}">
+
+    Returns 'text-{color}-400' (Tailwind 400-series) for matching
+    thresholds, or the empty string '' if the spec says "no color
+    override" (e.g. low process CPU usage). Returns '' on bad input
+    too (no class = no style).
+
+    The 400 shade was chosen because it has WCAG AA contrast against
+    the gray-800 card background (#1f2937) for all colors we use.
+    """
+    color = _resolve_color(value, thresholds)
+    if not color:
+        return ""
+    return f"text-{color}-400"
+
+
+@register.filter(name="tier_fill")
+def tier_fill(value, thresholds):
+    """Convenience filter: return the full Tailwind bg-{color}-400 class.
+
+    Use this for progress bar fills:
+        <div class="grm-progress">
+          <div class="{{ x|tier_fill:cpu_util_thresholds }}"
+               style="width: {{ x }}%"></div>
+        </div>
+
+    Returns 'bg-{color}-400' (Tailwind 400-series) for matching
+    thresholds, or the empty string '' for "no color override".
+
+    Note: progress bar fills
+    typically have a default color (e.g. 'gray' for "no data"), so the
+    spec should not return None for default unless the caller wants an
+    invisible fill.
+    """
+    color = _resolve_color(value, thresholds)
+    if not color:
+        return ""
+    return f"bg-{color}-400"

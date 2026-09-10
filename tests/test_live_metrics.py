@@ -1,3 +1,4 @@
+from pathlib import Path
 """
 Test the _fetch_rig_metrics function to find why Live Metrics is empty.
 """
@@ -7,7 +8,11 @@ import django
 import traceback
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'gpu_monitor.settings')
-sys.path.insert(0, '/home/qrv/workspace/GPU-Rig-Monitoring-Platform/gpu_monitor')
+# Add the tests/ directory to sys.path so we can import _paths
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _paths import GPU_MONITOR_DIR
+# gpu_monitor/ needs to be on sys.path so Django imports work.
+sys.path.insert(0, str(GPU_MONITOR_DIR))
 django.setup()
 
 from django.contrib.auth.models import User

@@ -54,6 +54,12 @@ done < .env
 python manage.py makemigrations
 python manage.py migrate
 
+# Always run collectstatic — staticfiles/ must mirror source static/ on
+# every deploy. The main sync_to_opt.sh does the same; this script is the
+# legacy manual-copy path and was missing the step entirely.
+echo "=== Collecting static files ==="
+python manage.py collectstatic --noinput --clear
+
 echo "=== Restarting Gunicorn ==="
 sudo systemctl restart gunicorn
 

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}{{ rig.name }}{% endblock %}
 {% block content %}
 <div class="max-w-[95%] mx-auto">
@@ -29,11 +30,11 @@
                     {% csrf_token %}
                     <div class="flex items-center gap-2">
                         <input type="text" name="name" value="{{ rig.name }}"
-                               class="text-xl font-bold bg-gray-700 border border-gray-600 rounded px-2 py-1 w-64"
+                               class="text-xl font-bold bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white-lg w-64"
                                maxlength="128"
                                required>
-                        <button type="submit" class="px-3 py-1 bg-blue-600 hover:bg-blue-500 rounded text-sm">Save</button>
-                        <button type="button" class="px-3 py-1 bg-gray-600 hover:bg-gray-500 rounded text-sm"
+                        <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded transition-colors duration-150 "px-3 py-1 text-sm">Save</button>
+                        <button type="button" class="bg-gray-700 hover:bg-gray-600 text-gray-300 px-4 py-2 rounded transition-colors duration-150 "px-3 py-1 text-sm"
                                 onclick="toggleRenameForm()">Cancel</button>
                     </div>
                 </form>
@@ -67,25 +68,25 @@
                 <span class="hidden md:inline">Live Metrics</span>
             </button>
             <button onclick="switchTab('charts')" id="tab-charts"
-                    class="tab-btn pb-3 px-1 md:px-2 border-b-2 border-transparent text-gray-400 hover:text-gray-200 flex items-center gap-1 md:gap-2 whitespace-nowrap">
+                    class="tab-btn pb-3 px-1 md:px-2 border-b-2 border-transparent text-gray-300 hover:text-gray-200 flex items-center gap-1 md:gap-2 whitespace-nowrap">
                 <span class="md:hidden text-base">📈</span>
                 <span class="hidden md:inline flex items-center gap-2">Historical Charts
-                <span class="text-xs text-gray-500 hover:text-gray-300 cursor-pointer"
+                <span class="text-xs text-gray-500 hover:text-gray-200 cursor-pointer"
                       onclick="event.stopPropagation(); loadCharts();"
                       title="Reload charts">↻</span></span>
             </button>
             <button onclick="switchTab('containers')" id="tab-containers"
-                    class="tab-btn pb-3 px-1 md:px-2 border-b-2 border-transparent text-gray-400 hover:text-gray-200 flex items-center gap-1 md:gap-2 whitespace-nowrap">
+                    class="tab-btn pb-3 px-1 md:px-2 border-b-2 border-transparent text-gray-300 hover:text-gray-200 flex items-center gap-1 md:gap-2 whitespace-nowrap">
                 <span class="md:hidden text-base">📦</span>
                 <span class="hidden md:inline">Containers</span>
             </button>
             <button onclick="switchTab('errors')" id="tab-errors"
-                    class="tab-btn pb-3 px-1 md:px-2 border-b-2 border-transparent text-gray-400 hover:text-gray-200 flex items-center gap-1 md:gap-2 whitespace-nowrap">
+                    class="tab-btn pb-3 px-1 md:px-2 border-b-2 border-transparent text-gray-300 hover:text-gray-200 flex items-center gap-1 md:gap-2 whitespace-nowrap">
                 <span class="md:hidden text-base">⚠️</span>
                 <span class="hidden md:inline">Errors</span>
             </button>
             <button onclick="switchTab('report')" id="tab-report"
-                    class="tab-btn pb-3 px-1 md:px-2 border-b-2 border-transparent text-gray-400 hover:text-gray-200 flex items-center gap-1 md:gap-2 whitespace-nowrap">
+                    class="tab-btn pb-3 px-1 md:px-2 border-b-2 border-transparent text-gray-300 hover:text-gray-200 flex items-center gap-1 md:gap-2 whitespace-nowrap">
                 <span class="md:hidden text-base">📋</span>
                 <span class="hidden md:inline">Report</span>
             </button>
@@ -93,9 +94,9 @@
                 <button onclick="setChartRange(24, 1)" id="btn-range-24h"
                         class="chart-range-btn px-2 py-0.5 rounded text-xs bg-blue-600 text-white">24h</button>
                 <button onclick="setChartRange(168, 60)" id="btn-range-7d"
-                        class="chart-range-btn px-2 py-0.5 rounded text-xs bg-gray-700 text-gray-400 hover:bg-gray-600">7d</button>
+                        class="chart-range-btn px-2 py-0.5 rounded text-xs bg-gray-700 text-gray-300 hover:bg-gray-600">7d</button>
                 <button onclick="setChartRange(720, 60)" id="btn-range-30d"
-                        class="chart-range-btn px-2 py-0.5 rounded text-xs bg-gray-700 text-gray-400 hover:bg-gray-600">30d</button>
+                        class="chart-range-btn px-2 py-0.5 rounded text-xs bg-gray-700 text-gray-300 hover:bg-gray-600">30d</button>
             </div>
         </nav>
     </div>
@@ -119,145 +120,79 @@
         <div class="space-y-6">
 
             <!-- GPU Temperature Chart (multi-GPU) -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">GPU Temperature (<span class="chart-timeframe-label">24h</span>)</h3>
-                <canvas id="chartGpuTemp"></canvas>
-            </div>
+            {% include "partials/_chart_card.html" with canvas_id="chartGpuTemp" title="GPU Temperature" %}
 
             <!-- GPU Fan Speed Chart (multi-GPU) -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">GPU Fan Speed (<span class="chart-timeframe-label">24h</span>)</h3>
-                <canvas id="chartGpuFan"></canvas>
-            </div>
+            {% include "partials/_chart_card.html" with canvas_id="chartGpuFan" title="GPU Fan Speed" %}
 
             <!-- GPU Utilization Chart (multi-GPU) -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">GPU Utilization (<span class="chart-timeframe-label">24h</span>)</h3>
-                <canvas id="chartGpuUtil"></canvas>
-            </div>
+            {% include "partials/_chart_card.html" with canvas_id="chartGpuUtil" title="GPU Utilization" %}
 
             <!-- GPU Memory Controller Util Chart (multi-GPU) -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">GPU Memory Controller Util (<span class="chart-timeframe-label">24h</span>)</h3>
-                <canvas id="chartGpuMemCtrlUtil"></canvas>
-            </div>
+            {% include "partials/_chart_card.html" with canvas_id="chartGpuMemCtrlUtil" title="GPU Memory Controller Util" %}
 
             <!-- GPU Power Draw Chart (multi-GPU) -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">GPU Power Draw (<span class="chart-timeframe-label">24h</span>)</h3>
-                <canvas id="chartGpuPower"></canvas>
-            </div>
+            {% include "partials/_chart_card.html" with canvas_id="chartGpuPower" title="GPU Power Draw" %}
 
             <!-- GPU VRAM Usage Chart (multi-GPU) -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">GPU VRAM Usage (<span class="chart-timeframe-label">24h</span>)</h3>
-                <canvas id="chartGpuMem"></canvas>
-            </div>
+            {% include "partials/_chart_card.html" with canvas_id="chartGpuMem" title="GPU VRAM Usage" %}
 
             <!-- GPU Core Clock Chart (multi-GPU) -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">GPU Core Clock (<span class="chart-timeframe-label">24h</span>)</h3>
-                <canvas id="chartGpuCoreClock"></canvas>
-            </div>
+            {% include "partials/_chart_card.html" with canvas_id="chartGpuCoreClock" title="GPU Core Clock" %}
 
             <!-- GPU Memory Clock Chart (multi-GPU) -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">GPU Memory Clock (<span class="chart-timeframe-label">24h</span>)</h3>
-                <canvas id="chartGpuMemClock"></canvas>
-            </div>
+            {% include "partials/_chart_card.html" with canvas_id="chartGpuMemClock" title="GPU Memory Clock" %}
 
             <!-- CPU Utilization Chart -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">CPU Utilization (<span class="chart-timeframe-label">24h</span>)</h3>
-                <canvas id="chartCpuUtil"></canvas>
-            </div>
+            {% include "partials/_chart_card.html" with canvas_id="chartCpuUtil" title="CPU Utilization" %}
 
             <!-- CPU Temperature Chart -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">CPU Temperature (<span class="chart-timeframe-label">24h</span>)</h3>
-                <canvas id="chartCpuTemp"></canvas>
-            </div>
+            {% include "partials/_chart_card.html" with canvas_id="chartCpuTemp" title="CPU Temperature" %}
 
             <!-- CPU Frequency Chart -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">CPU Frequency (<span class="chart-timeframe-label">24h</span>)</h3>
-                <canvas id="chartCpuFreq"></canvas>
-            </div>
+            {% include "partials/_chart_card.html" with canvas_id="chartCpuFreq" title="CPU Frequency" %}
 
             <!-- CPU Power Chart -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">CPU Power (<span class="chart-timeframe-label">24h</span>)</h3>
-                <canvas id="chartCpuPower"></canvas>
-            </div>
+            {% include "partials/_chart_card.html" with canvas_id="chartCpuPower" title="CPU Power" %}
 
             <!-- CPU Load Average Chart -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">CPU Load Average (<span class="chart-timeframe-label">24h</span>)</h3>
-                <canvas id="chartCpuLoad"></canvas>
-            </div>
+            {% include "partials/_chart_card.html" with canvas_id="chartCpuLoad" title="CPU Load Average" %}
 
             <!-- Disk Usage Chart (multi-disk) -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Disk Usage (<span class="chart-timeframe-label">24h</span>)</h3>
-                <canvas id="chartDiskUsage"></canvas>
-            </div>
+            {% include "partials/_chart_card.html" with canvas_id="chartDiskUsage" title="Disk Usage" %}
 
             <!-- Disk Read/Write Throughput Chart (multi-disk) -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Disk Read/Write (<span class="chart-timeframe-label">24h</span>)</h3>
-                <canvas id="chartDiskReadWriteThroughput"></canvas>
-            </div>
+            {% include "partials/_chart_card.html" with canvas_id="chartDiskReadWriteThroughput" title="Disk Read/Write" %}
 
             <!-- Disk Read/Write IOPS Chart (multi-disk) -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Disk Read/Write IOPS (<span class="chart-timeframe-label">24h</span>)</h3>
-                <canvas id="chartDiskReadWriteIops"></canvas>
-            </div>
+            {% include "partials/_chart_card.html" with canvas_id="chartDiskReadWriteIops" title="Disk Read/Write IOPS" %}
 
             <!-- Disk Utilization Chart (multi-disk) -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Disk Utilization (<span class="chart-timeframe-label">24h</span>)</h3>
-                <canvas id="chartDiskUtilization"></canvas>
-            </div>
+            {% include "partials/_chart_card.html" with canvas_id="chartDiskUtilization" title="Disk Utilization" %}
 
             <!-- Total System Power Chart -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Total System Power (<span class="chart-timeframe-label">24h</span>)</h3>
-                <canvas id="chartTotalPower"></canvas>
-            </div>
+            {% include "partials/_chart_card.html" with canvas_id="chartTotalPower" title="Total System Power" %}
 
             <!-- Memory & Swap Combined Chart -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Memory & Swap (<span class="chart-timeframe-label">24h</span>)</h3>
-                <canvas id="chartMemSwap"></canvas>
-            </div>
+            {% include "partials/_chart_card.html" with canvas_id="chartMemSwap" title="Memory & Swap" %}
 
             <!-- Network Traffic Chart (multi-interface, combined RX/TX/Errors) -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[300px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Network Traffic (<span class="chart-timeframe-label">24h</span>)</h3>
-                <canvas id="chartNetCombined"></canvas>
-            </div>
+            {% include "partials/_chart_card.html" with canvas_id="chartNetCombined" title="Network Traffic" height="tall" %}
 
             <!-- Uptime Chart -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Uptime (<span class="chart-timeframe-label">24h</span>)</h3>
-                <canvas id="chartUptime"></canvas>
-            </div>
+            {% include "partials/_chart_card.html" with canvas_id="chartUptime" title="Uptime" %}
 
             <!-- Error Frequency Chart -->
-            <div class="bg-gray-800 rounded-lg border border-gray-700 p-4 h-[280px]">
-                <h3 class="text-sm font-medium text-gray-300 mb-3">Error Frequency (<span class="chart-timeframe-label">24h</span>)</h3>
-                <canvas id="chartErrorFreq"></canvas>
-            </div>
+            {% include "partials/_chart_card.html" with canvas_id="chartErrorFreq" title="Error Frequency" %}
 
         </div>
     </div>
 
     <!-- Tab: Containers -->
     <div id="tab-content-containers" class="tab-content hidden">
-        <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+        <div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
             <div class="flex items-center justify-between mb-4">
-                <h3 class="text-sm font-medium text-gray-300">Container History</h3>
+                <h3 class="text-sm font-medium text-gray-200">Container History</h3>
                 {% if container_history %}
                 <span class="text-xs text-gray-500">{{ container_history|length }} state changes</span>
                 {% endif %}
@@ -274,7 +209,7 @@
                         {% elif c.status == 'restarting' %}
                         <span class="text-xs px-2 py-0.5 rounded bg-yellow-900/50 text-yellow-300">{{ c.status }}</span>
                         {% else %}
-                        <span class="text-xs px-2 py-0.5 rounded bg-gray-700 text-gray-300">{{ c.status }}</span>
+                        <span class="text-xs px-2 py-0.5 rounded bg-gray-700 text-gray-200">{{ c.status }}</span>
                         {% endif %}
                         <span class="text-sm text-gray-200 font-medium">{{ c.name|default:"unnamed" }}</span>
                         <span class="text-xs text-gray-600 font-mono">{{ c.container_id|default:""|truncatechars:12 }}</span>
@@ -295,9 +230,9 @@
 
     <!-- Tab: Errors -->
     <div id="tab-content-errors" class="tab-content hidden">
-        <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+        <div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
             <div class="flex items-center justify-between mb-4">
-                <h3 class="text-sm font-medium text-gray-300">Error History</h3>
+                <h3 class="text-sm font-medium text-gray-200">Error History</h3>
                 {% if error_history %}
                 <span class="text-xs text-gray-500">{{ error_history|length }} errors</span>
                 {% endif %}
@@ -314,7 +249,7 @@
                             {{ err.timestamp|default:err.received_at|default:"unknown"|truncatechars:30 }}
                         </span>
                     </div>
-                    <p class="text-sm text-gray-400 font-mono break-all">{{ err.message|truncatechars:300 }}</p>
+                    <p class="text-sm text-gray-300 font-mono break-all">{{ err.message|truncatechars:300 }}</p>
                 </div>
                 {% endfor %}
             </div>
@@ -326,10 +261,10 @@
 
     <!-- Tab: Report -->
     <div id="tab-content-report" class="tab-content hidden">
-        <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+        <div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
             <!-- Time range selector -->
             <div class="flex items-center gap-2 mb-4">
-                <span class="text-xs text-gray-400">Range:</span>
+                <span class="text-xs text-gray-300">Range:</span>
                 <button hx-get="{% url 'dashboard:htmx-report' rig.uuid %}?range_hours=24"
                         hx-target="#report-table-container"
                         hx-swap="innerHTML"
@@ -341,13 +276,13 @@
                         hx-swap="innerHTML"
                         onclick="selectReportRange(168)"
                         id="report-range-168"
-                        class="report-range-btn px-3 py-1 rounded text-xs bg-gray-700 text-gray-400 hover:bg-gray-600">7d</button>
+                        class="report-range-btn px-3 py-1 rounded text-xs bg-gray-700 text-gray-300 hover:bg-gray-600">7d</button>
                 <button hx-get="{% url 'dashboard:htmx-report' rig.uuid %}?range_hours=720"
                         hx-target="#report-table-container"
                         hx-swap="innerHTML"
                         onclick="selectReportRange(720)"
                         id="report-range-720"
-                        class="report-range-btn px-3 py-1 rounded text-xs bg-gray-700 text-gray-400 hover:bg-gray-600">30d</button>
+                        class="report-range-btn px-3 py-1 rounded text-xs bg-gray-700 text-gray-300 hover:bg-gray-600">30d</button>
             </div>
 
             <!-- Report table container: only load when tab is opened -->
@@ -364,1056 +299,38 @@
     </div>
 </div>
 
+{% block extra_js %}
+{# Phase 0.4: Extracted JS files. The chart-* files are loaded on every #}
+{# page (cheap when not used), and rig-detail.js is loaded only here. #}
+{# app-base.js is loaded in base.html for everyone. #}
+<script src="{% static 'js/chart-base.js' %}"></script>
+<script src="{% static 'js/chart-colors.js' %}"></script>
+<script src="{% static 'js/chart-loaders.js' %}"></script>
+<script src="{% static 'js/chart-runtime.js' %}"></script>
+<script src="{% static 'js/rig-detail.js' %}"></script>
 <script>
-// Tab switching
-function switchTab(tabName) {
-    document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
-    document.querySelectorAll('.tab-btn').forEach(el => {
-        el.classList.remove('border-blue-400', 'text-blue-400');
-        el.classList.add('border-transparent', 'text-gray-400');
-    });
-    document.getElementById('tab-content-' + tabName).classList.remove('hidden');
-    var btn = document.getElementById('tab-' + tabName);
-    btn.classList.remove('border-transparent', 'text-gray-400');
-    btn.classList.add('border-blue-400', 'text-blue-400');
-
-    // Lazy-load charts when tab is first opened
-    if (tabName === 'charts' && !chartsLoaded) {
-        chartsLoaded = true;
-        loadCharts();
-    }
-    // Load report data when Report tab is first opened
-    if (tabName === 'report') {
-        selectReportRange(24);
-        if (!reportLoaded) {
-            reportLoaded = true;
-            htmx.ajax('GET', "{% url 'dashboard:htmx-report' rig.uuid %}?range_hours=24", '#report-table-container');
-        }
-    }
-    // Show/hide timeframe buttons
-    var tf = document.getElementById('chart-timeframe');
-    if (tf) {
-        if (tabName === 'charts') {
-            tf.classList.remove('hidden');
-        } else {
-            tf.classList.add('hidden');
-        }
-    }
-}
-
-// Report range selection
-function selectReportRange(hours) {
-    var ranges = [24, 168, 720];
-    for (var i = 0; i < ranges.length; i++) {
-        var btn = document.getElementById('report-range-' + ranges[i]);
-        if (!btn) continue;
-        if (ranges[i] === hours) {
-            btn.classList.remove('bg-gray-700', 'text-gray-400', 'hover:bg-gray-600');
-            btn.classList.add('bg-blue-600', 'text-white');
-        } else {
-            btn.classList.remove('bg-blue-600', 'text-white');
-            btn.classList.add('bg-gray-700', 'text-gray-400', 'hover:bg-gray-600');
-        }
-    }
-}
-
-// Inline rename form toggle
-function toggleRenameForm() {
-    var form = document.getElementById('rig-rename-form');
-    var text = document.getElementById('rig-name-text');
-    var btn = document.getElementById('rig-rename-btn');
-    if (form.classList.contains('hidden')) {
-        form.classList.remove('hidden');
-        text.classList.add('opacity-50');
-        btn.classList.add('hidden');
-        form.querySelector('input').focus();
-    } else {
-        form.classList.add('hidden');
-        text.classList.remove('opacity-50');
-        btn.classList.remove('hidden');
-    }
-}
-
-// After HTMX swaps the rig name back, hide the form
-document.body.addEventListener('htmx:afterSettle', function(evt) {
-    if (evt.detail.target && evt.detail.target.id === 'rig-name-text') {
-        var form = document.getElementById('rig-rename-form');
-        if (form && !form.classList.contains('hidden')) {
-            toggleRenameForm();
-        }
-    }
-});
-
-// Delete confirmation modal
-function showDeleteModal() {
-    document.getElementById('delete-modal').classList.remove('hidden');
-    document.getElementById('delete-modal').classList.add('flex');
-    document.addEventListener('keydown', deleteModalEscHandler);
-}
-
-function hideDeleteModal() {
-    document.getElementById('delete-modal').classList.add('hidden');
-    document.getElementById('delete-modal').classList.remove('flex');
-    document.removeEventListener('keydown', deleteModalEscHandler);
-}
-
-function deleteModalEscHandler(evt) {
-    if (evt.key === 'Escape') {
-        hideDeleteModal();
-    }
-}
-
-// Close modal when clicking outside — defer to ensure DOM is ready
-document.addEventListener('DOMContentLoaded', function() {
-    var modal = document.getElementById('delete-modal');
-    if (modal) {
-        modal.addEventListener('click', function(evt) {
-            if (evt.target === this) {
-                hideDeleteModal();
-            }
-        });
-    }
-});
-
-// Chart instances
-var chartInstances = {};
-var chartsLoaded = false;
-var reportLoaded = false;
-
-// Chart timeframe state
-var chartRange = 24;        // hours
-var chartBucketMinutes = 1;  // bucket size in minutes
-
-
-
-function setChartRange(rangeHours, bucketMinutes) {
-    chartRange = rangeHours;
-    chartBucketMinutes = bucketMinutes;
-    // Update button styles
-    document.querySelectorAll('.chart-range-btn').forEach(function(btn) {
-        btn.classList.remove('bg-blue-600', 'text-white');
-        btn.classList.add('bg-gray-700', 'text-gray-400');
-    });
-    // Highlight active button
-    var activeId = 'btn-range-' + (rangeHours === 24 ? '24h' : rangeHours === 168 ? '7d' : '30d');
-    var activeBtn = document.getElementById(activeId);
-    if (activeBtn) {
-        activeBtn.classList.remove('bg-gray-700', 'text-gray-400');
-        activeBtn.classList.add('bg-blue-600', 'text-white');
-    }
-    // Reload charts with new range
-    loadCharts();
-    // Update chart heading labels
-    var label;
-    if (rangeHours === 24) {
-        label = '24h';
-    } else if (rangeHours === 168) {
-        label = '7d';
-    } else {
-        label = '30d';
-    }
-    document.querySelectorAll('.chart-timeframe-label').forEach(function(el) {
-        el.textContent = label;
-    });
-}
-
-// Load all charts with staggered timing to smooth DB load
-// Without staggering, all ~18 chart requests hit the server simultaneously
-// With staggering, requests are spread over ~2 seconds (100ms apart)
-async function loadCharts() {
-    var uuid = '{{ rig.uuid }}';
-    var range = chartRange;
-    var delay_ms = 100;  // Delay between chart requests
-
-    // Helper: load a chart after an optional delay
-    function delayedLoad(fn, delay) {
-        return new Promise(function(resolve) {
-            setTimeout(function() {
-                fn().then(resolve);
-            }, delay);
-        });
-    }
-
-    // Chart registry: defines loading order. This MUST match the HTML canvas
-    // order in the page. To reorder charts on the page, reorder both the HTML
-    // canvas elements AND this array. Each entry returns a Promise.
-    var chartLoaders = [
-            // GPU charts
-            function() { return loadChartMultiGpu('chartGpuTemp',      'gpu_temp_c',        uuid, range, '°C'); },
-            function() { return loadChartMultiGpu('chartGpuFan',       'gpu_fan_pct',       uuid, range, '%'); },
-            function() { return loadChartMultiGpu('chartGpuUtil',      'gpu_util_pct',      uuid, range, '%'); },
-            function() { return loadChartMultiGpu('chartGpuMemCtrlUtil', 'gpu_mem_controller_util_pct', uuid, range, '%'); },
-            function() { return loadChartMultiGpu('chartGpuPower',     'gpu_power_w',       uuid, range, 'W'); },
-            function() { return loadChartMultiGpu('chartGpuMem',       'gpu_mem_used_mb',   uuid, range, ' MB'); },
-            function() { return loadChartMultiGpu('chartGpuCoreClock', 'gpu_core_clock_mhz', uuid, range, ' MHz'); },
-            function() { return loadChartMultiGpu('chartGpuMemClock',  'gpu_mem_clock_mhz',  uuid, range, ' MHz'); },
-            // CPU charts
-            function() { return loadChart('chartCpuUtil',    'cpu_utilization_pct',  uuid, range, '%',   'rgba(16, 185, 129, 0.8)', 'rgba(16, 185, 129, 0.15)'); },
-            function() { return loadChart('chartCpuTemp',    'cpu_temp_c',           uuid, range, '°C',  'rgba(245, 158, 11, 0.8)', 'rgba(245, 158, 11, 0.15)'); },
-            function() { return loadChart('chartCpuFreq',    'cpu_freq_current_mhz', uuid, range, ' MHz', 'rgba(59, 130, 246, 0.8)', 'rgba(59, 130, 246, 0.15)'); },
-            function() { return loadChart('chartCpuPower',   'cpu_power_w',          uuid, range, 'W', 'rgba(168, 85, 247, 0.8)', 'rgba(168, 85, 247, 0.15)'); },
-            function() { return loadChartLoadAvg('chartCpuLoad', uuid, range); },
-            // Disk charts
-            function() { return loadChartMultiKey('chartDiskUsage', 'disk_usage_pct', uuid, range, '%', 'multi_disk'); },
-            function() { return loadChartMultiKeyDual('chartDiskReadWriteThroughput', 'disk_read_bytes_delta', 'disk_write_bytes_delta', uuid, range, ' MB', 'multi_disk', 'rgba(59, 130, 246, 0.8)', 'rgba(16, 185, 129, 0.8)'); },
-            function() { return loadChartMultiKeyDual('chartDiskReadWriteIops', 'disk_read_iops_delta', 'disk_write_iops_delta', uuid, range, ' IOPS', 'multi_disk', 'rgba(59, 130, 246, 0.8)', 'rgba(16, 185, 129, 0.8)'); },
-            function() { return loadChartMultiKey('chartDiskUtilization', 'disk_utilization_pct', uuid, range, '%', 'multi_disk'); },
-            // Rest
-            function() { return loadChart('chartTotalPower', 'total_system_power_w', uuid, range, 'W', 'rgba(59, 130, 246, 0.8)', 'rgba(59, 130, 246, 0.15)'); },
-            function() { return loadChartMemSwap('chartMemSwap', uuid, range); },
-            function() { return loadChartNetworkCombined('chartNetCombined', uuid, range); },
-            function() { return loadChart('chartUptime', 'uptime_s', uuid, range, ' days', 'rgba(168, 85, 247, 0.8)', 'rgba(168, 85, 247, 0.15)'); },
-            function() { return loadChart('chartErrorFreq', 'error_frequency', uuid, range, ' err/min', 'rgba(239, 68, 68, 0.8)', 'rgba(239, 68, 68, 0.5)', 'bar'); },
-        ];
-
-    // Load charts sequentially with staggering to smooth DB load.
-    // Without staggering, all ~17 chart requests would hit the server
-    // simultaneously, creating a burst of DB aggregation queries.
-    // With 100ms delay between each, requests are spread over ~1.7s,
-    // keeping DB load smooth and preventing query timeouts.
-    // Charts appear top-to-bottom as the user scrolls.
-    for (var i = 0; i < chartLoaders.length; i++) {
-        if (i === 0) {
-            // First chart loads immediately (no delay for above-the-fold content)
-            await chartLoaders[i]();
-        } else {
-            await delayedLoad(chartLoaders[i], delay_ms);
-        }
-    }
-}
-
-// Load a single chart
-async function loadChart(canvasId, metric, uuid, range, unit, borderColor, bgColor, chartType) {
-    var ctx = document.getElementById(canvasId);
-    if (!ctx) return;
-    chartType = chartType || 'line';
-
-    try {
-        var resp = await fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=${metric}&range=${range}&bucket_minutes=${chartBucketMinutes}`);
-        if (!resp.ok) {
-            throw new Error('HTTP ' + resp.status);
-        }
-        var data = await resp.json();
-        if (!data.datasets || !data.datasets[0] || !data.datasets[0].data) {
-            throw new Error('Invalid data format');
-        }
-
-        // Server already converts byte metrics to GB; no client-side conversion needed.
-        // Preserve null for gaps (offline periods).
-        var values = data.datasets[0].data;
-
-        // Destroy existing chart if any
-        if (chartInstances[canvasId]) {
-            chartInstances[canvasId].destroy();
-        }
-
-        chartInstances[canvasId] = new Chart(ctx, {
-            type: chartType,
-            data: {
-                labels: data.labels,
-                datasets: [{
-                    label: metric.replace(/_/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); }),
-                    data: values,
-                    borderColor: borderColor,
-                    backgroundColor: bgColor,
-                    borderWidth: chartType === 'bar' ? 0 : 2,
-                    fill: chartType === 'line',
-                    tension: 0.0,
-                    pointRadius: 0,
-                    pointHitRadius: 10,
-                    spanGaps: false,
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { display: false },
-                    tooltip: {
-                        mode: 'index',
-                        intersect: false,
-                        callbacks: {
-                            label: function(ctx) {
-                                return ctx.parsed.y + unit;
-                            }
-                        }
-                    }
-                },
-                scales: {
-                    x: {
-                        grid: { color: 'rgba(255,255,255,0.05)' },
-                        ticks: {
-                            color: '#9ca3af',
-                            maxTicksLimit: 12,
-                            maxRotation: 0,
-                            autoSkip: true,
-                            callback: function(val, index) {
-                                // Dynamic skip: show ~12 labels evenly across all buckets
-                                var total = this.getLabels().length;
-                                var skip = Math.max(1, Math.floor(total / 12));
-                                return index % skip === 0 ? this.getLabelForValue(val) : '';
-                            }
-                        }
-                    },
-                    y: {
-                        grid: { color: 'rgba(255,255,255,0.05)' },
-                        ticks: { color: '#9ca3af' },
-                        beginAtZero: true,
-                        title: { display: true, text: unit, color: '#6b7280', font: { size: 11 } }
-                    }
-                },
-                interaction: {
-                    mode: 'nearest',
-                    axis: 'x',
-                    intersect: false
-                }
-            }
-        });
-    } catch (e) {
-        console.error('Failed to load chart ' + metric + ':', e);
-        ctx.parentElement.innerHTML = '<div class="flex items-center justify-center h-48 text-gray-500 text-sm">No data available</div>';
-    }
-}
-
-// Load CPU Load Average chart (multi-series: 1m, 5m, 15m)
-async function loadChartLoadAvg(canvasId, uuid, range) {
-    var ctx = document.getElementById(canvasId);
-    if (!ctx) return;
-
-    try {
-        var resp = await fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=cpu_load_avg&range=${range}&bucket_minutes=${chartBucketMinutes}`);
-        var data = await resp.json();
-
-        var colors = [
-            { border: 'rgba(16, 185, 129, 0.8)',  bg: 'rgba(16, 185, 129, 0.15)' },  // 1m - green
-            { border: 'rgba(245, 158, 11, 0.8)',  bg: 'rgba(245, 158, 11, 0.15)' },  // 5m - amber
-            { border: 'rgba(239, 68, 68, 0.8)',   bg: 'rgba(239, 68, 68, 0.15)' },  // 15m - red
-        ];
-
-        if (chartInstances[canvasId]) {
-            chartInstances[canvasId].destroy();
-        }
-
-        chartInstances[canvasId] = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: data.labels,
-                datasets: data.datasets.map(function(ds, i) {
-                    return {
-                        label: ds.label,
-                        data: ds.data,
-                        borderColor: colors[i].border,
-                        backgroundColor: colors[i].bg,
-                        borderWidth: 2,
-                        fill: false,
-                        tension: 0.0,
-                        pointRadius: 0,
-                                            pointHitRadius: 10,
-                        spanGaps: false,
-                    };
-                })
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        display: true,
-                        labels: { color: '#9ca3af', boxWidth: 12, padding: 8, font: { size: 11 } },
-                    },
-                    tooltip: {
-                        mode: 'index',
-                        intersect: false,
-                        callbacks: {
-                            label: function(ctx) {
-                                return ctx.dataset.label + ': ' + (ctx.parsed.y !== null ? ctx.parsed.y.toFixed(2) : '—');
-                            }
-                        }
-                    }
-                },
-                scales: {
-                    x: {
-                        grid: { color: 'rgba(255,255,255,0.05)' },
-                        ticks: {
-                            color: '#9ca3af',
-                            maxTicksLimit: 12,
-                            maxRotation: 0,
-                            autoSkip: true,
-                            callback: function(val, index) {
-                                var skip = Math.max(1, Math.floor(this.getLabels().length / 12));
-                                return index % skip === 0 ? this.getLabelForValue(val) : '';
-                            }
-                        }
-                    },
-                    y: {
-                        grid: { color: 'rgba(255,255,255,0.05)' },
-                        ticks: { color: '#9ca3af' },
-                        beginAtZero: true,
-                        title: { display: true, text: 'Load', color: '#6b7280', font: { size: 11 } }
-                    }
-                },
-                interaction: {
-                    mode: 'nearest',
-                    axis: 'x',
-                    intersect: false
-                }
-            }
-        });
-    } catch (e) {
-        console.error('Failed to load chart cpu_load_avg:', e);
-        ctx.parentElement.innerHTML = '<div class="flex items-center justify-center h-48 text-gray-500 text-sm">No data available</div>';
-    }
-}
-
-// Load combined Memory & Swap chart (3 datasets: used, free, swap)
-async function loadChartMemSwap(canvasId, uuid, range) {
-    var ctx = document.getElementById(canvasId);
-    if (!ctx) return;
-
-    try {
-        var resp = await fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=mem_used_bytes&range=${range}&bucket_minutes=${chartBucketMinutes}&multi_mem=true`);
-        var data = await resp.json();
-
-        if (!data.datasets || data.datasets.length === 0) {
-            ctx.parentElement.innerHTML = '<div class="flex items-center justify-center h-48 text-gray-500 text-sm">No data available</div>';
-            return;
-        }
-
-        if (chartInstances[canvasId]) {
-            chartInstances[canvasId].destroy();
-        }
-
-        var memColors = [
-            { border: 'rgba(14, 165, 233, 0.9)',  bg: 'rgba(14, 165, 233, 0.15)' },  // blue - Memory Used
-            { border: 'rgba(34, 197, 94, 0.9)',   bg: 'rgba(34, 197, 94, 0.1)'  },   // green - Memory Free
-            { border: 'rgba(239, 68, 68, 0.9)',   bg: 'rgba(239, 68, 68, 0.1)'  },   // red - Swap Used
-        ];
-
-        chartInstances[canvasId] = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: data.labels,
-                datasets: data.datasets.map(function(ds, i) {
-                    var color = memColors[i % memColors.length];
-                    return {
-                        label: ds.label,
-                        data: ds.data,
-                        borderColor: color.border,
-                        backgroundColor: color.bg,
-                        borderWidth: 2,
-                        fill: i === 0,  // fill only Memory Used area
-                        tension: 0.0,
-                        pointRadius: 0,
-                                            pointHitRadius: 10,
-                        spanGaps: false,
-                    };
-                })
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        display: true,
-                        labels: { color: '#9ca3af', boxWidth: 12, padding: 8, font: { size: 11 } },
-                    },
-                    tooltip: {
-                        mode: 'index',
-                        intersect: false,
-                        callbacks: {
-                            label: function(ctx) {
-                                return ctx.dataset.label + ': ' + (ctx.parsed.y !== null ? ctx.parsed.y.toFixed(2) + ' GB' : '—');
-                            }
-                        }
-                    }
-                },
-                scales: {
-                    x: {
-                        grid: { color: 'rgba(255,255,255,0.05)' },
-                        ticks: {
-                            color: '#9ca3af',
-                            maxTicksLimit: 12,
-                            maxRotation: 0,
-                            autoSkip: true,
-                            callback: function(val, index) {
-                                var skip = Math.max(1, Math.floor(this.getLabels().length / 12));
-                                return index % skip === 0 ? this.getLabelForValue(val) : '';
-                            }
-                        }
-                    },
-                    y: {
-                        grid: { color: 'rgba(255,255,255,0.05)' },
-                        ticks: { color: '#9ca3af' },
-                        beginAtZero: true,
-                        title: { display: true, text: 'GB', color: '#6b7280', font: { size: 11 } }
-                    }
-                },
-                interaction: {
-                    mode: 'nearest',
-                    axis: 'x',
-                    intersect: false
-                }
-            }
-        });
-    } catch (e) {
-        console.error('Failed to load memory chart:', e);
-        ctx.parentElement.innerHTML = '<div class="flex items-center justify-center h-48 text-gray-500 text-sm">No data available</div>';
-    }
-}
-
-// Load combined Network chart (RX + TX + Errors) with dual Y-axes
-async function loadChartNetworkCombined(canvasId, uuid, range) {
-    var ctx = document.getElementById(canvasId);
-    if (!ctx) return;
-
-    try {
-        // Fetch all three metrics in parallel
-        var [rxResp, txResp, errResp] = await Promise.all([
-            fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=net_rx_bytes_delta&range=${range}&bucket_minutes=${chartBucketMinutes}&multi_iface=true`),
-            fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=net_tx_bytes_delta&range=${range}&bucket_minutes=${chartBucketMinutes}&multi_iface=true`),
-            fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=net_rx_errors&range=${range}&bucket_minutes=${chartBucketMinutes}&multi_iface=true`),
-        ]);
-        var [rxData, txData, errData] = await Promise.all([
-            rxResp.json(), txResp.json(), errResp.json(),
-        ]);
-
-        if (chartInstances[canvasId]) {
-            chartInstances[canvasId].destroy();
-        }
-
-        // Shared labels (same time buckets)
-        var labels = rxData.labels;
-
-        // Assign colors from GPU_COLORS palette: green=0, sky=5, red=3
-        var NET_COLORS = [
-            { border: 'rgba(34, 197, 94, 0.9)',  bg: 'rgba(34, 197, 94, 0.1)'  },   // green - RX
-            { border: 'rgba(14, 165, 233, 0.9)',  bg: 'rgba(14, 165, 233, 0.1)'  },   // blue  - TX
-            { border: 'rgba(239, 68, 68, 0.9)',   bg: 'rgba(239, 68, 68, 0.5)'  },   // red   - Errors
-        ];
-
-        // Build datasets: RX and TX on left Y-axis (MB), Errors on right Y-axis (count)
-        var datasets = [];
-
-        // RX datasets — solid lines, left axis
-        rxData.datasets.forEach(function(ds, i) {
-            var color = NET_COLORS[0];
-            datasets.push({
-                label: ds.label + ' RX',
-                data: ds.data,
-                borderColor: color.border,
-                backgroundColor: color.bg,
-                borderWidth: 2,
-                fill: false,
-                tension: 0.0,
-                pointRadius: 0,
-                                    pointHitRadius: 10,
-                spanGaps: false,
-                yAxisID: 'y',
-                borderDash: [],  // solid
-            });
-        });
-
-        // TX datasets — dashed lines, left axis
-        txData.datasets.forEach(function(ds, i) {
-            var color = NET_COLORS[1];
-            datasets.push({
-                label: ds.label + ' TX',
-                data: ds.data,
-                borderColor: color.border,
-                backgroundColor: color.bg,
-                borderWidth: 2,
-                fill: false,
-                tension: 0.0,
-                pointRadius: 0,
-                                    pointHitRadius: 10,
-                spanGaps: false,
-                yAxisID: 'y',
-                borderDash: [6, 3],  // dashed
-            });
-        });
-
-        // Errors datasets — bars, right axis
-        errData.datasets.forEach(function(ds, i) {
-            var color = NET_COLORS[2];
-            datasets.push({
-                label: ds.label + ' Err',
-                data: ds.data,
-                borderColor: color.border,
-                backgroundColor: color.bg,
-                borderWidth: 0,
-                fill: false,
-                tension: 0.0,
-                pointRadius: 0,
-                                    pointHitRadius: 10,
-                spanGaps: false,
-                yAxisID: 'y1',
-                type: 'bar',
-                barThickness: 2,
-                barPercentage: 0.9,
-                categoryPercentage: 0.8,
-            });
-        });
-
-        chartInstances[canvasId] = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: labels,
-                datasets: datasets,
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        display: true,
-                        labels: {
-                            color: '#9ca3af',
-                            boxWidth: 12,
-                            padding: 6,
-                            font: { size: 10 },
-                            generateLabels: function(chart) {
-                                var original = Chart.defaults.plugins.legend.labels.generateLabels(chart);
-                                return original.map(function(label) {
-                                    if (label.text) {
-                                        var spaceIdx = label.text.indexOf(' ');
-                                        if (spaceIdx > 0) {
-                                            var ifacePart = label.text.substring(0, spaceIdx);
-                                            var dirPart = label.text.substring(spaceIdx + 1);
-                                            // Shorten interface labels: "ens33 192.168.1.10 RX" → "ens33 … RX"
-                                            var parts = ifacePart.split(' ');
-                                            if (parts[0].length > 8) {
-                                                label.text = parts[0].substring(0, 8) + '…' + (parts[1] ? ' ' + parts[1] : '') + ' ' + dirPart;
-                                            }
-                                        }
-                                    }
-                                    return label;
-                                });
-                            }
-                        },
-                    },
-                    tooltip: {
-                        mode: 'index',
-                        intersect: false,
-                        callbacks: {
-                            label: function(ctx) {
-                                var val = ctx.parsed.y;
-                                if (val === null) return ctx.dataset.label + ': —';
-                                if (ctx.dataset.yAxisID === 'y1') {
-                                    return ctx.dataset.label + ': ' + val + ' err';
-                                }
-                                return ctx.dataset.label + ': ' + val.toFixed(2) + ' MB';
-                            }
-                        }
-                    }
-                },
-                scales: {
-                    x: {
-                        grid: { color: 'rgba(255,255,255,0.05)' },
-                        ticks: {
-                            color: '#9ca3af',
-                            maxTicksLimit: 12,
-                            maxRotation: 0,
-                            autoSkip: true,
-                            callback: function(val, index) {
-                                var skip = Math.max(1, Math.floor(this.getLabels().length / 12));
-                                return index % skip === 0 ? this.getLabelForValue(val) : '';
-                            }
-                        }
-                    },
-                    y: {
-                        type: 'linear',
-                        position: 'left',
-                        grid: { color: 'rgba(255,255,255,0.05)' },
-                        ticks: { color: '#9ca3af' },
-                        beginAtZero: true,
-                        title: { display: true, text: 'MB', color: '#6b7280', font: { size: 11 } },
-                    },
-                    y1: {
-                        type: 'linear',
-                        position: 'right',
-                        grid: { drawOnChartArea: false },
-                        ticks: { color: '#f87171' },
-                        beginAtZero: true,
-                        title: { display: true, text: 'Errors', color: '#f87171', font: { size: 11 } },
-                    },
-                },
-                interaction: {
-                    mode: 'nearest',
-                    axis: 'x',
-                    intersect: false
-                }
-            }
-        });
-    } catch (e) {
-        console.error('Failed to load network chart:', e);
-        ctx.parentElement.innerHTML = '<div class="flex items-center justify-center h-48 text-gray-500 text-sm">No data available</div>';
-    }
-}
-
-// Load dual-metric chart (read + write) with multi-device support
-// Fetches two metrics and renders them as two datasets in a single chart
-async function loadChartMultiKeyDual(canvasId, metricRead, metricWrite, uuid, range, unit, multi_param, colorRead, colorWrite) {
-    var ctx = document.getElementById(canvasId);
-    if (!ctx) return;
-
-    try {
-        var [respRead, respWrite] = await Promise.all([
-            fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=${metricRead}&range=${range}&bucket_minutes=${chartBucketMinutes}&${multi_param}=true`),
-            fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=${metricWrite}&range=${range}&bucket_minutes=${chartBucketMinutes}&${multi_param}=true`),
-        ]);
-
-        if (!respRead.ok || !respWrite.ok) {
-            throw new Error('HTTP ' + (respRead.status || respWrite.status));
-        }
-
-        var [dataRead, dataWrite] = await Promise.all([respRead.json(), respWrite.json()]);
-
-        if (!dataRead.datasets || !dataWrite.datasets || dataRead.datasets.length === 0) {
-            ctx.parentElement.innerHTML = '<div class="flex items-center justify-center h-48 text-gray-500 text-sm">No data available</div>';
-            return;
-        }
-
-        if (chartInstances[canvasId]) {
-            chartInstances[canvasId].destroy();
-        }
-
-        var datasets = [];
-        var labels = dataRead.labels;
-
-        dataRead.datasets.forEach(function(ds) {
-            datasets.push({
-                label: ds.label + ' Read',
-                data: ds.data,
-                borderColor: colorRead,
-                backgroundColor: colorRead.replace('0.8', '0.15'),
-                borderWidth: 2,
-                borderDash: [4, 2],
-                fill: false,
-                tension: 0.0,
-                pointRadius: 0,
-                                    pointHitRadius: 10,
-                spanGaps: false,
-            });
-        });
-
-        dataWrite.datasets.forEach(function(ds) {
-            datasets.push({
-                label: ds.label + ' Write',
-                data: ds.data,
-                borderColor: colorWrite,
-                backgroundColor: colorWrite.replace('0.8', '0.15'),
-                borderWidth: 2,
-                fill: false,
-                tension: 0.0,
-                pointRadius: 0,
-                                    pointHitRadius: 10,
-                spanGaps: false,
-            });
-        });
-
-        chartInstances[canvasId] = new Chart(ctx, {
-            type: 'line',
-            data: { labels: labels, datasets: datasets },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        display: true,
-                        labels: {
-                            color: '#9ca3af', boxWidth: 12, padding: 8, font: { size: 10 },
-                        },
-                    },
-                    tooltip: {
-                        mode: 'index',
-                        intersect: false,
-                        callbacks: {
-                            label: function(ctx) {
-                                return ctx.dataset.label + ': ' + (ctx.parsed.y !== null ? ctx.parsed.y.toFixed(1) + unit : '—');
-                            }
-                        }
-                    }
-                },
-                scales: {
-                    x: {
-                        grid: { color: 'rgba(255,255,255,0.05)' },
-                        ticks: { color: '#9ca3af', maxTicksLimit: 12, maxRotation: 0, autoSkip: true,
-                            callback: function(val, index) {
-                                var skip = Math.max(1, Math.floor(this.getLabels().length / 12));
-                                return index % skip === 0 ? this.getLabelForValue(val) : '';
-                            }
-                        }
-                    },
-                    y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#9ca3af' }, beginAtZero: true, title: { display: true, text: unit, color: '#6b7280', font: { size: 11 } } }
-                },
-                interaction: { mode: 'nearest', axis: 'x', intersect: false }
-            }
-        });
-    } catch (e) {
-        console.error('Failed to load dual chart ' + metricRead + '/' + metricWrite + ':', e);
-        ctx.parentElement.innerHTML = '<div class="flex items-center justify-center h-48 text-gray-500 text-sm">No data available</div>';
-    }
-}
-
-// Predefined colors for multi-GPU/distinct datasets (16 colors)
-var GPU_COLORS = [
-    { border: 'rgba(59, 130, 246, 0.9)',  bg: 'rgba(59, 130, 246, 0.15)' },  // blue
-    { border: 'rgba(16, 185, 129, 0.9)',  bg: 'rgba(16, 185, 129, 0.15)' },  // green
-    { border: 'rgba(245, 158, 11, 0.9)',  bg: 'rgba(245, 158, 11, 0.15)' },  // amber
-    { border: 'rgba(239, 68, 68, 0.9)',   bg: 'rgba(239, 68, 68, 0.15)' },   // red
-    { border: 'rgba(168, 85, 247, 0.9)',  bg: 'rgba(168, 85, 247, 0.15)' },  // purple
-    { border: 'rgba(14, 165, 233, 0.9)',  bg: 'rgba(14, 165, 233, 0.15)' },  // sky
-    { border: 'rgb(236, 72, 153, 0.9)',   bg: 'rgb(236, 72, 153, 0.15)' },   // pink
-    { border: 'rgb(251, 146, 60, 0.9)',   bg: 'rgb(251, 146, 60, 0.15)' },   // orange
-    { border: 'rgb(20, 184, 166, 0.9)',   bg: 'rgb(20, 184, 166, 0.15)' },   // teal
-    { border: 'rgb(139, 92, 246, 0.9)',   bg: 'rgb(139, 92, 246, 0.15)' },   // violet
-    { border: 'rgb(244, 114, 182, 0.9)',  bg: 'rgb(244, 114, 182, 0.15)' },  // rose
-    { border: 'rgb(250, 204, 21, 0.9)',   bg: 'rgb(250, 204, 21, 0.15)' },   // yellow
-    { border: 'rgb(45, 212, 191, 0.9)',   bg: 'rgb(45, 212, 191, 0.15)' },   // cyan
-    { border: 'rgb(124, 58, 237, 0.9)',   bg: 'rgb(124, 58, 237, 0.15)' },   // indigo
-    { border: 'rgb(217, 70, 239, 0.9)',   bg: 'rgb(217, 70, 239, 0.15)' },   // fuchsia
-    { border: 'rgb(8, 145, 178, 0.9)',    bg: 'rgb(8, 145, 178, 0.15)' },    // dark cyan
-];
-
-// Load multi-GPU chart (one dataset per GPU UUID, all on same chart)
-async function loadChartMultiGpu(canvasId, metric, uuid, range, unit) {
-    var ctx = document.getElementById(canvasId);
-    if (!ctx) return;
-
-    try {
-        var resp = await fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=${metric}&range=${range}&bucket_minutes=${chartBucketMinutes}&multi_gpu=true`);
-        var data = await resp.json();
-
-        if (chartInstances[canvasId]) {
-            chartInstances[canvasId].destroy();
-        }
-
-        chartInstances[canvasId] = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: data.labels,
-                datasets: data.datasets.map(function(ds, i) {
-                    var color = GPU_COLORS[i % GPU_COLORS.length];
-                    return {
-                        label: ds.label,  // GPU UUID as label
-                        data: ds.data,
-                        borderColor: color.border,
-                        backgroundColor: color.bg,
-                        borderWidth: 2,
-                        fill: false,
-                        tension: 0.0,
-                        pointRadius: 0,
-                                            pointHitRadius: 10,
-                        spanGaps: false,
-                    };
-                })
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        display: true,
-                        labels: {
-                            color: '#9ca3af',
-                            boxWidth: 12,
-                            padding: 8,
-                            font: { size: 10 },
-                            // Truncate UUID to 12 chars + "…" but keep model name
-                            // Label format: "GPU-a322cff7-...-b676c04a38aa RTX 3060"
-                            // Result:      "GPU-a322cff… RTX 3060"
-                            generateLabels: function(chart) {
-                                var original = Chart.defaults.plugins.legend.labels.generateLabels(chart);
-                                return original.map(function(label) {
-                                    if (label.text) {
-                                        var spaceIdx = label.text.indexOf(' ');
-                                        if (spaceIdx > 0) {
-                                            var uuidPart = label.text.substring(0, spaceIdx);
-                                            var modelPart = label.text.substring(spaceIdx + 1);
-                                            if (uuidPart.length > 12) {
-                                                label.text = uuidPart.substring(0, 12) + '… ' + modelPart;
-                                            }
-                                        } else if (label.text.length > 12) {
-                                            label.text = label.text.substring(0, 12) + '…';
-                                        }
-                                    }
-                                    return label;
-                                });
-                            }
-                        },
-                    },
-                    tooltip: {
-                        mode: 'index',
-                        intersect: false,
-                        callbacks: {
-                            title: function(items) {
-                                return items[0].label;
-                            },
-                            label: function(ctx) {
-                                return ctx.dataset.label + ': ' + (ctx.parsed.y !== null ? ctx.parsed.y.toFixed(1) + unit : '—');
-                            }
-                        }
-                    }
-                },
-                scales: {
-                    x: {
-                        grid: { color: 'rgba(255,255,255,0.05)' },
-                        ticks: {
-                            color: '#9ca3af',
-                            maxTicksLimit: 12,
-                            maxRotation: 0,
-                            autoSkip: true,
-                            callback: function(val, index) {
-                                var skip = Math.max(1, Math.floor(this.getLabels().length / 12));
-                                return index % skip === 0 ? this.getLabelForValue(val) : '';
-                            }
-                        }
-                    },
-                    y: {
-                        grid: { color: 'rgba(255,255,255,0.05)' },
-                        ticks: { color: '#9ca3af' },
-                        beginAtZero: true,
-                        title: { display: true, text: unit, color: '#6b7280', font: { size: 11 } }
-                    }
-                },
-                interaction: {
-                    mode: 'nearest',
-                    axis: 'x',
-                    intersect: false
-                }
-            }
-        });
-    } catch (e) {
-        console.error('Failed to load multi-GPU chart ' + metric + ':', e);
-        ctx.parentElement.innerHTML = '<div class="flex items-center justify-center h-48 text-gray-500 text-sm">No data available</div>';
-    }
-}
-
-// Load multi-key chart (generic: works for multi-disk, multi-interface, etc.)
-// multi_param: the query parameter name that enables multi-mode ('multi_disk', 'multi_iface')
-async function loadChartMultiKey(canvasId, metric, uuid, range, unit, multi_param) {
-    var ctx = document.getElementById(canvasId);
-    if (!ctx) return;
-
-    try {
-        var resp = await fetch(`/api/v1/rigs/${uuid}/chart-data/?metric=${metric}&range=${range}&bucket_minutes=${chartBucketMinutes}&${multi_param}=true`);
-        var data = await resp.json();
-
-        if (!data.datasets || data.datasets.length === 0) {
-            ctx.parentElement.innerHTML = '<div class="flex items-center justify-center h-48 text-gray-500 text-sm">No data available</div>';
-            return;
-        }
-
-        if (chartInstances[canvasId]) {
-            chartInstances[canvasId].destroy();
-        }
-
-        chartInstances[canvasId] = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: data.labels,
-                datasets: data.datasets.map(function(ds, i) {
-                    var color = GPU_COLORS[i % GPU_COLORS.length];
-                    return {
-                        label: ds.label,
-                        data: ds.data,
-                        borderColor: color.border,
-                        backgroundColor: color.bg,
-                        borderWidth: 2,
-                        fill: false,
-                        tension: 0.0,
-                        pointRadius: 0,
-                                            pointHitRadius: 10,
-                        spanGaps: false,
-                    };
-                })
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        display: true,
-                        labels: {
-                            color: '#9ca3af',
-                            boxWidth: 12,
-                            padding: 8,
-                            font: { size: 10 },
-                            generateLabels: function(chart) {
-                                var original = Chart.defaults.plugins.legend.labels.generateLabels(chart);
-                                return original.map(function(label) {
-                                    if (label.text) {
-                                        var spaceIdx = label.text.indexOf(' ');
-                                        if (spaceIdx > 0) {
-                                            var keyPart = label.text.substring(0, spaceIdx);
-                                            var extraPart = label.text.substring(spaceIdx + 1);
-                                            if (keyPart.length > 16) {
-                                                label.text = keyPart.substring(0, 16) + '… ' + extraPart;
-                                            }
-                                        } else if (label.text.length > 20) {
-                                            label.text = label.text.substring(0, 20) + '…';
-                                        }
-                                    }
-                                    return label;
-                                });
-                            }
-                        },
-                    },
-                    tooltip: {
-                        mode: 'index',
-                        intersect: false,
-                        callbacks: {
-                            label: function(ctx) {
-                                return ctx.dataset.label + ': ' + (ctx.parsed.y !== null ? ctx.parsed.y.toFixed(1) + unit : '—');
-                            }
-                        }
-                    }
-                },
-                scales: {
-                    x: {
-                        grid: { color: 'rgba(255,255,255,0.05)' },
-                        ticks: {
-                            color: '#9ca3af',
-                            maxTicksLimit: 12,
-                            maxRotation: 0,
-                            autoSkip: true,
-                            callback: function(val, index) {
-                                var skip = Math.max(1, Math.floor(this.getLabels().length / 12));
-                                return index % skip === 0 ? this.getLabelForValue(val) : '';
-                            }
-                        }
-                    },
-                    y: {
-                        grid: { color: 'rgba(255,255,255,0.05)' },
-                        ticks: { color: '#9ca3af' },
-                        beginAtZero: true,
-                        title: { display: true, text: unit, color: '#6b7280', font: { size: 11 } }
-                    }
-                },
-                interaction: {
-                    mode: 'nearest',
-                    axis: 'x',
-                    intersect: false
-                }
-            }
-        });
-    } catch (e) {
-        console.error('Failed to load multi-key chart ' + metric + ':', e);
-        ctx.parentElement.innerHTML = '<div class="flex items-center justify-center h-48 text-gray-500 text-sm">No data available</div>';
-    }
-}
+// Per-page state used by the chart runtime and rig-detail.js.
+// RigState holds the rig's UUID and the URL of the report endpoint,
+// so the chart loaders don't need any per-call globals.
+window.GRM = window.GRM || {};
+window.GRM.RigState = {
+    rigUuid: '{{ rig.uuid }}',
+    reportUrl: '{% url "dashboard:htmx-report" rig.uuid %}?range_hours=24',
+    reportLoaded: false,
+};
 </script>
+{% endblock %}
 
 <!-- Delete Confirmation Modal -->
 <div id="delete-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70">
-    <div class="bg-gray-800 rounded-lg border border-gray-700 p-6 max-w-md mx-4 shadow-2xl">
+    <div class="bg-gray-800 border border-gray-700 rounded-lg p-6 "max-w-md mx-4 shadow-2xl">
         <div class="flex items-center gap-3 mb-4">
             <div class="flex-shrink-0 w-10 h-10 rounded-full bg-red-900/30 flex items-center justify-center">
                 <svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
             </div>
             <h3 class="text-lg font-semibold text-white">Delete Rig</h3>
         </div>
-        <p class="text-gray-300 mb-2">
+        <p class="text-gray-200 mb-2">
             Are you sure you want to delete <strong id="delete-modal-rig-name" class="text-white">{{ rig.name }}</strong>?
         </p>
         <p class="text-red-400 text-sm mb-6">
@@ -1424,11 +341,11 @@ async function loadChartMultiKey(canvasId, metric, uuid, range, unit, multi_para
             <div class="flex items-center justify-end gap-3">
                 <button type="button"
                         onclick="hideDeleteModal()"
-                        class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded text-sm">
+                        class="bg-gray-700 hover:bg-gray-600 text-gray-300 px-4 py-2 rounded transition-colors duration-150">
                     Cancel
                 </button>
                 <button type="submit"
-                        class="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded text-sm font-medium">
+                        class="bg-red-600 hover:bg-red-700 text-white font-medium px-4 py-2 rounded transition-colors duration-150">
                     Delete Permanently
                 </button>
             </div>

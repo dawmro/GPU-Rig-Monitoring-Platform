@@ -19,7 +19,7 @@
 {#     <canvas id="chartGpuTemp"></canvas> #}
 {#   </div> #}
 
-<div class="{% if height == 'tall' %}bg-gray-800 border border-gray-700 rounded-lg p-4 h-[300px] overflow-hidden{% else %}bg-gray-800 border border-gray-700 rounded-lg p-4 h-[280px] overflow-hidden{% endif %}">
+<div class="{% if height == 'tall' %}bg-gray-800 border border-gray-700 rounded-lg p-4 h-[320px]{% else %}bg-gray-800 border border-gray-700 rounded-lg p-4 h-[320px]{% endif %}">
     <h3 class="text-sm font-medium text-gray-200 mb-3">
         {{ title }} (<span class="chart-timeframe-label">{{ timeframe_label|default:'24h' }}</span>)
     </h3>

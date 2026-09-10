@@ -227,6 +227,7 @@ class ChartDataView(APIView):
         'mem_total_bytes', 'mem_used_bytes', 'mem_free_bytes', 'mem_cached_bytes',
         'swap_used_bytes', 'swap_total_bytes',
         'cpu_power_w', 'total_system_power_w',
+        'has_active_job',
     })
 
     # Map chart metric -> GPUMetric DB column.

@@ -120,6 +120,8 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                 # Power data from agent (PSU efficiency already factored in)
                 'cpu_power_w': power_data.get('cpu_power_w') if power_data else None,
                 'total_system_power_w': power_data.get('total_power_w') if power_data else None,
+                # Job status: mapped 0/1 for AVG aggregation in chart buckets
+                'has_active_job': validated.get('has_active_job', False),
             }
             snapshot, created = MetricSnapshot.objects.update_or_create(
                 rig_uuid=rig_uuid,

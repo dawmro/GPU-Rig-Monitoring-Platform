@@ -9,7 +9,8 @@ from rest_framework.authentication import SessionAuthentication
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import get_object_or_404
-from django.db.models import Avg, Sum, F
+from django.db.models import Avg, Sum, F, Max, IntegerField
+from django.db.models.functions import Cast
 from django.db.models.functions import TruncMinute, TruncHour
 
 from accounts.authentication import APIKeyAuthentication
@@ -603,18 +604,17 @@ class ChartDataView(APIView):
                 datasets[2]['data'][idx] = round(row['swap'] / (1024 ** 3), 2) if row['swap'] is not None else None
             return {'labels': labels, 'datasets': datasets}
 
-        # Job status: use MAX (bool) — if ANY row in bucket is True, bucket = True (1), else False (0)
-        # Matches error_frequency pattern: integer values 0/1, bar chart, no float conversion
+        # Job status: MAX(bool) — cast to int first, then MAX(0/1). PostgreSQL supports MAX(int).
         if metric == 'has_active_job':
             rows = base_qs.annotate(bucket=trunc('timestamp')).values(
                 'bucket'
-            ).annotate(active=Max('has_active_job')).order_by('bucket')
+            ).annotate(active=Max(Cast('has_active_job', IntegerField()))).order_by('bucket')
             values = [0] * total_buckets
             for row in rows:
                 idx = self._bucket_index(row['bucket'], start_bucket, bucket_seconds)
                 if idx is None or idx >= total_buckets:
                     continue
-                values[idx] = 1 if row['active'] else 0
+                values[idx] = row['active'] if row['active'] is not None else 0
             return {'labels': labels, 'datasets': [
                 {'label': 'Active Job', 'data': values}
             ]}

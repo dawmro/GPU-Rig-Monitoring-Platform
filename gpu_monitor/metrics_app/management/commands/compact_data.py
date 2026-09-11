@@ -111,6 +111,8 @@ COMPACT_TABLES = [
             'mem_free_bytes': 'avg', 'mem_cached_bytes': 'avg', 'mem_total_bytes': 'last',
             'swap_used_bytes': 'avg', 'swap_total_bytes': 'last',
             'uptime_s': 'max', 'status': 'last', 'error_count': 'sum',
+            # Job status: MAX(bool) — any True in bucket -> True (1), else False (0)
+            'has_active_job': 'max',
             'cpu_power_w': 'avg', 'total_system_power_w': 'avg',
         },
         'static_fields': [

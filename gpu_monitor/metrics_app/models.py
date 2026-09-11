@@ -46,6 +46,10 @@ class MetricSnapshot(models.Model):
     # Error count for this snapshot (integer, aggregated for error frequency charts)
     error_count = models.PositiveIntegerField(default=0)
 
+    # Job status: True if rig has active GPU process or running Docker container
+    # Mapped 0/1 for AVG aggregation in time buckets (1m, 15m, 1h)
+    has_active_job = models.BooleanField(default=False, null=True, blank=True)
+
     class Meta:
         db_table = 'metrics_metricsnapshot'
         unique_together = ('rig_uuid', 'schema_version', 'timestamp')

@@ -71,6 +71,8 @@
             function () { return Loaders.loadChartNetworkCombined('chartNetCombined', uuid, range); },
             function () { return Loaders.loadChart('chartUptime',     'uptime_s',         uuid, range, ' days',  'rgba(168, 85, 247, 0.8)', 'rgba(168, 85, 247, 0.15)'); },
             function () { return Loaders.loadChart('chartErrorFreq',   'error_frequency',  uuid, range, ' err/min', 'rgba(239, 68, 68, 0.8)', 'rgba(239, 68, 68, 0.5)', 'bar'); },
+            // Job status: line chart, bool aggregated with MAX (any True = 1, else 0)
+            function () { return Loaders.loadChart('chartActiveJob',  'has_active_job',  uuid, range, '', 'rgba(255, 215, 0, 0.8)', 'rgba(255, 215, 0, 0.15)'); },
         ];
     }
 

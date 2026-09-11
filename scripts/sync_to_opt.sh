@@ -200,6 +200,17 @@ if [[ "$NO_MIGRATE" == "false" ]]; then
         # from trying to manage it.
         for mig_dir in "$OPT/gpu_monitor/"*/migrations/; do
             [ -d "$mig_dir" ] || continue
+            # Stale auto-generated removal or alter of has_active_job (opposite of feature)
+            for f in "$mig_dir"*_remove_metricsnapshot_has_active_job*.py; do
+                [ -f "$f" ] || continue
+                echo "  Removing bad removal migration: $(basename "$f")"
+                rm -f "$f"
+            done
+            for f in "$mig_dir"*_alter_metricsnapshot_has_active_job*.py; do
+                [ -f "$f" ] || continue
+                echo "  Removing bad removal migration: $(basename "$f")"
+                rm -f "$f"
+            done
             for f in "$mig_dir"*_erroreventoccurrence*.py; do
                 [ -f "$f" ] || continue
                 echo "  Removing stale migration: $(basename "$f")"
@@ -248,6 +259,9 @@ fi
 # --clear: remove stale files from staticfiles/ that no longer exist in
 # source. Without this, renaming a CSS file leaves the old copy in place
 # and nginx keeps serving it forever.
+echo "--- Clearing server staticfiles (remove stale JS/CSS before collect) ---"
+sudo rm -rf "$OPT/gpu_monitor/staticfiles/*"
+
 echo "--- Collecting static files ---"
 python manage.py collectstatic --noinput --clear
 

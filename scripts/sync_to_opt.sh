@@ -259,6 +259,9 @@ fi
 # --clear: remove stale files from staticfiles/ that no longer exist in
 # source. Without this, renaming a CSS file leaves the old copy in place
 # and nginx keeps serving it forever.
+echo "--- Clearing server staticfiles (remove stale JS/CSS before collect) ---"
+sudo rm -rf "$OPT/gpu_monitor/staticfiles/*"
+
 echo "--- Collecting static files ---"
 python manage.py collectstatic --noinput --clear
 

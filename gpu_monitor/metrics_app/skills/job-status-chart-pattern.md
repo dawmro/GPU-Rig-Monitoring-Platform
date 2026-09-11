@@ -1,18 +1,17 @@
 ---
-name: gpu-rig-chart-route-pattern
-description: Chart route pattern. Add MetricSnapshot metric: (1) model field + migration, (2) serializer defaults, (3) compact agg_fields (avg/sum/last), (4) SNAPSHOT_METRICS, (5) chart card (rig_detail.html) + loader (chart-runtime.js), (6) system check. Bool 0/1 -> AVG = fraction active.
+name: chart-route-pattern
+description: Chart route pattern for MetricSnapshot time-series metrics. Add metric: (1) model + migration, (2) serializer defaults, (3) compact agg_fields, (4) SNAPSHOT_METRICS, (5) chart card + loader, (6) system check. Includes PostgreSQL AVG(boolean) pitfall and sync_to_opt defense.
 files:
-  - references/job-status-chart-plan.md (corrected compaction/cleanup reality, 6 independent steps A-F + Step G chart display, future JobStateMetric vs JobEvent design)
+  - references/job-status-chart-plan.md (corrected: MetricSnapshot IS compacted + cleaned; bool MAX not AVG; sync must clear staticfiles)
 ---
 
-# Chart Route Pattern — Job Status Example (Embedded)
+# Chart Route Pattern — MetricSnapshot Metrics (updated)
 
-The session produced a concrete, corrected pattern for adding any MetricSnapshot-based historical chart. Key durable lessons (embedded here, not only in memory):
+Durable lessons from chart-job-status session (embedded, not just in memory):
 
-1. MetricSnapshot IS compacted (`compact_data.py` 104-119) and IS cleaned (`cleanup_old_data.py` 34). Any new MetricSnapshot field MUST have an entry in `agg_fields` (`avg`/`sum`/`max`/`min`/`last`) or it is lost in tier-2 (15m) / tier-3 (1h) compaction.
-2. PostgreSQL `AVG(boolean)` pitfall: `Avg('has_active_job')` on BooleanField produces SQL `AVG(boolean)`, rejected by PostgreSQL (`ProgrammingError`). Fix: `Avg(ExpressionWrapper(F('has_active_job'), FloatField()))` casts to float. Alternative (used here): `Max('has_active_job')` (native bool MAX) + `bar` chart = integer 0/1 per bucket. No float conversion needed.
-3. `sync_to_opt.sh` runs `makemigrations --check`; if `models.py` has `null=True` without `blank=True`, Django generates `0052_alter_...`. Fix: include `blank=True` on model. Also harden sync script to delete any `0052_remove_*` or `0052_alter_*` variants.
-4. System check (`metrics_app/checks.py` pattern): verify model field, `SNAPSHOT_METRICS`, serializer defaults, compaction `agg_fields`. Runs on `manage.py check`. Defense-in-depth pattern (W001/W004 class).
-5. Chart display pipeline (Step G): `rig_detail.html` includes card → `chart-runtime.js` loader (`loadChart`) with metric name → `chart-loaders.js` builds URL (`Base.buildChartUrl`) → `ChartDataView.get()` (SNAPSHOT_METRICS dispatch + SQL `Avg` + bucket truncation) → JSON response (`{labels, datasets}`) → Chart.js render (`lineDataset`, colors from `chart-colors.js`, options from `chart-base.js`).
-6. Empty chart = DB/state gap (no rows, column null/default because migration not applied, or all False), NOT a code regression. Reproduce with Django test client (`force_login`, `SERVER_NAME='localhost'`, `ALLOWED_HOSTS=['*']`) before guessing. Verify: model field exists, serializer writes, compaction aggregates, chart metric mapped.
-7. Workflow rules (user preference, embedded): new branch (`plan/` then `feat/`); never push to main; never merge; approval before implement; HTMX > AJAX; empirical > theoretical; Tailwind directly; doc-code sync required; 3-layer defense (code + check + skill/reference).
+1. MetricSnapshot IS compacted (`compact_data.py` 104-119) and cleaned (`cleanup_old_data.py` 34). Any new field needs `agg_fields` (`avg`/`sum`/`max`/`min`/`last`). For bool: use `max` (not `avg`) because PostgreSQL `AVG(boolean)` fails (`ProgrammingError`).
+2. PostgreSQL `AVG(boolean)` pitfall: `Avg('bool_field')` generates invalid SQL. Fix options: (a) `Avg(ExpressionWrapper(F('bool'), FloatField()))` for float avg (fraction), or (b) `Max(Cast('bool', IntegerField()))` for int 0/1 + bar chart. This session uses option (b) per user's simplification request.
+3. `sync_to_opt.sh` defense: include `blank=True` on BooleanField; add `0052_remove_*` / `0052_alter_*` deletion in sync script; clear old staticfiles before `collectstatic --clear` (`find ... -delete`) to prevent nginx serving stale `staticfiles/` (not updated by rsync of workspace `static/`).
+4. Empty chart diagnosis = DB/state gap (missing column from unapplied migration, all False values, or missing payload writes), NOT code regression. Reproduce with Django test client (`Client.force_login`, `SERVER_NAME='localhost'`, `ALLOWED_HOSTS=['*']`) before assuming regression.
+5. 3-layer defense (user's W001/W004): code fix + system check (`checks.py` E001-E004) + reference file/skill. Never guess without empirical reproduction.
+6. User-corrected simplification: don't over-engineer bool→float→AVG with ExpressionWrapper; use `Max` + bar chart (`'bar'`) like `error_frequency`. Keep code minimal.

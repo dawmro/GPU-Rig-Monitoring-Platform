@@ -37,8 +37,8 @@ Status: PLANNING — pending approval before any implementation
 - Bucket minutes: 1 (≤24h), 15 (≤168h), 60 (>168h) — already handled by `_bucket_minutes_for_range()`.
 
 ### 2.5 Compaction (compact_data.py)
-- `MetricSnapshot` IS compacted (`compact_data.py` line 104-119: included in `COMPACT_TABLES`, aggregated to 15m/1h buckets with `avg`/`sum`/`max`; FK-safe exclusion for referenced child rows). It is also cleaned (`cleanup_old_data.py` line 34). Adding `has_active_job` requires adding `has_active_job: 'avg'` to the `agg_fields` in `compact_data.py` for MetricSnapshot (line 107-115), since it will be aggregated as `AVG` (bool 0/1 → fraction active). Cleanup needs no change (row-level delete by timestamp).
-- This is critical: MetricSnapshot IS compacted (`compact_data.py` line 104-119: `agg_fields` includes `cpu_utilization_pct: 'avg'`, `cpu_temp_c: 'avg'`, etc.). Any new MetricSnapshot field **must** be added to that `agg_fields` dict or it will be lost during tier-2 (15m) / tier-3 (1h) compaction. For `has_active_job`: add `'has_active_job': 'avg'` (bool 0/1 → AVG = fraction active in bucket). ChartDataView aggregates it with `Avg` natively.
+- `MetricSnapshot` IS compacted (`compact_data.py` line 104-119: included in `COMPACT_TABLES`, aggregated to 15m/1h buckets with `avg`/`sum`/`max`; FK-safe exclusion for referenced child rows). It is also cleaned (`cleanup_old_data.py` line 34). Adding `has_active_job` requires adding `has_active_job: 'max'` to the `agg_fields` in `compact_data.py` for MetricSnapshot (line 107-115), since it will be aggregated as `AVG` (bool 0/1 → fraction active). Cleanup needs no change (row-level delete by timestamp).
+- This is critical: MetricSnapshot IS compacted (`compact_data.py` line 104-119: `agg_fields` includes `cpu_utilization_pct: 'avg'`, `cpu_temp_c: 'avg'`, etc.). Any new MetricSnapshot field **must** be added to that `agg_fields` dict or it will be lost during tier-2 (15m) / tier-3 (1h) compaction. For `has_active_job`: add `'has_active_job': 'max'` (bool -> MAX(0/1) = any active job in bucket (True/False)). ChartDataView aggregates it with `Avg` natively.
 - If we later introduce a separate job-state timeseries table, it WOULD need its own compaction entry in `COMPACT_TABLES`.
 
 ### 2.6 Cleanup (cleanup_old_data.py)
@@ -102,9 +102,9 @@ Patches relevant skill file (e.g., `skills/` if a chart-ingest skill exists).
 
 **For `has_active_job`, the same pipeline applies exactly:**
 - Add metric name `'has_active_job'` to `SNAPSHOT_METRICS` (Step D) → ChartDataView treats it as a snapshot metric.
-- ChartDataView aggregation: `MAX(has_active_job)` (bool) → bucket = 1 if any active job in bucket, else 0. Bar chart.
+- ChartDataView aggregation: `MAX(Cast('has_active_job', IntegerField()))` (PostgreSQL requires int cast before MAX) → bucket = 1 if any active job, else 0. Bar chart (same as error_frequency).
 - Template: add `{% include "partials/_chart_card.html" with canvas_id="chartActiveJob" title="Job Status" %}` in `rig_detail.html` charts tab (line 116 area, near `chartErrorFreq`).
-- Chart loader registry (`chart-runtime.js` `buildLoaders()`): add `function () { return Loaders.loadChart('chartActiveJob', 'has_active_job', uuid, range, '', 'rgba(255, 215, 0, 0.8)', 'rgba(255, 215, 0, 0.15)'); },` (gold/yellow (integer bar, 0/1)). Place it after system charts (after `chartErrorFreq` line 73), maintaining 22-chart order.
+- Chart loader registry: `function () { return Loaders.loadChart('chartActiveJob', 'has_active_job', uuid, range, 'Active %', 'rgba(255,215,0,0.8)', 'rgba(255,215,0,0.15)'); },` (line chart, gold, label 'Active Job', no float fraction needed — integer 0/1 from MAX). Place it after system charts (after `chartErrorFreq` line 73), maintaining 22-chart order.
 - Unit: none (integer 0/1); dataset label = Active Job as `"Active %"`. No byte conversion (`BYTE_TO_GB` not in path).
 - Chart type: `line` (not `bar`) — consistent with other time-series status indicators (`uptime_s`, `error_frequency`). If user wants `bar`, change `loadChart` `chartType` param to `'bar'`.
 
@@ -197,7 +197,7 @@ To make the current plan ready for future job-state expansion:
 
 ### Finding 1: MetricSnapshot is the right place for `has_active_job` — BUT compaction/cleanup must be updated
 - Confirmed: MetricSnapshot IS compacted (`compact_data.py` line 104-119) and IS cleaned (`cleanup_old_data.py` line 34). Adding `has_active_job` requires: (1) `metric_app/management/commands/compact_data.py` — add `'has_active_job': 'avg'` to MetricSnapshot `agg_fields` (line 107-115); (2) serializer `defaults` — include `'has_active_job': validated.get(...)`; (3) `SNAPSHOT_METRICS` — include `'has_active_job'`. Without (1), the field is lost during tier-2 (15m) and tier-3 (1h) compaction (bool 0/1 → AVG = fraction active over bucket). Cleanup (delete by timestamp) needs no column-level change.
-- ChartDataView already aggregates MetricSnapshot with `Avg` — bool→float works natively.
+- ChartDataView already aggregates MetricSnapshot with `Avg` — bool works with MAX (PostgreSQL native) — no float conversion needed.
 - Consistent with existing pattern (`cpu_utilization_pct`, `cpu_temp_c`, etc.).
 
 ### Finding 2: The serializer currently misses the write

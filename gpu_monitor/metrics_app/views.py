@@ -9,7 +9,7 @@ from rest_framework.authentication import SessionAuthentication
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import get_object_or_404
-from django.db.models import Avg, Sum, F, ExpressionWrapper, FloatField
+from django.db.models import Avg, Sum, F
 from django.db.models.functions import TruncMinute, TruncHour
 
 from accounts.authentication import APIKeyAuthentication
@@ -603,11 +603,24 @@ class ChartDataView(APIView):
                 datasets[2]['data'][idx] = round(row['swap'] / (1024 ** 3), 2) if row['swap'] is not None else None
             return {'labels': labels, 'datasets': datasets}
 
-        # PostgreSQL doesn't have AVG(boolean); cast bool to int (0/1) then average as float
+        # Job status: use MAX (bool) — if ANY row in bucket is True, bucket = True (1), else False (0)
+        # Matches error_frequency pattern: integer values 0/1, bar chart, no float conversion
         if metric == 'has_active_job':
-            agg = Avg(ExpressionWrapper(F(metric), output_field=FloatField()))
-        else:
-            agg = Avg(metric)
+            rows = base_qs.annotate(bucket=trunc('timestamp')).values(
+                'bucket'
+            ).annotate(active=Max('has_active_job')).order_by('bucket')
+            values = [0] * total_buckets
+            for row in rows:
+                idx = self._bucket_index(row['bucket'], start_bucket, bucket_seconds)
+                if idx is None or idx >= total_buckets:
+                    continue
+                values[idx] = 1 if row['active'] else 0
+            return {'labels': labels, 'datasets': [
+                {'label': 'Active Job', 'data': values}
+            ]}
+
+        # Single metric from MetricSnapshot (other metrics)
+        agg = Avg(metric)
         rows = base_qs.annotate(bucket=trunc('timestamp')).values(
             'bucket'
         ).annotate(val=agg).order_by('bucket')

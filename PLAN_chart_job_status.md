@@ -102,10 +102,10 @@ Patches relevant skill file (e.g., `skills/` if a chart-ingest skill exists).
 
 **For `has_active_job`, the same pipeline applies exactly:**
 - Add metric name `'has_active_job'` to `SNAPSHOT_METRICS` (Step D) → ChartDataView treats it as a snapshot metric.
-- ChartDataView aggregation: `AVG(has_active_job)` (bool stored as 0/1 float) → value range [0, 1].
+- ChartDataView aggregation: `MAX(has_active_job)` (bool) → bucket = 1 if any active job in bucket, else 0. Bar chart.
 - Template: add `{% include "partials/_chart_card.html" with canvas_id="chartActiveJob" title="Job Status" %}` in `rig_detail.html` charts tab (line 116 area, near `chartErrorFreq`).
-- Chart loader registry (`chart-runtime.js` `buildLoaders()`): add `function () { return Loaders.loadChart('chartActiveJob', 'has_active_job', uuid, range, '', 'rgba(255, 215, 0, 0.8)', 'rgba(255, 215, 0, 0.15)'); },` (gold/yellow color — indicates on/off state clearly). Place it after system charts (after `chartErrorFreq` line 73), maintaining 22-chart order.
-- Unit: empty (fraction 0-1), or label as `"Active %"`. No byte conversion (`BYTE_TO_GB` not in path).
+- Chart loader registry (`chart-runtime.js` `buildLoaders()`): add `function () { return Loaders.loadChart('chartActiveJob', 'has_active_job', uuid, range, '', 'rgba(255, 215, 0, 0.8)', 'rgba(255, 215, 0, 0.15)'); },` (gold/yellow (integer bar, 0/1)). Place it after system charts (after `chartErrorFreq` line 73), maintaining 22-chart order.
+- Unit: none (integer 0/1); dataset label = Active Job as `"Active %"`. No byte conversion (`BYTE_TO_GB` not in path).
 - Chart type: `line` (not `bar`) — consistent with other time-series status indicators (`uptime_s`, `error_frequency`). If user wants `bar`, change `loadChart` `chartType` param to `'bar'`.
 
 **Files affected by full chart display (Step G — only after A-F are verified):**

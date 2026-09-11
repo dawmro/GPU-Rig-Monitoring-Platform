@@ -46,10 +46,10 @@ def check_has_active_job_system_checks(app_configs, **kwargs):
     try:
         compact_path = 'gpu_monitor/metrics_app/management/commands/compact_data.py'
         compact_src = open(compact_path).read()
-        if "'has_active_job': 'avg'" not in compact_src:
+        if "'has_active_job': 'max'" not in compact_src:
             errors.append(Error(
-                "compact_data.py missing 'has_active_job': 'avg'",
-                hint='Run Step C: add to MetricSnapshot agg_fields',
+                "compact_data.py missing 'has_active_job': 'max'",
+                hint='Run Step C: add to MetricSnapshot agg_fields (use max, not avg)',
                 obj='metrics_app.management.commands.compact_data',
                 id='metrics_app.E003',
             ))

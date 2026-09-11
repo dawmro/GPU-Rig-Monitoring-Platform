@@ -82,8 +82,8 @@
             ticks: { color: STYLE.tickColor },
             beginAtZero: opts.beginAtZero !== false,
             title: {
-                display: true,
-                text: unit,
+                display: (unit !== ''),
+                text: unit || 'Job / No Job',
                 color: STYLE.axisTitleColor,
                 font: { size: STYLE.axisTitleFontSize },
             },
@@ -169,6 +169,19 @@
         };
     }
 
+    // Tooltip formatter for job status (bool 0/1): shows "Job" for 1, "No Job" for 0
+    function tooltipJob() {
+        return {
+            mode: 'index',
+            intersect: false,
+            callbacks: {
+                label: function (ctx) {
+                    return ctx.parsed.y === 1 ? 'Job' : 'No Job';
+                },
+            },
+        };
+    }
+
     // Tooltip formatter for multi-dataset charts.
     // `formatFn` is called with (parsed_y, dataset_label) and returns
     // the display string. If formatFn is omitted, defaults to
@@ -249,6 +262,7 @@
         legendOptions: legendOptions,
         buildChartUrl: buildChartUrl,
         tooltipSingle: tooltipSingle,
+        tooltipJob: tooltipJob,
         tooltipMulti: tooltipMulti,
         noDataMessage: noDataMessage,
         safeDestroy: safeDestroy,

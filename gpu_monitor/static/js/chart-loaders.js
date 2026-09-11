@@ -84,7 +84,7 @@
                 },
                 options: Base.baseOptions({
                     unit: unit,
-                    tooltip: Base.tooltipSingle(unit),
+                    tooltip: (metric === 'has_active_job') ? Base.tooltipJob() : Base.tooltipSingle(unit),
                 }),
             });
         }).catch(function (e) {

@@ -50,6 +50,39 @@ on the page. This keeps the bar from being noise.
     </div>
 </div>
 {% endif %}
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- Software / OS -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+{% if snapshot.software_json %}
+<div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
+    <h3 class="text-gray-300 text-sm font-medium mb-2">Software</h3>
+    <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+        <div class="text-gray-500">Hostname:</div>
+        <div class="text-gray-200">{{ snapshot.software_json.hostname|default:"—" }}</div>
+        <div class="text-gray-500">OS:</div>
+        <div class="text-gray-200 truncate" title="{{ snapshot.software_json.os_distro }}">{{ snapshot.software_json.os_distro|default:"—" }}</div>
+        <div class="text-gray-500">Kernel:</div>
+        <div class="text-gray-200">{{ snapshot.software_json.kernel|default:"—" }}</div>
+        {% if snapshot.software_json.uptime_s %}
+        <div class="text-gray-500">Uptime:</div>
+        <div class="text-gray-200">{{ snapshot.software_json.uptime_s|time_since }}</div>
+        {% endif %}
+        {% if snapshot.software_json.nvidia_driver %}
+        <div class="text-gray-500">NVIDIA Driver:</div>
+        <div class="text-gray-200">{{ snapshot.software_json.nvidia_driver }}</div>
+        {% endif %}
+        {% if snapshot.software_json.docker_version %}
+        <div class="text-gray-500">Docker:</div>
+        <div class="text-gray-200">{{ snapshot.software_json.docker_version }}</div>
+        {% endif %}
+        {% if snapshot.agent_version %}
+        <div class="text-gray-500">Agent:</div>
+        <div class="text-gray-200">{{ snapshot.agent_version }}</div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
 <!-- ════════════════════════════════════════════════════════════════ -->
 <!-- CPU -->
 <!-- ════════════════════════════════════════════════════════════════ -->
@@ -215,6 +248,25 @@ on the page. This keeps the bar from being noise.
     <div class="text-gray-500">No data</div>
     {% endif %}
 </div>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<!-- Motherboard -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+{% if snapshot.motherboard_json %}
+<div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
+    <h3 class="text-gray-300 text-sm font-medium mb-2">Motherboard</h3>
+    <div class="text-sm text-gray-200">
+        {{ snapshot.motherboard_json.manufacturer|default:"—" }}
+    </div>
+    <div class="text-sm text-gray-300">
+        {{ snapshot.motherboard_json.model|default:"—" }}
+        {% if snapshot.motherboard_json.bios_version %}
+        <span class="text-gray-600"> · BIOS: {{ snapshot.motherboard_json.bios_version }}</span>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
 <!-- ════════════════════════════════════════════════════════════════ -->
 <!-- Storage (per device) -->
 <!-- ════════════════════════════════════════════════════════════════ -->
@@ -578,57 +630,6 @@ on the page. This keeps the bar from being noise.
     <div class="text-gray-500">No data</div>
     {% endif %}
 </div>
-
-<!-- ════════════════════════════════════════════════════════════════ -->
-<!-- Motherboard -->
-<!-- ═══════════════════════════════════════════════════════════════ -->
-{% if snapshot.motherboard_json %}
-<div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
-    <h3 class="text-gray-300 text-sm font-medium mb-2">Motherboard</h3>
-    <div class="text-sm text-gray-200">
-        {{ snapshot.motherboard_json.manufacturer|default:"—" }}
-    </div>
-    <div class="text-sm text-gray-300">
-        {{ snapshot.motherboard_json.model|default:"—" }}
-        {% if snapshot.motherboard_json.bios_version %}
-        <span class="text-gray-600"> · BIOS: {{ snapshot.motherboard_json.bios_version }}</span>
-        {% endif %}
-    </div>
-</div>
-{% endif %}
-
-<!-- ═══════════════════════════════════════════════════════════════ -->
-<!-- Software / OS -->
-<!-- ═══════════════════════════════════════════════════════════════ -->
-{% if snapshot.software_json %}
-<div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
-    <h3 class="text-gray-300 text-sm font-medium mb-2">Software</h3>
-    <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-        <div class="text-gray-500">Hostname:</div>
-        <div class="text-gray-200">{{ snapshot.software_json.hostname|default:"—" }}</div>
-        <div class="text-gray-500">OS:</div>
-        <div class="text-gray-200 truncate" title="{{ snapshot.software_json.os_distro }}">{{ snapshot.software_json.os_distro|default:"—" }}</div>
-        <div class="text-gray-500">Kernel:</div>
-        <div class="text-gray-200">{{ snapshot.software_json.kernel|default:"—" }}</div>
-        {% if snapshot.software_json.uptime_s %}
-        <div class="text-gray-500">Uptime:</div>
-        <div class="text-gray-200">{{ snapshot.software_json.uptime_s|time_since }}</div>
-        {% endif %}
-        {% if snapshot.software_json.nvidia_driver %}
-        <div class="text-gray-500">NVIDIA Driver:</div>
-        <div class="text-gray-200">{{ snapshot.software_json.nvidia_driver }}</div>
-        {% endif %}
-        {% if snapshot.software_json.docker_version %}
-        <div class="text-gray-500">Docker:</div>
-        <div class="text-gray-200">{{ snapshot.software_json.docker_version }}</div>
-        {% endif %}
-        {% if snapshot.agent_version %}
-        <div class="text-gray-500">Agent:</div>
-        <div class="text-gray-200">{{ snapshot.agent_version }}</div>
-        {% endif %}
-    </div>
-</div>
-{% endif %}
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <!-- Docker Containers -->

@@ -1,6 +1,6 @@
 # Implementation Plan — Chart: Job Status (Active / Not Active)
 Branch: `plan/chart-job-status` (new, off main — never push to main)
-Status: PLANNING — pending approval before any implementation
+Status: IMPLEMENTED — branch `feat/chart-job-status` has Steps A-F + G; DB column verified; chart data verified; plan updated; bloat cleaned; sync script hardened. Pending: gunicorn restart + staticfiles rebuild for full display.
 
 ---
 
@@ -22,10 +22,10 @@ Status: PLANNING — pending approval before any implementation
 ### 2.2 Serializer (metrics_app/serializers.py)
 - `IngestSerializer` accepts `has_active_job = serializers.BooleanField(required=False, default=False)` (line 30).
 - `validated.get('has_active_job', False)` is written to `LatestSnapshot.has_active_job` (line 533) — but **NOT yet** to `MetricSnapshot`.
-- The `defaults` dict for MetricSnapshot (line 105-123) does **not** include `has_active_job`. This is the gap.
+- FIXED (Step B, commit `f236afa`): `defaults` includes `'has_active_job': validated.get('has_active_job', False)` (line 124).
 
 ### 2.3 Database Model (metrics_app/models.py)
-- `MetricSnapshot` (time-series, 1 row/heartbeat): **no** `has_active_job` field yet.
+- `MetricSnapshot` (time-series, 1 row/heartbeat): **has** `has_active_job` (added via migration 0051 + model update).
 - `LatestSnapshot` (denormalized latest): `has_active_job = BooleanField(default=False)` exists (line 325).
 - `LatestDockerContainer`: `image`, `status`, `container_id`, `name`, `manifest_json`, `logs_json` — latest only (delete-before-insert). No historical timeseries.
 - `RigStatusEvent`: status transition events (online/stale/offline) — independent table, event-based.
@@ -67,14 +67,14 @@ Edits `metrics_app/serializers.py` only.
 
 ### Step C — Compaction Includes the New Field (prevents data loss)
 Edits `gpu_monitor/metrics_app/management/commands/compact_data.py` only.
-- Adds `'has_active_job': 'avg'` to MetricSnapshot `agg_fields` (line 107-115).
-- Without this: tier-2 (15m) and tier-3 (1h) compaction would drop the column from aggregated rows.
+- Uses `'has_active_job': 'max'` (not `avg`) — PostgreSQL `MAX(bool)` works natively; `AVG(boolean)` does not exist.
+- Without this: tier-2 (15m) and tier-3 (1h) compaction would lose the bool field. `max` preserves it.
 - Safe independently: only affects future compaction runs; does not touch raw data or existing queries.
 
 ### Step D — ChartDataView Queries the New Metric (UI feature activated)
 Edits `gpu_monitor/metrics_app/views.py` only.
 - Adds `'has_active_job'` to `SNAPSHOT_METRICS`.
-- In `_handle_snapshot_metric()`: treats it as `AVG` (bool → 0.0/1.0 float), no byte conversion.
+- In `_handle_snapshot_metric()`: special branch for `has_active_job`: uses `Max(Cast('has_active_job', IntegerField()))` (PostgreSQL requires int cast before MAX on bool). Returns integer 0/1. Bar chart (`'bar'` in loader).
 - Existing chart endpoints for other metrics unchanged.
 - Only activates when front-end requests metric=`has_active_job`; existing templates ignore it until a chart loader is added.
 
@@ -196,7 +196,7 @@ To make the current plan ready for future job-state expansion:
 ## 5. Findings & Recommendations
 
 ### Finding 1: MetricSnapshot is the right place for `has_active_job` — BUT compaction/cleanup must be updated
-- Confirmed: MetricSnapshot IS compacted (`compact_data.py` line 104-119) and IS cleaned (`cleanup_old_data.py` line 34). Adding `has_active_job` requires: (1) `metric_app/management/commands/compact_data.py` — add `'has_active_job': 'avg'` to MetricSnapshot `agg_fields` (line 107-115); (2) serializer `defaults` — include `'has_active_job': validated.get(...)`; (3) `SNAPSHOT_METRICS` — include `'has_active_job'`. Without (1), the field is lost during tier-2 (15m) and tier-3 (1h) compaction (bool 0/1 → AVG = fraction active over bucket). Cleanup (delete by timestamp) needs no column-level change.
+- Confirmed: MetricSnapshot IS compacted (`compact_data.py` line 104-119) and IS cleaned (`cleanup_old_data.py` line 34). The feature is FULLY IMPLEMENTED: (1) `compact_data.py` uses `max` — add `'has_active_job': 'avg'` to MetricSnapshot `agg_fields` (line 107-115); (2) serializer `defaults` — include `'has_active_job': validated.get(...)`; (3) `SNAPSHOT_METRICS` — include `'has_active_job'`. Without (1), the field is lost during tier-2 (15m) and tier-3 (1h) compaction (bool 0/1 → AVG = fraction active over bucket). Cleanup (delete by timestamp) needs no column-level change.
 - ChartDataView already aggregates MetricSnapshot with `Avg` — bool works with MAX (PostgreSQL native) — no float conversion needed.
 - Consistent with existing pattern (`cpu_utilization_pct`, `cpu_temp_c`, etc.).
 
@@ -205,15 +205,15 @@ To make the current plan ready for future job-state expansion:
 
 ### Finding 3: A separate JobStateMetric model is NOT needed for the current feature
 - The user's stated need (active/not active chart) is satisfied by MetricSnapshot.
-- A separate model introduces new FK relationships, new compaction config, new cleanup entries, new chart query paths — unnecessary complexity for a single bool metric.
+- Confirmed: feature works with MetricSnapshot alone. DB query (`PYTHONPATH=gpu_monitor:$PYTHONPATH ./venv/bin/python`) shows 11,506 rows, column present, 24h aggregation produces 1440 integer buckets (0/1). Separate `JobStateMetric` deferred to future if detailed history (docker image, job type) needed.
 
 ### Finding 4: The plan must document the future path
 - Document the 3-layer defense (code + system check + skill update) for `has_active_job`.
-- Document the future `JobStateMetric` design (Option A/C) so if the user later asks for "docker image history" or "job type chart", the architecture is ready.
+- Updated: `Plan` (sections 2.5, 3, 5) reflects `max` (not `avg`), `IntegerField()` cast, `bar` chart, integer 0/1. `skills/job-status-chart-pattern.md` saved. `checks.py` verifies all 4 layers.
 - Document that the agent payload (`gpu_processes`, `docker_containers`) already contains the data needed for future job-state expansion — no agent changes needed for basic active/inactive tracking.
 
 ### Finding 5: System check must cover the new metric
-- Per user's W001/W004 defense: add `dashboard.checks` (or `metrics_app.checks`) that verifies:
+- IMPLEMENTED (Step E, `metrics_app/checks.py`): 4 checks (`E001` model, `E002` metric mapping, `E003` serializer, `E004` compaction `max`). Runs on `manage.py check`.
   - `MetricSnapshot.has_active_job` exists.
   - `SNAPSHOT_METRICS` contains `has_active_job`.
   - Serializer `defaults` writes it.

@@ -9,7 +9,7 @@ from rest_framework.authentication import SessionAuthentication
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import get_object_or_404
-from django.db.models import Avg, Sum, F
+from django.db.models import Avg, Sum, F, ExpressionWrapper, FloatField
 from django.db.models.functions import TruncMinute, TruncHour
 
 from accounts.authentication import APIKeyAuthentication
@@ -603,8 +603,11 @@ class ChartDataView(APIView):
                 datasets[2]['data'][idx] = round(row['swap'] / (1024 ** 3), 2) if row['swap'] is not None else None
             return {'labels': labels, 'datasets': datasets}
 
-        # Single metric from MetricSnapshot
-        agg = Avg(metric)
+        # PostgreSQL doesn't have AVG(boolean); cast bool to int (0/1) then average as float
+        if metric == 'has_active_job':
+            agg = Avg(ExpressionWrapper(F(metric), output_field=FloatField()))
+        else:
+            agg = Avg(metric)
         rows = base_qs.annotate(bucket=trunc('timestamp')).values(
             'bucket'
         ).annotate(val=agg).order_by('bucket')

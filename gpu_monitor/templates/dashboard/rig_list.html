@@ -61,7 +61,7 @@
 
     <div id="rig-table-container"
          hx-get="{% url 'dashboard:rig-list' %}?status={{ status_filter }}&search={{ search }}&tag={{ tag_filter }}"
-         hx-trigger="every 30s"
+         hx-trigger="every 60s"
          hx-target="#rig-table-container"
          hx-swap="innerHTML"
          hx-indicator=".htmx-indicator">

@@ -48,7 +48,7 @@
             <span id="global-refresh-clock" class="text-gray-500 text-xs"></span>
             <div id="rig-status-container"
                  hx-get="{% url 'dashboard:htmx-rig-status' rig.uuid %}"
-                 hx-trigger="every 15s"
+                 hx-trigger="every 60s"
                  hx-target="#rig-status-container"
                  hx-swap="innerHTML">
                 {% include "dashboard/_rig_status_badge.html" %}
@@ -105,7 +105,7 @@
     <div id="tab-content-metrics" class="tab-content">
         <div id="metrics-container"
              hx-get="{% url 'dashboard:htmx-metrics' rig.uuid %}"
-             hx-trigger="load, every 30s"
+             hx-trigger="load, every 60s"
              hx-target="#metrics-container"
              hx-swap="innerHTML"
              hx-indicator=".htmx-indicator">

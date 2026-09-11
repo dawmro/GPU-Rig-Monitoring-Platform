@@ -299,6 +299,14 @@ on the page. This keeps the bar from being noise.
             <div class="flex items-center gap-4 text-xs text-gray-500">
                 {% if disk.capacity_bytes %}
                 <span>Capacity: {{ disk.capacity_bytes|filesizeformat }}</span>
+                {% with used_bytes=disk.capacity_bytes|default:0|multiply:disk.usage_pct|default:0|divide:100 %}
+                <span>Used: {{ used_bytes|filesizeformat }}</span>
+                {% endwith %}
+                {% with used_for_subtract=disk.capacity_bytes|default:0|multiply:disk.usage_pct|default:0|divide:100 %}
+                {% with free_bytes=disk.capacity_bytes|default:0|subtract:used_for_subtract %}
+                <span>Free: {{ free_bytes|filesizeformat }}</span>
+                {% endwith %}
+                {% endwith %}
                 {% endif %}
                 {% if disk.temp_c != None %}
                 <span>Temp: {{ disk.temp_c|floatformat:1 }}°C</span>

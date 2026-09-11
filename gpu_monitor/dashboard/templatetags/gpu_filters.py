@@ -597,6 +597,13 @@ def tier_text(value, thresholds):
     return f"text-{color}-400"
 
 
+@register.filter
+def subtract(value, arg):
+    try:
+        return float(value) - float(arg)
+    except (TypeError, ValueError):
+        return value
+
 @register.filter(name="tier_fill")
 def tier_fill(value, thresholds):
     """Convenience filter: return the full Tailwind bg-{color}-400 class.

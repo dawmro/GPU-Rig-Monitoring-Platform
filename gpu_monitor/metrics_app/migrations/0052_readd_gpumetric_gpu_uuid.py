@@ -9,7 +9,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='gpumetric',
             name='gpu_uuid',
-            field=models.UUIDField(db_index=True, max_length=64, null=True, blank=True,
+            field=models.CharField(db_index=True, max_length=64, null=True, blank=True,
                                    help_text='Stable GPU UUID for identity tracking; full value shown in charts'),
         ),
     ]

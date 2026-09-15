@@ -288,23 +288,6 @@
                             fontSize: 10,
                             // Shorten interface labels: "ens33 192.168.1.10 RX"
                             // → "ens33 … RX" (truncate the IP part)
-                            generateLabels: function (chart) {
-                                var original = Chart.defaults.plugins.legend.labels.generateLabels(chart);
-                                return original.map(function (label) {
-                                    if (!label.text) return label;
-                                    var spaceIdx = label.text.indexOf(' ');
-                                    if (spaceIdx <= 0) return label;
-                                    var ifacePart = label.text.substring(0, spaceIdx);
-                                    var dirPart = label.text.substring(spaceIdx + 1);
-                                    var parts = ifacePart.split(' ');
-                                    if (parts[0].length > 8) {
-                                        label.text = parts[0].substring(0, 8) + '…' +
-                                                     (parts[1] ? ' ' + parts[1] : '') + ' ' + dirPart;
-                                    }
-                                    return label;
-                                });
-                            },
-                        }),
                         tooltip: {
                             mode: 'index',
                             intersect: false,
@@ -533,21 +516,7 @@
                         // Result:      "GPU-a322cff… RTX 3060"
                         // (truncate the UUID part to 12 chars)
                         generateLabels: function (chart) {
-                            var original = Chart.defaults.plugins.legend.labels.generateLabels(chart);
-                            return original.map(function (label) {
-                                if (!label.text) return label;
-                                var spaceIdx = label.text.indexOf(' ');
-                                if (spaceIdx > 0) {
-                                    var uuidPart = label.text.substring(0, spaceIdx);
-                                    var modelPart = label.text.substring(spaceIdx + 1);
-                                    if (uuidPart.length > 12) {
-                                        label.text = uuidPart.substring(0, 12) + '… ' + modelPart;
-                                    }
-                                } else if (label.text.length > 12) {
-                                    label.text = label.text.substring(0, 12) + '…';
-                                }
-                                return label;
-                            });
+                            return Chart.defaults.plugins.legend.labels.generateLabels(chart);
                         }
                     }),
                     tooltip: {

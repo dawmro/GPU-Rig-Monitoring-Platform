@@ -651,6 +651,12 @@ class ChartDataView(APIView):
                 agg_func=agg_func,
             )
             # Find the requested gpu_index (default 0)
+            latest_gpu = GPUMetric.objects.filter(
+                rig_uuid=uuid, gpu_index=gpu_index,
+                timestamp__gte=start_bucket, timestamp__lte=end_bucket
+            ).order_by('-timestamp').first()
+            label_uuid = getattr(latest_gpu, 'gpu_uuid', None) or f"gpu-{gpu_index}"
+            label_model = getattr(latest_gpu, 'model', '') or 'Unknown'
             values = [None] * total_buckets
             key = (gpu_index,)
             if key in groups:
@@ -658,17 +664,17 @@ class ChartDataView(APIView):
                     if i < total_buckets:
                         values[i] = v
             return {'labels': labels, 'datasets': [
-                {'label': f'GPU {gpu_index}', 'data': values}
+                {'label': f"GPU-{label_uuid} {label_model}", 'data': values}
             ]}
 
         # multi_gpu: single GROUP BY (gpu_index, bucket) — no N+1
         groups = self._read_prebucketed(
             GPUMetric, uuid, db_field, start_bucket, end_bucket,
-            bucket_minutes, group_by_keys=['gpu_index'],
+            bucket_minutes, group_by_keys=['gpu_index', 'gpu_uuid', 'model'],
             agg_func=agg_func,
         )
         # Sort by gpu_index
-        sorted_keys = sorted(groups.keys(), key=lambda k: k[0])
+        sorted_keys = sorted(groups.keys(), key=lambda k: (k[0], k[1], k[2]))
         datasets = []
         for key in sorted_keys:
             values = [None] * total_buckets
@@ -676,7 +682,7 @@ class ChartDataView(APIView):
                 if i < total_buckets:
                     values[i] = v
             datasets.append({
-                'label': f'GPU{key[0]}',
+                'label': f"GPU-{key[1]} {key[2]}",
                 'data': values,
             })
         return {'labels': labels, 'datasets': datasets}

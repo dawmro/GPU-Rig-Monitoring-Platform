@@ -671,21 +671,30 @@ class ChartDataView(APIView):
             ]}
 
         # multi_gpu: single GROUP BY (gpu_index, bucket) — no N+1
+        # Group by gpu_index only; fetch UUID/model from latest row per index (like model)
         groups = self._read_prebucketed(
             GPUMetric, uuid, db_field, start_bucket, end_bucket,
-            bucket_minutes, group_by_keys=['gpu_index', 'gpu_uuid', 'model'],
+            bucket_minutes, group_by_keys=['gpu_index'],
             agg_func=agg_func,
         )
         # Sort by gpu_index
-        sorted_keys = sorted(groups.keys(), key=lambda k: (k[0], k[1], k[2]))
+        sorted_keys = sorted(groups.keys(), key=lambda k: k[0])
         datasets = []
         for key in sorted_keys:
             values = [None] * total_buckets
             for i, v in groups[key].items():
                 if i < total_buckets:
                     values[i] = v
+            # Fetch UUID/model for this gpu_index from latest row
+            idx = key[0]
+            latest_gpu = GPUMetric.objects.filter(
+                rig_uuid=uuid, gpu_index=idx,
+                timestamp__gte=start_bucket, timestamp__lte=end_bucket
+            ).order_by('-timestamp').first()
+            label_uuid = getattr(latest_gpu, 'gpu_uuid', None) or f"gpu-{idx}"
+            label_model = getattr(latest_gpu, 'model', '') or 'Unknown'
             datasets.append({
-                'label': f"GPU-{key[1]} {key[2]}",
+                'label': f"GPU-{label_uuid} {label_model}",
                 'data': values,
             })
         return {'labels': labels, 'datasets': datasets}

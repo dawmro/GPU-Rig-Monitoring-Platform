@@ -172,7 +172,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                         'pcie_current_width': gpu.get('pcie_current_width'),
                         'pcie_max_width': gpu.get('pcie_max_width'),
                         'gpu_core_clock_mhz': gpu.get('gpu_core_clock_mhz'),
-                        'gpu_uuid': gpu.get('uuid', ''),
+                        'gpu_uuid': (lambda v: v.replace('GPU-', '') if v.startswith('GPU-') else v)(gpu.get('uuid', '')) or '',
                         'gpu_mem_clock_mhz': gpu.get('gpu_mem_clock_mhz'),
                     },
                 )
@@ -582,10 +582,12 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
             # invalidating 22 metrics × 3 ranges × 1 bucket × 64 (gpu_index ×
             # multi_* combos) = ~4,200 cache.delete() calls per heartbeat.
             # Old keys naturally expire via cache TTL (55s).
+            # Also force-delete chart_v to handle cold-start/corrupt state.
             try:
-                cache.incr(f'chart_v_{rig_uuid}')
-            except ValueError:
-                cache.set(f'chart_v_{rig_uuid}', 1, timeout=None)
+                cache.delete(f'chart_v_{rig_uuid}')  # Force clear any stale version
+                cache.set(f'chart_v_{rig_uuid}', 1, timeout=None)  # Reset to 1
+            except Exception:
+                pass  # Cache failures shouldn't break ingest
             # Track rig status transitions
             if rig:
                 previous_status = rig.status

@@ -103,6 +103,9 @@
         var url = Base.buildChartUrl(uuid, range, { metric: 'cpu_load_avg' });
 
         return fetchChartData(url).then(function (data) {
+            if (!data || !data.datasets || data.datasets.length === 0) {
+                throw new Error('Invalid data format');
+            }
             Base.safeDestroy(canvasId, window.GRM.ChartRuntime.instances);
 
             window.GRM.ChartRuntime.instances[canvasId] = new Chart(ctx, {
@@ -486,6 +489,9 @@
         var url = Base.buildChartUrl(uuid, range, { metric: metric, extra: { multi_gpu: 'true' } });
 
         return fetchChartData(url).then(function (data) {
+            if (!data || !data.datasets || data.datasets.length === 0) {
+                throw new Error('Invalid data format');
+            }
             Base.safeDestroy(canvasId, window.GRM.ChartRuntime.instances);
 
             window.GRM.ChartRuntime.instances[canvasId] = new Chart(ctx, {

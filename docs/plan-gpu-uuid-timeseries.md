@@ -311,42 +311,6 @@ for row in reversed(gpu_agg):
 gpu_devices.reverse()  # restore index order
 ```
 
-**Note**: The `gpu_agg` query groups ONLY by `gpu_index` and `model` (NOT `gpu_uuid`) to avoid fragmentation. UUID is fetched from raw data for the header.
-```python
-# Fetch raw changes per index
-gpu_raw = GPUMetric.objects.filter(**base_filter)
-    .values('gpu_index', 'gpu_uuid', 'model', 'timestamp')
-    .order_by('gpu_index', 'timestamp')
-
-# Post-process: group by gpu_index, detect changes
-changes_by_index = {}
-for row in gpu_raw:
-    idx = row['gpu_index']
-    if idx not in changes_by_index:
-        changes_by_index[idx] = []
-    changes_by_index[idx].append({
-        'uuid': row['gpu_uuid'],
-        'model': row['model'],
-        'timestamp': row['timestamp'],
-    })
-
-# Detect transitions
-for idx, history in changes_by_index.items():
-    prev = None
-    for entry in history:
-        if prev and (prev['uuid'] != entry['uuid'] or prev['model'] != entry['model']):
-            # CHANGE DETECTED
-            changes.append({
-                'gpu_index': idx,
-                'from_uuid': prev['uuid'],
-                'from_model': prev['model'],
-                'to_uuid': entry['uuid'],
-                'to_model': entry['model'],
-                'change_timestamp': entry['timestamp'],
-            })
-        prev = entry
-```
-
 #### 2. Report Context Extension
 Add to `_build_report_context` return dict:
 ```python

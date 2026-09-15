@@ -235,29 +235,83 @@ gpu_devices = GPUMetric.objects.filter(**base_filter)
 
 ### Proposed Enhancement: GPU Identity Change Tracking in Report
 
-#### 1. Data Source Extension
-Extend `_build_report_context` Query 1 to detect UUID/model changes per `gpu_index` within the report range:
+#### 1. Data Source Extension (Single Combined Query)
+Extend `_build_report_context` Query 1 to detect UUID/model changes per `gpu_index` within the report range using a single combined query with Python post-processing:
 
 ```python
-# New: Detect GPU identity changes per index within range
-gpu_identity_changes = list(
+# Fetch raw GPU data with all needed fields in ONE query
+gpu_raw = list(
     GPUMetric.objects.filter(**base_filter)
-    .values('gpu_index')
-    .annotate(
-        # Get all distinct (uuid, model) combinations with first/last timestamps
-        identities=ArrayAgg(
-            Concat('gpu_uuid', Value('|'), 'model'),
-            distinct=True,
-            ordering=['timestamp']
-        ),
-        first_timestamp=Min('timestamp'),
-        last_timestamp=Max('timestamp'),
-    )
-    .filter(identities__len__gt=1)  # Only indices with changes
+    .values('gpu_index', 'gpu_uuid', 'model', 'timestamp')
+    .order_by('gpu_index', 'timestamp')
 )
+
+# Build aggregated metrics per GPU index (same query, different aggregation)
+gpu_agg = list(
+    GPUMetric.objects.filter(**base_filter)
+    .values('gpu_index', 'model')
+    .annotate(
+        gpu_temp_c_avg=Avg('gpu_temp_c'),
+        gpu_temp_c_max=Max('gpu_temp_c'),
+        gpu_util_pct_avg=Avg('gpu_util_pct'),
+        gpu_util_pct_max=Max('gpu_util_pct'),
+        mem_controller_util_pct_avg=Avg('mem_controller_util_pct'),
+        mem_controller_util_pct_max=Max('mem_controller_util_pct'),
+        power_draw_w_avg=Avg('power_draw_w'),
+        power_draw_w_max=Max('power_draw_w'),
+        mem_used_mb_avg=Avg('mem_used_mb'),
+        mem_used_mb_max=Max('mem_used_mb'),
+        fan_speed_pct_avg=Avg('fan_speed_pct'),
+        fan_speed_pct_max=Max('fan_speed_pct'),
+        gpu_core_clock_mhz_avg=Avg('gpu_core_clock_mhz'),
+        gpu_core_clock_mhz_max=Max('gpu_core_clock_mhz'),
+        gpu_mem_clock_mhz_avg=Avg('gpu_mem_clock_mhz'),
+        gpu_mem_clock_mhz_max=Max('gpu_mem_clock_mhz'),
+    ).order_by('gpu_index')
+)
+
+# Post-process: detect identity changes per GPU index from raw data
+changes_by_index = {}
+for row in gpu_raw:
+    idx = row['gpu_index']
+    if idx not in changes_by_index:
+        changes_by_index[idx] = []
+    changes_by_index[idx].append({
+        'uuid': row['gpu_uuid'] or '',
+        'model': row['model'] or '',
+        'timestamp': row['timestamp'],
+    })
+
+gpu_identity_changes = []
+for idx, history in changes_by_index.items():
+    prev = None
+    for entry in history:
+        if prev and (prev['uuid'] != entry['uuid'] or prev['model'] != entry['model']):
+            gpu_identity_changes.append({
+                'gpu_index': idx,
+                'from_uuid': prev['uuid'],
+                'from_model': prev['model'],
+                'to_uuid': entry['uuid'],
+                'to_model': entry['model'],
+                'change_timestamp': entry['timestamp'],
+            })
+        prev = entry
+
+# Deduplicate gpu_agg to one row per index (latest model/uuid for header)
+gpu_devices = []
+seen = set()
+for row in reversed(gpu_agg):
+    idx = row['gpu_index']
+    if idx not in seen:
+        seen.add(idx)
+        # Get UUID from raw data for this index (latest)
+        latest_raw = next((r for r in gpu_raw if r['gpu_index'] == idx), None)
+        row['gpu_uuid'] = (latest_raw['gpu_uuid'] if latest_raw else '') or ''
+        gpu_devices.append(row)
+gpu_devices.reverse()  # restore index order
 ```
 
-Alternative: simpler approach using window functions or Python post-processing:
+**Note**: The `gpu_agg` query groups ONLY by `gpu_index` and `model` (NOT `gpu_uuid`) to avoid fragmentation. UUID is fetched from raw data for the header.
 ```python
 # Fetch raw changes per index
 gpu_raw = GPUMetric.objects.filter(**base_filter)
@@ -298,7 +352,7 @@ Add to `_build_report_context` return dict:
 ```python
 return {
     ...
-    'gpu_identity_changes': changes_list,  # List of dicts with change details
+    'gpu_identity_changes': gpu_identity_changes,  # List of dicts with change details
     'gpu_devices': gpu_devices,  # unchanged
     ...
 }
@@ -630,6 +684,8 @@ Since `gpu_agg` query now includes `gpu_uuid` in `.values()`, the `gpu_devices` 
 ---
 
 This Option B implementation provides a complete, production-ready GPU identity change tracking section for the report card with full visual polish and zero external dependencies.
+
+> **Important**: The view implementation in **"Required View Changes"** section above (lines 485-553) is the **authoritative implementation**. The earlier "Data Source Extension" section has been updated to match. The old ArrayAgg approach has been removed.
 
 #### 3. Query Performance Considerations
 - **Additional query**: 1 extra query per report (acceptable, ~4→5 queries)

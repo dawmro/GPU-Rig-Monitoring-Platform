@@ -207,3 +207,195 @@ File: `gpu_monitor/static/js/chart-loaders.js` (`loadChartMultiGpu`)
 5. **Empty UUID fallback**: If `gpu_uuid` null → label shows `GPU-gpu-0 RTX 4090`
 
 All fixes applied, verified, and committed on `plan/gpu-uuid-timeseries`. Ready for user merge on GitHub.
+
+---
+
+## GPU UUID/Model Change Tracking in Report Card
+
+### Current Report Format Analysis
+
+**Report endpoint**: `htmx_report_data` → `_build_report_context` → `_report_table.html`
+
+**Data source for GPU section** (`views.py:715-736`):
+```python
+gpu_devices = GPUMetric.objects.filter(**base_filter)
+    .values('gpu_index', 'model')
+    .annotate(Avg/Max for metrics...)
+    .order_by('gpu_index')
+```
+
+**Current GPU header** (`_report_table.html:4-5`):
+```html
+<h3>GPU {{ gpu.gpu_index }} — {{ gpu.model }}</h3>
+```
+
+**Gap**: No GPU UUID shown; no change detection for UUID/model over the report period.
+
+---
+
+### Proposed Enhancement: GPU Identity Change Tracking in Report
+
+#### 1. Data Source Extension
+Extend `_build_report_context` Query 1 to detect UUID/model changes per `gpu_index` within the report range:
+
+```python
+# New: Detect GPU identity changes per index within range
+gpu_identity_changes = list(
+    GPUMetric.objects.filter(**base_filter)
+    .values('gpu_index')
+    .annotate(
+        # Get all distinct (uuid, model) combinations with first/last timestamps
+        identities=ArrayAgg(
+            Concat('gpu_uuid', Value('|'), 'model'),
+            distinct=True,
+            ordering=['timestamp']
+        ),
+        first_timestamp=Min('timestamp'),
+        last_timestamp=Max('timestamp'),
+    )
+    .filter(identities__len__gt=1)  # Only indices with changes
+)
+```
+
+Alternative: simpler approach using window functions or Python post-processing:
+```python
+# Fetch raw changes per index
+gpu_raw = GPUMetric.objects.filter(**base_filter)
+    .values('gpu_index', 'gpu_uuid', 'model', 'timestamp')
+    .order_by('gpu_index', 'timestamp')
+
+# Post-process: group by gpu_index, detect changes
+changes_by_index = {}
+for row in gpu_raw:
+    idx = row['gpu_index']
+    if idx not in changes_by_index:
+        changes_by_index[idx] = []
+    changes_by_index[idx].append({
+        'uuid': row['gpu_uuid'],
+        'model': row['model'],
+        'timestamp': row['timestamp'],
+    })
+
+# Detect transitions
+for idx, history in changes_by_index.items():
+    prev = None
+    for entry in history:
+        if prev and (prev['uuid'] != entry['uuid'] or prev['model'] != entry['model']):
+            # CHANGE DETECTED
+            changes.append({
+                'gpu_index': idx,
+                'from_uuid': prev['uuid'],
+                'from_model': prev['model'],
+                'to_uuid': entry['uuid'],
+                'to_model': entry['model'],
+                'change_timestamp': entry['timestamp'],
+            })
+        prev = entry
+```
+
+#### 2. Report Context Extension
+Add to `_build_report_context` return dict:
+```python
+return {
+    ...
+    'gpu_identity_changes': changes_list,  # List of dicts with change details
+    'gpu_devices': gpu_devices,  # unchanged
+    ...
+}
+```
+
+Each change entry:
+```python
+{
+    'gpu_index': 0,
+    'from_uuid': 'a322cff7-...',  # or empty string
+    'from_model': 'RTX 3060',
+    'to_uuid': 'b676c04a-...',
+    'to_model': 'RTX 4090',
+    'change_timestamp': datetime(...),
+}
+```
+
+#### 3. Template Changes (`_report_table.html`)
+
+**Option A: Inline in GPU header** (minimal)
+```html
+<h3 class="text-sm font-medium text-gray-200 mt-4 mb-2">
+    GPU {{ gpu.gpu_index }} — {{ gpu.model }}
+    {% if gpu.uuid %}
+        <span class="text-xs text-gray-400 font-mono ml-2">{{ gpu.uuid }}</span>
+    {% endif %}
+</h3>
+```
+*Note: Need to add `uuid` to `gpu_devices` query (add `gpu_uuid` to `.values()` and pass through)*
+
+**Option B: Dedicated "GPU Changes" subsection** (comprehensive)
+```html
+{% if gpu_identity_changes %}
+<div class="mt-6 p-4 bg-gray-800/50 rounded-lg">
+    <h4 class="text-sm font-medium text-yellow-300 mb-3">GPU Identity Changes ({{ range_hours }}h)</h4>
+    <div class="space-y-2 text-xs">
+    {% for change in gpu_identity_changes %}
+        <div class="flex flex-wrap gap-2 text-gray-300">
+            <span class="font-mono text-gray-400">GPU {{ change.gpu_index }}:</span>
+            <span class="text-red-400">{{ change.from_model }}</span>
+            <span class="text-gray-500">→</span>
+            <span class="text-green-400">{{ change.to_model }}</span>
+            <span class="text-gray-500">@</span>
+            <span class="font-mono">{{ change.change_timestamp|date:"M d H:i" }}</span>
+            {% if change.from_uuid != change.to_uuid %}
+                <span class="text-gray-500">(UUID: </span>
+                <span class="font-mono text-red-400">{{ change.from_uuid|default:"—" }}</span>
+                <span class="text-gray-500">→</span>
+                <span class="font-mono text-green-400">{{ change.to_uuid|default:"—" }}</span>
+                <span class="text-gray-500">)</span>
+            {% endif %}
+        </div>
+    {% endfor %}
+    </div>
+</div>
+{% endif %}
+```
+
+#### 3. Query Performance Considerations
+- **Additional query**: 1 extra query per report (acceptable, ~4→5 queries)
+- **Data volume**: Only scans `GPUMetric` in range (already queried for metrics)
+- **Optimization**: Can combine with Query 1 by adding `gpu_uuid` to `.values()` and post-processing in Python
+- **Caching**: Reuses existing `report_{uuid}_{range_hours}` cache key (55s TTL)
+
+---
+
+### Implementation Steps for Report Enhancement
+
+1. **Modify Query 1** (`views.py:715-736`): Add `gpu_uuid` to `.values()` and include identity change detection
+2. **Extend context** (`views.py:794-802`): Add `'gpu_identity_changes': changes_list`
+3. **Update template** (`_report_table.html:4-5`): Show UUID in header + optional changes section
+4. **Add fallback** for empty UUID: show `gpu-<index>` placeholder
+5. **Test**: Verify with GPU replacement scenario (UUID change at same index)
+
+---
+
+### Summary of Report Changes
+
+| Location | Change |
+|----------|--------|
+| `views.py:715-736` | Add `gpu_uuid` to `.values()`; add identity change detection logic |
+| `views.py:794-802` | Add `'gpu_identity_changes'` to return dict |
+| `_report_table.html:4-5` | Show UUID in GPU header; add "GPU Changes" subsection |
+| Cache key | Unchanged (uses existing `report_{uuid}_{range_hours}`) |
+
+---
+
+### Benefits
+- **Visibility**: Users see GPU UUID directly in report header
+- **Audit trail**: Complete history of GPU swaps with timestamps
+- **Correlation**: Link model changes to UUID changes (replacement vs reconfiguration)
+- **No performance penalty**: Single extra query, cached at 55s TTL
+- **Consistent with charts**: Same identity tracking logic as chart endpoint
+
+---
+
+### Future Enhancement (Post-MVP)
+- Export changes to CSV/PDF for compliance
+- Alert on unexpected GPU changes
+- Cross-rig GPU tracking (same UUID seen on different rigs)

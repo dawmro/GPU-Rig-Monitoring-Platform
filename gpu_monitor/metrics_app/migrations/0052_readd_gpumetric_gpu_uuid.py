@@ -1,4 +1,4 @@
-"""Re-add gpu_uuid to GPUMetric (previously removed in 0029 / 0004)."""
+"""Safe approach: AddField (fresh CharField — works if DB cleaned; safe if column missing post-clean); no RemoveField."""
 from django.db import migrations, models
 
 class Migration(migrations.Migration):
@@ -9,7 +9,8 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='gpumetric',
             name='gpu_uuid',
-            field=models.CharField(db_index=True, max_length=64, null=True, blank=True,
-                                   help_text='Stable GPU UUID for identity tracking; full value shown in charts'),
+            field=models.CharField(db_index=True, max_length=64, blank=True, default='',
+                                   help_text='Stable GPU UUID or GPU-prefixed identifier; full value in charts'),
+            preserve_default=False,
         ),
     ]

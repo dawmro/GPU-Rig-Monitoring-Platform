@@ -302,12 +302,15 @@ class ChartDataView(APIView):
         now = timezone.now()
         # Align end_bucket to the same boundary as compaction script
         end_bucket = now.replace(second=0, microsecond=0)
+        # Add one bucket to include the current partial bucket (agent timestamps have seconds)
+        end_bucket = end_bucket + timedelta(minutes=bucket_minutes)
         if bucket_minutes == 60:
             end_bucket = end_bucket.replace(minute=0)
         elif bucket_minutes == 15:
             # Align to 15-minute boundary (0, 15, 30, 45)
             minute = (now.minute // 15) * 15
             end_bucket = end_bucket.replace(minute=minute)
+            end_bucket = end_bucket + timedelta(minutes=bucket_minutes)
         elif bucket_minutes == 1:
             pass  # Already aligned to minute
 

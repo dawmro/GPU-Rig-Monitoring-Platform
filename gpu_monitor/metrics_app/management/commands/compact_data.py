@@ -96,6 +96,14 @@ COMPACT_TABLES = [
         },
         'static_fields': ['snapshot_id'],
     },
+    {
+        'table': 'metrics_rig_status_event',
+        'group_by': ['rig_uuid', 'status'],
+        'agg_fields': {
+            'previous_status': 'last',
+        },
+        'static_fields': [],
+    },
     # NOTE: 'metrics_power_reading' was removed in migration 0048.
     # Power time-series lives in MetricSnapshot.cpu_power_w and
     # total_system_power_w (plus GPUMetric.power_draw_w per-GPU).

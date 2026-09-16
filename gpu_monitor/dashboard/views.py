@@ -694,25 +694,33 @@ def _build_report_context(uuid, uuid_str, range_hours):
       snap_agg total_system_power_w_avg — no separate query needed.
     - Caching at the view level (55s TTL) handles the common case of repeated loads.
 
-    Query count for range_hours=24 (1-min buckets): 4 queries
-        1. GPUMetric aggregation
-        2. MetricSnapshot aggregation (CPU/Memory/Power/Errors)
-        3. StorageMetric aggregation
-        4. NetworkMetric aggregation
+    Query count for range_hours=24 (1-min buckets): 5 queries
+        1. GPUMetric raw scan (for identity changes)
+        2. GPUMetric aggregation (metrics)
+        3. MetricSnapshot aggregation (CPU/Memory/Power/Errors)
+        4. StorageMetric aggregation
+        5. NetworkMetric aggregation
 
-    Query count for range_hours=168/720 (15-min/1-hour buckets): same 4 queries
+    Query count for range_hours=168/720 (15-min/1-hour buckets): same 5 queries
         but each scans ~30x fewer rows due to pre-bucketed data.
     """
     now = timezone.now()
     start = now - timedelta(hours=range_hours)
     base_filter = dict(rig_uuid=uuid_str, timestamp__gte=start, timestamp__lte=now)
 
-    from django.db.models import Avg, Max, Sum
+    from django.db.models import Avg, Max, Min, Sum
 
-    # Query 1: GPU metrics aggregation
-    # Scans all raw rows in range; for 7d/30d the data is mostly tier 2/3
-    # (pre-bucketed) so the actual row count is ~700 instead of ~10000.
-    gpu_devices = list(
+    # Query 1a: GPU raw scan for identity change detection
+    # Fetches all needed fields in chronological order per GPU index
+    gpu_raw = list(
+        GPUMetric.objects.filter(**base_filter)
+        .values('gpu_index', 'gpu_uuid', 'model', 'timestamp')
+        .order_by('gpu_index', 'timestamp')
+    )
+
+    # Query 1b: GPU metrics aggregation (groups by index + model only, NOT uuid)
+    # UUID is fetched from raw data for the header to avoid fragmentation
+    gpu_agg = list(
         GPUMetric.objects.filter(**base_filter)
         .values('gpu_index', 'model')
         .annotate(
@@ -734,6 +742,47 @@ def _build_report_context(uuid, uuid_str, range_hours):
             gpu_mem_clock_mhz_max=Max('gpu_mem_clock_mhz'),
         ).order_by('gpu_index')
     )
+
+    # Post-process: detect identity changes per GPU index from raw data
+    changes_by_index = {}
+    for row in gpu_raw:
+        idx = row['gpu_index']
+        if idx not in changes_by_index:
+            changes_by_index[idx] = []
+        changes_by_index[idx].append({
+            'uuid': row['gpu_uuid'] or '',
+            'model': row['model'] or '',
+            'timestamp': row['timestamp'],
+        })
+
+    gpu_identity_changes = []
+    for idx, history in changes_by_index.items():
+        prev = None
+        for entry in history:
+            if prev and (prev['uuid'] != entry['uuid'] or prev['model'] != entry['model']):
+                gpu_identity_changes.append({
+                    'gpu_index': idx,
+                    'from_uuid': prev['uuid'],
+                    'from_model': prev['model'],
+                    'to_uuid': entry['uuid'],
+                    'to_model': entry['model'],
+                    'change_timestamp': entry['timestamp'],
+                })
+            prev = entry
+
+    # Deduplicate gpu_agg to one row per index (latest model/uuid for header)
+    # UUID is fetched from raw data for the header to avoid fragmentation
+    gpu_devices = []
+    seen = set()
+    for row in reversed(gpu_agg):
+        idx = row['gpu_index']
+        if idx not in seen:
+            seen.add(idx)
+            # Get UUID from raw data for this index (latest)
+            latest_raw = next((r for r in gpu_raw if r['gpu_index'] == idx), None)
+            row['gpu_uuid'] = (latest_raw['gpu_uuid'] if latest_raw else '') or ''
+            gpu_devices.append(row)
+    gpu_devices.reverse()  # restore index order
 
     # Query 2: CPU / Memory / Power / Errors aggregation
     # MetricSnapshot is NOT compacted, so this always scans raw rows.
@@ -794,6 +843,7 @@ def _build_report_context(uuid, uuid_str, range_hours):
     return {
         'range_hours': range_hours,
         'gpu_devices': gpu_devices,
+        'gpu_identity_changes': gpu_identity_changes,
         'disk_devices': disk_devices,
         'net_interfaces': net_interfaces,
         'power_total_kwh': power_total_kwh,

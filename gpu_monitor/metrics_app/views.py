@@ -302,12 +302,15 @@ class ChartDataView(APIView):
         now = timezone.now()
         # Align end_bucket to the same boundary as compaction script
         end_bucket = now.replace(second=0, microsecond=0)
+        # Add one bucket to include the current partial bucket (agent timestamps have seconds)
+        end_bucket = end_bucket + timedelta(minutes=bucket_minutes)
         if bucket_minutes == 60:
             end_bucket = end_bucket.replace(minute=0)
         elif bucket_minutes == 15:
             # Align to 15-minute boundary (0, 15, 30, 45)
             minute = (now.minute // 15) * 15
             end_bucket = end_bucket.replace(minute=minute)
+            end_bucket = end_bucket + timedelta(minutes=bucket_minutes)
         elif bucket_minutes == 1:
             pass  # Already aligned to minute
 
@@ -651,6 +654,12 @@ class ChartDataView(APIView):
                 agg_func=agg_func,
             )
             # Find the requested gpu_index (default 0)
+            latest_gpu = GPUMetric.objects.filter(
+                rig_uuid=uuid, gpu_index=gpu_index,
+                timestamp__gte=start_bucket, timestamp__lte=end_bucket
+            ).order_by('-timestamp').first()
+            label_uuid = getattr(latest_gpu, 'gpu_uuid', None) or f"gpu-{gpu_index}"
+            label_model = getattr(latest_gpu, 'model', '') or 'Unknown'
             values = [None] * total_buckets
             key = (gpu_index,)
             if key in groups:
@@ -658,10 +667,11 @@ class ChartDataView(APIView):
                     if i < total_buckets:
                         values[i] = v
             return {'labels': labels, 'datasets': [
-                {'label': f'GPU {gpu_index}', 'data': values}
+                {'label': f"GPU-{label_uuid} {label_model}", 'data': values}
             ]}
 
         # multi_gpu: single GROUP BY (gpu_index, bucket) — no N+1
+        # Group by gpu_index only; fetch UUID/model from latest row per index (like model)
         groups = self._read_prebucketed(
             GPUMetric, uuid, db_field, start_bucket, end_bucket,
             bucket_minutes, group_by_keys=['gpu_index'],
@@ -675,8 +685,16 @@ class ChartDataView(APIView):
             for i, v in groups[key].items():
                 if i < total_buckets:
                     values[i] = v
+            # Fetch UUID/model for this gpu_index from latest row
+            idx = key[0]
+            latest_gpu = GPUMetric.objects.filter(
+                rig_uuid=uuid, gpu_index=idx,
+                timestamp__gte=start_bucket, timestamp__lte=end_bucket
+            ).order_by('-timestamp').first()
+            label_uuid = getattr(latest_gpu, 'gpu_uuid', None) or f"gpu-{idx}"
+            label_model = getattr(latest_gpu, 'model', '') or 'Unknown'
             datasets.append({
-                'label': f'GPU{key[0]}',
+                'label': f"GPU-{label_uuid} {label_model}",
                 'data': values,
             })
         return {'labels': labels, 'datasets': datasets}

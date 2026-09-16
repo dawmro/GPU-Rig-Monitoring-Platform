@@ -172,6 +172,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                         'pcie_current_width': gpu.get('pcie_current_width'),
                         'pcie_max_width': gpu.get('pcie_max_width'),
                         'gpu_core_clock_mhz': gpu.get('gpu_core_clock_mhz'),
+                        'gpu_uuid': (lambda v: v.replace('GPU-', '') if v.startswith('GPU-') else v)(gpu.get('uuid', '')) or '',
                         'gpu_mem_clock_mhz': gpu.get('gpu_mem_clock_mhz'),
                     },
                 )

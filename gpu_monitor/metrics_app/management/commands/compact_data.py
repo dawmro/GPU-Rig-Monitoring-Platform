@@ -67,7 +67,7 @@ COMPACT_TABLES = [
             'gpu_core_clock_mhz': 'avg',
             'gpu_mem_clock_mhz': 'avg',
         },
-        'static_fields': ['model', 'snapshot_id'],
+        'static_fields': ['model', 'snapshot_id', 'gpu_uuid'],
     },
     {
         'table': 'metrics_storagemetric',

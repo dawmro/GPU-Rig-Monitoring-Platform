@@ -189,11 +189,11 @@ done < .env
 
 if [[ "$NO_MIGRATE" == "false" ]]; then
     echo "--- Checking for model changes ---"
-    if python manage.py makemigrations --check 2>/dev/null; then
+    if python3 manage.py makemigrations --check 2>/dev/null; then
         echo "  No model changes — migrations up to date"
     else
         echo "  Model changes detected — creating migrations..."
-        python manage.py makemigrations
+        python3 manage.py makemigrations
 
         # Remove auto-generated ErrorEventOccurrence migrations — table was
         # manually dropped; keeping the model out of models.py prevents Django
@@ -241,11 +241,11 @@ fi
 
 # Apply migrations
 echo "--- Applying migrations ---"
-if python manage.py migrate --check 2>/dev/null; then
+if python3 manage.py migrate --check 2>/dev/null; then
     echo "  No new migrations to apply"
 else
     echo "  Applying..."
-    python manage.py migrate
+    python3 manage.py migrate
 fi
 
 # ── Always run collectstatic after sync ──────────────────────────────
@@ -263,7 +263,7 @@ echo "--- Clearing server staticfiles (remove stale JS/CSS before collect) ---"
 sudo rm -rf "$OPT/gpu_monitor/staticfiles/*"
 
 echo "--- Collecting static files ---"
-python manage.py collectstatic --noinput --clear
+python3 manage.py collectstatic --noinput --clear
 
 # ── Step 9: Restart Gunicorn ───────────────────────────────────────
 echo "--- Restarting Gunicorn ---"

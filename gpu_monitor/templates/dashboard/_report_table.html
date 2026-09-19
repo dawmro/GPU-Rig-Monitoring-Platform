@@ -1,6 +1,7 @@
 {% load gpu_filters %}
 
 <!-- GPU Section (per-GPU) -->
+<span class="htmx-indicator">⟳ Refreshing...</span>
 {% for gpu in gpu_devices %}
 <h3 class="text-sm font-medium text-gray-200 mt-4 mb-2 flex flex-wrap items-center gap-2">
     <span>GPU {{ gpu.gpu_index }}</span>

@@ -302,15 +302,12 @@ class ChartDataView(APIView):
         now = timezone.now()
         # Align end_bucket to the same boundary as compaction script
         end_bucket = now.replace(second=0, microsecond=0)
-        # Add one bucket to include the current partial bucket (agent timestamps have seconds)
-        end_bucket = end_bucket + timedelta(minutes=bucket_minutes)
         if bucket_minutes == 60:
             end_bucket = end_bucket.replace(minute=0)
         elif bucket_minutes == 15:
             # Align to 15-minute boundary (0, 15, 30, 45)
             minute = (now.minute // 15) * 15
             end_bucket = end_bucket.replace(minute=minute)
-            end_bucket = end_bucket + timedelta(minutes=bucket_minutes)
         elif bucket_minutes == 1:
             pass  # Already aligned to minute
 
@@ -654,24 +651,20 @@ class ChartDataView(APIView):
                 agg_func=agg_func,
             )
             # Find the requested gpu_index (default 0)
-            latest_gpu = GPUMetric.objects.filter(
-                rig_uuid=uuid, gpu_index=gpu_index,
-                timestamp__gte=start_bucket, timestamp__lte=end_bucket
-            ).order_by('-timestamp').first()
-            label_uuid = getattr(latest_gpu, 'gpu_uuid', None) or f"gpu-{gpu_index}"
-            label_model = getattr(latest_gpu, 'model', '') or 'Unknown'
             values = [None] * total_buckets
             key = (gpu_index,)
             if key in groups:
                 for i, v in groups[key].items():
                     if i < total_buckets:
                         values[i] = v
+            # Safe identity label: uses denormalized LatestSnapshot + defensive fallback
+            # (never breaks charts — ultimate fallback is f'GPU {gpu_index}')
+            label_text = _safe_gpu_label(uuid, gpu_index=gpu_index)
             return {'labels': labels, 'datasets': [
-                {'label': f"GPU-{label_uuid} {label_model}", 'data': values}
+                {'label': label_text, 'data': values}
             ]}
 
         # multi_gpu: single GROUP BY (gpu_index, bucket) — no N+1
-        # Group by gpu_index only; fetch UUID/model from latest row per index (like model)
         groups = self._read_prebucketed(
             GPUMetric, uuid, db_field, start_bucket, end_bucket,
             bucket_minutes, group_by_keys=['gpu_index'],
@@ -685,16 +678,10 @@ class ChartDataView(APIView):
             for i, v in groups[key].items():
                 if i < total_buckets:
                     values[i] = v
-            # Fetch UUID/model for this gpu_index from latest row
-            idx = key[0]
-            latest_gpu = GPUMetric.objects.filter(
-                rig_uuid=uuid, gpu_index=idx,
-                timestamp__gte=start_bucket, timestamp__lte=end_bucket
-            ).order_by('-timestamp').first()
-            label_uuid = getattr(latest_gpu, 'gpu_uuid', None) or f"gpu-{idx}"
-            label_model = getattr(latest_gpu, 'model', '') or 'Unknown'
+            # Safe identity label per GPU index — defensive fallback if missing
+            label_text = _safe_gpu_label(uuid, gpu_index=key[0])
             datasets.append({
-                'label': f"GPU-{label_uuid} {label_model}",
+                'label': label_text,
                 'data': values,
             })
         return {'labels': labels, 'datasets': datasets}
@@ -830,3 +817,26 @@ class ChartDataView(APIView):
                           for v in values]
             datasets.append({'label': key[0] or 'Unknown', 'data': values})
         return {'labels': labels, 'datasets': datasets}
+# --- SAFE UUID/MODEL FETCH DEFENSE (added professionally) ---
+# Never use raw .filter().first() for identity labels in chart endpoint.
+# Use LatestSnapshot denormalized data + multi-layer fallback.
+def _safe_gpu_label(uuid_str, gpu_index=0):
+    """Safe identity label: falls back gracefully if UUID/model missing."""
+    from metrics_app.models import LatestSnapshot
+    try:
+        snap = LatestSnapshot.objects.filter(rig_uuid=uuid_str).first()
+        if snap:
+            # gpu_uuids_json is a JSON array from agent payload (keeps GPU- prefix)
+            uuids = getattr(snap, 'gpu_uuids_json', None) or []
+            idx_uuid = uuids[gpu_index] if gpu_index < len(uuids) else None
+            # model from latest metric (or fallback to 'Unknown')
+            from metrics_app.models import GPUMetric
+            latest_model = GPUMetric.objects.filter(
+                rig_uuid=uuid_str, gpu_index=gpu_index
+            ).order_by('-timestamp').values_list('model', flat=True).first()
+            label_uuid = (str(idx_uuid) or '').replace('GPU-', '').strip()
+            label_model = (str(latest_model) or '').strip() or 'Unknown'
+            return f"GPU-{label_uuid or f'gpu-{gpu_index}'} {label_model}"
+    except Exception:
+        pass
+    return f"GPU {gpu_index}"  # ultimate fallback — never breaks charts

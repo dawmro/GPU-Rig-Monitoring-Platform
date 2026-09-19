@@ -62,3 +62,48 @@ def check_has_active_job_system_checks(app_configs, **kwargs):
         ))
 
     return errors
+
+
+@register('metrics_app')
+def check_gpu_uuid_compaction_defense(app_configs, **kwargs):
+    errors = []
+    from metrics_app.models import GPUMetric
+    try:
+        f = GPUMetric._meta.get_field('gpu_uuid')
+        if not f.blank:
+            errors.append(Error('GPUMetric.gpu_uuid missing blank=True',
+                                hint='Add blank=True for grouping defense',
+                                obj='metrics_app.GPUMetric.gpu_uuid', id='metrics_app.E005'))
+        if f.default != '':
+            errors.append(Error('GPUMetric.gpu_uuid missing default=""',
+                                hint='Default must be empty string',
+                                obj='metrics_app.GPUMetric.gpu_uuid', id='metrics_app.E006'))
+    except Exception as e:
+        errors.append(Error(f'GPUMetric missing gpu_uuid: {e}', id='metrics_app.E007'))
+    try:
+        src = open('gpu_monitor/metrics_app/management/commands/compact_data.py').read()
+        import re
+        block = re.search(r"'table': 'metrics_gpumetric'.*?'static_fields': \[.*?\]", src, re.S)
+        if block and 'gpu_uuid' not in block.group(0):
+            errors.append(Error("compact_data: metrics_gpumetric static_fields missing gpu_uuid",
+                                hint='Preserve identity through compaction',
+                                obj='metrics_app.management.commands.compact_data',
+                                id='metrics_app.E008'))
+    except FileNotFoundError:
+        pass
+    return errors
+
+
+@register('metrics_app')
+def check_chart_query_budget(app_configs, **kwargs):
+    errors = []
+    try:
+        src = open('gpu_monitor/metrics_app/views.py').read()
+        if '_safe_gpu_label' not in src:
+            errors.append(Error('Chart endpoint missing _safe_gpu_label defense',
+                                hint='Add safe identity label helper',
+                                obj='metrics_app.views.ChartDataView', id='metrics_app.E009'))
+    except FileNotFoundError:
+        errors.append(Error('views.py not found', id='metrics_app.E010'))
+    return errors
+

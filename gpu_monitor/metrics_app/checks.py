@@ -92,3 +92,18 @@ def check_gpu_uuid_compaction_defense(app_configs, **kwargs):
     except FileNotFoundError:
         pass
     return errors
+
+
+@register('metrics_app')
+def check_chart_query_budget(app_configs, **kwargs):
+    errors = []
+    try:
+        src = open('gpu_monitor/metrics_app/views.py').read()
+        if '_safe_gpu_label' not in src:
+            errors.append(Error('Chart endpoint missing _safe_gpu_label defense',
+                                hint='Add safe identity label helper',
+                                obj='metrics_app.views.ChartDataView', id='metrics_app.E009'))
+    except FileNotFoundError:
+        errors.append(Error('views.py not found', id='metrics_app.E010'))
+    return errors
+

@@ -778,21 +778,9 @@ def _build_report_context(uuid, uuid_str, range_hours):
         idx = row['gpu_index']
         if idx not in seen:
             seen.add(idx)
-            # Get UUID/model from CURRENT state (LatestSnapshot), not from historical
-            # raw data — avoids showing stale UUID for 7d range when GPU changed.
-            from metrics_app.models import LatestSnapshot
-            latest_snap = LatestSnapshot.objects.filter(rig_uuid=uuid_str).first()
-            # Also try current raw latest (falls back safely)
-            from metrics_app.models import GPUMetric
-            latest_metric = GPUMetric.objects.filter(
-                rig_uuid=uuid_str, gpu_index=idx
-            ).order_by('-timestamp').values('gpu_uuid', 'model').first()
-            # Safe fallback chain (same defense as chart endpoint)
-            snap_uuids = (latest_snap.gpu_uuids_json if latest_snap and latest_snap.gpu_uuids_json else []) or []
-            snap_uuid = snap_uuids[idx] if (snap_uuids and idx < len(snap_uuids)) else None
-            row['gpu_uuid'] = (str(snap_uuid) if snap_uuid else None) or \
-                (str(latest_metric.get('gpu_uuid', '')) if latest_metric else '') or ''
-            # Template uses gpu.gpu_uuid; value already stripped of GPU- prefix by safe chain
+            # Get UUID from raw data for this index (latest)
+            latest_raw = next((r for r in gpu_raw if r['gpu_index'] == idx), None)
+            row['gpu_uuid'] = (latest_raw['gpu_uuid'] if latest_raw else '') or ''
             gpu_devices.append(row)
     gpu_devices.reverse()  # restore index order
 

@@ -307,12 +307,12 @@
 {# Phase 0.4: Extracted JS files. The chart-* files are loaded on every #}
 {# page (cheap when not used), and rig-detail.js is loaded only here. #}
 {# app-base.js is loaded in base.html for everyone. #}
-<script src="{% static 'js/chart-base.js' %}"></script>
-<script src="{% static 'js/chart-colors.js' %}"></script>
-<script src="{% static 'js/chart-loaders.js' %}"></script>
-<script src="{% static 'js/chart-registry.js' %}"></script>
-<script src="{% static 'js/chart-runtime.js' %}"></script>
-<script src="{% static 'js/rig-detail.js' %}"></script>
+<script src="{% static 'js/chart-base.js' %}?v=2"></script>
+<script src="{% static 'js/chart-colors.js' %}?v=2"></script>
+<script src="{% static 'js/chart-loaders.js' %}?v=2"></script>
+<script src="{% static 'js/chart-registry.js' %}?v=2"></script>
+<script src="{% static 'js/chart-runtime.js' %}?v=2"></script>
+<script src="{% static 'js/rig-detail.js' %}?v=2"></script>
 <script>
 // Per-page state used by the chart runtime and rig-detail.js.
 // RigState holds the rig's UUID and the URL of the report endpoint,

@@ -67,7 +67,7 @@ COMPACT_TABLES = [
             'gpu_core_clock_mhz': 'avg',
             'gpu_mem_clock_mhz': 'avg',
         },
-        'static_fields': ['model', 'snapshot_id', 'gpu_uuid'],
+        'static_fields': ['model', 'snapshot_id'],
     },
     {
         'table': 'metrics_storagemetric',
@@ -95,14 +95,6 @@ COMPACT_TABLES = [
             # network_speeds_json. No view ever read them from the time-series.
         },
         'static_fields': ['snapshot_id'],
-    },
-    {
-        'table': 'metrics_rig_status_event',
-        'group_by': ['rig_uuid', 'status'],
-        'agg_fields': {
-            'previous_status': 'last',
-        },
-        'static_fields': [],
     },
     # NOTE: 'metrics_power_reading' was removed in migration 0048.
     # Power time-series lives in MetricSnapshot.cpu_power_w and

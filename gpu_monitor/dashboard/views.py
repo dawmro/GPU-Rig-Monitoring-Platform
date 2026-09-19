@@ -778,16 +778,9 @@ def _build_report_context(uuid, uuid_str, range_hours):
         idx = row['gpu_index']
         if idx not in seen:
             seen.add(idx)
-            # Professional identity: current UUID from LatestSnapshot (not historical raw scan)
-            from metrics_app.models import LatestSnapshot, GPUMetric
-            latest_snap = LatestSnapshot.objects.filter(rig_uuid=uuid_str).first()
-            latest_metric = GPUMetric.objects.filter(
-                rig_uuid=uuid_str, gpu_index=idx
-            ).order_by('-timestamp').values('gpu_uuid', 'model').first()
-            snap_uuids = (latest_snap.gpu_uuids_json if latest_snap and latest_snap.gpu_uuids_json else []) or []
-            snap_uuid = snap_uuids[idx] if (snap_uuids and idx < len(snap_uuids)) else None
-            row['gpu_uuid'] = (str(snap_uuid) if snap_uuid else None) or \
-                (str(latest_metric.get('gpu_uuid', '')) if latest_metric else '') or ''
+            # Get UUID from raw data for this index (latest)
+            latest_raw = next((r for r in gpu_raw if r['gpu_index'] == idx), None)
+            row['gpu_uuid'] = (latest_raw['gpu_uuid'] if latest_raw else '') or ''
             gpu_devices.append(row)
     gpu_devices.reverse()  # restore index order
 

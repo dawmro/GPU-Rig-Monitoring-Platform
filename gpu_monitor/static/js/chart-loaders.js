@@ -197,15 +197,12 @@
     // ---------------------------------------------------------------
     // The only chart in the project with a dual Y-axis. Errors use
     // a different color (red) and a different scale (count, not bytes).
-    function loadChartNetworkCombined(canvasId, uuid, range) {
-        var ctx = document.getElementById(canvasId);
-        if (!ctx) return Promise.resolve();
-
+    // Helper: fetch the three network metric responses.
+    function fetchNetworkData(uuid, range) {
         var ifaceExtra = { multi_iface: 'true' };
         var rxUrl = Base.buildChartUrl(uuid, range, { metric: 'net_rx_bytes_delta', extra: ifaceExtra });
         var txUrl = Base.buildChartUrl(uuid, range, { metric: 'net_tx_bytes_delta', extra: ifaceExtra });
         var errUrl = Base.buildChartUrl(uuid, range, { metric: 'net_rx_errors', extra: ifaceExtra });
-
         return Promise.all([fetch(rxUrl), fetch(txUrl), fetch(errUrl)])
             .then(function (responses) {
                 return Promise.all([
@@ -213,70 +210,80 @@
                     responses[1].json(),
                     responses[2].json(),
                 ]);
-            })
+            });
+    }
+
+    // Helper: build dataset objects from the three network data responses.
+    function buildNetworkDatasets(rxData, txData, errData) {
+        var datasets = [];
+        rxData.datasets.forEach(function (ds) {
+            var color = Colors.NETWORK[0];
+            datasets.push({
+                label: ds.label + ' RX',
+                data: ds.data,
+                borderColor: color.border,
+                backgroundColor: color.bg,
+                borderWidth: Base.STYLE.borderWidth,
+                fill: false,
+                tension: Base.STYLE.tension,
+                pointRadius: Base.STYLE.pointRadius,
+                pointHitRadius: Base.STYLE.pointHitRadius,
+                spanGaps: Base.STYLE.lineSpanGaps,
+                yAxisID: 'y',
+                borderDash: [],
+            });
+        });
+        txData.datasets.forEach(function (ds) {
+            var color = Colors.NETWORK[1];
+            datasets.push({
+                label: ds.label + ' TX',
+                data: ds.data,
+                borderColor: color.border,
+                backgroundColor: color.bg,
+                borderWidth: Base.STYLE.borderWidth,
+                fill: false,
+                tension: Base.STYLE.tension,
+                pointRadius: Base.STYLE.pointRadius,
+                pointHitRadius: Base.STYLE.pointHitRadius,
+                spanGaps: Base.STYLE.lineSpanGaps,
+                yAxisID: 'y',
+                borderDash: [6, 3],
+            });
+        });
+        errData.datasets.forEach(function (ds) {
+            var color = Colors.NETWORK[2];
+            datasets.push({
+                label: ds.label + ' Err',
+                data: ds.data,
+                borderColor: color.border,
+                backgroundColor: color.bg,
+                borderWidth: Base.STYLE.barBorderWidth,
+                fill: false,
+                tension: Base.STYLE.tension,
+                pointRadius: Base.STYLE.pointRadius,
+                pointHitRadius: Base.STYLE.pointHitRadius,
+                spanGaps: Base.STYLE.lineSpanGaps,
+                yAxisID: 'y1',
+                type: 'bar',
+                barThickness: 2,
+                barPercentage: 0.9,
+                categoryPercentage: 0.8,
+            });
+        });
+        return datasets;
+    }
+
+    function loadChartNetworkCombined(canvasId, uuid, range) {
+        var ctx = document.getElementById(canvasId);
+        if (!ctx) return Promise.resolve();
+        return fetchNetworkData(uuid, range)
             .then(function (data) {
                 var rxData = data[0], txData = data[1], errData = data[2];
                 var labels = rxData.labels;
                 Base.safeDestroy(canvasId, window.GRM.ChartRuntime.instances);
-
-                var datasets = [];
-                // RX datasets — solid lines, left axis
-                rxData.datasets.forEach(function (ds) {
-                    var color = Colors.NETWORK[0];
-                    datasets.push({
-                        label: ds.label + ' RX',
-                        data: ds.data,
-                        borderColor: color.border,
-                        backgroundColor: color.bg,
-                        borderWidth: Base.STYLE.borderWidth,
-                        fill: false,
-                        tension: Base.STYLE.tension,
-                        pointRadius: Base.STYLE.pointRadius,
-                        pointHitRadius: Base.STYLE.pointHitRadius,
-                        spanGaps: Base.STYLE.lineSpanGaps,
-                        yAxisID: 'y',
-                        borderDash: [],
-                    });
-                });
-                // TX datasets — dashed lines, left axis
-                txData.datasets.forEach(function (ds) {
-                    var color = Colors.NETWORK[1];
-                    datasets.push({
-                        label: ds.label + ' TX',
-                        data: ds.data,
-                        borderColor: color.border,
-                        backgroundColor: color.bg,
-                        borderWidth: Base.STYLE.borderWidth,
-                        fill: false,
-                        tension: Base.STYLE.tension,
-                        pointRadius: Base.STYLE.pointRadius,
-                        pointHitRadius: Base.STYLE.pointHitRadius,
-                        spanGaps: Base.STYLE.lineSpanGaps,
-                        yAxisID: 'y',
-                        borderDash: [6, 3],
-                    });
-                });
-                // Errors datasets — bars, right axis
-                errData.datasets.forEach(function (ds) {
-                    var color = Colors.NETWORK[2];
-                    datasets.push({
-                        label: ds.label + ' Err',
-                        data: ds.data,
-                        borderColor: color.border,
-                        backgroundColor: color.bg,
-                        borderWidth: Base.STYLE.barBorderWidth,
-                        fill: false,
-                        tension: Base.STYLE.tension,
-                        pointRadius: Base.STYLE.pointRadius,
-                        pointHitRadius: Base.STYLE.pointHitRadius,
-                        spanGaps: Base.STYLE.lineSpanGaps,
-                        yAxisID: 'y1',
-                        type: 'bar',
-                        barThickness: 2,
-                        barPercentage: 0.9,
-                        categoryPercentage: 0.8,
-                    });
-                });
+                var datasets = buildNetworkDatasets(rxData, txData, errData);
+                // Note: dataset labels include ' RX' / ' TX' / ' Err' suffixes
+                // from buildNetworkDatasets; no additional mapping needed here.
 
                 window.GRM.ChartRuntime.instances[canvasId] = new Chart(ctx, {
                     type: 'line',
@@ -386,23 +393,7 @@
                         fontSize: 10,
                         // Truncate long label (e.g. "sda /boot") to
                         // first 16 chars + ellipsis
-                        generateLabels: function (chart) {
-                                var original = Chart.defaults.plugins.legend.labels.generateLabels(chart);
-                                return original.map(function (label) {
-                                    if (!label.text) return label;
-                                    var spaceIdx = label.text.indexOf(' ');
-                                    if (spaceIdx > 0) {
-                                        var keyPart = label.text.substring(0, spaceIdx);
-                                        var extraPart = label.text.substring(spaceIdx + 1);
-                                        if (keyPart.length > 16) {
-                                            label.text = keyPart.substring(0, 16) + '… ' + extraPart;
-                                        }
-                                    } else if (label.text.length > 20) {
-                                        label.text = label.text.substring(0, 20) + '…';
-                                    }
-                                    return label;
-                                });
-                        }
+                        generateLabels: Base.generateLabels({ maxLength: 16 })
                     }),
                     tooltip: Base.tooltipMulti(function (y, label) {
                         return label + ': ' + (y !== null ? y.toFixed(1) + unit : '—');
@@ -532,23 +523,7 @@
                         // Label format: "GPU-a322cff7-...-b676c04a38aa RTX 3060"
                         // Result:      "GPU-a322cff… RTX 3060"
                         // (truncate the UUID part to 12 chars)
-                        generateLabels: function (chart) {
-                            var original = Chart.defaults.plugins.legend.labels.generateLabels(chart);
-                            return original.map(function (label) {
-                                if (!label.text) return label;
-                                var spaceIdx = label.text.indexOf(' ');
-                                if (spaceIdx > 0) {
-                                    var uuidPart = label.text.substring(0, spaceIdx);
-                                    var modelPart = label.text.substring(spaceIdx + 1);
-                                    if (uuidPart.length > 12) {
-                                        label.text = uuidPart.substring(0, 12) + '… ' + modelPart;
-                                    }
-                                } else if (label.text.length > 12) {
-                                    label.text = label.text.substring(0, 12) + '…';
-                                }
-                                return label;
-                            });
-                        }
+                        generateLabels: Base.generateLabels({ uuidTruncLength: 12 })
                     }),
                     tooltip: {
                         mode: 'index',

@@ -50,11 +50,9 @@
     }
 
     // Update clocks to "Refreshed @ ..." on any HTMX swap.
-    // This tells the user when the page was last auto-updated.
+    // Simplified: uses direct selector instead of fragile evt.detail parsing.
     function updateClocksOnHtmxSwap() {
-        document.body.addEventListener('htmx:afterSwap', function (evt) {
-            var targetId = evt.detail && evt.detail.target && evt.detail.target.id;
-            if (!targetId) return;
+        document.body.addEventListener('htmx:afterSwap', function () {
             var text = 'Refreshed @ ' + formatTime(new Date());
             CLOCK_IDS.forEach(function (id) {
                 var el = document.getElementById(id);

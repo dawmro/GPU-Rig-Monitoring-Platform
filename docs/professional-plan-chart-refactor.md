@@ -75,3 +75,6 @@ Branch: `refactor/chart-routes-js` (from pulled `main`). Each feature = one self
 - If any feature fails, revert that single commit (`git revert <sha>`); others unaffected.
 - Push to branch: `git push origin refactor/chart-routes-js` (not `main`).
 - User merges on GitHub after reviewing each feature.
+
+- `tests/test_compaction_bool_max_defense.py`: bool max INTEGER cast defense (daily_maintenance reference).
+- Skill reference (`gpu-rig-monitoring`): `ExpressionWrapper` + `Cast` patterns for bool aggregation (W001 / W0052 defense).

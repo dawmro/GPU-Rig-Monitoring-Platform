@@ -28,6 +28,8 @@ from datetime import timedelta
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from django.db import connection
+from django.db.models import Avg, Sum, F, Max, IntegerField, FloatField
+from django.db.models.functions import Cast, ExpressionWrapper
 
 logger = logging.getLogger(__name__)
 
@@ -203,13 +205,17 @@ class Command(BaseCommand):
         bucket_expr = self._bucket_expression(bucket_minutes)
         select_parts = [f"{bucket_expr} AS bucket_ts"] + list(config['group_by'])
         for f, agg in agg_fields.items():
-            select_parts.append(
-                f"AVG({f}) AS {f}" if agg == 'avg' else
-                f"SUM({f}) AS {f}" if agg == 'sum' else
-                f"MAX({f}) AS {f}" if agg == 'max' else
-                f"MIN({f}) AS {f}" if agg == 'min' else
-                f"(ARRAY_AGG({f} ORDER BY timestamp DESC))[1] AS {f}"
-            )
+            # Professional defense: bool fields need Cast to IntegerField before MAX.
+            if agg == 'max' and f == 'has_active_job':
+                select_parts.append(f"MAX(CAST({f} AS INTEGER)) AS {f}")
+            else:
+                select_parts.append(
+                    f"AVG({f}) AS {f}" if agg == 'avg' else
+                    f"SUM({f}) AS {f}" if agg == 'sum' else
+                    f"MAX({f}) AS {f}" if agg == 'max' else
+                    f"MIN({f}) AS {f}" if agg == 'min' else
+                    f"(ARRAY_AGG({f} ORDER BY timestamp DESC))[1] AS {f}"
+                )
         for f in static_fields:
             select_parts.append(f"(ARRAY_AGG({f} ORDER BY timestamp DESC))[1] AS {f}")
         select_clause = ',\n            '.join(select_parts)

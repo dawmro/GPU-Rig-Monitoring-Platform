@@ -1,6 +1,6 @@
 # Plan: Fix Charts Broken by PR #186 (gpu-uuid-timeseries) — Revert to PR #185 Simple Charts
 
-Status: **PLAN — NOT IMPLEMENTED — AWAITING USER APPROVAL**
+Status: **IMPLEMENTED — pushed to fix/revert-chart-uuid-model (d32fb1a)**
 Branch rule (per memory/workflow): NEW branch, never push to main.
 
 ---

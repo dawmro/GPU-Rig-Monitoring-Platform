@@ -76,27 +76,21 @@
         ];
     }
 
-    // Helper: load a chart after a delay (Promise-based).
-    function delayedLoad(fn, delay) {
-        return new Promise(function (resolve) {
-            setTimeout(function () { fn().then(resolve); }, delay);
-        });
-    }
-
     // Main entry point: load all charts with 100ms staggering.
     // Without staggering, all 22 chart requests would hit the server
     // simultaneously, creating a burst of DB aggregation queries.
     // With 100ms delay between each, requests are spread over ~2.2s.
     function loadCharts(uuid) {
         var loaders = buildLoaders(uuid, state.rangeHours);
-        // Run sequentially with first chart immediate, then staggered
-        var p = Promise.resolve();
+        // Simplified staggering: first immediate, rest with 100ms delay (same spread, cleaner)
         loaders.forEach(function (loader, i) {
-            p = p.then(function () {
-                return i === 0 ? loader() : delayedLoad(loader, 100);
-            });
+            setTimeout(function () {
+                loader().catch(function (e) {
+                    console.error('Chart loader failed (index ' + i + '):', e);
+                });
+            }, i === 0 ? 0 : i * 100);
         });
-        return p;
+        state.chartsLoaded = true;
     }
 
     // Change the range and reload. Updates button styles too.

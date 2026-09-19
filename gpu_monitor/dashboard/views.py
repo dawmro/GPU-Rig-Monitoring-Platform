@@ -792,8 +792,7 @@ def _build_report_context(uuid, uuid_str, range_hours):
             snap_uuid = snap_uuids[idx] if (snap_uuids and idx < len(snap_uuids)) else None
             row['gpu_uuid'] = (str(snap_uuid) if snap_uuid else None) or \
                 (str(latest_metric.get('gpu_uuid', '')) if latest_metric else '') or ''
-            # Model from latest metric (most recent actual measurement)
-            row['gpu_uuid_display'] = (str(snap_uuid) if snap_uuid else '').replace('GPU-', '')
+            # Template uses gpu.gpu_uuid; value already stripped of GPU- prefix by safe chain
             gpu_devices.append(row)
     gpu_devices.reverse()  # restore index order
 

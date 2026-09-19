@@ -91,6 +91,21 @@ def check_gpu_uuid_compaction_defense(app_configs, **kwargs):
                                 id='metrics_app.E008'))
     except FileNotFoundError:
         pass
+    # Layer 4 (bool aggregation defense): has_active_job must use INTEGER cast, not raw MAX(bool)
+    try:
+        src = open('gpu_monitor/metrics_app/management/commands/compact_data.py').read()
+        if "'has_active_job': 'max'" in src:
+            # Verify the SQL emission uses CAST(... AS INTEGER) for bool max
+            if 'CAST(' not in src or 'AS INTEGER' not in src:
+                # Check more precisely: the SQL generation must emit CAST for has_active_job max
+                # The defensive code adds a special case; verify it's present in generation logic
+                if 'if agg == \'max\' and f == \'has_active_job\':' not in src:
+                    errors.append(Error("compact_data: bool max missing INTEGER cast defense",
+                                        hint='Add Cast(has_active_job, IntegerField()) for bool aggregation',
+                                        obj='metrics_app.management.commands.compact_data',
+                                        id='metrics_app.E009'))
+    except FileNotFoundError:
+        errors.append(Error('compact_data.py not found', id='metrics_app.E010'))
     return errors
 
 

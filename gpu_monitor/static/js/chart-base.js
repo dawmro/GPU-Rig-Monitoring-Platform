@@ -289,6 +289,7 @@
         noDataMessage: noDataMessage,
         safeDestroy: safeDestroy,
         baseOptions: baseOptions,
+        generateLabels: generateLabels,
         lineDataset: lineDataset,
     };
 })();

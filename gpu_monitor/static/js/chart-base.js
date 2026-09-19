@@ -136,6 +136,28 @@
         };
     }
 
+    // Shared legend label generator (DRY replacement for 6 inline copies).
+    function generateLabels(config) {
+        config = config || {};
+        return function (chart) {
+            var original = Chart.defaults.plugins.legend.labels.generateLabels(chart);
+            return original.map(function (label) {
+                if (!label.text) return label;
+                var spaceIdx = label.text.indexOf(' ');
+                if (spaceIdx > 0) {
+                    var uuidPart = label.text.substring(0, spaceIdx);
+                    var modelPart = label.text.substring(spaceIdx + 1);
+                    if (uuidPart.length > (config.uuidTruncLength || 12)) {
+                        label.text = uuidPart.substring(0, config.uuidTruncLength || 12) + '… ' + modelPart;
+                    }
+                } else if (label.text.length > (config.maxLength || 12)) {
+                    label.text = label.text.substring(0, config.maxLength || 12) + '…';
+                }
+                return label;
+            });
+        };
+    }
+
     // Build a chart-data API URL for the given uuid/range. Optional
     // `params.metric` adds "?metric=..."; optional `params.extra` adds
     // arbitrary key=value pairs. Centralized so the bucketMinutes and

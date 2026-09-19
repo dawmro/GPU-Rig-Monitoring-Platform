@@ -386,23 +386,7 @@
                         fontSize: 10,
                         // Truncate long label (e.g. "sda /boot") to
                         // first 16 chars + ellipsis
-                        generateLabels: function (chart) {
-                                var original = Chart.defaults.plugins.legend.labels.generateLabels(chart);
-                                return original.map(function (label) {
-                                    if (!label.text) return label;
-                                    var spaceIdx = label.text.indexOf(' ');
-                                    if (spaceIdx > 0) {
-                                        var keyPart = label.text.substring(0, spaceIdx);
-                                        var extraPart = label.text.substring(spaceIdx + 1);
-                                        if (keyPart.length > 16) {
-                                            label.text = keyPart.substring(0, 16) + '… ' + extraPart;
-                                        }
-                                    } else if (label.text.length > 20) {
-                                        label.text = label.text.substring(0, 20) + '…';
-                                    }
-                                    return label;
-                                });
-                        }
+                        generateLabels: Base.generateLabels({ maxLength: 16 })
                     }),
                     tooltip: Base.tooltipMulti(function (y, label) {
                         return label + ': ' + (y !== null ? y.toFixed(1) + unit : '—');
@@ -532,23 +516,7 @@
                         // Label format: "GPU-a322cff7-...-b676c04a38aa RTX 3060"
                         // Result:      "GPU-a322cff… RTX 3060"
                         // (truncate the UUID part to 12 chars)
-                        generateLabels: function (chart) {
-                            var original = Chart.defaults.plugins.legend.labels.generateLabels(chart);
-                            return original.map(function (label) {
-                                if (!label.text) return label;
-                                var spaceIdx = label.text.indexOf(' ');
-                                if (spaceIdx > 0) {
-                                    var uuidPart = label.text.substring(0, spaceIdx);
-                                    var modelPart = label.text.substring(spaceIdx + 1);
-                                    if (uuidPart.length > 12) {
-                                        label.text = uuidPart.substring(0, 12) + '… ' + modelPart;
-                                    }
-                                } else if (label.text.length > 12) {
-                                    label.text = label.text.substring(0, 12) + '…';
-                                }
-                                return label;
-                            });
-                        }
+                        generateLabels: Base.generateLabels({ uuidTruncLength: 12 })
                     }),
                     tooltip: {
                         mode: 'index',

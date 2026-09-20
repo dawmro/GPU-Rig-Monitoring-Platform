@@ -44,3 +44,11 @@ After deploy + `systemctl restart nginx`: browser hard reload (`Ctrl+F5`) + CDN 
 ## Commit
 
 Self-contained (`v=2` only in templates; no production logic changed). Independent revert (`git revert <sha>`). Branch: `feat/cdn-cache-bypass-v2`.
+
+---
+
+## Timestamp Approach (`?ts={% timezone.now|date:'U' %}`) — NOT IMPLEMENTED
+
+More robust than `v=2`: URL changes every second → guaranteed CDN miss.
+NOT professional (breaks CDN caching, increases origin load, untestable).
+User confirmed: stick with `v=2`; document only. Not applied to code.

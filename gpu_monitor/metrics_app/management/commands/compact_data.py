@@ -28,8 +28,8 @@ from datetime import timedelta
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from django.db import connection
-from django.db.models import Avg, Sum, F, Max, IntegerField, FloatField
-from django.db.models.functions import Cast, ExpressionWrapper
+from django.db.models import Avg, Sum, F, Max, IntegerField, FloatField, ExpressionWrapper
+from django.db.models.functions import Cast
 
 logger = logging.getLogger(__name__)
 

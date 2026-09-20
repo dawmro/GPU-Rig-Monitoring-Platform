@@ -57,3 +57,5 @@ Each file moved as separate commit (`feat(archive): move <filename>`). Order: ea
 Before moving any file: verify it is NOT referenced by active code, skills, or docs (e.g., `DEPLOY.md` referenced by `DEPLOYMENT_GUIDE.md` — may need to merge or keep).
 
 After archive: verify `docs/archive/` exists and moved files preserved (no deletion — archive = preserve, not delete).
+
+- `professional-prevention.md` (11,499 bytes): completed defense reference doc. May archive when current fixes complete and doc no longer actively referenced.

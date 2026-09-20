@@ -223,7 +223,14 @@ class Command(BaseCommand):
         # Build insert columns
         insert_fields = ['timestamp'] + list(agg_fields.keys()) + static_fields + list(config['group_by'])
         insert_cols = ', '.join(insert_fields)
-        insert_vals = ', '.join(['bucket_ts' if f == 'timestamp' else f for f in insert_fields])
+        # Build insert expressions — bool fields must be cast back to boolean for PostgreSQL
+        def insert_expr(col):
+            if col == 'timestamp':
+                return 'bucket_ts'
+            if col == 'has_active_job':
+                return f"CAST({col} AS BOOLEAN)"
+            return col
+        insert_vals = ', '.join([insert_expr(f) for f in insert_fields])
 
         # Get total rows and oldest timestamp in window
         with connection.cursor() as c:

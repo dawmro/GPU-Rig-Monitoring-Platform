@@ -61,6 +61,11 @@
 - **Agent isolation** — API keys scoped to user; no cross-user rig access
 - **API Key Management** — Create, revoke, reactivate, delete, transfer between users (admin)
 
+### 📈 Reports & Identity Tracking
+- **Report Card** (`htmx_report`) — 24h/7d/30d GPU metrics with identity change tracking (current UUID from `LatestSnapshot.gpu_uuids_json`, not historical raw scan). Detects GPU replacement per `gpu_index`.
+- **GPU Identity Changes** — Audit subsection: before/after UUID/model transition cards (`BEFORE`/`AFTER` grid), full UUID comparison expandable (`<details>`), change timestamp with `timesince`, change count badge.
+- **Compaction Defense** (`W001/W004/0052`): `gpumetric.gpu_uuid` preserved through tiers (`static_fields`); bool max uses `CAST(... AS INTEGER)`; grouping test verifies identity preservation.
+
 ---
 
 ## 🏗️ Architecture
@@ -398,6 +403,20 @@ bash scripts/sync_to_opt.sh --no-migrate  # Fast: skip migrations
 | Deleted | 31+ days | — | 0 | 100% |
 
 **Result:** ~94% storage reduction (487 GB → 28 GB for 1000 rigs/month)
+
+---
+
+## 📊 Chart Types & Reports
+
+|| Type | Loaders / Endpoint | Key Feature / Defense |
+||---|---|---|
+|| **GPU Charts** (8 multi-series) | `loadChartMultiGpu()` (`chart-loaders.js`) | Group by `gpu_index` only; identity label via `_safe_gpu_label` (fallback); legend truncation (`generateLabels` to 12 chars). |
+|| **CPU Load** | `loadChartLoadAvg()` | 3-series (1m/5m/15m); raw data; no compaction. |
+|| **Memory / Swap** | `loadChartMemSwap()` | Filled area (used); free/swap lines; multi-dataset tooltip. |
+|| **Network Combined** | `loadChartNetworkCombined()` (composable: `fetchNetworkData()` + `buildNetworkDatasets()`) | Dual axis (`y`: bytes; `y1`: errors); errors as bars (`y1` right). |
+|| **Disk / IOPS / Util** | `loadChartMultiKey()` / `loadChartMultiKeyDual()` | Multi-device grouping; Windows `utilization_pct` null fallback to `usage_pct`. |
+|| **Job Status** | `loadChart()` (`SNAPSHOT_METRICS`) | Bool max uses `CAST(... AS INTEGER)` (`compact_data` defense `W001`); label `Active %`. |
+|| **Report Card** | `htmx_report` (`_report_table.html`) | Per-GPU identity from `LatestSnapshot.gpu_uuids_json` (current, not historical); identity change cards (before/after UUID/model); HTMX `.htmx-indicator` present. |
 
 ---
 

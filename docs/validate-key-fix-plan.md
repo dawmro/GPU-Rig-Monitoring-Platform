@@ -501,9 +501,116 @@ python manage.py migrate
 2. **Redis throttle** — replaces LocMemCache for fleet-wide rate limiting
 3. **Async Argon2 verify** — offload to thread pool for high concurrency
 4. **Key rotation endpoint** — issue new key, revoke old, seamless migration
-5. **Throttle last_used_at updates** — only update if >5 min old (see document §9)
+5. **Throttle last_used_at updates** — only update if >5 min old:
+   ```python
+   if (
+       key_obj.last_used_at is None
+       or key_obj.last_used_at < timezone.now() - timedelta(minutes=5)
+   ):
+       key_obj.last_used_at = timezone.now()
+       key_obj.save(update_fields=["last_used_at"])
+   ```
 
 These are **optional** — the nullable prefix index solves the design flaw completely.
+
+---
+
+## Design Decisions (from external review)
+
+The following decisions shaped this implementation:
+
+| # | Decision | Rationale |
+|---|----------|-----------|
+| 1 | **Do not modify existing API-key strings** | No credential rotation; clients unchanged |
+| 2 | **Keep Argon2** | Don't change crypto + performance simultaneously |
+| 3 | **Argon2 cannot be used for lookup** | Salted hashes; plaintext unrecoverable |
+| 4 | **Store only a prefix** | Not plaintext; prefix = candidate selection only |
+| 5 | **Argon2 = authentication, prefix = lookup** | Clean separation of responsibilities |
+| 6 | **Nullable prefix = migration state** | `NULL`=legacy, non-NULL=migrated; single source of truth |
+| 7 | **Auto-migrate on successful auth** | Lazy migration without client changes |
+| 8 | **Migrate ONLY after Argon2 success** | Prevents attacker populating metadata |
+| 9 | **Keep legacy fallback** | `key_prefix IS NULL` for backward compatibility |
+| 10 | **Exclude migrated from legacy scan** | `key_prefix__isnull=True` shrinks search space |
+| 11 | **Generate prefix for new keys** | Fast path from first request |
+| 12 | **Use 16-char prefix** | 64-bit effective space; collision headroom |
+| 13 | **Prefix collisions acceptable** | Argon2 resolves; affects performance not correctness |
+| 14 | **One PasswordHasher per request** | Avoids unnecessary object creation |
+| 15 | **Catch only VerifyMismatchError** | No broad Exception swallowing |
+
+---
+
+## Architecture Flow
+
+```
+                     API REQUEST
+                          │
+                          ▼
+                    plaintext key
+                          │
+                          ▼
+                 calculate 16-char prefix
+                          │
+                          ▼
+              ┌─────────────────────────┐
+              │ indexed key_prefix      │
+              │ + is_active             │
+              └────────────┬────────────┘
+                           │
+                    candidate found?
+                     /             \
+                   YES              NO
+                    │                │
+                    ▼                ▼
+             Argon2 verify      legacy lookup
+                    │                │
+                 success             │
+                    │             Argon2 verify
+                    │                │
+                    │             success
+                    │                │
+                    │          save key_prefix
+                    │                │
+                    └───────┬────────┘
+                            ▼
+                       authenticated
+```
+
+**Critical property:** The credential itself never changes.
+
+| Stage | Behavior |
+|-------|----------|
+| Before deployment | Works (legacy path) |
+| First use | Works + prefix added |
+| Subsequent use | Works via fast lookup |
+| Client sees | **Absolutely no change** |
+
+---
+
+## Limitations
+
+> There is no way to make the very first authentication of an unknown legacy key O(1) using only the data you currently have.
+
+You have Argon2 hashes A, B, C... and receive a plaintext key. There is no searchable relationship between the plaintext and those Argon2 hashes. Therefore the first successful authentication of an unmigrated key necessarily requires the legacy search.
+
+After that:
+```
+legacy → successful verification → prefix stored → fast authentication forever
+```
+unless the key is revoked/deleted.
+
+This is the unavoidable trade-off that preserves every existing credential.
+
+---
+
+## Monitoring Migration Progress
+
+```python
+# Legacy count (should decrease over time)
+ApiKey.objects.filter(key_prefix__isnull=True).count()
+
+# Migrated count (should increase)
+ApiKey.objects.filter(key_prefix__isnull=False).count()
+```
 
 ---
 

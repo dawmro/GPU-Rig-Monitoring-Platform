@@ -221,6 +221,9 @@ DB_PASSWORD=local_dev_password
 DB_HOST=127.0.0.1
 DB_PORT=5432
 
+# API Key Authentication (generate with: python -c "import secrets; print(secrets.token_hex(32))")
+API_KEY_LOOKUP_SECRET=your-64-char-hex-secret-here
+
 # Email configuration (optional — for password recovery)
 # Leave EMAIL_HOST empty for development (emails printed to console)
 # For production with Gmail SMTP, uncomment and fill in:
@@ -247,6 +250,12 @@ chmod 600 /opt/gpu_monitor/.env
 > python3 -c "import secrets; print(secrets.token_urlsafe(50))"
 > ```
 > Then update `DJANGO_SECRET_KEY` in `.env`.
+
+> **Generate API_KEY_LOOKUP_SECRET:**
+> ```bash
+> python3 -c "import secrets; print(secrets.token_hex(32))"
+> ```
+> Then update `API_KEY_LOOKUP_SECRET` in `.env`.
 
 > **Note:** `DJANGO_ALLOWED_HOSTS=*` accepts requests from any IP address. This is
 > suitable for local testing but should be set to your actual domain in production.

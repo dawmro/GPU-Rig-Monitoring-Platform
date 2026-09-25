@@ -107,14 +107,10 @@ def create_api_key(request):
             messages.error(request, 'Key name is required')
             return redirect('accounts:api-keys')
 
-        plaintext = secrets.token_hex(32)
-        key_hash = ApiKey.hash_key(plaintext)
-
-        api_key = ApiKey.objects.create(
+        api_key, plaintext = ApiKey.create_key(
             user=request.user,
             name=name,
             base_name=name,
-            key_hash=key_hash,
         )
 
         log_audit_event(request, 'apikey.created', 'ApiKey', api_key.id,

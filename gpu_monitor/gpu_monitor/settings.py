@@ -4,6 +4,7 @@ Django settings for gpu_monitor project.
 
 import os
 from pathlib import Path
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -131,6 +132,13 @@ REST_FRAMEWORK = {
         'chart_data': '120/min',
     },
 }
+
+# ── API Key Authentication ──────────────────────────────────────────────────────
+# Generate once: python -c "import secrets; print(secrets.token_hex(32))"
+# Store in environment/secrets manager — NOT in code
+API_KEY_LOOKUP_SECRET = os.environ.get("API_KEY_LOOKUP_SECRET")
+if not API_KEY_LOOKUP_SECRET:
+    raise ImproperlyConfigured("API_KEY_LOOKUP_SECRET must be set in environment")
 
 # Security settings controlled from .env
 # ALLOWED_HOSTS uses hostnames/IPs only

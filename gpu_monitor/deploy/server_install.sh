@@ -126,8 +126,10 @@ fi
 # Why these formats:
 # - token_hex(24) gives a long random database password with shell-safe characters
 # - token_urlsafe(50) gives a strong Django secret key suitable for signing
+# - token_hex(32) gives a 64-char secret for API key HMAC lookup
 DB_PASS="${EXISTING_DB_PASS:-$(python3 -c "import secrets; print(secrets.token_hex(24))")}"
 DJANGO_SECRET="${EXISTING_DJANGO_SECRET:-$(python3 -c "import secrets; print(secrets.token_urlsafe(50))")}"
+API_KEY_LOOKUP_SECRET="${EXISTING_API_KEY_LOOKUP_SECRET:-$(python3 -c "import secrets; print(secrets.token_hex(32))")}"
 
 # ── Database setup ────────────────────────────────────────────────────────
 # Create or update PostgreSQL role/database in an idempotent way.
@@ -261,6 +263,7 @@ echo "==> Writing application .env..."
 cat > "$APP_DIR/.env" << ENVEOF
 DJANGO_SECRET_KEY=$DJANGO_SECRET
 DJANGO_DEBUG=False
+API_KEY_LOOKUP_SECRET=$API_KEY_LOOKUP_SECRET
 
 # Django host validation: hostnames/IPs only, comma-separated
 DJANGO_ALLOWED_HOSTS=$DJANGO_ALLOWED_HOSTS_VALUE

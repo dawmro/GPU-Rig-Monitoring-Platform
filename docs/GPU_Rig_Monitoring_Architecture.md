@@ -405,9 +405,79 @@ debug_mode: false         # Verbose logging
 
 | Context | Mechanism |
 |---------|-----------|
-| Agent ingestion | `X-API-Key` header → `APIKeyAuthentication` (Argon2id hash comparison) |
+| Agent ingestion | `X-API-Key` header → `APIKeyAuthentication` (HMAC-SHA256 lookup + Argon2id verification) |
 | Dashboard | Django session cookie (Secure, HttpOnly, SameSite=Lax) |
 | API key creation | Session auth + `login_required` |
+
+### 4.2b API Key Authentication — HMAC + Argon2 Design
+
+**Core principle:** Separate **lookup** from **verification**.
+
+```
+plaintext API key
+       │
+       ├── HMAC-SHA256(API_KEY_LOOKUP_SECRET) → key_lookup (fast DB lookup)
+       │
+       └── Argon2 → key_hash (slow verification)
+```
+
+| Component | Algorithm | Purpose | Stored in DB |
+|-----------|-----------|---------|--------------|
+| `key_lookup` | HMAC-SHA256(secret, plaintext) | **Fast DB lookup** — indexed, finds candidate row in O(1) | `key_lookup` (64-char hex, indexed) |
+| `key_hash` | Argon2id (m=65536, t=3, p=4) | **Cryptographic verification** — proves key possession | `key_hash` (Argon2 hash) |
+
+**Security properties:**
+- `key_lookup` is opaque — database dump alone cannot reproduce lookup values without `API_KEY_LOOKUP_SECRET`
+- Zero entropy of API key exposed in `key_lookup` column
+- `key_hash` remains Argon2id — actual authentication still requires Argon2 verification
+- Clear naming: `get_key_lookup()` = fast lookup, `hash_key()` = cryptographic verifier
+
+**Migration path for existing keys:**
+1. Add nullable `key_lookup` field with index
+2. Existing rows: `key_lookup=NULL` (legacy)
+3. New keys: `key_lookup` populated immediately via `create_key()`
+4. Legacy keys: `key_lookup` populated on first successful auth (after Argon2 success)
+5. No credential rotation — agents unchanged
+
+**Authentication flow:**
+```
+plaintext → HMAC-SHA256(secret) → key_lookup
+                │
+                ▼
+        indexed DB lookup (O(1))
+                │
+                ├── found → Argon2 verify → success
+                │
+                └── not found → legacy fallback (key_lookup IS NULL)
+                                    │
+                                    ▼
+                              scan legacy keys
+                                    │
+                                    ▼
+                              Argon2 verify → success → store key_lookup
+```
+
+**Invalid key behavior (post-migration):**
+- HMAC lookup misses → legacy fallback finds no legacy keys → immediate rejection
+- **Zero Argon2 operations** for invalid keys after full migration
+
+### 4.2c Configuration
+
+Add to `.env`:
+```bash
+# Generate once: python -c "import secrets; print(secrets.token_hex(32))"
+API_KEY_LOOKUP_SECRET=your-64-char-hex-secret-here
+```
+
+Add to `settings.py`:
+```python
+# API Key Authentication
+API_KEY_LOOKUP_SECRET = os.environ.get("API_KEY_LOOKUP_SECRET")
+if not API_KEY_LOOKUP_SECRET:
+    raise ImproperlyConfigured("API_KEY_LOOKUP_SECRET must be set in environment")
+```
+
+---
 
 ### 4.3 Ingestion Pipeline
 
@@ -702,7 +772,7 @@ Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the age
 | Table | App | Purpose |
 |-------|-----|---------|
 | `accounts_user` | accounts | Custom user model (email-based) |
-| `accounts_apikey` | accounts | API keys for agent ingestion (Argon2id hashed). Fields: name, base_name (clean original name for transfer naming), key_hash, is_active, created_at, last_used_at, revoked_at, transfer_count |
+| `accounts_apikey` | accounts | API keys for agent ingestion. Fields: name, base_name (clean original name for transfer naming), key_hash (Argon2id), key_lookup (HMAC-SHA256, indexed, nullable), is_active, created_at, last_used_at, revoked_at, transfer_count |
 | `rigs_rig` | rigs | Rig inventory (uuid PK, owner FK, status, last_seen, name, latest_errors_json, error_history_json, enrolled_by_api_key FK to accounts_apikey) |
 || `rigs_rigtag` | rigs | Tags (name, color) |
 || `rigs_rig_tags` | rigs | M2M through table |

@@ -279,6 +279,9 @@ DB_PASSWORD=your-random-password-here
 DB_HOST=127.0.0.1
 DB_PORT=5432
 
+# API Key Authentication (generate with: python -c "import secrets; print(secrets.token_hex(32))")
+API_KEY_LOOKUP_SECRET=your-64-char-hex-secret-here
+
 # Optional: uncomment for Gmail SMTP password recovery
 # See Architecture doc §7.5 for setup instructions
 # EMAIL_HOST=smtp.gmail.com

@@ -354,6 +354,9 @@ class ApiKey(models.Model):
         
         Uses iterator(chunk_size=100) to process legacy keys in chunks,
         avoiding loading all into memory at once.
+        
+        Handles race condition: if concurrent request migrates the same key,
+        fall back to fast path lookup.
         """
         candidates = (
             cls.objects
@@ -372,7 +375,9 @@ class ApiKey(models.Model):
             key_obj.save(update_fields=["key_lookup", "last_used_at"])
             return key_obj
 
-        return None
+        # Race condition fallback: key may have been migrated by concurrent request
+        # Fall back to fast path lookup
+        return cls._validate_using_lookup(plaintext, key_lookup, password_hasher)
 
     # ================================================================
     # PUBLIC VALIDATION API

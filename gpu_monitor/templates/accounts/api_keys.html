@@ -32,6 +32,9 @@
                         <span class="text-xs text-gray-400">{{ key.rig_count }} rig{{ key.rig_count|pluralize }}</span>
                     </div>
                     <div class="text-xs text-gray-400">Created: {{ key.created_at|date:"Y-m-d H:i" }}{% if key.revoked_at %} · Revoked: {{ key.revoked_at|date:"Y-m-d H:i" }}{% endif %}</div>
+                    <div class="text-xs text-gray-400 font-mono">ID: {{ key.id }}</div>
+                    <div class="text-xs text-gray-400">Base name: {{ key.base_name|default:"—" }}</div>
+                    <div class="text-xs text-gray-400">Last used: {% if key.last_used_at %}{{ key.last_used_at|date:"Y-m-d H:i" }}{% else %}Never{% endif %}</div>
                     {% if key.rig_count > 1 %}
                     <div class="mt-2 flex items-center gap-1.5 text-xs text-yellow-500">
                         <span>⚠️</span>

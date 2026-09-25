@@ -361,8 +361,6 @@ def _fetch_rig_metrics(uuid, rig=None):
                 pass
             else:
                 cache.set(cache_key, snapshot, 50)
-
-    # Delegate to per-device builders (Phase 2.4)
     gpu_metrics = _build_gpu_metrics(snapshot)
     storage_metrics = _build_storage_metrics(snapshot)
     network_metrics = _build_network_metrics(snapshot)

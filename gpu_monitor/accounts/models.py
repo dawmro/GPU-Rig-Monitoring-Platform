@@ -65,6 +65,9 @@ class ApiKey(models.Model):
     ARGON2_TIME_COST = 3
     ARGON2_PARALLELISM = 4
 
+    # Class-level cached hasher (singleton pattern)
+    _password_hasher = None
+
     # ================================================================
     # Identity
     # ================================================================
@@ -188,12 +191,16 @@ class ApiKey(models.Model):
 
         It is used for cryptographic verification after the
         key_lookup has already identified the candidate row.
+
+        Uses singleton pattern to avoid allocating 64 MB per request.
         """
-        return PasswordHasher(
-            memory_cost=cls.ARGON2_MEMORY_COST,
-            time_cost=cls.ARGON2_TIME_COST,
-            parallelism=cls.ARGON2_PARALLELISM,
-        )
+        if cls._password_hasher is None:
+            cls._password_hasher = PasswordHasher(
+                memory_cost=cls.ARGON2_MEMORY_COST,
+                time_cost=cls.ARGON2_TIME_COST,
+                parallelism=cls.ARGON2_PARALLELISM,
+            )
+        return cls._password_hasher
 
     @classmethod
     def hash_key(cls, plaintext: str) -> str:
@@ -344,11 +351,18 @@ class ApiKey(models.Model):
 
         Therefore an attacker cannot populate key_lookup with a
         value for a key they do not actually possess.
+        
+        Uses iterator(chunk_size=100) to process legacy keys in chunks,
+        avoiding loading all into memory at once.
+        
+        Handles race condition: if concurrent request migrates the same key,
+        fall back to fast path lookup.
         """
         candidates = (
             cls.objects
             .select_related("user")
             .filter(is_active=True, key_lookup__isnull=True)
+            .iterator(chunk_size=100)
         )
 
         for key_obj in candidates:
@@ -361,7 +375,9 @@ class ApiKey(models.Model):
             key_obj.save(update_fields=["key_lookup", "last_used_at"])
             return key_obj
 
-        return None
+        # Race condition fallback: key may have been migrated by concurrent request
+        # Fall back to fast path lookup
+        return cls._validate_using_lookup(plaintext, key_lookup, password_hasher)
 
     # ================================================================
     # PUBLIC VALIDATION API

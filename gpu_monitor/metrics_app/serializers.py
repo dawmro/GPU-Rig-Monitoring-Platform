@@ -585,7 +585,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
             try:
                 cache.incr(f'chart_v_{rig_uuid}')
             except ValueError:
-                cache.set(f'chart_v_{rig_uuid}', 1, timeout=None)
+                cache.set(f'chart_v_{rig_uuid}', 1, timeout=3600)  # 1 hour TTL
             # Track rig status transitions
             if rig:
                 previous_status = rig.status

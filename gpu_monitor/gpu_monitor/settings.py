@@ -133,6 +133,19 @@ REST_FRAMEWORK = {
     },
 }
 
+# ── Cache Configuration ───────────────────────────────────────────────────────
+# LocMemCache with limits to prevent unbounded memory growth
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'gpu-monitor-cache',
+        'OPTIONS': {
+            'MAX_ENTRIES': 10000,
+            'CULL_FREQUENCY': 3,
+        }
+    }
+}
+
 # ── API Key Authentication ──────────────────────────────────────────────────────
 # Generate once: python -c "import secrets; print(secrets.token_hex(32))"
 # Store in environment/secrets manager — NOT in code

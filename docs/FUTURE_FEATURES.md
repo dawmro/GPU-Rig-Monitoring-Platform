@@ -229,7 +229,7 @@ Both `agent/check_update.py` and `agent_windows/check_update.py` exist. They:
 ```python
 class AgentVersion(models.Model):
     platform = models.CharField(max_length=10)  # 'linux' or 'windows'
-    version = models.CharField(max_length=20)  # '1.5.15' or '1.6.15-win'
+    version = models.CharField(max_length=20)  # '1.9.1' or '1.6.17-win'
     release_date = models.DateTimeField()
     changelog = models.TextField()
     download_url = models.URLField()  # GitHub raw file URL
@@ -246,7 +246,7 @@ class AgentVersion(models.Model):
 **Rollout control:**
 1. Admin selects target version + rollout strategy (all at once, or canary %).
 2. Server marks the version as "rolling out" and records which rigs have been notified.
-3. On next heartbeat, outdated rigs receive a response header `X-Agent-Update-Available: 1.5.15` with download URL.
+3. On next heartbeat, outdated rigs receive a response header `X-Agent-Update-Available: 1.9.1` with download URL.
 4. Agent's `check_update.py` sees the header and performs the update.
 5. After update, agent reports new version in next payload — server marks it as updated.
 

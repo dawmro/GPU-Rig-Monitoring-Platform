@@ -200,14 +200,14 @@ retry_attempts: 3         # Exponential backoff: 1s → 2s → 4s
 debug_mode: false         # Verbose logging
 ```
 
-### 3.3 Payload Schema (v1.7)
+### 3.3 Payload Schema (v1.14)
 
 ```json
 {
   "rig_uuid": "UUIDv4",
   "rig_name": "my-server",
-  "schema_version": "1.10",
-  "agent_version": "1.5.15",
+  "schema_version": "1.14",
+  "agent_version": "1.9.1",
   "timestamp": "2026-06-07T19:54:06Z",
   "metrics": {
     "cpu": {
@@ -216,7 +216,12 @@ debug_mode: false         # Verbose logging
       "logical_cores": 16,
       "load_avg": [0.26, 0.23, 0.36],
       "utilization_pct": 5.2,
-      "temp_c": null
+      "temp_c": null,
+      "freq": {
+        "current_mhz": 3200.0,
+        "min_mhz": 2200.0,
+        "max_mhz": 4400.0
+      }
     },
     "memory": {
       "total_bytes": 68637540352,
@@ -261,6 +266,7 @@ debug_mode: false         # Verbose logging
         "mem_used_mb": 1235,
         "mem_free_mb": 11052,
         "mem_util_pct": 10.1,
+        "mem_controller_util_pct": 12.5,
         "gpu_util_pct": 4,
         "temp_c": 46,
         "fan_speed_pct": 0,
@@ -329,14 +335,41 @@ debug_mode: false         # Verbose logging
 ```
 
 **Changelog from schema 1.9 → 1.10:**
-- Added `cpu_freq_current_mhz`, `cpu_freq_min_mhz`, `cpu_freq_max_mhz` to CPU metrics (psutil `cpu_freq()`)
-- Added CPU Frequency chart (single-line, reads from `MetricSnapshot.cpu_freq_current_mhz`)
-- Added `error_history_json` to Rig model (rolling 1000 errors with dedup via `_seen_error_hashes_json`)
-- Server updates `Rig.enrolled_by_api_key` on every ingest (supports key rotation without re-enrollment)
-- Added `base_name` and `transfer_count` fields to ApiKey model (for admin key transfer between users)
+- Added GPU memory controller utilization: `mem_controller_util_pct` to GPU metrics
+- 1 new FloatField on GPUMetric: `mem_controller_util_pct` (from `nvmlDeviceGetUtilizationRates().memory`)
+- 1 new JSONField on LatestSnapshot: `gpu_mem_controller_utils_json` (array of mem controller util % per GPU)
+- New chart metric: `gpu_mem_controller_util_pct` for historical charts
+- Fleet Overview: "Mem Ctrl [%]" column
+- Live Metrics: "Mem Controller Util" bar with percentage
+- Report page: "Mem Controller Util" row (avg/max) alongside "Core Utilization"
+- Backward compatible: `None` if agent doesn't send field
 
-**Changelog from schema 1.7 → 1.8:**
-- Added `top_processes` object to `metrics` section with `by_cpu`, `by_mem`, and `total_count`
+**Changelog from schema 1.10 → 1.11:**
+- Added `has_active_job` boolean to payload (top-level)
+- 1 new BooleanField on MetricSnapshot: `has_active_job`
+- 1 new BooleanField on LatestSnapshot: `has_active_job`
+- Fleet Overview: "Job" column with green/red indicator
+- Report page: tracks active job status
+- Backward compatible: defaults to `false`
+
+**Changelog from schema 1.11 → 1.12:**
+- Extended Docker manifest collection from 6 fields to 30+ fields via `docker inspect`
+- All fields stored as JSON in `LatestDockerContainer.manifest_json`
+- Added: image_tag, digest, size, media_type, platform, annotations, labels, state, mounts, networks, port_bindings, resource_limits, restart_policy, resource_reservations, restart_count, created, exposed_ports, working_dir, entrypoint, cmd, user, healthcheck, security, dns, env
+- Log collection: primary reads LogPath directly, fallback to `docker logs`
+- No migration needed (stored in JSONField)
+
+**Changelog from schema 1.12 → 1.13:**
+- Added `has_active_job` boolean field in payload (agent 1.8.0+)
+- Computed as: `bool(gpu_processes) or any(c.status == 'running' for c in docker_containers)`
+- Stored in LatestSnapshot.has_active_job and MetricSnapshot.has_active_job
+- Display: Fleet Overview "Job" column (green/red circle)
+
+**Changelog from schema 1.13 → 1.14:**
+- Schema version bump only (no payload structure changes)
+- Aligns agent schema version with implementation
+- Agents: Linux 1.9.1, Windows 1.6.17-win
+- Server accepts schema versions 1.0 through 1.14
 - `by_cpu`: top 20 processes sorted by CPU% descending
 - `by_mem`: top 20 processes sorted by memory% descending
 - Each process entry: `pid`, `name`, `cpu_pct`, `mem_pct`, `username`, `cmdline`, `status`
@@ -915,6 +948,7 @@ Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the age
 | Chart data | `chart_{uuid}_{ver}_{metric}_{range}_{bucket}_g{gpu_idx}_{m_*}` | 55s | **Version-based** — serializer increments `chart_v_{uuid}` on every ingest, making all old keys unreachable. O(1) invalidation (no per-metric/range enumeration) |
 | Report context | `report_{uuid}_{range_hours}` | 55s | TTL expiry only (no explicit invalidation) |
 | Rig (lightweight) | `rig_light_{uuid}` | 30s | On heartbeat/status change/rename/tag toggle/delete/ownership transfer (7 invalidation paths) |
+| Chart version counter | `chart_v_{uuid}` | 3600s (1 hour) | Auto-expires; bumping version on ingest makes old keys unreachable |
 | Power throttle | `power_throttle_{uuid}` | 60s | TTL expiry (replaces old PowerReading throttling sentinel) |
 | Rate limit counters | `rl_user_{id}` / `rl_ip_{ip}` | 60s | Automatic TTL |
 
@@ -1144,14 +1178,15 @@ Files **never** overwritten: `.env`, `venv/`, `logs/`, `staticfiles/`, `config.y
 
 ### 8.5 Data Retention
 
-The platform uses **tiered compaction** to manage long-term storage growth. Without retention, 1,000 rigs would accumulate ~487 GB/month. With compaction: ~23 GB/month (95% savings).
+The platform uses **tiered compaction** to manage long-term storage growth. Without retention, 1,000 rigs would accumulate ~487 GB/month. With 3-tier compaction: ~23 GB/month (95% savings).
 
 #### Retention Tiers
 
 | Tier | Age | Bucket | Rows/Day/Rig | Savings |
 |---|---|---|---|---|
 | Raw | 0-1 day | 1-minute | 1,440 | — |
-| Compacted | 1-31 days | 1-hour | 24 | 60× |
+| Compacted (Tier 2) | 1-7 days | 15-minute | 96 | 15× |
+| Compacted (Tier 3) | 7-31 days | 1-hour | 24 | 60× |
 | Deleted | 31+ days | — | 0 | 100× |
 
 #### Management Commands
@@ -1159,9 +1194,10 @@ The platform uses **tiered compaction** to manage long-term storage growth. With
 Two Django management commands handle retention:
 
 **`compact_data`** — Aggregates old data into larger time buckets:
-|- Single phase: data > 1 day → 1-hour buckets
-|- Aggregation: AVG (temperature, utilization, power), SUM (network bytes, error_count), LAST (GPU model names, GPU UUIDs, uptime), MAX (uptime_s)
-|- Child tables (GPU, storage, network, gpu_process) compacted FIRST; parent table (`metrics_metricsnapshot`) compacted LAST
+- Phase A (Tier 2): Data 1-7 days old → 15-minute buckets (15× reduction)
+- Phase B (Tier 3): Data 7-31 days old → 1-hour buckets (4× reduction from Tier 2)
+- Aggregation per metric: AVG (temperature, utilization, power, mem_controller_util_pct), SUM (network bytes, error_count), LAST (GPU model names, GPU UUIDs, uptime), MAX (uptime_s)
+- Child tables (GPU, storage, network, gpu_process) compacted FIRST; parent table (`metrics_metricsnapshot`) compacted LAST
 - FK-safe: parent rows still referenced by children are excluded from compaction via NOT EXISTS subqueries
 
 **`cleanup_old_data`** — Deletes data older than N days (default: 31):
@@ -1613,18 +1649,18 @@ sudo -u postgres psql gpu_monitor
 
 ### A. Full JSON Schema Definitions (Agent Payload)
 
-**Current: v1.11** (see changelog below)
+**Current: v1.14** (see changelog below)
 
 ```json
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "GPU Rig Monitoring Agent Payload v1.11",
+  "title": "GPU Rig Monitoring Agent Payload v1.14",
   "type": "object",
   "required": ["rig_uuid", "schema_version", "timestamp", "metrics"],
   "properties": {
     "rig_uuid": { "type": "string", "format": "uuid" },
     "rig_name": { "type": "string", "maxLength": 128 },
-    "schema_version": { "type": "string", "enum": ["1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "1.10", "1.11"] },
+    "schema_version": { "type": "string", "enum": ["1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "1.10", "1.11", "1.12", "1.13", "1.14"] },
     "agent_version": { "type": "string" },
     "timestamp": { "type": "string", "format": "date-time" },
     "metrics": {
@@ -1828,14 +1864,14 @@ sudo -u postgres psql gpu_monitor
 - New chart metric: `gpu_mem_controller_util_pct` for historical charts
 - Fleet Overview: "Mem Ctrl [%]" column
 - Live Metrics: "Mem" utilization bar with percentage
-- Report page: "Mem Utilization" row (avg/max) alongside "Core Utilization"
+- Report page: "Mem Controller Util" row (avg/max) alongside "Core Utilization"
 - Backward compatible: `None` if agent doesn't send field
 
-**Changelog from schema 1.10 → 1.11:**
+**Schema 1.10 → 1.11 changelog:**
 - Schema version bump only (no payload structure changes)
 - Aligns agent schema version with implementation
-- Agents: Linux 1.9.1, Windows 1.9.1-win
-- Server accepts schema versions 1.0 through 1.11
+- Agents: Linux 1.9.1, Windows 1.6.17-win
+- Server accepts schema versions 1.0 through 1.14
 
 ### B. Endpoint Catalog (Summary)
 

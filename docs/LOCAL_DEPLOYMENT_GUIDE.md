@@ -641,9 +641,10 @@ echo '0 3 * * * qrv bash /opt/gpu_monitor/deploy/data_retention.sh >> /var/log/m
 
 This runs two commands daily:
 
-1. **`compact_data`** — Single-phase aggregation of old data:
-   - Data > 1 day old → 1-hour buckets (60× reduction)
-   - Aggregation per metric: AVG (temperature, utilization, power), SUM (network bytes, error_count), LAST (GPU model names, GPU UUIDs), MAX (uptime_s)
+1. **`compact_data`** — Two-phase aggregation of old data:
+   - Phase A (Tier 2): Data 1-7 days old → 15-minute buckets (15× reduction)
+   - Phase B (Tier 3): Data 7-31 days old → 1-hour buckets (4× reduction from Tier 2)
+   - Aggregation per metric: AVG (temperature, utilization, power, mem_controller_util_pct), SUM (network bytes, error_count), LAST (GPU model names, GPU UUIDs, uptime), MAX (uptime_s)
    - Parent table compacted first; child tables after
    - FK-safe: parent rows referenced by children are excluded
 
@@ -652,7 +653,7 @@ This runs two commands daily:
    - Deletes in batches of 10,000 rows to avoid long locks
    - Handles tables with non-standard primary keys (e.g., `metrics_latest_snapshot` uses `rig_uuid`)
 
-**Storage impact:** Without compaction, 1,000 rigs would use ~487 GB/month. With compaction: ~23 GB/month (95% savings). For a single test rig: ~24 MB/month with compaction (31-day retention).
+**Storage impact:** Without compaction, 1,000 rigs would use ~487 GB/month. With 3-tier compaction: ~23 GB/month (95% savings). For a single test rig: ~24 MB/month with compaction (31-day retention).
 
 #### Manual Run (for testing)
 

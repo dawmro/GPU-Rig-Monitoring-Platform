@@ -53,7 +53,7 @@ fi
 "$INSTALL_DIR/venv/bin/pip" install psutil py-cpuinfo requests pyyaml
 
 # Try to install pynvml (NVIDIA GPU monitoring)
-"$INSTALL_DIR/venv/bin/pip" install nvidia-ml-py3 2>/dev/null || \
+"$INSTALL_DIR/venv/bin/pip" install pynvml 2>/dev/null || \
     echo "WARNING: pynvml not installed. GPU monitoring will be unavailable."
 
 # Copy agent files

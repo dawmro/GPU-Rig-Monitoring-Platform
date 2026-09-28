@@ -406,7 +406,18 @@ bash scripts/sync_to_opt.sh --no-migrate  # Fast: skip migrations
 
 ---
 
-## 📊 Chart Types & Reports
+## 📋 Recent Migrations (0047–0052)
+
+| Migration | Change | Rationale |
+|-----------|--------|-----------|
+| 0047 | Drop `GPUProcessMetric` table | Denormalized GPU processes to `LatestSnapshot.gpu_processes_json` (current snapshot only). Eliminated 50+ INSERTs + 1 DELETE per heartbeat. |
+| 0048 | Drop `PowerReading` table | Never read by any view. Power data lives in `MetricSnapshot.cpu_power_w/total_system_power_w` + `GPUMetric.power_draw_w`. |
+| 0049 | Drop cumulative I/O counters from `StorageMetric` | Moved `read_bytes`, `write_bytes`, `read_iops`, `write_iops`, `busy_time_ms` to `LatestSnapshot.storage_*_total_json`. Saves 40 bytes/row. |
+| 0050 | Drop static fields from `NetworkMetric` | Moved `ipv4`, `link_speed_mbps` to `LatestSnapshot.network_ipv4s_json/speeds_json`. |
+| 0051 | Add `has_active_job` to `MetricSnapshot` | Tracks active GPU process or running Docker container. Used for Job Status chart (bool max via `CAST(... AS INTEGER)`). |
+| 0052 | Re-add `gpu_uuid` to `GPUMetric` | Preserves GPU identity through compaction tiers (`static_fields` in `compact_data.py`). |
+
+---
 
 || Type | Loaders / Endpoint | Key Feature / Defense |
 ||---|---|---|

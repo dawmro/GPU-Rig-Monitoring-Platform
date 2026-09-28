@@ -166,7 +166,7 @@ The platform's target users (GPU farmers, AI researchers, small data centers) al
 - PSU efficiency: 90% (user-configurable on User model)
 - Total power calculation: `(gpu + cpu + 40) / 0.90 = total AC watts`
 - `electricity_rate_kwh` on User model (default 0.33)
-- `PowerReading` model stores historical power data (one row per minute, throttled)
+- Historical power data stored in `MetricSnapshot.cpu_power_w/total_system_power_w` and `GPUMetric.power_draw_w` (PowerReading table removed in migration 0048)
 - `LatestSnapshot` stores latest values: `power_total_w`, `power_gpu_w`, `power_cpu_w`, `power_other_w`
 - **Live Metrics**: Power Consumption card with GPU/CPU/Other breakdown + cost/hr + est. daily
 - **Charts**: GPU Power Draw (multi-GPU), CPU Power, Total System Power — all in Historical Charts tab

@@ -139,19 +139,25 @@ Rate limiting design:
 | `agent_windows/run.py` | Windows agent (~916 lines) |
 | `metrics_app/views.py` | IngestView, HealthView, ChartDataView, RigMetricsView |
 | `metrics_app/serializers.py` | IngestSerializer, process_ingest() |
-|| `metrics_app/models.py` | MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, LatestDockerContainer, LatestSnapshot (with GPU/storage/network JSON fields + power, GPU processes), RigStatusEvent |
+| `metrics_app/models.py` | MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, LatestDockerContainer, LatestSnapshot (with GPU/storage/network JSON fields + power, GPU processes), RigStatusEvent |
 | `dashboard/views.py` | index_view (root → dashboard/login redirect), rig_list, rig_detail, htmx_metrics, htmx_rig_status, rig_rename |
 | `dashboard/templatetags/gpu_filters.py` | gpu_model_name, gpu_model_short, gpu_compact_summary_json, gpu_temp_cell_json, gpu_util_cell_json, gpu_fan_cell_json, time_since, last_seen_short filters |
 | `rigs/models.py` | Rig, RigTag |
-|| `accounts/authentication.py` | APIKeyAuthentication |
-|| `accounts/views.py` | Login, logout, API key management, tag management, audit events |
-|| `audit/views.py` | Activity feed view (audit_log_view) |
-|| `audit/models.py` | AuditLog model |
-|| `audit/templatetags/audit_tags.py` | audit_target_name template tag for DB lookup |
-|| `audit/urls.py` | Audit URL routing |
-|| `audit/management/commands/cleanup_audit_log.py` | Audit log retention cleanup |
-|| `audit/management/commands/backfill_audit_names.py` | Backfill target names for old entries |
-|| `rigs/management/commands/update_rig_status.py` | Rig status state machine (creates RigStatusEvent on transitions) |
+| `accounts/authentication.py` | APIKeyAuthentication |
+| `accounts/views.py` | Login, logout, API key management, tag management, audit events |
+| `audit/views.py` | Activity feed view (audit_log_view) |
+| `audit/models.py` | AuditLog model |
+| `audit/templatetags/audit_tags.py` | audit_target_name template tag for DB lookup |
+| `audit/urls.py` | Audit URL routing |
+| `audit/management/commands/cleanup_audit_log.py` | Audit log retention cleanup |
+| `audit/management/commands/backfill_audit_names.py` | Backfill target names for old entries |
+| `rigs/management/commands/update_rig_status.py` | Rig status state machine (creates RigStatusEvent on transitions) |
+
+> **Note:** The following models/tables were removed in migrations 0047-0050:
+> - `GPUProcessMetric` (migration 0047) — GPU process data denormalized to `LatestSnapshot.gpu_processes_json`
+> - `PowerReading` (migration 0048) — power data lives in `MetricSnapshot.cpu_power_w/total_system_power_w` + `GPUMetric.power_draw_w`
+> - Cumulative I/O counters (`read_bytes`, `write_bytes`, `read_iops`, `write_iops`, `busy_time_ms`) removed from `StorageMetric` (migration 0049) — moved to `LatestSnapshot.storage_*_total_json`
+> - Static fields `ipv4`, `link_speed_mbps` removed from `NetworkMetric` (migration 0050) — moved to `LatestSnapshot.network_ipv4s_json` and `network_speeds_json`
 
 ---
 
@@ -438,7 +444,7 @@ debug_mode: false         # Verbose logging
 
 **Core principle:** Separate **lookup** from **verification**.
 
-```
+```text
 plaintext API key
        │
        ├── HMAC-SHA256(API_KEY_LOOKUP_SECRET) → key_lookup (fast DB lookup)
@@ -456,6 +462,13 @@ plaintext API key
 - Zero entropy of API key exposed in `key_lookup` column
 - `key_hash` remains Argon2id — actual authentication still requires Argon2 verification
 - Clear naming: `get_key_lookup()` = fast lookup, `hash_key()` = cryptographic verifier
+
+**Configuration:** `API_KEY_LOOKUP_SECRET` is read from environment in `gpu_monitor/settings.py:152-154`:
+```python
+API_KEY_LOOKUP_SECRET = os.environ.get("API_KEY_LOOKUP_SECRET")
+if not API_KEY_LOOKUP_SECRET:
+    raise ImproperlyConfigured("API_KEY_LOOKUP_SECRET must be set in environment")
+```
 
 **Migration path for existing keys:**
 1. Add nullable `key_lookup` field with index
@@ -974,14 +987,13 @@ Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the age
 | `rigs_rig` | rigs | Rig inventory (uuid PK, owner FK, status, last_seen, name, latest_errors_json, error_history_json, enrolled_by_api_key FK to accounts_apikey) |
 || `rigs_rigtag` | rigs | Tags (name, color) |
 || `rigs_rig_tags` | rigs | M2M through table |
-|| `metrics_metricsnapshot` | metrics_app | Per-heartbeat metrics for charts (cpu, memory, uptime, error_count) |
+| `metrics_metricsnapshot` | metrics_app | Per-heartbeat metrics for charts (cpu, memory, uptime, error_count) |
 | `metrics_gpumetric` | metrics_app | Per-GPU metrics (temp, util, mem, power, fan, pcie, core_clock, mem_clock; FK to snapshot) |
-|| `metrics_gpu_process` | metrics_app | Per-GPU-process metrics (gpu_index, pid, name, type, mem; latest snapshot only) |
-||| `metrics_storagemetric` | metrics_app | Per-disk metrics (capacity, usage%, temp, SMART health, read/write bytes, read/write IOPS, busy_time_ms, utilization%; FK to snapshot) |
-||| `metrics_networkmetric` | metrics_app | Per-interface metrics (rx/tx bytes, rx/tx deltas, speed, errors) |
-||| `metrics_latest_docker_container` | metrics_app | Latest container snapshot (name, container_id, image, status, created, status_text; for Live Metrics) |
-|||| `metrics_latest_snapshot` | metrics_app | Denormalized latest snapshot per rig (fast dashboard loading). Single row per rig, updated every heartbeat. Stores all display data: cpu_model, cpu_physical_cores, cpu_logical_cores, cpu_utilization_pct, cpu_temp_c, cpu_load_avg_json, cpu_freq_current_mhz, cpu_freq_min_mhz, cpu_freq_max_mhz, mem_total_bytes, mem_used_bytes, mem_free_bytes, mem_cached_bytes, swap_total_bytes, swap_used_bytes, uptime_s, motherboard_json, software_json, agent_version, 17 GPU JSON arrays, 11 storage JSON arrays, 7 network JSON arrays, 3 process fields (top_cpu_processes_json, top_mem_processes_json, process_count). Total: ~62 fields. |
-|| `metrics_rig_status_event` | metrics_app | Rig status transition log (online/stale/offline with timestamps) |
+| `metrics_storagemetric` | metrics_app | Per-disk metrics (capacity, usage%, temp, SMART health, read/write bytes, read/write IOPS, busy_time_ms, utilization%; FK to snapshot) |
+| `metrics_networkmetric` | metrics_app | Per-interface metrics (rx/tx bytes, rx/tx deltas, speed, errors) |
+| `metrics_latest_docker_container` | metrics_app | Latest container snapshot (name, container_id, image, status, created, status_text; for Live Metrics) |
+| `metrics_latest_snapshot` | metrics_app | Denormalized latest snapshot per rig (fast dashboard loading). Single row per rig, updated every heartbeat. Stores all display data: cpu_model, cpu_physical_cores, cpu_logical_cores, cpu_utilization_pct, cpu_temp_c, cpu_load_avg_json, cpu_freq_current_mhz, cpu_freq_min_mhz, cpu_freq_max_mhz, mem_total_bytes, mem_used_bytes, mem_free_bytes, mem_cached_bytes, swap_total_bytes, swap_used_bytes, uptime_s, motherboard_json, software_json, agent_version, 17 GPU JSON arrays, 11 storage JSON arrays, 7 network JSON arrays, 3 process fields (top_cpu_processes_json, top_mem_processes_json, process_count). Total: ~62 fields. |
+| `metrics_rig_status_event` | metrics_app | Rig status transition log (online/stale/offline with timestamps) |
 || `audit_auditlog` | audit | Immutable audit trail |
 
 ### 6.1b Management Commands
@@ -999,7 +1011,6 @@ Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the age
 | Table | Constraint |
 |-------|------------|
 | `metrics_gpumetric` | `UNIQUE(rig_uuid, timestamp, gpu_index)` |
-| `metrics_gpu_process` | `UNIQUE(rig_uuid, timestamp, gpu_index, pid)` |
 | `metrics_storagemetric` | `UNIQUE(rig_uuid, timestamp, device)` |
 | `metrics_networkmetric` | `UNIQUE(rig_uuid, timestamp, interface)` |
 | `metrics_latest_docker_container` | `UNIQUE(rig_uuid, name)` |

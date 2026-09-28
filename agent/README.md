@@ -50,7 +50,7 @@ The installer performs these operations:
 |------|-------------|
 | 1 | Creates `monitoring-agent` system user (no-login shell) |
 | 2 | Creates directories: `/opt/monitoring-agent/`, `/etc/monitoring-agent/`, `/var/log/monitoring-agent/` |
-| 3 | Creates Python virtualenv and installs dependencies (`psutil`, `py-cpuinfo`, `requests`, `pyyaml`, `nvidia-ml-py3`). Docker container monitoring uses the `docker` CLI via sudo — no Python SDK needed. |
+| 3 | Creates Python virtualenv and installs dependencies (`psutil`, `py-cpuinfo`, `requests`, `pyyaml`, `pynvml`). Docker container monitoring uses the `docker` CLI via sudo — no Python SDK needed. |
 | 4 | Copies `run.py` and creates config template at `/etc/monitoring-agent/config.yaml` |
 | 5 | Configures sudoers (`/etc/sudoers.d/monitoring-agent`) for SMART disk queries, NVMe logs, journalctl, and docker (read-only, passwordless). Includes `Defaults:monitoring-agent !authenticate` (required for nologin shell users). |
 | 6 | Creates cron job — runs every 60 seconds with `flock` to prevent overlaps |
@@ -148,7 +148,7 @@ The cron job will start automatically within 1 minute.
 | System errors (with dedup, up to 1000 entries) | `journalctl` | ✅ | ✅ |
 | Power consumption (CPU, GPU, total system) | RAPL sysfs + `pynvml` + calculation | ✅ | ✅ |
 
-\* Requires NVIDIA GPU with drivers and `nvidia-ml-py3` installed.
+\* Requires NVIDIA GPU with drivers and `pynvml` installed.
 † Requires Docker daemon running.
 
 ## Power Collection Details
@@ -275,10 +275,10 @@ curl -v https://monitor.example.com/api/v1/health/
 
 ```bash
 # Install NVIDIA support
-sudo /opt/monitoring-agent/venv/bin/pip install nvidia-ml-py3
+sudo /opt/monitoring-agent/venv/bin/pip install pynvml
 ```
 
-Requires NVIDIA GPU with up-to-date drivers. If you see `FutureWarning: The pynvml package is deprecated`, install `nvidia-ml-py` instead — both provide the `pynvml` module.
+Requires NVIDIA GPU with up-to-date drivers. The `pynvml` package provides the `pynvml` module.
 
 ### Docker metrics empty
 

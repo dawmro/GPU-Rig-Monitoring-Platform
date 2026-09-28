@@ -188,7 +188,7 @@ agent_windows/
 | System errors (with dedup, up to 1000 entries) | PowerShell `Get-WinEvent` | ✅ | ✅ |
 | Power consumption (CPU, GPU, total system) | `pynvml` + estimation | ✅ | ✅ |
 
-\* Requires NVIDIA GPU with drivers and `nvidia-ml-py3` installed.
+\* Requires NVIDIA GPU with drivers and `pynvml` installed.
 † Requires Docker Desktop running.
 
 ## Power Collection Details

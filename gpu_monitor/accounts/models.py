@@ -222,14 +222,14 @@ class ApiKey(models.Model):
     @classmethod
     def generate_key(cls) -> str:
         """
-        Generate a new cryptographically secure API key.
+        Generate a new cryptographically secure API key (64-char hex string).
 
         The plaintext value is returned only to the caller that
         creates the key.
 
         It is never stored in the database.
         """
-        return secrets.token_urlsafe(32)
+        return secrets.token_hex(32)
 
     # ================================================================
     # KEY CREATION

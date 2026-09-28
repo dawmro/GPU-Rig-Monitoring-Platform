@@ -161,7 +161,7 @@ EOF
 **Verify the connection:**
 
 ```bash
-PGPASSWORD=local_...word psql -h 127.0.0.1 -U gpu_monitor -d gpu_monitor -c "SELECT 1;"
+PGPASSWORD=local_dev_password psql -h 127.0.0.1 -U gpu_monitor -d gpu_monitor -c "SELECT 1;"
 ```
 
 If you see `?column? | 1`, the database is ready.
@@ -186,14 +186,14 @@ chown -R "$USER:$USER" /opt/gpu_monitor/logs
 
 # Set permissions
 chmod 755 /opt/gpu_monitor/logs
-chmod 664 /opt/gpu_monitor/logs/app.log
-chmod 664 /opt/gpu_monitor/logs/gunicorn-access.log
-chmod 664 /opt/gpu_monitor/logs/gunicorn-error.log
+chmod 755 /opt/gpu_monitor/logs/app.log
+chmod 755 /opt/gpu_monitor/logs/gunicorn-access.log
+chmod 755 /opt/gpu_monitor/logs/gunicorn-error.log
 
 # Fix permissions — Gunicorn needs to read all files
 # If you later add new template/views files, re-run this:
-chmod -R 644 /opt/gpu_monitor/templates/
-chmod -R 755 /opt/gpu_monitor/templates/dashboard/
+sudo chmod -R 755 /opt/gpu_monitor/templates/
+sudo chmod -R 755 /opt/gpu_monitor/templates/dashboard/
 
 # Create and activate virtualenv
 cd /opt/gpu_monitor
@@ -212,6 +212,7 @@ pip install django djangorestframework django-htmx psycopg2-binary \
 
 ```bash
 cat > /opt/gpu_monitor/.env << 'EOF'
+# DJANGO secret key (generate with: python3 -c "import secrets; print(secrets.token_urlsafe(50))"
 DJANGO_SECRET_KEY=change-me-generate-a-random-value-with-python-secrets
 DJANGO_DEBUG=True
 DJANGO_ALLOWED_HOSTS=*
@@ -236,29 +237,30 @@ API_KEY_LOOKUP_SECRET=your-64-char-hex-secret-here
 EOF
 
 chmod 600 /opt/gpu_monitor/.env
-
-> **Email setup for production:**
-> 1. Enable 2-Factor Authentication on your Google account
-> 2. Generate App Password: https://myaccount.google.com/apppasswords
-> 3. Select "Mail" → "Other (Custom name)" → "GPU Rig Monitor"
-> 4. Copy the 16-character password into EMAIL_HOST_PASSWORD
-> 5. Gmail sending limit: ~500 emails/day (sufficient for password recovery)
 ```
 
-> **Important:** Generate a proper secret key instead of the placeholder:
-> ```bash
-> python3 -c "import secrets; print(secrets.token_urlsafe(50))"
-> ```
-> Then update `DJANGO_SECRET_KEY` in `.env`.
+**Email setup for production:**
+1. Enable 2-Factor Authentication on your Google account
+2. Generate App Password: https://myaccount.google.com/apppasswords
+3. Select "Mail" → "Other (Custom name)" → "GPU Rig Monitor"
+4. Copy the 16-character password into EMAIL_HOST_PASSWORD
+5. Gmail sending limit: ~500 emails/day (sufficient for password recovery)
 
-> **Generate API_KEY_LOOKUP_SECRET:**
-> ```bash
-> python3 -c "import secrets; print(secrets.token_hex(32))"
-> ```
-> Then update `API_KEY_LOOKUP_SECRET` in `.env`.
 
-> **Note:** `DJANGO_ALLOWED_HOSTS=*` accepts requests from any IP address. This is
-> suitable for local testing but should be set to your actual domain in production.
+**Important:** Generate a proper secret key instead of the placeholder:
+```bash
+python3 -c "import secrets; print(secrets.token_urlsafe(50))"
+```
+Then update `DJANGO_SECRET_KEY` in `.env`.
+
+**Generate API_KEY_LOOKUP_SECRET:**
+```bash
+python3 -c "import secrets; print(secrets.token_hex(32))"
+```
+Then update `API_KEY_LOOKUP_SECRET` in `.env`.
+
+**Note:** `DJANGO_ALLOWED_HOSTS=*` accepts requests from any IP address. This is
+suitable for local testing but should be set to your actual domain in production.
 
 ### 3.5 Run Migrations
 

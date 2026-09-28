@@ -987,14 +987,13 @@ Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the age
 | `rigs_rig` | rigs | Rig inventory (uuid PK, owner FK, status, last_seen, name, latest_errors_json, error_history_json, enrolled_by_api_key FK to accounts_apikey) |
 || `rigs_rigtag` | rigs | Tags (name, color) |
 || `rigs_rig_tags` | rigs | M2M through table |
-|| `metrics_metricsnapshot` | metrics_app | Per-heartbeat metrics for charts (cpu, memory, uptime, error_count) |
+| `metrics_metricsnapshot` | metrics_app | Per-heartbeat metrics for charts (cpu, memory, uptime, error_count) |
 | `metrics_gpumetric` | metrics_app | Per-GPU metrics (temp, util, mem, power, fan, pcie, core_clock, mem_clock; FK to snapshot) |
-|| `metrics_gpu_process` | metrics_app | Per-GPU-process metrics (gpu_index, pid, name, type, mem; latest snapshot only) |
-||| `metrics_storagemetric` | metrics_app | Per-disk metrics (capacity, usage%, temp, SMART health, read/write bytes, read/write IOPS, busy_time_ms, utilization%; FK to snapshot) |
-||| `metrics_networkmetric` | metrics_app | Per-interface metrics (rx/tx bytes, rx/tx deltas, speed, errors) |
-||| `metrics_latest_docker_container` | metrics_app | Latest container snapshot (name, container_id, image, status, created, status_text; for Live Metrics) |
-|||| `metrics_latest_snapshot` | metrics_app | Denormalized latest snapshot per rig (fast dashboard loading). Single row per rig, updated every heartbeat. Stores all display data: cpu_model, cpu_physical_cores, cpu_logical_cores, cpu_utilization_pct, cpu_temp_c, cpu_load_avg_json, cpu_freq_current_mhz, cpu_freq_min_mhz, cpu_freq_max_mhz, mem_total_bytes, mem_used_bytes, mem_free_bytes, mem_cached_bytes, swap_total_bytes, swap_used_bytes, uptime_s, motherboard_json, software_json, agent_version, 17 GPU JSON arrays, 11 storage JSON arrays, 7 network JSON arrays, 3 process fields (top_cpu_processes_json, top_mem_processes_json, process_count). Total: ~62 fields. |
-|| `metrics_rig_status_event` | metrics_app | Rig status transition log (online/stale/offline with timestamps) |
+| `metrics_storagemetric` | metrics_app | Per-disk metrics (capacity, usage%, temp, SMART health, read/write bytes, read/write IOPS, busy_time_ms, utilization%; FK to snapshot) |
+| `metrics_networkmetric` | metrics_app | Per-interface metrics (rx/tx bytes, rx/tx deltas, speed, errors) |
+| `metrics_latest_docker_container` | metrics_app | Latest container snapshot (name, container_id, image, status, created, status_text; for Live Metrics) |
+| `metrics_latest_snapshot` | metrics_app | Denormalized latest snapshot per rig (fast dashboard loading). Single row per rig, updated every heartbeat. Stores all display data: cpu_model, cpu_physical_cores, cpu_logical_cores, cpu_utilization_pct, cpu_temp_c, cpu_load_avg_json, cpu_freq_current_mhz, cpu_freq_min_mhz, cpu_freq_max_mhz, mem_total_bytes, mem_used_bytes, mem_free_bytes, mem_cached_bytes, swap_total_bytes, swap_used_bytes, uptime_s, motherboard_json, software_json, agent_version, 17 GPU JSON arrays, 11 storage JSON arrays, 7 network JSON arrays, 3 process fields (top_cpu_processes_json, top_mem_processes_json, process_count). Total: ~62 fields. |
+| `metrics_rig_status_event` | metrics_app | Rig status transition log (online/stale/offline with timestamps) |
 || `audit_auditlog` | audit | Immutable audit trail |
 
 ### 6.1b Management Commands
@@ -1012,7 +1011,6 @@ Time window for HTMX metrics: 1 hour (not 5 minutes) to handle gaps when the age
 | Table | Constraint |
 |-------|------------|
 | `metrics_gpumetric` | `UNIQUE(rig_uuid, timestamp, gpu_index)` |
-| `metrics_gpu_process` | `UNIQUE(rig_uuid, timestamp, gpu_index, pid)` |
 | `metrics_storagemetric` | `UNIQUE(rig_uuid, timestamp, device)` |
 | `metrics_networkmetric` | `UNIQUE(rig_uuid, timestamp, interface)` |
 | `metrics_latest_docker_container` | `UNIQUE(rig_uuid, name)` |

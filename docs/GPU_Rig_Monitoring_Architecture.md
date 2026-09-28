@@ -444,7 +444,7 @@ debug_mode: false         # Verbose logging
 
 **Core principle:** Separate **lookup** from **verification**.
 
-```
+```text
 plaintext API key
        │
        ├── HMAC-SHA256(API_KEY_LOOKUP_SECRET) → key_lookup (fast DB lookup)
@@ -462,6 +462,13 @@ plaintext API key
 - Zero entropy of API key exposed in `key_lookup` column
 - `key_hash` remains Argon2id — actual authentication still requires Argon2 verification
 - Clear naming: `get_key_lookup()` = fast lookup, `hash_key()` = cryptographic verifier
+
+**Configuration:** `API_KEY_LOOKUP_SECRET` is read from environment in `gpu_monitor/settings.py:152-154`:
+```python
+API_KEY_LOOKUP_SECRET = os.environ.get("API_KEY_LOOKUP_SECRET")
+if not API_KEY_LOOKUP_SECRET:
+    raise ImproperlyConfigured("API_KEY_LOOKUP_SECRET must be set in environment")
+```
 
 **Migration path for existing keys:**
 1. Add nullable `key_lookup` field with index

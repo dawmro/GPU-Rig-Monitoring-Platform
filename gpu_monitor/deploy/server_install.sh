@@ -115,11 +115,13 @@ systemctl enable postgresql
 # - rerunnable deployment scripts are easier to maintain than one-time-only scripts
 EXISTING_DB_PASS=""
 EXISTING_DJANGO_SECRET=""
+EXISTING_API_KEY_LOOKUP_SECRET=""
 
 if [ -f "$APP_DIR/.env" ]; then
     echo "==> Existing .env found, attempting to reuse secrets..."
     EXISTING_DB_PASS="$(grep -E '^DB_PASSWORD=' "$APP_DIR/.env" | head -n1 | cut -d= -f2- || true)"
     EXISTING_DJANGO_SECRET="$(grep -E '^DJANGO_SECRET_KEY=' "$APP_DIR/.env" | head -n1 | cut -d= -f2- || true)"
+    EXISTING_API_KEY_LOOKUP_SECRET="$(grep -E '^API_KEY_LOOKUP_SECRET=' "$APP_DIR/.env" | head -n1 | cut -d= -f2- || true)"
 fi
 
 # Generate new secrets only when they do not already exist.

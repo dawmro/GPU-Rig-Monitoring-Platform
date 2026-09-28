@@ -139,19 +139,25 @@ Rate limiting design:
 | `agent_windows/run.py` | Windows agent (~916 lines) |
 | `metrics_app/views.py` | IngestView, HealthView, ChartDataView, RigMetricsView |
 | `metrics_app/serializers.py` | IngestSerializer, process_ingest() |
-|| `metrics_app/models.py` | MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, LatestDockerContainer, LatestSnapshot (with GPU/storage/network JSON fields + power, GPU processes), RigStatusEvent |
+| `metrics_app/models.py` | MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, LatestDockerContainer, LatestSnapshot (with GPU/storage/network JSON fields + power, GPU processes), RigStatusEvent |
 | `dashboard/views.py` | index_view (root → dashboard/login redirect), rig_list, rig_detail, htmx_metrics, htmx_rig_status, rig_rename |
 | `dashboard/templatetags/gpu_filters.py` | gpu_model_name, gpu_model_short, gpu_compact_summary_json, gpu_temp_cell_json, gpu_util_cell_json, gpu_fan_cell_json, time_since, last_seen_short filters |
 | `rigs/models.py` | Rig, RigTag |
-|| `accounts/authentication.py` | APIKeyAuthentication |
-|| `accounts/views.py` | Login, logout, API key management, tag management, audit events |
-|| `audit/views.py` | Activity feed view (audit_log_view) |
-|| `audit/models.py` | AuditLog model |
-|| `audit/templatetags/audit_tags.py` | audit_target_name template tag for DB lookup |
-|| `audit/urls.py` | Audit URL routing |
-|| `audit/management/commands/cleanup_audit_log.py` | Audit log retention cleanup |
-|| `audit/management/commands/backfill_audit_names.py` | Backfill target names for old entries |
-|| `rigs/management/commands/update_rig_status.py` | Rig status state machine (creates RigStatusEvent on transitions) |
+| `accounts/authentication.py` | APIKeyAuthentication |
+| `accounts/views.py` | Login, logout, API key management, tag management, audit events |
+| `audit/views.py` | Activity feed view (audit_log_view) |
+| `audit/models.py` | AuditLog model |
+| `audit/templatetags/audit_tags.py` | audit_target_name template tag for DB lookup |
+| `audit/urls.py` | Audit URL routing |
+| `audit/management/commands/cleanup_audit_log.py` | Audit log retention cleanup |
+| `audit/management/commands/backfill_audit_names.py` | Backfill target names for old entries |
+| `rigs/management/commands/update_rig_status.py` | Rig status state machine (creates RigStatusEvent on transitions) |
+
+> **Note:** The following models/tables were removed in migrations 0047-0050:
+> - `GPUProcessMetric` (migration 0047) — GPU process data denormalized to `LatestSnapshot.gpu_processes_json`
+> - `PowerReading` (migration 0048) — power data lives in `MetricSnapshot.cpu_power_w/total_system_power_w` + `GPUMetric.power_draw_w`
+> - Cumulative I/O counters (`read_bytes`, `write_bytes`, `read_iops`, `write_iops`, `busy_time_ms`) removed from `StorageMetric` (migration 0049) — moved to `LatestSnapshot.storage_*_total_json`
+> - Static fields `ipv4`, `link_speed_mbps` removed from `NetworkMetric` (migration 0050) — moved to `LatestSnapshot.network_ipv4s_json` and `network_speeds_json`
 
 ---
 

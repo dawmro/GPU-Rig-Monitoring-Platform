@@ -235,8 +235,8 @@ def _validate_legacy_key(cls, plaintext: str, key_lookup: str, password_hasher: 
 | 2. Cache Timeouts (chart_v) | ✅ Done | `serializers.py` |
 | 3. LocMemCache Limits | ✅ Done | `settings.py` |
 | 4. Legacy Key Iterator | ✅ Done | `models.py` |
-| 5. lsnap/report TTL | ⏳ Pending | `serializers.py` / dashboard views |
-| 6. Race Condition Fallback | ⏳ Pending | `models.py` |
+| 5. lsnap/report TTL | ✅ Done | `dashboard/views.py` |
+| 6. Race Condition Fallback | ✅ Done | `models.py` |
 
 ---
 
@@ -262,15 +262,17 @@ def _validate_legacy_key(cls, plaintext: str, key_lookup: str, password_hasher: 
 # Add CACHES configuration to settings.py
 ```
 
-### Step 5: Add TTL for lsnap_* and report_* (Pending)
+### Step 5: Add TTL for lsnap_* and report_* (Done)
 ```bash
-# Find all cache.set() calls for lsnap_* and report_* keys
-# Add timeout=60 for lsnap, timeout=7200 for report
+# Already implemented in dashboard/views.py:
+# Line 363: cache.set(cache_key, snapshot, 50)  # lsnap_* - 50s TTL
+# Line 671: cache.set(cache_key, context, 55)   # report_* - 55s TTL
 ```
 
-### Step 6: Handle Race Condition (Pending)
+### Step 6: Handle Race Condition (Done)
 ```bash
-# Modify _validate_legacy_key() to fallback to fast path
+# Already implemented in models.py:_validate_legacy_key() lines 378-380
+# Falls back to fast path lookup if concurrent request migrated the same key
 ```
 
 ### Step 3: Configure LocMemCache Limits (settings.py) ✅ Done

@@ -316,8 +316,8 @@ class ApiKey(models.Model):
     # ================================================================
     @classmethod
     def generate_key(cls) -> str:
-        """Generate a new cryptographically secure API key."""
-        return secrets.token_urlsafe(32)
+        """Generate a new cryptographically secure API key (64-char hex string)."""
+        return secrets.token_hex(32)
 
     # ================================================================
     # KEY CREATION

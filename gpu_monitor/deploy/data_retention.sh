@@ -41,7 +41,7 @@ echo "Running VACUUM ANALYZE..." >> "$LOG_DIR/cleanup.log"
 # VACUUM ANALYZE cannot run inside a transaction block.
 # Run each VACUUM ANALYZE in its own psql call (autocommit mode by default).
 # Use PGPASSWORD env var for password, connect with application DB credentials.
-for table in metrics_gpumetric metrics_storagemetric metrics_networkmetric metrics_gpu_process metrics_power_reading metrics_metricsnapshot; do
+for table in metrics_gpumetric metrics_storagemetric metrics_networkmetric metrics_metricsnapshot; do
     PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "VACUUM ANALYZE $table;" >> "$LOG_DIR/cleanup.log" 2>&1 || true
 done
 

@@ -1257,6 +1257,8 @@ class BuildStorageMetricsTests(SimpleTestCase):
         self.assertEqual(result[0]["vendor"], "Samsung")
         self.assertEqual(result[0]["serial"], "S6EWNF0R1234")
         self.assertEqual(result[0]["wwn"], "0x5002538e12345678")
+        # Pre-joined label dedups the vendor when it is already in model
+        self.assertEqual(result[0]["model_label"], "Samsung SSD 870 EVO 1TB")
 
     def test_build_storage_metrics_with_no_storage(self):
         snap = SimpleNamespace(storage_count=0)

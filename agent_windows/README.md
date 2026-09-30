@@ -1,6 +1,6 @@
 # GPU Rig Monitoring Agent — Windows
 
-**Version:** 1.6.16-win | **Schema:** 1.10
+**Version:** 1.10.0-win | **Schema:** 1.16
 
 Windows-compatible agent for the GPU Rig Monitoring Platform. Collects hardware/software metrics and sends them to the monitoring server via HTTPS.
 
@@ -179,8 +179,8 @@ agent_windows/
 | Motherboard (manufacturer, model, BIOS) | WMI (`Win32_BaseBoard`, `Win32_BIOS`) | ✅ | ✅ |
 | Storage (partitions, capacity, usage, SMART, read/write bytes, IOPS) | psutil + WMI | ✅ | ✅ |
 | Network (interfaces, bytes, errors, speed) | psutil + WMI | ✅ | ✅ |
-| GPU (model, memory, util, temp, power, fan, PCIe link, core/mem clocks) | `pynvml` | ✅* | ✅* |
-| GPU processes (per-process: name, type C/G/C+G, memory) | `pynvml` | ✅* | ✅* |
+|| GPU (model, memory, util, temp, power, fan, PCIe link, core/mem clocks, **brand**, **board part number**) | `pynvml` | ✅* | ✅* |
+|| GPU processes (per-process: name, type C/G/C+G, memory) | `pynvml` | ✅* | ✅* |
 | Docker containers (name, image, status, container_id, uptime) | `docker` CLI (subprocess) | ✅† | ✅† |
 | Top processes (top 20 by CPU and memory) | psutil two-pass | ✅ | ✅ |
 | OS info (hostname, OS, kernel, uptime) | `platform` + psutil | ✅ | ✅ |

@@ -386,17 +386,6 @@ on the page. This keeps the bar from being noise.
             <div class="flex items-center justify-between mb-1">
                 <span class="text-sm font-medium text-gray-200">
                     <span class="text-gray-500">GPU{{ gpu.gpu_index }}</span> 
-                    {# Brand badge + Model #}
-                    {% if gpu.gpu_brand %}
-                    <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium mr-1.5
-                        {% if 'GeForce' in gpu.gpu_brand or 'Titan' in gpu.gpu_brand %}bg-amber-900/50 text-amber-300
-                        {% elif 'Tesla' in gpu.gpu_brand or 'GRID' in gpu.gpu_brand or 'NVIDIA' in gpu.gpu_brand %}bg-blue-900/50 text-blue-300
-                        {% elif 'Quadro' in gpu.gpu_brand or 'NVIDIA RTX' in gpu.gpu_brand %}bg-green-900/50 text-green-300
-                        {% elif 'Virtual' in gpu.gpu_brand or 'Cloud' in gpu.gpu_brand %}bg-purple-900/50 text-purple-300
-                        {% else %}bg-gray-700 text-gray-300{% endif %}">
-                        {{ gpu.gpu_brand }}
-                    </span>
-                    {% endif %}
                     {{ gpu.model|default:"Unknown GPU" }}
                 </span>
                 {% if gpu.gpu_uuid %}

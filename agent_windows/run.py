@@ -54,7 +54,7 @@ import yaml
 import requests
 
 __version__ = '1.10.0-win'
-__schema_version__ = '1.17'
+__schema_version__ = '1.16'
 
 # == Config ==================================================================
 
@@ -803,16 +803,6 @@ def collect_network():
         return []
 
 
-def _nvml_bytes_to_str(value):
-    """pynvml returns bytes on Python 3; decode to str (None-safe)."""
-    if value is None:
-        return None
-    if isinstance(value, bytes):
-        value = value.decode('utf-8', errors='replace')
-    value = value.strip() if isinstance(value, str) else value
-    return value or None
-
-
 # PCI Subvendor ID -> Human-readable name mapping
 # Based on PCI ID Repository and common GPU subvendor IDs
 GPU_SUBVENDOR_MAP = {
@@ -859,7 +849,8 @@ def _nvml_bytes_to_str(value):
 
 def collect_gpus():
     """Collect all GPU metrics: uuid, model, memory, utilization, temp, fan, power,
-    plus static identifiers (AIB board part number and subvendor)."""
+    plus static identifiers (AIB subvendor + AIB board part number)."""
+
     try:
         import pynvml
         pynvml.nvmlInit()
@@ -938,78 +929,6 @@ def collect_gpus():
                 # Static identifiers
                 'gpu_subvendor': gpu_subvendor,
                 'gpu_board_part_number': gpu_board_part,
-    plus static identifiers (brand, board part number)."""
-
-    try:
-        import pynvml
-        pynvml.nvmlInit()
-        count = pynvml.nvmlDeviceGetCount()
-        gpus = []
-        for i in range(count):
-            handle = pynvml.nvmlDeviceGetHandleByIndex(i)
-            info = pynvml.nvmlDeviceGetMemoryInfo(handle)
-            util = pynvml.nvmlDeviceGetUtilizationRates(handle)
-            try:
-                temp = pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
-            except Exception:
-                temp = None
-            try:
-                fan = pynvml.nvmlDeviceGetFanSpeed(handle)
-            except Exception:
-                fan = None
-            try:
-                power = pynvml.nvmlDeviceGetPowerUsage(handle) / 1000.0
-                power_limit = pynvml.nvmlDeviceGetEnforcedPowerLimit(handle) / 1000.0
-            except Exception:
-                power = None
-                power_limit = None
-
-            # Collect PCIe link info
-            pcie_current_gen = None
-            pcie_max_gen = None
-            pcie_current_width = None
-            pcie_max_width = None
-            try:
-                pcie_current_gen = pynvml.nvmlDeviceGetCurrPcieLinkGeneration(handle)
-                pcie_max_gen = pynvml.nvmlDeviceGetMaxPcieLinkGeneration(handle)
-                pcie_current_width = pynvml.nvmlDeviceGetCurrPcieLinkWidth(handle)
-                pcie_max_width = pynvml.nvmlDeviceGetMaxPcieLinkWidth(handle)
-            except Exception:
-                pass  # PCIe info not available on all GPUs/systems
-
-            # Collect GPU clock speeds
-            gpu_core_clock_mhz = None
-            gpu_mem_clock_mhz = None
-            try:
-                gpu_core_clock_mhz = pynvml.nvmlDeviceGetClockInfo(handle, pynvml.NVML_CLOCK_GRAPHICS)
-                gpu_mem_clock_mhz = pynvml.nvmlDeviceGetClockInfo(handle, pynvml.NVML_CLOCK_MEM)
-            except Exception as e:
-                logging.getLogger('gpu').debug('GPU %d clock info not available: %s', i, e)
-
-            # pynvml returns bytes for uuid and name in Python 3; decode them
-            raw_uuid = pynvml.nvmlDeviceGetUUID(handle)
-            if isinstance(raw_uuid, bytes):
-                raw_uuid = raw_uuid.decode('utf-8')
-            raw_name = pynvml.nvmlDeviceGetName(handle)
-            if isinstance(raw_name, bytes):
-                raw_name = raw_name.decode('utf-8')
-
-            # Collect AIB board part number (e.g., "ASUS Astral", "MSI Suprim")
-            gpu_board_part = None
-            try:
-                gpu_board_part = _nvml_bytes_to_str(pynvml.nvmlDeviceGetBoardPartNumber(handle))
-            except pynvml.NVMLError_NotSupported:
-                pass  # NOT_SUPPORTED on some GPUs
-            except pynvml.NVMLError:
-                pass  # Other NVML errors
-
-            gpus.append({
-                'uuid': raw_uuid,
-                'model': raw_name,
-                # Static identifiers
-                'gpu_board_part_number': gpu_board_part,
-                'uuid': raw_uuid,
-                'model': raw_name,
                 'mem_total_mb': info.total // (1024 * 1024),
                 'mem_used_mb': info.used // (1024 * 1024),
                 'mem_free_mb': info.free // (1024 * 1024),

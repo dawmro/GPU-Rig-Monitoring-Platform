@@ -179,7 +179,7 @@ agent_windows/
 | Motherboard (manufacturer, model, BIOS) | WMI (`Win32_BaseBoard`, `Win32_BIOS`) | ✅ | ✅ |
 | Storage (partitions, capacity, usage, SMART, read/write bytes, IOPS) | psutil + WMI | ✅ | ✅ |
 | Network (interfaces, bytes, errors, speed) | psutil + WMI | ✅ | ✅ |
-|| GPU (model, memory, util, temp, power, fan, PCIe link, core/mem clocks, **brand**, **board part number**) | `pynvml` | ✅* | ✅* |
+| GPU (model, memory, util, temp, power, fan, PCIe link, core/mem clocks, **AIB subvendor**, **board part number**) | `pynvml` | ✅* | ✅* |
 || GPU processes (per-process: name, type C/G/C+G, memory) | `pynvml` | ✅* | ✅* |
 | Docker containers (name, image, status, container_id, uptime) | `docker` CLI (subprocess) | ✅† | ✅† |
 | Top processes (top 20 by CPU and memory) | psutil two-pass | ✅ | ✅ |

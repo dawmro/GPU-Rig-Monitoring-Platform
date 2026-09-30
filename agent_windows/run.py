@@ -875,8 +875,10 @@ def collect_gpus():
             gpu_board_part = None
             try:
                 gpu_board_part = _nvml_bytes_to_str(pynvml.nvmlDeviceGetBoardPartNumber(handle))
-            except pynvml.NVMLError:
+            except pynvml.NVMLError_NotSupported:
                 pass  # NOT_SUPPORTED on some GPUs
+            except pynvml.NVMLError:
+                pass  # Other NVML errors
 
             gpus.append({
                 'uuid': raw_uuid,

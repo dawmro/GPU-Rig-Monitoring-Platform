@@ -284,6 +284,20 @@ on the page. This keeps the bar from being noise.
                 <span class="text-sm font-medium text-gray-200">{{ disk.device|default:"unknown" }}</span>
                 <span class="text-xs text-gray-500">{{ disk.fstype|default:"" }} · {{ disk.mountpoint|default:"" }}</span>
             </div>
+            {# Static hardware identifiers from sysfs (model / vendor / serial / WWN) #}
+{% if disk.model or disk.vendor or disk.serial or disk.wwn %}
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-0.5 text-xs text-gray-500 mb-1">
+                {% if disk.vendor or disk.model %}
+                <span>Model: <span class="text-gray-300">{{ disk.vendor }}{{ ' ' if disk.vendor and disk.model else '' }}{{ disk.model }}</span></span>
+                {% endif %}
+                {% if disk.serial %}
+                <span>Serial: <span class="text-gray-300 font-mono">{{ disk.serial }}</span></span>
+                {% endif %}
+                {% if disk.wwn %}
+                <span>WWN: <span class="text-gray-300 font-mono">{{ disk.wwn }}</span></span>
+                {% endif %}
+            </div>
+{% endif %}
             <div class="flex items-center gap-3 mb-1">
                 <div class="flex-1">
                     <div class="w-full bg-gray-700 rounded-full h-2 overflow-hidden">

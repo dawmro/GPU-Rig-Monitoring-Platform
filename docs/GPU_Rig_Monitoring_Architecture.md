@@ -108,11 +108,11 @@ Cron → Agent collects metrics → JSON payload → POST /api/v1/ingest/
   → DRF APIKeyAuthentication (X-API-Key header → Argon2id hash comparison)
   → DRF throttle (per-rig rate limit via X-Rig-UUID header, 2/min per rig)
     → Timestamp sanity check (reject if >5 min future or >1 hour past)
-    → IngestSerializer validation (schema version 1.0 through 1.14)
+    → IngestSerializer validation (schema version 1.0 through 1.15)
   → process_ingest() → DB upsert (MetricSnapshot, GPUMetric, StorageMetric, NetworkMetric, LatestDockerContainer, RigStatusEvent, LatestSnapshot)
   → StorageMetric: capacity, usage%, temp, SMART, read/write *deltas*, read/write IOPS *deltas*, utilization% (cumulative counters live only in LatestSnapshot.storage_*_total_json after migration 0049)
   → NetworkMetric: rx/tx *deltas*, rx/tx errors (static fields ipv4, link_speed_mbps live only in LatestSnapshot.network_*_json after migration 0050)
-  → LatestSnapshot: 11 storage JSON arrays (devices, fstypes, mountpoints, capacities, usage%, temps, smart, deltas, totals) + 5 cumulative storage JSON arrays (read/write bytes/IOPS totals, busy_time_ms) + 3 process fields (top_cpu_processes_json, top_mem_processes_json, process_count) + power fields (power_total_w, power_gpu_w, power_cpu_w, power_other_w) + gpu_processes_json + gpu_process_count + has_active_job + 17 GPU JSON arrays
+  → LatestSnapshot: 15 storage JSON arrays (devices, fstypes, mountpoints, capacities, usage%, temps, smart, model, vendor, serial, wwn, deltas, totals) + 5 cumulative storage JSON arrays (read/write bytes/IOPS totals, busy_time_ms) + 3 process fields (top_cpu_processes_json, top_mem_processes_json, process_count) + power fields (power_total_w, power_gpu_w, power_cpu_w, power_other_w) + gpu_processes_json + gpu_process_count + has_active_job + 17 GPU JSON arrays
   → Rig.latest_errors_json updated with latest error text
   → Rig.enrolled_by_api_key updated to current key (handles key rotation)
   → Rig.last_seen and Rig.status updated to ONLINE
@@ -206,14 +206,14 @@ retry_attempts: 3         # Exponential backoff: 1s → 2s → 4s
 debug_mode: false         # Verbose logging
 ```
 
-### 3.3 Payload Schema (v1.14)
+### 3.3 Payload Schema (v1.15)
 
 ```json
 {
   "rig_uuid": "UUIDv4",
   "rig_name": "my-server",
-  "schema_version": "1.14",
-  "agent_version": "1.9.1",
+  "schema_version": "1.15",
+  "agent_version": "1.10.0",
   "timestamp": "2026-06-07T19:54:06Z",
   "metrics": {
     "cpu": {
@@ -246,6 +246,10 @@ debug_mode: false         # Verbose logging
         "usage_pct": 51.7,
         "temp_c": null,
         "smart_health": "",
+        "model": "Samsung SSD 870 EVO 1TB",
+        "vendor": "Samsung",
+        "serial": "S6EWNF0R1234",
+        "wwn": "0x5002538e12345678",
         "read_bytes": 37688539648,
         "write_bytes": 156538570752,
         "read_iops": 3309393,
@@ -371,6 +375,17 @@ debug_mode: false         # Verbose logging
 - Stored in LatestSnapshot.has_active_job and MetricSnapshot.has_active_job
 - Display: Fleet Overview "Job" column (green/red circle)
 
+**Changelog from schema 1.14 → 1.15 (agent 1.10.0):**
+- Added disk hardware identifiers to `storage[]` objects: `model`, `vendor`, `serial`, `wwn`
+- Agent reads them from `/sys/block/<disk>/device/{model,vendor,serial,wwn}` (read-only sysfs, no sudo, no new dependencies)
+- Values are per-physical-disk (partitions share the whole-disk identifiers), `null` when the sysfs attribute is unavailable (virtual devices, some NVMe drives)
+- 4 new JSONFields on LatestSnapshot: `storage_models_json`, `storage_vendors_json`, `storage_serials_json`, `storage_wwns_json` (one entry per disk, same order as `storage_devices_json`; empty string when unavailable)
+- Not stored in the StorageMetric time-series table: identifiers are static (disk replacement is the only change case) and no chart/report reads them historically — same rationale as migration 0049/0050 denormalization
+- Display: Live Metrics Storage card shows `Model: <vendor> <model>`, `Serial: …`, `WWN: …` per disk (rows hidden when all empty)
+- Migration: 0054_latest_snapshot_disk_hardware_identifiers
+- Server accepts schema versions 1.0 through 1.15; older agents (≤1.14) default to empty strings
+- Django system check `check_storage_hardware_identifiers` (metrics_app.E011/E012) verifies model fields + serializer writes
+
 **Changelog from schema 1.13 → 1.14:**
 - Schema version bump only (no payload structure changes)
 - Aligns agent schema version with implementation
@@ -414,13 +429,13 @@ debug_mode: false         # Verbose logging
 
 | Agent | Version | Schema | Platform | Scheduling |
 |-------|---------|--------|----------|------------|
-| Linux | 1.9.1 | 1.14 | Any Linux, VMware NAT | `cron` every 60s with `flock` |
-| Windows | 1.9.1-win | 1.14 | Windows 10/11 | Task Scheduler (1 min) with `pythonw.exe` (hidden window) |
+| Linux | 1.10.0 | 1.15 | Any Linux, VMware NAT | `cron` every 60s with `flock` |
+| Windows | 1.6.16-win | 1.10 | Windows 10/11 | Task Scheduler (1 min) with `pythonw.exe` (hidden window) |
 
 **Versioning rules:**
 - `agent_version` (e.g. `1.9.1`): incremented for agent-side changes (collectors, payload format, bug fixes). Format: `MAJOR.MINOR.PATCH`.
 - `schema_version` (e.g. `1.14`): incremented only when the payload structure changes in a way that affects the server's serialization/storage. Format: `MAJOR.MINOR`.
-- Schema versions 1.0 through 1.14 are supported (backward compatible via `validate_schema_version` in `IngestSerializer`).
+- Schema versions 1.0 through 1.15 are supported (backward compatible via `validate_schema_version` in `IngestSerializer`).
 - When schema versions change, the `validate_schema_version` method in `IngestSerializer` is updated to accept the new version. The same serializer handles all supported versions.
 - See §11.5 for the contract testing strategy.
 
@@ -697,7 +712,7 @@ POST /api/v1/ingest/
   → APIKeyAuthentication validates X-API-Key
   → Nginx rate limit: 2r/min per rig_uuid (burst=5)
   → DRF throttle (per-rig rate limit via X-Rig-UUID header, 2/min per rig)
-  → IngestSerializer validation (schema version 1.0 through 1.14)
+  → IngestSerializer validation (schema version 1.0 through 1.15)
   → process_ingest() in transaction.atomic():
       - Upsert MetricSnapshot (cpu, memory, status fields; motherboard/software as JSON; error_count)
       - Upsert GPUMetric per GPU (gpu_index = 0, 1, ...)
@@ -710,7 +725,7 @@ POST /api/v1/ingest/
       - Update LatestSnapshot (denormalized cache for fast dashboard loading):
           * CPU: cpu_utilization_pct, cpu_temp_c, mem_used_bytes, mem_total_bytes
           * GPU (JSON arrays): gpu_count, gpu_uuids_json, gpu_models_json, gpu_temps_json, gpu_utils_json, gpu_fans_json, gpu_core_clocks_json, gpu_mem_clocks_json, gpu_mem_used_json, gpu_mem_total_json, gpu_mem_util_pcts_json, gpu_mem_free_json, gpu_power_draws_json, gpu_power_limits_json, gpu_pcie_gen_json, gpu_pcie_max_gen_json, gpu_pcie_width_json, gpu_pcie_max_width_json
-          * Storage (JSON arrays): storage_count, storage_devices_json, storage_fstypes_json, storage_mountpoints_json, storage_capacities_json, storage_usage_pcts_json, storage_temps_json, storage_smart_json + storage_read_bytes_delta_json, storage_write_bytes_delta_json, storage_read_iops_delta_json, storage_write_iops_delta_json, storage_utilization_pcts_json + storage_read_bytes_total_json, storage_write_bytes_total_json, storage_read_iops_total_json, storage_write_iops_total_json, storage_busy_time_ms_total_json
+          * Storage (JSON arrays): storage_count, storage_devices_json, storage_fstypes_json, storage_mountpoints_json, storage_capacities_json, storage_usage_pcts_json, storage_temps_json, storage_smart_json, storage_models_json, storage_vendors_json, storage_serials_json, storage_wwns_json + storage_read_bytes_delta_json, storage_write_bytes_delta_json, storage_read_iops_delta_json, storage_write_iops_delta_json, storage_utilization_pcts_json + storage_read_bytes_total_json, storage_write_bytes_total_json, storage_read_iops_total_json, storage_write_iops_total_json, storage_busy_time_ms_total_json
           * Network (JSON arrays): network_count, network_interfaces_json, network_ipv4s_json, network_speeds_json, network_rx_bytes_json, network_tx_bytes_json, network_rx_errors_json, network_tx_errors_json
           * Cache invalidation: cache.delete(lsnap_{uuid})
       - Update Rig.last_seen = now(), Rig.status = ONLINE, cache.delete(lsnap_{uuid})

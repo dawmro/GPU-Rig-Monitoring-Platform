@@ -232,6 +232,11 @@ def _build_storage_metrics(snapshot):
             'usage_pct': _json_get(snapshot.storage_usage_pcts_json, i),
             'temp_c': _json_get(snapshot.storage_temps_json, i),
             'smart_health': _json_get(snapshot.storage_smart_json, i, ''),
+            # Static hardware identifiers (sysfs) — '' when unavailable
+            'model': _json_get(snapshot.storage_models_json, i, ''),
+            'vendor': _json_get(snapshot.storage_vendors_json, i, ''),
+            'serial': _json_get(snapshot.storage_serials_json, i, ''),
+            'wwn': _json_get(snapshot.storage_wwns_json, i, ''),
             # Disk I/O metrics — deltas (since last sample) and cumulative totals (since boot)
             'read_bytes_delta': _json_get(snapshot.storage_read_bytes_delta_json, i),
             'write_bytes_delta': _json_get(snapshot.storage_write_bytes_delta_json, i),

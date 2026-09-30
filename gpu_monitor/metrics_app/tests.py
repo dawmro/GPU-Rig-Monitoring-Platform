@@ -5,6 +5,7 @@ from django.contrib.auth import get_user_model
 from accounts.models import ApiKey
 from rigs.models import Rig
 from metrics_app.models import MetricSnapshot, LatestSnapshot
+from metrics_app.serializers import process_ingest
 
 User = get_user_model()
 
@@ -175,3 +176,87 @@ class ApiKeyTestCase(TestCase):
     def test_invalid_key_validation(self):
         key_obj, error = ApiKey.validate_key('nonexistent-key')
         self.assertIsNone(key_obj)
+
+
+class DiskHardwareIdentifierTestCase(TestCase):
+    """Disk hardware identifiers (model/vendor/serial/wwn) flow from
+    the agent payload into LatestSnapshot via process_ingest.
+    (W001-style regression test for the disk-identifier pipeline.)"""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email='diskhw@example.com', password='testpass123',
+            username='diskhwuser'
+        )
+        self.rig = Rig.objects.create(uuid=uuid.uuid4(), owner=self.user)
+
+    def _payload(self, storage):
+        return {
+            'rig_uuid': str(self.rig.uuid),
+            'schema_version': '1.15',
+            'agent_version': '1.10.0',
+            'timestamp': '2024-05-20T14:32:00Z',
+            'metrics': {
+                'cpu': {'utilization_pct': 1.0},
+                'memory': {'total_bytes': 1000, 'used_bytes': 500},
+                'storage': storage,
+            },
+            'software': {'hostname': 'x'},
+            'errors': [],
+        }
+
+    def test_ingest_writes_disk_hardware_identifiers(self):
+        storage = [
+            {'device': '/dev/sda', 'mountpoint': '/', 'fstype': 'ext4',
+             'capacity_bytes': 1000, 'usage_pct': 10.0,
+             'model': 'Samsung SSD 870 EVO 1TB', 'vendor': 'Samsung',
+             'serial': 'S6EWNF0R1234', 'wwn': '0x5002538e12345678'},
+            {'device': '/dev/sdb', 'mountpoint': '/home', 'fstype': 'ext4',
+             'capacity_bytes': 2000, 'usage_pct': 50.0,
+             'model': None, 'vendor': None, 'serial': None, 'wwn': None},
+        ]
+        result, code = process_ingest(str(self.rig.uuid), self._payload(storage),
+                                     self.user.id, rig=self.rig)
+        self.assertIn(code, (200, 202))
+        ls = LatestSnapshot.objects.get(rig_uuid=self.rig.uuid)
+        self.assertEqual(ls.storage_models_json, ['Samsung SSD 870 EVO 1TB', ''])
+        self.assertEqual(ls.storage_vendors_json, ['Samsung', ''])
+        self.assertEqual(ls.storage_serials_json, ['S6EWNF0R1234', ''])
+        self.assertEqual(ls.storage_wwns_json, ['0x5002538e12345678', ''])
+
+    def test_ingest_without_hardware_identifiers_uses_defaults(self):
+        """Older agents (schema 1.14) send no model/vendor/serial/wwn —
+        server must default to empty strings, not crash."""
+        storage = [
+            {'device': '/dev/sda', 'mountpoint': '/', 'fstype': 'ext4',
+             'capacity_bytes': 1000, 'usage_pct': 10.0},
+        ]
+        payload = self._payload(storage)
+        payload['schema_version'] = '1.14'
+        result, code = process_ingest(str(self.rig.uuid), payload,
+                                     self.user.id, rig=self.rig)
+        self.assertIn(code, (200, 202))
+        ls = LatestSnapshot.objects.get(rig_uuid=self.rig.uuid)
+        self.assertEqual(ls.storage_models_json, [''])
+        self.assertEqual(ls.storage_vendors_json, [''])
+        self.assertEqual(ls.storage_serials_json, [''])
+        self.assertEqual(ls.storage_wwns_json, [''])
+
+    def test_build_storage_metrics_exposes_identifiers(self):
+        from dashboard.views import _build_storage_metrics
+        storage = [
+            {'device': '/dev/sda', 'mountpoint': '/', 'fstype': 'ext4',
+             'capacity_bytes': 1000, 'usage_pct': 10.0,
+             'model': 'WD Blue SN550 1TB', 'vendor': 'Western Digital',
+             'serial': 'S7K5NZABF999', 'wwn': ''},
+        ]
+        result, code = process_ingest(str(self.rig.uuid), self._payload(storage),
+                                     self.user.id, rig=self.rig)
+        self.assertIn(code, (200, 202))
+        ls = LatestSnapshot.objects.get(rig_uuid=self.rig.uuid)
+        metrics = _build_storage_metrics(ls)
+        self.assertEqual(len(metrics), 1)
+        self.assertEqual(metrics[0]['model'], 'WD Blue SN550 1TB')
+        self.assertEqual(metrics[0]['vendor'], 'Western Digital')
+        self.assertEqual(metrics[0]['serial'], 'S7K5NZABF999')
+        self.assertEqual(metrics[0]['wwn'], '')

@@ -29,11 +29,11 @@ Versioning:
 
     After making changes to agent code, you MUST increment __version__ and/or
     __schema_version__ according to the depth of changes:
-    - PATCH: bug fixes, minor collector tweaks (e.g. 1.5.0 → 1.5.1)
-    - MINOR: new collectors, new payload fields (e.g. 1.5.0 → 1.6.0)
-    - MAJOR: breaking changes to payload structure (e.g. 1.4 → 2.0)
+    - PATCH: bug fixes, minor collector tweaks (e.g. 1.5.0 -> 1.5.1)
+    - MINOR: new collectors, new payload fields (e.g. 1.5.0 -> 1.6.0)
+    - MAJOR: breaking changes to payload structure (e.g. 1.4 -> 2.0)
 
-    See docs/GPU_Rig_Monitoring_Architecture.md §3.1a for full versioning rules.
+    See docs/GPU_Rig_Monitoring_Architecture.md Sec. 3.1a for full versioning rules.
 """
 
 import os
@@ -54,9 +54,9 @@ import yaml
 import requests
 
 __version__ = '1.10.0-win'
-__schema_version__ = '1.16'
+__schema_version__ = '1.17'
 
-# ── Config ──────────────────────────────────────────────────────────────────
+# == Config ==================================================================
 
 def get_default_config_path():
     """Return platform-appropriate default config path."""
@@ -102,7 +102,7 @@ def load_config(path=None):
     return config
 
 
-# ── Logging ─────────────────────────────────────────────────────────────────
+# == Logging =================================================================
 
 def setup_logging(debug=False):
     log_dir = Path(__file__).resolve().parent / 'logs'
@@ -133,7 +133,7 @@ def log_payload(payload):
     payload_path.write_text(json.dumps(payload, indent=2, default=str) + '\n')
 
 
-# ── Metric Collectors (all-in-one, no duplication) ─────────────────────────
+# == Metric Collectors (all-in-one, no duplication) =========================
 
 def collect_cpu():
     """Collect all CPU metrics: static info + time-series data."""
@@ -268,7 +268,7 @@ def estimate_cpu_power_w(cpu_utilization, cpu_cores):
     Uses: cpu_power = 10 + TDP × (0.1 + 0.9 × util)
     - TDP = 8W per core + 25W base (calibrated against 16 real CPUs)
     - 10W constant base (VRM losses, chipset, platform overhead)
-    - TDP × 0.1 = proportional idle power (leakage, uncore — scales with core count)
+    - TDP × 0.1 = proportional idle power (leakage, uncore - scales with core count)
     - TDP × 0.9 × util = dynamic load power
 
     Validated against Ryzen 3, 5, 7 at various utilizations.
@@ -290,7 +290,7 @@ def collect_power(cpu_metrics):
 
     Tries RAPL first for accurate CPU power measurement (Linux only).
     Falls back to estimation from utilization if RAPL unavailable.
-    All power values returned are AC (wall) — PSU efficiency already factored in.
+    All power values returned are AC (wall) - PSU efficiency already factored in.
 
     Args:
         cpu_metrics: dict from collect_cpu() with 'utilization_pct' (0-100) and 'physical_cores'
@@ -425,17 +425,17 @@ def _get_drive_to_physical_map():
     """Build a mapping from Windows drive letter to PhysicalDrive name.
 
     Uses wmic CLI commands to get the association chain:
-    1. Win32_LogicalDiskToPartition: logical disk → partition
-    2. Win32_DiskDriveToDiskPartition: disk drive → partition
+    1. Win32_LogicalDiskToPartition: logical disk -> partition
+    2. Win32_DiskDriveToDiskPartition: disk drive -> partition
 
-    Combines both to build: drive letter → PhysicalDriveN
+    Combines both to build: drive letter -> PhysicalDriveN
 
     Returns dict: {'C': 'PhysicalDrive0', 'D': 'PhysicalDrive1', ...}
     """
     drive_map = {}
 
     try:
-        # Step 1: Get logical disk → partition mapping
+        # Step 1: Get logical disk -> partition mapping
         # Output format: Node,Antecedent,Dependent
         # Antecedent: Win32_DiskPartition.DeviceID="Disk #0, Partition #0"
         # Dependent: Win32_LogicalDisk.DeviceID="C:"
@@ -468,7 +468,7 @@ def _get_drive_to_physical_map():
             logging.getLogger('storage').debug('wmic LogicalDiskToPartition returned no data')
             return _get_drive_to_physical_map_wmi()
 
-        # Step 2: Get disk drive → partition mapping
+        # Step 2: Get disk drive -> partition mapping
         # Antecedent: Win32_DiskDrive.DeviceID="\\.\PHYSICALDRIVE0"
         # Dependent: Win32_DiskPartition.DeviceID="Disk #0, Partition #0"
         disk_to_partition = {}
@@ -495,9 +495,9 @@ def _get_drive_to_physical_map():
                 disk_to_partition[(disk_idx, part_idx)] = disk_idx
 
         # Step 3: Combine both mappings
-        # logical_to_partition: (disk_idx, part_idx) → letter
-        # disk_to_partition: (disk_idx, part_idx) → disk_idx
-        # Result: letter → PhysicalDriveN
+        # logical_to_partition: (disk_idx, part_idx) -> letter
+        # disk_to_partition: (disk_idx, part_idx) -> disk_idx
+        # Result: letter -> PhysicalDriveN
         for (disk_idx, part_idx), letter in logical_to_partition.items():
             if (disk_idx, part_idx) in disk_to_partition:
                 drive_map[letter] = f'PhysicalDrive{disk_idx}'
@@ -599,7 +599,7 @@ def _normalize_physical_drive_name(device_id):
 def _get_windows_disks_wmi():
     """Fallback: get disk partitions via WMI when psutil returns empty results.
 
-    Returns a list of dicts with device, mountpoint, fstype — same format
+    Returns a list of dicts with device, mountpoint, fstype - same format
     as psutil.disk_partitions() entries.
     """
     try:
@@ -813,8 +813,131 @@ def _nvml_bytes_to_str(value):
     return value or None
 
 
+# PCI Subvendor ID -> Human-readable name mapping
+# Based on PCI ID Repository and common GPU subvendor IDs
+GPU_SUBVENDOR_MAP = {
+    0x10DE: "NVIDIA (Founders Edition)",
+    0x1043: "ASUS",
+    0x1458: "Gigabyte",
+    0x1462: "MSI",
+    0x19DA: "Zotac",
+    0x3842: "EVGA",
+    0x1569: "Palit",
+    0x107D: "Leadtek",
+    0x1E04: "Inno3D",
+    0x152D: "Quanta",
+    0x11A9: "InnoVISION",
+    0x1B4C: "Galax / KFA2",
+    0x1ACC: "PNY",
+    0x19BE: "Gainward",
+    0x103C: "HP",
+    0x17AA: "Lenovo",
+    0x1028: "Dell",
+    0x144D: "Samsung",
+    0x1014: "IBM",
+    0x1002: "AMD",
+}
+
+
+def _get_gpu_subvendor_name(pci_subsystem_id):
+    """Extract subvendor name from PCI subsystem ID."""
+    if pci_subsystem_id is None:
+        return None
+    subvendor_id = pci_subsystem_id & 0xFFFF
+    return GPU_SUBVENDOR_MAP.get(subvendor_id, f"Unknown (0x{subvendor_id:04X})")
+
+
+def _nvml_bytes_to_str(value):
+    """pynvml returns bytes on Python 3; decode to str (None-safe)."""
+    if value is None:
+        return None
+    if isinstance(value, bytes):
+        value = value.decode('utf-8', errors='replace')
+    value = value.strip() if isinstance(value, str) else value
+    return value or None
+
+
 def collect_gpus():
     """Collect all GPU metrics: uuid, model, memory, utilization, temp, fan, power,
+    plus static identifiers (AIB board part number and subvendor)."""
+    try:
+        import pynvml
+        pynvml.nvmlInit()
+        count = pynvml.nvmlDeviceGetCount()
+        gpus = []
+        for i in range(count):
+            handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+            info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+            util = pynvml.nvmlDeviceGetUtilizationRates(handle)
+            try:
+                temp = pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
+            except Exception:
+                temp = None
+            try:
+                fan = pynvml.nvmlDeviceGetFanSpeed(handle)
+            except Exception:
+                fan = None
+            try:
+                power = pynvml.nvmlDeviceGetPowerUsage(handle) / 1000.0
+                power_limit = pynvml.nvmlDeviceGetEnforcedPowerLimit(handle) / 1000.0
+            except Exception:
+                power = None
+                power_limit = None
+
+            # Collect PCIe link info
+            pcie_current_gen = None
+            pcie_max_gen = None
+            pcie_current_width = None
+            pcie_max_width = None
+            try:
+                pcie_current_gen = pynvml.nvmlDeviceGetCurrPcieLinkGeneration(handle)
+                pcie_max_gen = pynvml.nvmlDeviceGetMaxPcieLinkGeneration(handle)
+                pcie_current_width = pynvml.nvmlDeviceGetCurrPcieLinkWidth(handle)
+                pcie_max_width = pynvml.nvmlDeviceGetMaxPcieLinkWidth(handle)
+            except Exception:
+                pass  # PCIe info not available on all GPUs/systems
+
+            # Collect GPU clock speeds
+            gpu_core_clock_mhz = None
+            gpu_mem_clock_mhz = None
+            try:
+                gpu_core_clock_mhz = pynvml.nvmlDeviceGetClockInfo(handle, pynvml.NVML_CLOCK_GRAPHICS)
+                gpu_mem_clock_mhz = pynvml.nvmlDeviceGetClockInfo(handle, pynvml.NVML_CLOCK_MEM)
+            except Exception as e:
+                logging.getLogger('gpu').debug('GPU %d clock info not available: %s', i, e)
+
+            # pynvml returns bytes for uuid and name in Python 3; decode them
+            raw_uuid = pynvml.nvmlDeviceGetUUID(handle)
+            if isinstance(raw_uuid, bytes):
+                raw_uuid = raw_uuid.decode('utf-8')
+            raw_name = pynvml.nvmlDeviceGetName(handle)
+            if isinstance(raw_name, bytes):
+                raw_name = raw_name.decode('utf-8')
+
+            # Collect PCI info for subvendor identification
+            gpu_subvendor = None
+            try:
+                pci_info = pynvml.nvmlDeviceGetPciInfo(handle)
+                if pci_info and hasattr(pci_info, 'pciSubSystemId'):
+                    gpu_subvendor = _get_gpu_subvendor_name(pci_info.pciSubSystemId)
+            except pynvml.NVMLError:
+                pass  # PCI info not available
+
+            # Collect AIB board part number (e.g., "ASUS Astral", "MSI Suprim")
+            gpu_board_part = None
+            try:
+                gpu_board_part = _nvml_bytes_to_str(pynvml.nvmlDeviceGetBoardPartNumber(handle))
+            except pynvml.NVMLError_NotSupported:
+                pass  # NOT_SUPPORTED on some GPUs
+            except pynvml.NVMLError:
+                pass  # Other NVML errors
+
+            gpus.append({
+                'uuid': raw_uuid,
+                'model': raw_name,
+                # Static identifiers
+                'gpu_subvendor': gpu_subvendor,
+                'gpu_board_part_number': gpu_board_part,
     plus static identifiers (brand, board part number)."""
 
     try:
@@ -914,7 +1037,7 @@ def collect_gpus():
 def collect_gpu_processes():
     """Collect GPU process list from nvidia-smi (Windows version).
 
-    Same parsing as Linux — nvidia-smi output format is identical
+    Same parsing as Linux - nvidia-smi output format is identical
     across platforms for the Processes section.
     """
     processes = []
@@ -1490,7 +1613,7 @@ def collect_errors():
     return errors
 
 
-# ── Payload & Transport ─────────────────────────────────────────────────────
+# == Payload & Transport =====================================================
 
 def build_payload(config):
     """Build the telemetry payload.
@@ -1582,7 +1705,7 @@ def send_payload(config, payload):
     return None, {}
 
 
-# ── Acquisition Lock ────────────────────────────────────────────────────────
+# == Acquisition Lock ========================================================
 
 class AcquisitionLock:
     """Cross-platform file lock to prevent overlapping agent runs."""
@@ -1635,7 +1758,7 @@ class AcquisitionLock:
                 self._locked = False
 
 
-# ── Windows Task Scheduler Setup Helper ─────────────────────────────────────
+# == Windows Task Scheduler Setup Helper =====================================
 
 def print_task_scheduler_instructions():
     """Print instructions for setting up Windows Task Scheduler."""
@@ -1658,15 +1781,15 @@ def print_task_scheduler_instructions():
     print("The built-in --install-task flag uses 1-minute intervals.")
     print("NOTE: Uses pythonw.exe to run without a visible terminal window.")
     print()
-    print("Option 1 — Automatic (run as Administrator):")
+    print("Option 1 - Automatic (run as Administrator):")
     print(f'  python "{script_path}" --install-task')
     print()
-    print("Option 2 — Using schtasks command (run as Administrator):")
+    print("Option 2 - Using schtasks command (run as Administrator):")
     print(f'  schtasks /create /tn "GPURigMonitorAgent" '
           f'/tr "\\{pythonw_path}\\" \\"{script_path}\\"" '
           f'/sc minute /mo 1 /f')
     print()
-    print("Option 3 — Using Task Scheduler GUI:")
+    print("Option 3 - Using Task Scheduler GUI:")
     print("  1. Open Task Scheduler (taskschd.msc)")
     print("  2. Click 'Create Basic Task'")
     print("  3. Name: GPURigMonitorAgent")
@@ -1790,12 +1913,12 @@ def _detect_server():
             result = sock.connect_ex((ip, 80))
             sock.close()
             if result == 0:
-                print(f"  {ip:20s} — {label} (port 80 open)")
+                print(f"  {ip:20s} - {label} (port 80 open)")
                 found.append(ip)
             else:
-                print(f"  {ip:20s} — {label} (no response)")
+                print(f"  {ip:20s} - {label} (no response)")
         except Exception:
-            print(f"  {ip:20s} — {label} (error)")
+            print(f"  {ip:20s} - {label} (error)")
 
     if found:
         best = found[0]
@@ -1814,7 +1937,7 @@ def _detect_server():
                     r = s.connect_ex((probe, 80))
                     s.close()
                     if r == 0:
-                        print(f"  {probe} responds on port 80 — try: http://{probe}")
+                        print(f"  {probe} responds on port 80 - try: http://{probe}")
                 except Exception:
                     pass
     else:
@@ -1826,7 +1949,7 @@ def _detect_server():
     print("=" * 60)
 
 
-# ── Main ────────────────────────────────────────────────────────────────────
+# == Main ====================================================================
 
 def main():
     # Handle command-line arguments for task management and diagnostics

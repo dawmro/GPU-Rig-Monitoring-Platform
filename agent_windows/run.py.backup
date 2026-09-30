@@ -1,14 +1,25 @@
 #!/usr/bin/env python3
 """
-GPU Rig Monitoring Agent
+GPU Rig Monitoring Agent (Windows)
 
 Collects hardware/software metrics and sends them to the monitoring server.
-Designed to run via cron every 60 seconds.
+Designed to run via Windows Task Scheduler.
 
 Usage:
-    python3 run.py
+    python run.py
 
-Config file: /etc/monitoring-agent/config.yaml
+Config file: config.yaml (in the same directory as this script)
+
+Dependencies:
+    pip install psutil py-cpuinfo requests pyyaml wmi
+
+Optional dependencies:
+    pip install pynvml         # For NVIDIA GPU monitoring (requires NVIDIA GPU)
+
+Notes:
+    - Docker container monitoring uses the `docker` CLI via subprocess.
+      No Python SDK required. Docker Desktop must be running on Windows.
+    - The `docker` CLI must be in the system PATH.
 
 Versioning:
     - __version__ (MAJOR.MINOR.PATCH): incremented for agent-side changes
@@ -18,18 +29,17 @@ Versioning:
 
     After making changes to agent code, you MUST increment __version__ and/or
     __schema_version__ according to the depth of changes:
-    - PATCH: bug fixes, minor collector tweaks (e.g. 1.4.0 → 1.4.1)
-    - MINOR: new collectors, new payload fields (e.g. 1.4.0 → 1.5.0)
-    - MAJOR: breaking changes to payload structure (e.g. 1.4 → 2.0)
+    - PATCH: bug fixes, minor collector tweaks (e.g. 1.5.0 -> 1.5.1)
+    - MINOR: new collectors, new payload fields (e.g. 1.5.0 -> 1.6.0)
+    - MAJOR: breaking changes to payload structure (e.g. 1.4 -> 2.0)
 
-    See docs/GPU_Rig_Monitoring_Architecture.md §3.1a for full versioning rules.
+    See docs/GPU_Rig_Monitoring_Architecture.md Sec. 3.1a for full versioning rules.
 """
 
 import os
 import sys
 import json
 import re
-import signal
 import time
 import random
 import logging
@@ -43,15 +53,22 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.12.0'
-__schema_version__ = '1.17'
+__version__ = '1.10.0-win'
+__schema_version__ = '1.16'
 
-# ── Config ──────────────────────────────────────────────────────────────────
+# == Config ==================================================================
 
-DEFAULT_CONFIG_PATH = '/etc/monitoring-agent/config.yaml'
+def get_default_config_path():
+    """Return platform-appropriate default config path."""
+    script_dir = Path(__file__).resolve().parent
+    return str(script_dir / 'config.yaml')
 
-def load_config(path=DEFAULT_CONFIG_PATH):
+
+def load_config(path=None):
     """Load and validate configuration."""
+    if path is None:
+        path = get_default_config_path()
+
     with open(path, 'r') as f:
         config = yaml.safe_load(f) or {}
 
@@ -60,6 +77,12 @@ def load_config(path=DEFAULT_CONFIG_PATH):
         if not config.get(field):
             print(f"ERROR: Missing required config field: {field}", file=sys.stderr)
             sys.exit(2)
+
+    # Validate server_endpoint has a scheme
+    endpoint = config.get('server_endpoint', '')
+    if not endpoint.startswith(('http://', 'https://')):
+        print(f"ERROR: server_endpoint must start with http:// or https://. Got: {endpoint}", file=sys.stderr)
+        sys.exit(2)
 
     # Auto-generate UUID on first run
     if config.get('rig_uuid') == 'auto' or not config.get('rig_uuid'):
@@ -79,29 +102,19 @@ def load_config(path=DEFAULT_CONFIG_PATH):
     return config
 
 
-# ── Logging ─────────────────────────────────────────────────────────────────
+# == Logging =================================================================
 
 def setup_logging(debug=False):
-    log_dir = Path('/opt/monitoring-agent/var/log')
-    try:
-        log_dir.mkdir(parents=True, exist_ok=True)
-    except PermissionError:
-        # Fallback to /tmp if /var/log is not writable (e.g., during testing)
-        log_dir = Path('/tmp/monitoring-agent')
-        log_dir.mkdir(parents=True, exist_ok=True)
+    log_dir = Path(__file__).resolve().parent / 'logs'
+    log_dir.mkdir(parents=True, exist_ok=True)
 
     level = logging.DEBUG if debug else logging.INFO
     fmt = '{"ts":"%(asctime)s","level":"%(levelname)s","module":"%(name)s","msg":"%(message)s"}'
 
-    try:
-        handler = logging.handlers.RotatingFileHandler(
-            log_dir / 'agent.log', maxBytes=10*1024*1024, backupCount=3
-        )
-        handler.setFormatter(logging.Formatter(fmt))
-    except PermissionError:
-        # If we can't write to the log file, just use console
-        handler = logging.StreamHandler()
-        handler.setFormatter(logging.Formatter(fmt))
+    handler = logging.handlers.RotatingFileHandler(
+        log_dir / 'agent.log', maxBytes=10*1024*1024, backupCount=3
+    )
+    handler.setFormatter(logging.Formatter(fmt))
 
     console = logging.StreamHandler()
     console.setFormatter(logging.Formatter(fmt))
@@ -114,16 +127,13 @@ def setup_logging(debug=False):
 
 def log_payload(payload):
     """Save the latest full JSON payload to payload.json for local analysis."""
-    log_dir = Path('/opt/monitoring-agent/var/log')
-    try:
-        log_dir.mkdir(parents=True, exist_ok=True)
-        payload_path = log_dir / 'payload.json'
-        payload_path.write_text(json.dumps(payload, indent=2, default=str) + '\n')
-    except PermissionError:
-        pass  # Silently skip if we can't write (e.g., testing as non-root)
+    log_dir = Path(__file__).resolve().parent / 'logs'
+    log_dir.mkdir(parents=True, exist_ok=True)
+    payload_path = log_dir / 'payload.json'
+    payload_path.write_text(json.dumps(payload, indent=2, default=str) + '\n')
 
 
-# ── Metric Collectors (all-in-one, no duplication) ─────────────────────────
+# == Metric Collectors (all-in-one, no duplication) =========================
 
 def collect_cpu():
     """Collect all CPU metrics: static info + time-series data."""
@@ -132,50 +142,26 @@ def collect_cpu():
         cpu_percent = psutil.cpu_percent(interval=1)
         cpu_count_phys = psutil.cpu_count(logical=False)
         cpu_count_log = psutil.cpu_count(logical=True)
-        load_avg = os.getloadavg()
+
+        # Windows doesn't have os.getloadavg(); use CPU percent as proxy
+        load_avg = [cpu_percent / 100.0 * cpu_count_log] * 3
 
         temp_c = None
         try:
             temps = psutil.sensors_temperatures()
             if temps:
-                # Strategy: find the highest temperature among CPU core sensors.
-                # Priority:
-                #   1. Known CPU sensor names (coretemp, k10temp) — take highest core temp
-                #   2. Any sensor with "Core" in label — take highest
-                #   3. Fallback: first available reading
-                cpu_sensor_names = ('coretemp', 'k10temp')
-                best_temp = None
-
-                # First pass: known CPU sensors
-                for name in cpu_sensor_names:
-                    if name in temps:
-                        for entry in temps[name]:
-                            if entry.current is not None:
-                                if best_temp is None or entry.current > best_temp:
-                                    best_temp = entry.current
-
-                # Second pass: any entry with "Core" in label
-                if best_temp is None:
-                    for name, entries in temps.items():
-                        for entry in entries:
-                            if entry.current is not None and 'Core' in entry.label:
-                                if best_temp is None or entry.current > best_temp:
-                                    best_temp = entry.current
-
-                # Third pass: any temperature reading at all
-                if best_temp is None:
-                    for name, entries in temps.items():
-                        if entries and entries[0].current is not None:
-                            best_temp = entries[0].current
-                            break
-
-                temp_c = best_temp
+                for name, entries in temps.items():
+                    if entries:
+                        temp_c = entries[0].current
+                        break
         except Exception:
+            # sensors_temperatures() may not be available on Windows
             pass
 
         # CPU frequency via psutil
         cpu_freq = None
         try:
+            import psutil
             freq = psutil.cpu_freq(percpu=False)
             if freq is not None and freq.current is not None:
                 cpu_freq = {
@@ -196,11 +182,22 @@ def collect_cpu():
         except Exception:
             pass
 
+        # Fallback: use WMI on Windows if cpuinfo didn't work
+        if model == 'Unknown' and platform.system() == 'Windows':
+            try:
+                import wmi
+                c = wmi.WMI()
+                for proc in c.Win32_Processor():
+                    model = proc.Name.strip()
+                    break
+            except Exception:
+                pass
+
         return {
             'model': model,
             'physical_cores': cpu_count_phys,
             'logical_cores': cpu_count_log,
-            'load_avg': list(load_avg),
+            'load_avg': load_avg,
             'utilization_pct': cpu_percent,
             'temp_c': temp_c,
             'freq': cpu_freq,
@@ -214,28 +211,23 @@ def read_cpu_power_w():
     """Read CPU power consumption via RAPL (Intel/AMD energy counters).
 
     Returns power in watts, or None if RAPL is not available.
-
-    RAPL (Running Average Power Limit) provides hardware energy counters
-    built into modern Intel (Sandy Bridge+) and AMD (Zen 2+) CPUs.
-    Exposed via Linux sysfs at /sys/class/powercap/intel-rapl/
+    RAPL is only available on Linux (sysfs). On Windows, always returns None.
     """
     try:
+        from pathlib import Path
         rapl_base = Path('/sys/class/powercap')
         if not rapl_base.exists():
             return None
 
-        # Find RAPL zone (intel-rapl:0 or amd-rapl:0)
         rapl_zone = None
         for entry in sorted(rapl_base.iterdir()):
             if entry.name.startswith('intel-rapl:') or entry.name.startswith('amd-rapl:'):
-                # Verify it's a package-level zone (not subzone)
                 name_file = entry / 'name'
                 if name_file.exists():
                     zone_name = name_file.read_text().strip()
                     if zone_name in ('package-0', 'psys', 'pkg'):
                         rapl_zone = entry
                         break
-                # Fallback: use first intel-rapl:0 or amd-rapl:0
                 if entry.name in ('intel-rapl:0', 'amd-rapl:0'):
                     rapl_zone = entry
                     break
@@ -249,32 +241,24 @@ def read_cpu_power_w():
         if not energy_path.exists():
             return None
 
-        # Read energy at two time points (100ms sample window)
         energy_start = int(energy_path.read_text())
         time.sleep(0.1)
         energy_end = int(energy_path.read_text())
 
-        # Handle counter wraparound
         if max_energy_path.exists():
             max_energy = int(max_energy_path.read_text())
             if energy_end < energy_start:
                 energy_end += max_energy
 
-        # Convert to watts: energy (J) / time (s) = power (W)
         energy_joules = (energy_end - energy_start) / 1_000_000
-        power_watts = energy_joules / 0.1  # 0.1 second sample window
+        power_watts = energy_joules / 0.1
 
-        # Sanity check: reject obviously wrong values
         if power_watts < 0 or power_watts > 1000:
             return None
 
         return round(power_watts, 1)
 
-    except (OSError, PermissionError, ValueError) as e:
-        logging.getLogger('power').debug('RAPL read failed: %s', e)
-        return None
-    except Exception as e:
-        logging.getLogger('power').warning('RAPL read error: %s', e)
+    except Exception:
         return None
 
 
@@ -284,7 +268,7 @@ def estimate_cpu_power_w(cpu_utilization, cpu_cores):
     Uses: cpu_power = 10 + TDP × (0.1 + 0.9 × util)
     - TDP = 8W per core + 25W base (calibrated against 16 real CPUs)
     - 10W constant base (VRM losses, chipset, platform overhead)
-    - TDP × 0.1 = proportional idle power (leakage, uncore — scales with core count)
+    - TDP × 0.1 = proportional idle power (leakage, uncore - scales with core count)
     - TDP × 0.9 × util = dynamic load power
 
     Validated against Ryzen 3, 5, 7 at various utilizations.
@@ -304,9 +288,9 @@ def estimate_cpu_power_w(cpu_utilization, cpu_cores):
 def collect_power(cpu_metrics):
     """Collect and calculate power consumption data.
 
-    Tries RAPL first for accurate CPU power measurement.
+    Tries RAPL first for accurate CPU power measurement (Linux only).
     Falls back to estimation from utilization if RAPL unavailable.
-    All power values returned are AC (wall) — PSU efficiency already factored in.
+    All power values returned are AC (wall) - PSU efficiency already factored in.
 
     Args:
         cpu_metrics: dict from collect_cpu() with 'utilization_pct' (0-100) and 'physical_cores'
@@ -318,19 +302,15 @@ def collect_power(cpu_metrics):
     try:
         import psutil
 
-        # Use CPU utilization and core count from collect_cpu() to avoid duplicate measurement
         cpu_percent = (cpu_metrics.get('utilization_pct') or 0) / 100.0
         cpu_cores = cpu_metrics.get('physical_cores') or psutil.cpu_count(logical=False) or psutil.cpu_count(logical=True) or 1
 
-        # Try RAPL first for CPU power
         cpu_power_w = read_cpu_power_w()
         cpu_power_source = 'rapl' if cpu_power_w is not None else 'estimate'
 
-        # Fall back to estimation if RAPL not available
         if cpu_power_w is None:
             cpu_power_w = estimate_cpu_power_w(cpu_percent, cpu_cores)
 
-        # Get GPU power (already collected via pynvml)
         gpu_power_w = 0
         try:
             import pynvml
@@ -338,17 +318,14 @@ def collect_power(cpu_metrics):
             device_count = pynvml.nvmlDeviceGetCount()
             for i in range(device_count):
                 handle = pynvml.nvmlDeviceGetHandleByIndex(i)
-                power = pynvml.nvmlDeviceGetPowerUsage(handle) / 1000.0  # mW to W
+                power = pynvml.nvmlDeviceGetPowerUsage(handle) / 1000.0
                 gpu_power_w += power
             pynvml.nvmlShutdown()
         except Exception:
-            pass  # GPU power collection failure is non-fatal
+            pass
 
-        # Flat estimate for other components (RAM + disks + MB + fans)
         other_power_w = 40
-
-        # Calculate total DC power, then apply PSU efficiency to get AC
-        PSU_EFFICIENCY = 0.90  # 80 Plus Gold
+        PSU_EFFICIENCY = 0.90
         total_dc = gpu_power_w + cpu_power_w + other_power_w
         total_power_w = round(total_dc / PSU_EFFICIENCY, 1)
 
@@ -384,29 +361,43 @@ def collect_memory():
 
 
 def collect_motherboard():
-    """Collect motherboard info."""
+    """Collect motherboard/system info via WMI on Windows."""
     result = {}
-    try:
-        for field, path in [
-            ('manufacturer', '/sys/class/dmi/id/board_vendor'),
-            ('model', '/sys/class/dmi/id/board_name'),
-            ('bios_version', '/sys/class/dmi/id/bios_version'),
-        ]:
-            try:
-                result[field] = Path(path).read_text().strip()
-            except Exception:
-                result[field] = 'unknown'
-    except Exception:
-        pass
+    if platform.system() == 'Windows':
+        try:
+            import wmi
+            c = wmi.WMI()
+            for board in c.Win32_BaseBoard():
+                result['manufacturer'] = board.Manufacturer.strip()
+                result['model'] = board.Product.strip()
+                break
+            for bios in c.Win32_BIOS():
+                result['bios_version'] = bios.SMBIOSBIOSVersion.strip()
+                break
+        except Exception:
+            pass
+    else:
+        try:
+            for field, path in [
+                ('manufacturer', '/sys/class/dmi/id/board_vendor'),
+                ('model', '/sys/class/dmi/id/board_name'),
+                ('bios_version', '/sys/class/dmi/id/bios_version'),
+            ]:
+                try:
+                    result[field] = Path(path).read_text().strip()
+                except Exception:
+                    result[field] = 'unknown'
+        except Exception:
+            pass
     return result
 
 
-def _get_disk_io_counters():
-    """Get per-physical-disk I/O counters from psutil.
+def _get_windows_disk_io():
+    """Get per-physical-disk I/O counters on Windows.
 
-    Returns a dict keyed by disk name (e.g. 'sda', 'nvme0n1') with:
-      read_bytes, write_bytes, read_iops, write_iops, busy_time_ms
-    Filters out partitions (e.g. sda1, sda2) and virtual devices (loop, sr, dm).
+    psutil returns keys like 'PhysicalDrive0', 'PhysicalDrive1'.
+    Returns dict: { 'PhysicalDrive0': {read_bytes, write_bytes, read_iops, write_iops, busy_time_ms}, ... }
+    Note: busy_time_ms is only available on Linux; on Windows it will be None.
     """
     try:
         import psutil
@@ -416,111 +407,248 @@ def _get_disk_io_counters():
     except Exception:
         return {}
 
-    # Identify whole-disk devices (not partitions)
-    # Whole disks: sda, nvme0n1, vda, hda (no trailing digits, or nvme pattern)
-    # Partitions: sda1, sda2, nvme0n1p1 (have trailing digits after base name)
-    import re
-    whole_disks = {}
+    result = {}
     for name, counters in io.items():
-        # Skip loop devices, sr (CD-ROM), dm (device mapper virtual)
-        if name.startswith('loop') or name.startswith('sr') or name.startswith('dm-'):
+        if not name.startswith('PhysicalDrive'):
             continue
-        # Skip partitions: names ending in digits that aren't pure NVMe
-        # NVMe whole disk: nvme0n1 (ends in digit but has 'p' before it for partitions)
-        # SATA whole disk: sda, vda, hda (no digits at all)
-        # Partition: sda1, nvme0n1p1
-        if re.match(r'^[a-z]+\d+$', name) and not name.startswith('nvme'):
-            # Ends in digits, not NVMe → partition (sda1, vda2, etc.)
-            continue
-        if re.match(r'^nvme\dn\d+p\d+$', name):
-            # NVMe partition: nvme0n1p1
-            continue
-        whole_disks[name] = {
+        result[name] = {
             'read_bytes': counters.read_bytes,
             'write_bytes': counters.write_bytes,
             'read_iops': counters.read_count,
             'write_iops': counters.write_count,
             'busy_time_ms': getattr(counters, 'busy_time', None),
         }
-    return whole_disks
+    return result
 
 
-def _disk_to_whole_disk(device_name):
-    """Map a partition device to its parent whole-disk device.
+def _get_drive_to_physical_map():
+    """Build a mapping from Windows drive letter to PhysicalDrive name.
 
-    Examples:
-        /dev/sda1 -> sda
-        /dev/sda  -> sda
-        /dev/nvme0n1p1 -> nvme0n1
-        /dev/nvme0n1 -> nvme0n1
+    Uses wmic CLI commands to get the association chain:
+    1. Win32_LogicalDiskToPartition: logical disk -> partition
+    2. Win32_DiskDriveToDiskPartition: disk drive -> partition
+
+    Combines both to build: drive letter -> PhysicalDriveN
+
+    Returns dict: {'C': 'PhysicalDrive0', 'D': 'PhysicalDrive1', ...}
+    """
+    drive_map = {}
+
+    try:
+        # Step 1: Get logical disk -> partition mapping
+        # Output format: Node,Antecedent,Dependent
+        # Antecedent: Win32_DiskPartition.DeviceID="Disk #0, Partition #0"
+        # Dependent: Win32_LogicalDisk.DeviceID="C:"
+        logical_to_partition = {}
+        out = subprocess.run(
+            ['wmic', 'path', 'Win32_LogicalDiskToPartition', 'get',
+             'Antecedent,Dependent', '/format:csv'],
+            capture_output=True, text=True, timeout=15
+        )
+        if out.returncode != 0:
+            logging.getLogger('storage').debug('wmic LogicalDiskToPartition failed')
+            return _get_drive_to_physical_map_wmi()
+
+        import re
+        for line in out.stdout.strip().split('\n'):
+            line = line.strip()
+            if not line or line.startswith('Node') or line.startswith('Antecedent'):
+                continue
+            # Extract partition info from Antecedent: Disk #N, Partition #M
+            part_match = re.search(r'Disk #(\d+), Partition #(\d+)', line)
+            # Extract drive letter from Dependent: DeviceID="X:"
+            drive_match = re.search(r'DeviceID="([A-Z]):"', line)
+            if part_match and drive_match:
+                disk_idx = int(part_match.group(1))
+                part_idx = int(part_match.group(2))
+                letter = drive_match.group(1)
+                logical_to_partition[(disk_idx, part_idx)] = letter
+
+        if not logical_to_partition:
+            logging.getLogger('storage').debug('wmic LogicalDiskToPartition returned no data')
+            return _get_drive_to_physical_map_wmi()
+
+        # Step 2: Get disk drive -> partition mapping
+        # Antecedent: Win32_DiskDrive.DeviceID="\\.\PHYSICALDRIVE0"
+        # Dependent: Win32_DiskPartition.DeviceID="Disk #0, Partition #0"
+        disk_to_partition = {}
+        out = subprocess.run(
+            ['wmic', 'path', 'Win32_DiskDriveToDiskPartition', 'get',
+             'Antecedent,Dependent', '/format:csv'],
+            capture_output=True, text=True, timeout=15
+        )
+        if out.returncode != 0:
+            logging.getLogger('storage').debug('wmic DiskDriveToDiskPartition failed')
+            return _get_drive_to_physical_map_wmi()
+
+        for line in out.stdout.strip().split('\n'):
+            line = line.strip()
+            if not line or line.startswith('Node') or line.startswith('Antecedent'):
+                continue
+            # Extract PhysicalDrive index from Antecedent
+            phys_match = re.search(r'PHYSICALDRIVE(\d+)', line)
+            # Extract partition info from Dependent: Disk #N, Partition #M
+            part_match = re.search(r'Disk #(\d+), Partition #(\d+)', line)
+            if phys_match and part_match:
+                disk_idx = int(phys_match.group(1))
+                part_idx = int(part_match.group(2))
+                disk_to_partition[(disk_idx, part_idx)] = disk_idx
+
+        # Step 3: Combine both mappings
+        # logical_to_partition: (disk_idx, part_idx) -> letter
+        # disk_to_partition: (disk_idx, part_idx) -> disk_idx
+        # Result: letter -> PhysicalDriveN
+        for (disk_idx, part_idx), letter in logical_to_partition.items():
+            if (disk_idx, part_idx) in disk_to_partition:
+                drive_map[letter] = f'PhysicalDrive{disk_idx}'
+
+        if drive_map:
+            logging.getLogger('storage').debug('Drive map from wmic: %s', drive_map)
+            return drive_map
+
+    except Exception as e:
+        logging.getLogger('storage').debug('wmic drive mapping failed: %s', e)
+
+    return _get_drive_to_physical_map_wmi()
+
+
+def _get_drive_to_physical_map_wmi():
+    """Fallback: build drive-to-physical map using Python WMI module.
+
+    Iterates through all disk drives, their partitions, and logical disks
+    to build the complete mapping.
+    """
+    drive_map = {}
+    try:
+        import wmi
+        c = wmi.WMI()
+        for dd in c.Win32_DiskDrive():
+            disk_idx = getattr(dd, 'Index', None)
+            if disk_idx is None:
+                continue
+            for partition in dd.associators("Win32_DiskDriveToDiskPartition"):
+                for logical_disk in partition.associators("Win32_LogicalDiskToPartition"):
+                    drive_letter = logical_disk.DeviceID[0]  # e.g. 'C'
+                    drive_map[drive_letter] = f'PhysicalDrive{disk_idx}'
+        logging.getLogger('storage').debug('Drive map from WMI: %s', drive_map)
+    except Exception as e:
+        logging.getLogger('storage').debug('WMI drive mapping failed: %s', e)
+    return drive_map
+
+
+def _partition_letter_to_physical(device_str):
+    """Map a Windows drive letter to its PhysicalDrive name.
+
+    This is a compatibility wrapper that uses the pre-built drive map.
+    The actual mapping is done once in collect_storage() via _get_drive_to_physical_map().
+
+    Input: 'C:\\' or 'D:\\'
+    Output: 'PhysicalDrive0' or similar, or None if not found.
+    """
+    # This function is kept for compatibility but the actual mapping
+    # is now done via _get_drive_to_physical_map() in collect_storage()
+    drive_letter = device_str[0].upper()
+    try:
+        import wmi
+        c = wmi.WMI()
+        for ld in c.Win32_LogicalDisk(DriveType=3):
+            if ld.DeviceID.startswith(drive_letter):
+                for assoc in ld.associators("Win32_LogicalDiskToPartition"):
+                    for pdisk in assoc.associators("Win32_DiskPartitionToDiskDrive"):
+                        idx = getattr(pdisk, 'Index', None)
+                        if idx is not None:
+                            return f'PhysicalDrive{idx}'
+    except Exception:
+        pass
+    return None
+
+
+def _windows_partition_to_physical(device_str):
+    """Map a Windows partition device string to its PhysicalDrive name.
+
+    Input: 'C:\\' or 'D:\\' (from psutil.disk_partitions().device)
+    Output: 'PhysicalDrive0' or similar, or None if not found.
+    """
+    try:
+        import wmi
+        c = wmi.WMI()
+        drive_letter = device_str[0].upper()
+        for ld in c.Win32_LogicalDisk(DriveType=3):
+            if ld.DeviceID.startswith(drive_letter):
+                for assoc in ld.associators("Win32_LogicalDiskToPartition"):
+                    for pdisk in assoc.associators("Win32_DiskPartitionToDiskDrive"):
+                        return pdisk.DeviceID  # e.g. \\.\PHYSICALDRIVE0
+    except Exception:
+        pass
+    return None
+
+
+def _normalize_physical_drive_name(device_id):
+    """Normalize a Windows physical drive ID to a consistent name.
+
+    Input: '\\\\.\\PHYSIVE0' or '\\\\.\\PhysicalDrive0'
+    Output: 'PhysicalDrive0'
     """
     import re
-    # Strip /dev/ prefix
-    name = device_name.split('/')[-1]
-    # NVMe: nvme0n1p1 -> nvme0n1, nvme0n1 -> nvme0n1
-    nvme_match = re.match(r'^(nvme\d+n\d+)', name)
-    if nvme_match:
-        return nvme_match.group(1)
-    # SATA/SCSI: sda1 -> sda, vda2 -> vda, sda -> sda
-    sat_match = re.match(r'^([a-z]+)', name)
-    if sat_match:
-        return sat_match.group(1)
-    return name
+    m = re.search(r'(PhysicalDrive\d+)', device_id)
+    if m:
+        return m.group(1)
+    return device_id
 
 
-def _read_sysfs(path):
-    """Read a sysfs attribute as a stripped string, or None on any failure."""
-    try:
-        text = Path(path).read_text().strip()
-        return text or None
-    except Exception:
-        return None
+def _get_windows_disks_wmi():
+    """Fallback: get disk partitions via WMI when psutil returns empty results.
 
-
-def _get_disk_hardware_info(whole_disk):
-    """Collect static disk hardware identifiers from sysfs.
-
-    No new dependencies and no sudo required — plain read-only sysfs access.
-    Handles both SCSI/ATA whole disks (/sys/block/sda/device/...) and
-    NVMe whole disks (/sys/block/nvme0n1/device -> nvme controller attrs).
-
-    Returns a dict with model, vendor, serial, wwn — each None when the
-    attribute is absent (e.g. virtual devices, some NVMe drives omit wwn).
+    Returns a list of dicts with device, mountpoint, fstype - same format
+    as psutil.disk_partitions() entries.
     """
-    info = {'model': None, 'vendor': None, 'serial': None, 'wwn': None}
-    if not whole_disk:
-        return info
-    base = f'/sys/block/{whole_disk}/device'
-    for field, attr in (('model', 'model'), ('vendor', 'vendor'),
-                        ('serial', 'serial'), ('wwn', 'wwn')):
-        val = _read_sysfs(f'{base}/{attr}')
-        if val:
-            info[field] = val
-    return info
+    try:
+        import wmi
+        c = wmi.WMI()
+        disks = []
+        for disk in c.Win32_LogicalDisk(DriveType=3):
+            # DriveType=3 = Local Disk (fixed HDD/SSD)
+            disks.append(type('Partition', (), {
+                'device': disk.DeviceID + '\\',
+                'mountpoint': disk.DeviceID + '\\',
+                'fstype': disk.FileSystem or '',
+                'opts': '',
+            })())
+        return disks
+    except Exception:
+        return []
 
 
 def collect_storage():
     """Collect all storage metrics per disk: capacity, usage, temp, smart,
-    hardware identifiers (model, vendor, serial, wwn from sysfs),
     plus disk I/O counters (throughput, IOPS, utilization).
 
-    I/O counters are per-physical-disk (whole disk, not partition).
-    All partitions on the same physical disk share the same I/O counters.
-    Counters are cumulative; deltas are computed server-side during ingest.
+    I/O counters are per-physical-disk. All partitions on the same physical
+    disk share the same I/O counters. Counters are cumulative; deltas are
+    computed server-side during ingest.
     """
     try:
         import psutil
         disks = []
-        # Get per-physical-disk I/O counters once, reuse for all partitions
-        disk_io = _get_disk_io_counters()
-        for part in psutil.disk_partitions():
-            if part.fstype in ('squashfs', 'tmpfs', 'devtmpfs'):
-                continue
+        # Get per-physical-disk I/O counters once
+        disk_io = _get_windows_disk_io() if platform.system() == 'Windows' else {}
+        # Build drive-to-physical map once for all partitions
+        drive_map = _get_drive_to_physical_map() if platform.system() == 'Windows' and disk_io else {}
+        partitions = psutil.disk_partitions()
+        # On Windows, if psutil returns no partitions, fall back to WMI
+        if platform.system() == 'Windows' and not partitions:
+            partitions = _get_windows_disks_wmi()
+        for part in partitions:
+            # Skip virtual/special filesystems on non-Windows
+            if platform.system() != 'Windows':
+                if part.fstype in ('squashfs', 'tmpfs', 'devtmpfs'):
+                    continue
+            # On Windows, skip CD-ROM and removable drives with no media
+            if platform.system() == 'Windows':
+                if part.fstype == '' or part.fstype.lower() == 'cdfs':
+                    continue
             try:
                 usage = psutil.disk_usage(part.mountpoint)
-                whole_disk = _disk_to_whole_disk(part.device)
-                io = disk_io.get(whole_disk, {})
-                hw = _get_disk_hardware_info(whole_disk)
                 disk = {
                     'device': part.device,
                     'mountpoint': part.mountpoint,
@@ -529,76 +657,95 @@ def collect_storage():
                     'usage_pct': round(usage.percent, 1),
                     'temp_c': None,
                     'smart_health': '',
-                    # Static hardware identifiers from sysfs (per physical disk)
-                    'model': hw['model'],
-                    'vendor': hw['vendor'],
-                    'serial': hw['serial'],
-                    'wwn': hw['wwn'],
-                    # Disk I/O counters (cumulative, per-physical-disk)
-                    'read_bytes': io.get('read_bytes'),
-                    'write_bytes': io.get('write_bytes'),
-                    'read_iops': io.get('read_iops'),
-                    'write_iops': io.get('write_iops'),
-                    'busy_time_ms': io.get('busy_time_ms'),
                 }
-                # Try SMART for temperature
-                try:
-                    out = subprocess.run(
-                        ['sudo', 'smartctl', '-a', part.device],
-                        capture_output=True, text=True, timeout=5
-                    )
-                    for line in out.stdout.splitlines():
-                        line_lower = line.lower()
-                        if 'temperature' in line_lower:
-                            # Parse temperature value from various formats:
-                            # SATA: "Temperature_Celsius     0x0022   40   60   40  Old_age   Always       -       40 (Min/Max 32/62)"
-                            # NVME: "Temperature:                        45 Celsius"
-                            parts_w = line.split()
-                            for i, w in enumerate(parts_w):
-                                # Match numbers like "45", "45.0", but skip hex like "0x0022"
-                                clean = w.replace('.', '').replace('-', '')
-                                if clean.isdigit() and i > 0:
-                                    val = float(w)
-                                    # Skip unrealistic values (>150°C is likely a raw SMART value, not temp)
-                                    if 0 < val <= 120:
-                                        disk['temp_c'] = val
-                                        break
-                            if disk['temp_c'] is not None:
-                                break
-                except Exception:
-                    pass
-                # Fallback: try nvme CLI for NVMe drives
-                if disk['temp_c'] is None and 'nvme' in part.device:
+                # Attach I/O counters using pre-built drive map (Windows)
+                if platform.system() == 'Windows' and drive_map:
+                    drive_letter = part.device[0].upper()
+                    phys_name = drive_map.get(drive_letter)
+                    if phys_name:
+                        io = disk_io.get(phys_name, {})
+                        disk['read_bytes'] = io.get('read_bytes')
+                        disk['write_bytes'] = io.get('write_bytes')
+                        disk['read_iops'] = io.get('read_iops')
+                        disk['write_iops'] = io.get('write_iops')
+                        disk['busy_time_ms'] = io.get('busy_time_ms')
+                        logging.getLogger('storage').debug(
+                            'I/O for %s mapped to %s', part.device, phys_name)
+                    else:
+                        logging.getLogger('storage').debug(
+                            'No physical drive mapping for %s, I/O not attached', part.device)
+                elif platform.system() == 'Linux':
                     try:
                         out = subprocess.run(
-                            ['sudo', 'nvme', 'smart-log', part.device],
+                            ['sudo', 'smartctl', '-a', part.device],
                             capture_output=True, text=True, timeout=5
                         )
                         for line in out.stdout.splitlines():
-                            if 'temperature' in line.lower():
-                                # Format: "temperature : 45 Celsius" or "temperature : 318 Kelvin"
-                                parts_w = line.split(':')
-                                if len(parts_w) >= 2:
-                                    val_str = parts_w[1].split()[0]
-                                    try:
-                                        val = float(val_str)
-                                        # Convert Kelvin to Celsius if needed
-                                        if 'kelvin' in line.lower():
-                                            val = val - 273.15
-                                        if 0 < val <= 120:
-                                            disk['temp_c'] = round(val, 1)
-                                            break
-                                    except ValueError:
-                                        pass
+                            if 'Temperature' in line and 'Celsius' in line:
+                                parts_w = line.split()
+                                for i, w in enumerate(parts_w):
+                                    if w.replace('.', '').isdigit() and i > 0:
+                                        disk['temp_c'] = float(w)
+                                        break
                     except Exception:
                         pass
+                else:
+                    disk['device'] = _get_physical_disk_name(part.device)
+                    disk['smart_health'] = 'unsupported'
                 disks.append(disk)
             except PermissionError:
+                logging.getLogger('storage').debug('Permission denied for %s, skipping', part.device)
+                continue
+            except OSError as e:
+                logging.getLogger('storage').debug('OS error for %s: %s, skipping', part.device, e)
                 continue
         return disks
     except Exception as e:
         logging.getLogger('storage').warning('Storage collection failed: %s', e)
         return []
+
+
+def _get_physical_drive_for_partition(partition_letter):
+    """Map a Windows partition letter to a physical drive number using WMI."""
+    try:
+        import wmi
+        c = wmi.WMI()
+        drive_letter = partition_letter[0].upper()
+        for ld in c.Win32_LogicalDisk(DriveType=3):
+            if ld.DeviceID.startswith(drive_letter):
+                for assoc in ld.associators("Win32_LogicalDiskToPartition"):
+                    for pdisk in assoc.associators("Win32_DiskPartitionToDiskDrive"):
+                        return pdisk.DeviceID  # e.g. \\.\PHYSICALDRIVE0
+    except Exception:
+        pass
+    return None
+
+
+def _read_smart_windows(physical_drive):
+    """Read SMART health status from a physical drive on Windows."""
+    try:
+        import wmi
+        c = wmi.WMI(namespace='root\\wmi')
+        for disk in c.MSStorageDriver_FailurePredictStatus():
+            if disk.PredictFailure:
+                return 'FAILING'
+            else:
+                return 'OK'
+    except Exception:
+        pass
+    return None
+
+
+def _get_physical_disk_name(device):
+    """Get a friendly disk name on Windows."""
+    try:
+        import wmi
+        c = wmi.WMI()
+        for disk in c.Win32_DiskDrive():
+            return disk.Model
+    except Exception:
+        pass
+    return device
 
 
 def collect_network():
@@ -609,8 +756,8 @@ def collect_network():
         stats = psutil.net_io_counters(pernic=True)
         addrs = psutil.net_if_addrs()
         for iface, snic in stats.items():
-            # Skip loopback and common virtual interfaces
-            if iface == 'lo':
+            # Skip loopback
+            if iface.lower() in ('lo', 'loopback'):
                 continue
             entry = {
                 'interface': iface,
@@ -628,19 +775,42 @@ def collect_network():
             # Skip interfaces with loopback IPv4 or no IPv4
             if not entry.get('ipv4') or entry['ipv4'].startswith('127.'):
                 continue
-            # Link speed
-            try:
-                speed_path = Path(f'/sys/class/net/{iface}/speed')
-                speed = int(speed_path.read_text().strip())
-                if speed > 0:
-                    entry['link_speed_mbps'] = speed
-            except Exception:
-                pass
+            # Link speed on Windows via WMI
+            if platform.system() == 'Windows':
+                try:
+                    import wmi
+                    c = wmi.WMI()
+                    for nic in c.Win32_NetworkAdapter(NetEnabled=True):
+                        for nic_config in nic.associators("Win32_NetworkAdapterSetting"):
+                            pass
+                        if nic.Speed:
+                            entry['link_speed_mbps'] = int(nic.Speed) // 1_000_000
+                            break
+                except Exception:
+                    pass
+            else:
+                try:
+                    speed_path = Path(f'/sys/class/net/{iface}/speed')
+                    speed = int(speed_path.read_text().strip())
+                    if speed > 0:
+                        entry['link_speed_mbps'] = speed
+                except Exception:
+                    pass
             interfaces.append(entry)
         return interfaces
     except Exception as e:
         logging.getLogger('network').warning('Network collection failed: %s', e)
         return []
+
+
+def _nvml_bytes_to_str(value):
+    """pynvml returns bytes on Python 3; decode to str (None-safe)."""
+    if value is None:
+        return None
+    if isinstance(value, bytes):
+        value = value.decode('utf-8', errors='replace')
+    value = value.strip() if isinstance(value, str) else value
+    return value or None
 
 
 # PCI Subvendor ID -> Human-readable name mapping
@@ -660,7 +830,6 @@ GPU_SUBVENDOR_MAP = {
     0x1B4C: "Galax / KFA2",
     0x1ACC: "PNY",
     0x19BE: "Gainward",
-    0x107D: "Leadtek",
     0x103C: "HP",
     0x17AA: "Lenovo",
     0x1028: "Dell",
@@ -674,7 +843,6 @@ def _get_gpu_subvendor_name(pci_subsystem_id):
     """Extract subvendor name from PCI subsystem ID."""
     if pci_subsystem_id is None:
         return None
-    # Extract lower 16 bits = subvendor ID
     subvendor_id = pci_subsystem_id & 0xFFFF
     return GPU_SUBVENDOR_MAP.get(subvendor_id, f"Unknown (0x{subvendor_id:04X})")
 
@@ -691,8 +859,7 @@ def _nvml_bytes_to_str(value):
 
 def collect_gpus():
     """Collect all GPU metrics: uuid, model, memory, utilization, temp, fan, power,
-    plus static identifiers (AIB board part number)."""
-
+    plus static identifiers (AIB board part number and subvendor)."""
     try:
         import pynvml
         pynvml.nvmlInit()
@@ -749,7 +916,6 @@ def collect_gpus():
 
             # Collect PCI info for subvendor identification
             gpu_subvendor = None
-            gpu_board_part = None
             try:
                 pci_info = pynvml.nvmlDeviceGetPciInfo(handle)
                 if pci_info and hasattr(pci_info, 'pciSubSystemId'):
@@ -772,6 +938,78 @@ def collect_gpus():
                 # Static identifiers
                 'gpu_subvendor': gpu_subvendor,
                 'gpu_board_part_number': gpu_board_part,
+    plus static identifiers (brand, board part number)."""
+
+    try:
+        import pynvml
+        pynvml.nvmlInit()
+        count = pynvml.nvmlDeviceGetCount()
+        gpus = []
+        for i in range(count):
+            handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+            info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+            util = pynvml.nvmlDeviceGetUtilizationRates(handle)
+            try:
+                temp = pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
+            except Exception:
+                temp = None
+            try:
+                fan = pynvml.nvmlDeviceGetFanSpeed(handle)
+            except Exception:
+                fan = None
+            try:
+                power = pynvml.nvmlDeviceGetPowerUsage(handle) / 1000.0
+                power_limit = pynvml.nvmlDeviceGetEnforcedPowerLimit(handle) / 1000.0
+            except Exception:
+                power = None
+                power_limit = None
+
+            # Collect PCIe link info
+            pcie_current_gen = None
+            pcie_max_gen = None
+            pcie_current_width = None
+            pcie_max_width = None
+            try:
+                pcie_current_gen = pynvml.nvmlDeviceGetCurrPcieLinkGeneration(handle)
+                pcie_max_gen = pynvml.nvmlDeviceGetMaxPcieLinkGeneration(handle)
+                pcie_current_width = pynvml.nvmlDeviceGetCurrPcieLinkWidth(handle)
+                pcie_max_width = pynvml.nvmlDeviceGetMaxPcieLinkWidth(handle)
+            except Exception:
+                pass  # PCIe info not available on all GPUs/systems
+
+            # Collect GPU clock speeds
+            gpu_core_clock_mhz = None
+            gpu_mem_clock_mhz = None
+            try:
+                gpu_core_clock_mhz = pynvml.nvmlDeviceGetClockInfo(handle, pynvml.NVML_CLOCK_GRAPHICS)
+                gpu_mem_clock_mhz = pynvml.nvmlDeviceGetClockInfo(handle, pynvml.NVML_CLOCK_MEM)
+            except Exception as e:
+                logging.getLogger('gpu').debug('GPU %d clock info not available: %s', i, e)
+
+            # pynvml returns bytes for uuid and name in Python 3; decode them
+            raw_uuid = pynvml.nvmlDeviceGetUUID(handle)
+            if isinstance(raw_uuid, bytes):
+                raw_uuid = raw_uuid.decode('utf-8')
+            raw_name = pynvml.nvmlDeviceGetName(handle)
+            if isinstance(raw_name, bytes):
+                raw_name = raw_name.decode('utf-8')
+
+            # Collect AIB board part number (e.g., "ASUS Astral", "MSI Suprim")
+            gpu_board_part = None
+            try:
+                gpu_board_part = _nvml_bytes_to_str(pynvml.nvmlDeviceGetBoardPartNumber(handle))
+            except pynvml.NVMLError_NotSupported:
+                pass  # NOT_SUPPORTED on some GPUs
+            except pynvml.NVMLError:
+                pass  # Other NVML errors
+
+            gpus.append({
+                'uuid': raw_uuid,
+                'model': raw_name,
+                # Static identifiers
+                'gpu_board_part_number': gpu_board_part,
+                'uuid': raw_uuid,
+                'model': raw_name,
                 'mem_total_mb': info.total // (1024 * 1024),
                 'mem_used_mb': info.used // (1024 * 1024),
                 'mem_free_mb': info.free // (1024 * 1024),
@@ -797,18 +1035,16 @@ def collect_gpus():
 
 
 def collect_gpu_processes():
-    """Collect GPU process list from nvidia-smi.
+    """Collect GPU process list from nvidia-smi (Windows version).
 
-    Parses the full nvidia-smi output table to get all processes
-    (Compute, Graphics, and Compute+Graphics).
-
-    Returns list of dicts:
-        [{gpu_index, pid, type, name, gpu_mem_mb}]
+    Same parsing as Linux - nvidia-smi output format is identical
+    across platforms for the Processes section.
     """
     processes = []
     try:
         out = subprocess.run(
-            ['nvidia-smi'], capture_output=True, text=True, timeout=10
+            ['nvidia-smi'],
+            capture_output=True, text=True, timeout=10
         )
         if out.returncode != 0:
             return processes
@@ -820,14 +1056,18 @@ def collect_gpu_processes():
             if stripped.startswith('| Processes:'):
                 in_processes = True
                 continue
+
             if not in_processes:
                 continue
+
             if stripped.startswith('+') or not stripped:
                 if processes:
                     break
                 continue
+
             if '---' in stripped or ('GPU' in stripped and 'PID' in stripped):
                 continue
+
             if 'ID' in stripped and 'Usage' in stripped and not stripped.startswith('|'):
                 continue
 
@@ -835,6 +1075,7 @@ def collect_gpu_processes():
             if not clean:
                 continue
             parts = clean.split()
+
             if len(parts) < 5:
                 continue
 
@@ -888,7 +1129,8 @@ def collect_docker_inspect(containers, docker_prefix):
             # docker inspect <id>
             result = subprocess.run(
                 docker_prefix + ['inspect', cid],
-                capture_output=True, text=True, timeout=5
+                capture_output=True, text=True, timeout=5,
+                encoding='utf-8', errors='replace'
             )
             if result.returncode != 0:
                 logging.getLogger('docker').debug('inspect %s failed: %s', cid, result.stderr[:100])
@@ -1080,7 +1322,8 @@ def collect_docker_inspect(containers, docker_prefix):
                 try:
                     result = subprocess.run(
                         docker_prefix + ['logs', '--tail', '100', cid],
-                        capture_output=True, text=True, timeout=10
+                        capture_output=True, text=True, timeout=10,
+                        encoding='utf-8', errors='replace'
                     )
                     if result.returncode == 0 and result.stdout.strip():
                         lines = []
@@ -1112,39 +1355,45 @@ def collect_docker():
     """Collect Docker container metrics using docker CLI via subprocess.
 
     Tries multiple approaches to access Docker:
-    1. Direct 'docker' CLI (works if user is in docker group)
-    2. 'sudo docker' CLI (works if sudoers is configured)
-    3. Returns empty list if both fail
+    1. Direct 'docker' CLI (default on Windows with Docker Desktop)
+    2. Returns empty list if it fails
 
+    Uses subprocess calls instead of the Docker Python SDK because:
+    1. The SDK requires direct access to the Docker socket/named pipe
+    2. The CLI approach works reliably on both Windows and Linux
+    3. No Python SDK dependency needed
+
+    Note: Per-container CPU/memory usage is NOT collected because:
+        - 'docker stats' requires elevated permissions and is unreliable
+        - GPU compute metrics are covered by NVIDIA GPU collection
     For each container, collects: container_id, name, image, status, created, status_text.
     Running containers additionally get: manifest (inspect data) and logs (tail).
     """
     containers = []
 
-    # Try docker access methods: direct first, then sudo
-    docker_cmds_to_try = [
-        ['docker'],           # Direct access (docker group member)
-        ['sudo', 'docker'],   # Sudo access (sudoers configured)
-    ]
+    # On Windows, Docker Desktop manages permissions differently
+    # The user running the agent should have Docker access by default
+    # Try direct docker CLI access
+    docker_prefix = ['docker']
 
-    docker_prefix = None
-    for prefix in docker_cmds_to_try:
-        try:
-            test = subprocess.run(
-                prefix + ['ps', '-a', '--format', '{{.ID}}'],
-                capture_output=True, text=True, timeout=10
-            )
-            if test.returncode == 0:
-                docker_prefix = prefix
-                break
-        except (FileNotFoundError, OSError):
-            # Docker binary not found or not accessible — try next method
-            continue
-
-    if docker_prefix is None:
+    # Quick test if docker is accessible
+    try:
+        test = subprocess.run(
+            docker_prefix + ['ps', '-a', '--format', '{{.ID}}'],
+            capture_output=True, text=True, timeout=10,
+            encoding='utf-8', errors='replace'
+        )
+    except (FileNotFoundError, OSError):
         logging.getLogger('docker').warning(
-            'Docker collection failed: cannot access docker CLI '
-            '(tried direct and sudo). Check docker group membership or sudoers config.'
+            'Docker collection failed: docker CLI not found. '
+            'Ensure Docker Desktop is installed and docker is in PATH.'
+        )
+        return []
+    if test.returncode != 0:
+        logging.getLogger('docker').warning(
+            'Docker collection failed: cannot access docker CLI. '
+            'Ensure Docker Desktop is running and the user has permissions. '
+            f'Error: {test.stderr.strip()[:200]}'
         )
         return []
 
@@ -1154,7 +1403,8 @@ def collect_docker():
         result = subprocess.run(
             docker_prefix + ['ps', '-a', '--no-trunc',
              '--format', '{{.ID}}|{{.Names}}|{{.Image}}|{{.Status}}|{{.CreatedAt}}'],
-            capture_output=True, text=True, timeout=15
+            capture_output=True, text=True, timeout=15,
+            encoding='utf-8', errors='replace'
         )
         if result.returncode != 0:
             logging.getLogger('docker').warning(
@@ -1174,7 +1424,7 @@ def collect_docker():
             cid, name, image, status_str, created_str = parts
             container_id = cid[:12]
 
-            # Parse status: "Up 2 hours" or "Exited (0) 3 hours ago" or "Restarting (1) 5 seconds ago"
+            # Parse status
             status = 'running' if status_str.startswith('Up') else 'exited'
             if 'Restarting' in status_str:
                 status = 'restarting'
@@ -1280,7 +1530,7 @@ def collect_software():
     """Collect software/OS info."""
     result = {
         'hostname': platform.node(),
-        'os_distro': ' '.join(platform.dist()) if hasattr(platform, 'dist') else platform.platform(),
+        'os_distro': platform.platform(),
         'kernel': platform.release(),
     }
     try:
@@ -1291,7 +1541,8 @@ def collect_software():
     # NVIDIA driver
     try:
         out = subprocess.run(['nvidia-smi', '--query-gpu=driver_version', '--format=csv,noheader'],
-                           capture_output=True, text=True, timeout=5)
+                           capture_output=True, text=True, timeout=5,
+                           encoding='utf-8', errors='replace')
         if out.returncode == 0:
             result['nvidia_driver'] = out.stdout.strip().split('\n')[0]
     except Exception:
@@ -1299,7 +1550,8 @@ def collect_software():
     # Docker version
     try:
         out = subprocess.run(['docker', 'version', '--format', '{{.Server.Version}}'],
-                           capture_output=True, text=True, timeout=5)
+                           capture_output=True, text=True, timeout=5,
+                           encoding='utf-8', errors='replace')
         if out.returncode == 0:
             result['docker_version'] = out.stdout.strip()
     except Exception:
@@ -1308,37 +1560,70 @@ def collect_software():
 
 
 def collect_errors():
-    """Collect recent system errors from journalctl."""
+    """Collect recent system errors from Windows Event Log or journalctl."""
     errors = []
-    try:
-        out = subprocess.run(
-            ['sudo', 'journalctl', '-p', 'err..crit', '--since', '5 min ago', '--no-pager', '-o', 'short-iso'],
-            capture_output=True, text=True, timeout=10
-        )
-        seen = set()
-        for line in out.stdout.strip().splitlines()[:20]:
-            if line not in seen:
-                seen.add(line)
-                errors.append({
-                    'source': 'kernel',
-                    'message': line[:200],
-                    'timestamp': line[:23] if len(line) > 23 else '',
-                })
-    except Exception as e:
-        logging.getLogger('errors').warning('Error collection failed: %s', e)
+    if platform.system() == 'Windows':
+        # Use Windows Event Log via PowerShell
+        try:
+            ps_cmd = (
+                "Get-WinEvent -FilterHashtable @{"
+                "LogName='Application','System';"
+                "Level=1,2,3;"
+                "StartTime=(Get-Date).AddMinutes(-5)"
+                "} -MaxEvents 20 -ErrorAction SilentlyContinue | "
+                "ForEach-Object { $_.TimeCreated.ToString('yyyy-MM-ddTHH:mm:ss') + ' ' + "
+                "$_.ProviderName + ': ' + $_.Message }"
+            )
+            out = subprocess.run(
+                ['powershell', '-Command', ps_cmd],
+                capture_output=True, text=True, timeout=15,
+                encoding='utf-8', errors='replace'
+            )
+            if out.returncode == 0 and out.stdout and out.stdout.strip():
+                seen = set()
+                for line in out.stdout.strip().splitlines():
+                    if line not in seen and len(line.strip()) > 0:
+                        seen.add(line)
+                        parts = line.split(None, 2)
+                        errors.append({
+                            'source': parts[1].rstrip(':') if len(parts) > 1 else 'windows',
+                            'message': line[:200],
+                            'timestamp': parts[0] if len(parts) > 0 else '',
+                        })
+        except Exception as e:
+            logging.getLogger('errors').warning('Windows Event Log collection failed: %s', e)
+    else:
+        # Linux: use journalctl
+        try:
+            out = subprocess.run(
+                ['journalctl', '-p', 'err..crit', '--since', '5 min ago', '--no-pager', '-o', 'short-iso'],
+                capture_output=True, text=True, timeout=10
+            )
+            seen = set()
+            for line in out.stdout.strip().splitlines()[:20]:
+                if line not in seen:
+                    seen.add(line)
+                    errors.append({
+                        'source': 'kernel',
+                        'message': line[:200],
+                        'timestamp': line[:23] if len(line) > 23 else '',
+                    })
+        except Exception as e:
+            logging.getLogger('errors').warning('Error collection failed: %s', e)
     return errors
 
 
-# ── Payload & Transport ─────────────────────────────────────────────────────
+# == Payload & Transport =====================================================
 
 def build_payload(config):
     """Build the telemetry payload.
 
     Payload structure (no duplication):
-    - metrics: all time-series data (cpu, memory, storage, network, gpu, docker).
-              Each collector returns both static identifiers (model, uuid, capacity)
-              and dynamic values (utilization, temp, usage). This ensures complete
-              data for per-minute historical tracking.
+    - metrics: all data in one section. Each collector returns both static
+              identifiers (model, uuid, capacity) and dynamic values
+              (utilization, temp, usage). This ensures complete data for
+              per-minute historical tracking. GPU uuid is included so
+              replacements can be tracked accurately.
     - motherboard: static hardware info
     - software: OS-level info (hostname, kernel, driver versions)
     - errors: recent system errors
@@ -1420,28 +1705,280 @@ def send_payload(config, payload):
     return None, {}
 
 
-# ── Main ────────────────────────────────────────────────────────────────────
+# == Acquisition Lock ========================================================
 
-def timeout_handler(signum, frame):
-    raise TimeoutError("Collection exceeded time limit")
+class AcquisitionLock:
+    """Cross-platform file lock to prevent overlapping agent runs."""
 
+    def __init__(self):
+        self._lock_file = None
+        self._locked = False
+
+    def acquire(self):
+        """Try to acquire the lock. Returns True if successful."""
+        lock_dir = Path(__file__).resolve().parent / 'logs'
+        lock_dir.mkdir(parents=True, exist_ok=True)
+        lock_path = lock_dir / '.agent.lock'
+
+        try:
+            if platform.system() == 'Windows':
+                import msvcrt
+                self._lock_file = open(lock_path, 'w')
+                msvcrt.locking(self._lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+                self._locked = True
+                return True
+            else:
+                import fcntl
+                self._lock_file = open(lock_path, 'w')
+                fcntl.flock(self._lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                self._locked = True
+                return True
+        except (IOError, OSError):
+            if self._lock_file:
+                self._lock_file.close()
+                self._lock_file = None
+            return False
+
+    def release(self):
+        """Release the lock."""
+        if self._lock_file and self._locked:
+            try:
+                if platform.system() == 'Windows':
+                    import msvcrt
+                    self._lock_file.seek(0)
+                    msvcrt.locking(self._lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(self._lock_file.fileno(), fcntl.LOCK_UN)
+            except Exception:
+                pass
+            finally:
+                self._lock_file.close()
+                self._lock_file = None
+                self._locked = False
+
+
+# == Windows Task Scheduler Setup Helper =====================================
+
+def print_task_scheduler_instructions():
+    """Print instructions for setting up Windows Task Scheduler."""
+    script_path = Path(__file__).resolve()
+    python_path = sys.executable
+
+    pythonw_path = python_path.replace('python.exe', 'pythonw.exe')
+    if not Path(pythonw_path).exists():
+        pythonw_path = python_path.replace('python3.exe', 'pythonw.exe')
+    if not Path(pythonw_path).exists():
+        pythonw_path = python_path
+
+    print()
+    print("=" * 60)
+    print("  Windows Task Scheduler Setup")
+    print("=" * 60)
+    print()
+    print("The agent should run every 60 seconds.")
+    print("Windows Task Scheduler minimum interval is 1 minute.")
+    print("The built-in --install-task flag uses 1-minute intervals.")
+    print("NOTE: Uses pythonw.exe to run without a visible terminal window.")
+    print()
+    print("Option 1 - Automatic (run as Administrator):")
+    print(f'  python "{script_path}" --install-task')
+    print()
+    print("Option 2 - Using schtasks command (run as Administrator):")
+    print(f'  schtasks /create /tn "GPURigMonitorAgent" '
+          f'/tr "\\{pythonw_path}\\" \\"{script_path}\\"" '
+          f'/sc minute /mo 1 /f')
+    print()
+    print("Option 3 - Using Task Scheduler GUI:")
+    print("  1. Open Task Scheduler (taskschd.msc)")
+    print("  2. Click 'Create Basic Task'")
+    print("  3. Name: GPURigMonitorAgent")
+    print("  4. Trigger: When the computer starts")
+    print("  5. Action: Start a program")
+    print(f"  6. Program: {pythonw_path}")
+    print('  7. Arguments: "{script_path}"')
+    print("  8. Check 'Run whether user is logged on or not'")
+    print("  9. Check 'Run with highest privileges' (for SMART/GPU access)")
+    print()
+    print("To verify: schtasks /query /tn GPURigMonitorAgent")
+    print("To remove: schtasks /delete /tn GPURigMonitorAgent /f")
+    print()
+    print("=" * 60)
+
+
+def create_windows_task():
+    """Attempt to create a Windows Task Scheduler entry automatically."""
+    if platform.system() != 'Windows':
+        print("This function is only available on Windows.")
+        return
+
+    script_path = Path(__file__).resolve()
+    python_path = sys.executable
+
+    pythonw_path = python_path.replace('python.exe', 'pythonw.exe')
+    if not Path(pythonw_path).exists():
+        pythonw_path = python_path.replace('python3.exe', 'pythonw.exe')
+    if not Path(pythonw_path).exists():
+        pythonw_path = python_path
+
+    task_name = "GPURigMonitorAgent"
+    arguments = f'"{pythonw_path}" "{script_path}"'
+
+    cmd = [
+        'schtasks', '/create',
+        '/tn', task_name,
+        '/tr', arguments,
+        '/sc', 'minute',
+        '/mo', '1',
+        '/ru', 'SYSTEM',
+        '/f',
+    ]
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        if result.returncode == 0:
+            print(f"Task '{task_name}' created successfully.")
+            print("The agent will run every 1 minute (hidden window).")
+            print(f"To verify: schtasks /query /tn {task_name}")
+            print(f"To remove: schtasks /delete /tn {task_name} /f")
+        else:
+            print(f"Failed to create task: {result.stderr}")
+            print("Try running as Administrator, or set up manually:")
+            print_task_scheduler_instructions()
+    except Exception as e:
+        print(f"Error creating task: {e}")
+        print_task_scheduler_instructions()
+
+
+def remove_windows_task():
+    """Remove the Windows Task Scheduler entry."""
+    if platform.system() != 'Windows':
+        print("This function is only available on Windows.")
+        return
+
+    task_name = "GPURigMonitorAgent"
+    try:
+        result = subprocess.run(
+            ['schtasks', '/delete', '/tn', task_name, '/f'],
+            capture_output=True, text=True, timeout=30
+        )
+        if result.returncode == 0:
+            print(f"Task '{task_name}' removed successfully.")
+        else:
+            print(f"Failed to remove task: {result.stderr}")
+    except Exception as e:
+        print(f"Error removing task: {e}")
+
+
+def _detect_server():
+    """Try to auto-detect the server on common local/test IP ranges."""
+    import socket
+
+    print()
+    print("=" * 60)
+    print("  Server Auto-Detection")
+    print("=" * 60)
+    print()
+
+    hostname = socket.gethostname()
+    try:
+        local_ip = socket.gethostbyname(hostname)
+        print(f"  This machine: {hostname} ({local_ip})")
+    except Exception:
+        print(f"  This machine: {hostname}")
+
+    candidates = [
+        ("192.168.253.1", "VMware NAT (VMnet8) gateway"),
+        ("192.168.40.1", "VMware Host-Only (VMnet1) gateway"),
+        ("192.168.8.1", "Common gateway (192.168.8.x)"),
+        ("192.168.0.1", "Common gateway (192.168.0.x)"),
+        ("192.168.1.1", "Common gateway (192.168.1.x)"),
+        ("127.0.0.1", "Localhost (same machine)"),
+    ]
+
+    try:
+        local_parts = local_ip.rsplit('.', 1)
+        if len(local_parts) == 2:
+            subnet_gw = f"{local_parts[0]}.1"
+            candidates.insert(0, (subnet_gw, f"Detected gateway (subnet {local_parts[0]}.x)"))
+    except Exception:
+        pass
+
+    print("  Probing candidates...")
+    found = []
+    for ip, label in candidates:
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(2)
+            result = sock.connect_ex((ip, 80))
+            sock.close()
+            if result == 0:
+                print(f"  {ip:20s} - {label} (port 80 open)")
+                found.append(ip)
+            else:
+                print(f"  {ip:20s} - {label} (no response)")
+        except Exception:
+            print(f"  {ip:20s} - {label} (error)")
+
+    if found:
+        best = found[0]
+        print()
+        print(f"  Recommended server_endpoint: http://{best}")
+        print(f"  Or try: https://{best}")
+        if best == "192.168.253.1":
+            print()
+            print("  NOTE: This is the VMware NAT gateway. The VM itself may use")
+            print("  a different IP like 192.168.253.xxx. Try probing higher IPs:")
+            for i in range(128, 140):
+                probe = f"192.168.253.{i}"
+                try:
+                    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    s.settimeout(0.5)
+                    r = s.connect_ex((probe, 80))
+                    s.close()
+                    if r == 0:
+                        print(f"  {probe} responds on port 80 - try: http://{probe}")
+                except Exception:
+                    pass
+    else:
+        print()
+        print("  No server found on common addresses.")
+        print("  Check that the server is running and the IP is correct.")
+
+    print()
+    print("=" * 60)
+
+
+# == Main ====================================================================
 
 def main():
-    # Random jitter to spread load across the reporting interval
-    # Without this, all rigs send at the same second (cron :00)
-    # causing thundering herd problem with hundreds of rigs
-    jitter_s = random.uniform(0, 25)
-    time.sleep(jitter_s)
+    # Handle command-line arguments for task management and diagnostics
+    if '--install-task' in sys.argv:
+        create_windows_task()
+        return
+    if '--remove-task' in sys.argv:
+        remove_windows_task()
+        return
+    if '--help-task' in sys.argv:
+        print_task_scheduler_instructions()
+        return
+    if '--detect-server' in sys.argv:
+        _detect_server()
+        return
 
     config = load_config()
     setup_logging(debug=config.get('debug_mode', False))
     logger = logging.getLogger('main')
 
-    # Hard timeout — 30s allows collection + retries while leaving
-    # margin for jitter (25s max) within the 60s cron interval
-    timeout_s = config.get('collection_timeout_s', 30)
-    signal.signal(signal.SIGALRM, timeout_handler)
-    signal.alarm(timeout_s)
+    # Random jitter to spread load across the reporting interval
+    jitter_s = random.uniform(0, 25)
+    time.sleep(jitter_s)
+
+    # Acquire lock to prevent overlapping runs
+    lock = AcquisitionLock()
+    if not lock.acquire():
+        logger.warning('Another instance is already running. Exiting.')
+        sys.exit(0)
 
     try:
         logger.info('Starting collection for rig %s', config['rig_uuid'])
@@ -1452,14 +1989,11 @@ def main():
             logger.info('Payload accepted: %s', response.get('status', 'unknown'))
         else:
             logger.error('Payload rejected: %s %s', status_code, response)
-    except TimeoutError:
-        logger.error('Collection timed out after %ds', timeout_s)
-        sys.exit(1)
     except Exception as e:
         logger.exception('Unexpected error: %s', e)
         sys.exit(1)
     finally:
-        signal.alarm(0)
+        lock.release()
 
 
 if __name__ == '__main__':

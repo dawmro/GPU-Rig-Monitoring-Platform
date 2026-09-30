@@ -13,12 +13,12 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='gpumetric',
             name='gpu_board_part_number',
-            field=models.CharField(blank=True, default='', max_length=128),
+            field=models.CharField(blank=True, default='', max_length=128, null=True),
         ),
         migrations.AddField(
             model_name='gpumetric',
             name='gpu_brand',
-            field=models.CharField(blank=True, default='', max_length=64),
+            field=models.CharField(blank=True, default='', max_length=64, null=True),
         ),
         migrations.AddField(
             model_name='latestsnapshot',

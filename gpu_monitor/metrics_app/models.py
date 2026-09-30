@@ -75,8 +75,8 @@ class GPUMetric(models.Model):
                            help_text='Stable GPU UUID or GPU-prefixed identifier for identity tracking; full value shown in charts')
     # Static GPU identifiers (brand, AIB board part number) — rarely change,
     # preserved through compaction via static_fields (like model)
-    gpu_brand = models.CharField(max_length=64, blank=True, default='')
-    gpu_board_part_number = models.CharField(max_length=128, blank=True, default='')
+    gpu_brand = models.CharField(max_length=64, blank=True, default='', null=True)
+    gpu_board_part_number = models.CharField(max_length=128, blank=True, default='', null=True)
     gpu_util_pct = models.FloatField(null=True)
     mem_controller_util_pct = models.FloatField(null=True)
     gpu_temp_c = models.FloatField(null=True)

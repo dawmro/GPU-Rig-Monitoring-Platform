@@ -1230,6 +1230,10 @@ class BuildStorageMetricsTests(SimpleTestCase):
             storage_usage_pcts_json=[45],
             storage_temps_json=[35],
             storage_smart_json=["PASSED"],
+            storage_models_json=["Samsung SSD 870 EVO 1TB"],
+            storage_vendors_json=["Samsung"],
+            storage_serials_json=["S6EWNF0R1234"],
+            storage_wwns_json=["0x5002538e12345678"],
             storage_read_bytes_delta_json=[1024000],
             storage_write_bytes_delta_json=[512000],
             storage_read_iops_delta_json=[120],
@@ -1248,6 +1252,11 @@ class BuildStorageMetricsTests(SimpleTestCase):
         self.assertEqual(result[0]["usage_pct"], 45)
         self.assertEqual(result[0]["temp_c"], 35)
         self.assertEqual(result[0]["smart_health"], "PASSED")
+        # Disk hardware identifiers (sysfs static)
+        self.assertEqual(result[0]["model"], "Samsung SSD 870 EVO 1TB")
+        self.assertEqual(result[0]["vendor"], "Samsung")
+        self.assertEqual(result[0]["serial"], "S6EWNF0R1234")
+        self.assertEqual(result[0]["wwn"], "0x5002538e12345678")
 
     def test_build_storage_metrics_with_no_storage(self):
         snap = SimpleNamespace(storage_count=0)

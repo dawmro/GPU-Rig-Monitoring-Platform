@@ -803,18 +803,6 @@ def collect_network():
         return []
 
 
-# NVML Brand enum -> human-readable label (pynvml.NVML_BRAND_*)
-NVML_BRAND_LABELS = {
-    0: 'Unknown', 1: 'Quadro', 2: 'Tesla', 3: 'NVS', 4: 'Grid',
-    5: 'GeForce', 6: 'Titan', 7: 'NVIDIA Virtual Applications',
-    8: 'NVIDIA Virtual PC', 9: 'NVIDIA vGPU for Compute',
-    10: 'NVIDIA RTX Virtual Workstation', 11: 'NVIDIA Cloud Gaming',
-    12: 'Quadro RTX', 13: 'NVIDIA RTX', 14: 'NVIDIA',
-    15: 'GeForce RTX', 16: 'Titan RTX', 17: 'NVIDIA DLA',
-    18: 'NVIDIA vGameDev', 19: 'NVIDIA NPU',
-}
-
-
 def _nvml_bytes_to_str(value):
     """pynvml returns bytes on Python 3; decode to str (None-safe)."""
     if value is None:
@@ -883,14 +871,7 @@ def collect_gpus():
             if isinstance(raw_name, bytes):
                 raw_name = raw_name.decode('utf-8')
 
-            # Collect static GPU identifiers: brand and AIB board part number
-            gpu_brand = None
-            try:
-                brand_int = pynvml.nvmlDeviceGetBrand(handle)
-                gpu_brand = NVML_BRAND_LABELS.get(brand_int, 'Unknown')
-            except pynvml.NVMLError:
-                pass  # NOT_SUPPORTED on some GPUs
-
+            # Collect AIB board part number (e.g., "ASUS Astral", "MSI Suprim")
             gpu_board_part = None
             try:
                 gpu_board_part = _nvml_bytes_to_str(pynvml.nvmlDeviceGetBoardPartNumber(handle))
@@ -901,7 +882,6 @@ def collect_gpus():
                 'uuid': raw_uuid,
                 'model': raw_name,
                 # Static identifiers
-                'gpu_brand': gpu_brand,
                 'gpu_board_part_number': gpu_board_part,
                 'uuid': raw_uuid,
                 'model': raw_name,

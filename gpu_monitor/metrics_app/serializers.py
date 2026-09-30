@@ -133,7 +133,6 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
             # Store per-GPU metrics AND build summary arrays in one loop
             gpu_uuids = []
             gpu_models = []
-            gpu_brands = []
             gpu_board_part_numbers = []
             gpu_temps = []
             gpu_utils = []
@@ -159,8 +158,6 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                     defaults={
                         'snapshot': snapshot,
                         'model': gpu.get('model', ''),
-                        # Static GPU identifiers (brand, AIB board part number)
-                        'gpu_brand': gpu.get('gpu_brand', ''),
                         'gpu_board_part_number': gpu.get('gpu_board_part_number', ''),
                         'gpu_util_pct': gpu.get('gpu_util_pct'),
                         'mem_controller_util_pct': gpu.get('mem_controller_util_pct'),
@@ -184,8 +181,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                 # Build summary arrays for LatestSnapshot
                 gpu_uuids.append(gpu.get('uuid', ''))
                 gpu_models.append(gpu.get('model', ''))
-                # Static GPU identifiers (brand, AIB board part number)
-                gpu_brands.append(gpu.get('gpu_brand') or '')
+                # Static GPU identifiers (AIB board part number)
                 gpu_board_part_numbers.append(gpu.get('gpu_board_part_number') or '')
                 gpu_temps.append(gpu.get('temp_c'))
                 gpu_utils.append(gpu.get('gpu_util_pct'))
@@ -503,7 +499,6 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                 'gpu_count': len(gpu_list),
                 'gpu_uuids_json': gpu_uuids,
                 'gpu_models_json': gpu_models,
-                'gpu_brands_json': gpu_brands,
                 'gpu_board_part_numbers_json': gpu_board_part_numbers,
                 'gpu_temps_json': gpu_temps,
                 'gpu_utils_json': gpu_utils,

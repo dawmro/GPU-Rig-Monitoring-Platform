@@ -43,8 +43,8 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.9.1'
-__schema_version__ = '1.14'
+__version__ = '1.10.0'
+__schema_version__ = '1.15'
 
 # ── Config ──────────────────────────────────────────────────────────────────
 
@@ -458,7 +458,7 @@ def _disk_to_whole_disk(device_name):
     # Strip /dev/ prefix
     name = device_name.split('/')[-1]
     # NVMe: nvme0n1p1 -> nvme0n1, nvme0n1 -> nvme0n1
-    nvme_match = re.match(r'^(nvme\dn\d+)', name)
+    nvme_match = re.match(r'^(nvme\d+n\d+)', name)
     if nvme_match:
         return nvme_match.group(1)
     # SATA/SCSI: sda1 -> sda, vda2 -> vda, sda -> sda
@@ -468,8 +468,40 @@ def _disk_to_whole_disk(device_name):
     return name
 
 
+def _read_sysfs(path):
+    """Read a sysfs attribute as a stripped string, or None on any failure."""
+    try:
+        text = Path(path).read_text().strip()
+        return text or None
+    except Exception:
+        return None
+
+
+def _get_disk_hardware_info(whole_disk):
+    """Collect static disk hardware identifiers from sysfs.
+
+    No new dependencies and no sudo required — plain read-only sysfs access.
+    Handles both SCSI/ATA whole disks (/sys/block/sda/device/...) and
+    NVMe whole disks (/sys/block/nvme0n1/device -> nvme controller attrs).
+
+    Returns a dict with model, vendor, serial, wwn — each None when the
+    attribute is absent (e.g. virtual devices, some NVMe drives omit wwn).
+    """
+    info = {'model': None, 'vendor': None, 'serial': None, 'wwn': None}
+    if not whole_disk:
+        return info
+    base = f'/sys/block/{whole_disk}/device'
+    for field, attr in (('model', 'model'), ('vendor', 'vendor'),
+                        ('serial', 'serial'), ('wwn', 'wwn')):
+        val = _read_sysfs(f'{base}/{attr}')
+        if val:
+            info[field] = val
+    return info
+
+
 def collect_storage():
     """Collect all storage metrics per disk: capacity, usage, temp, smart,
+    hardware identifiers (model, vendor, serial, wwn from sysfs),
     plus disk I/O counters (throughput, IOPS, utilization).
 
     I/O counters are per-physical-disk (whole disk, not partition).
@@ -488,6 +520,7 @@ def collect_storage():
                 usage = psutil.disk_usage(part.mountpoint)
                 whole_disk = _disk_to_whole_disk(part.device)
                 io = disk_io.get(whole_disk, {})
+                hw = _get_disk_hardware_info(whole_disk)
                 disk = {
                     'device': part.device,
                     'mountpoint': part.mountpoint,
@@ -496,6 +529,11 @@ def collect_storage():
                     'usage_pct': round(usage.percent, 1),
                     'temp_c': None,
                     'smart_health': '',
+                    # Static hardware identifiers from sysfs (per physical disk)
+                    'model': hw['model'],
+                    'vendor': hw['vendor'],
+                    'serial': hw['serial'],
+                    'wwn': hw['wwn'],
                     # Disk I/O counters (cumulative, per-physical-disk)
                     'read_bytes': io.get('read_bytes'),
                     'write_bytes': io.get('write_bytes'),

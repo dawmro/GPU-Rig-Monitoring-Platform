@@ -1,6 +1,6 @@
 # GPU Rig Monitoring Agent — Linux
 
-**Version:** 1.6.0 | **Schema:** 1.11
+**Version:** 1.10.0 | **Schema:** 1.15
 
 Linux agent for the GPU Rig Monitoring Platform. Collects hardware/software metrics via `psutil`, `pynvml`, and system interfaces, then POSTs them to the monitoring server every 60 seconds via cron.
 
@@ -138,6 +138,7 @@ The cron job will start automatically within 1 minute.
 | Memory (total, used, free, cached, swap) | psutil | ✅ | ✅ |
 | Motherboard (manufacturer, model, BIOS) | `/sys/class/dmi/` | ✅ | ✅ |
 | Storage (partitions, capacity, usage, SMART/NVMe, temp, read/write bytes, IOPS) | psutil + `smartctl`/`nvme` | ✅ | ✅ |
+| Disk hardware identifiers (model, vendor, serial, WWN per physical disk) | `/sys/block/<disk>/device/{model,vendor,serial,wwn}` (read-only sysfs, no sudo) | ✅ | — |
 | Network (interfaces, bytes, errors, speed) | psutil + sysfs | ✅ | ✅ |
 | GPU (model, memory, util, temp, power, fan, PCIe link, core/mem clocks) | `pynvml` | ✅* | ✅* |
 | GPU processes (per-process: name, type C/G/C+G, memory) | `pynvml` | ✅* | ✅* |

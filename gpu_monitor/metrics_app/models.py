@@ -290,6 +290,13 @@ class LatestSnapshot(models.Model):
     storage_usage_pcts_json = models.JSONField(default=list, blank=True)     # [72.5, 45.2]
     storage_temps_json = models.JSONField(default=list, blank=True)          # [35, 40]
     storage_smart_json = models.JSONField(default=list, blank=True)          # ["OK", "OK"]
+    # Static hardware identifiers from sysfs (model, vendor, serial, wwn).
+    # One entry per disk, same order as storage_devices_json. None when the
+    # sysfs attribute is unavailable (virtual devices, some NVMe drives).
+    storage_models_json = models.JSONField(default=list, blank=True)         # ["Samsung SSD 870 EVO 1TB", ...]
+    storage_vendors_json = models.JSONField(default=list, blank=True)        # ["Samsung", ...]
+    storage_serials_json = models.JSONField(default=list, blank=True)        # ["S6EWNF0R...", ...]
+    storage_wwns_json = models.JSONField(default=list, blank=True)           # ["0x5002538d...", ...]
     # Disk I/O metrics — latest deltas for Live Metrics display
     storage_read_bytes_delta_json = models.JSONField(default=list, blank=True)   # [12345678, 9876543] bytes/s
     storage_write_bytes_delta_json = models.JSONField(default=list, blank=True)  # [5678901, 1234567] bytes/s

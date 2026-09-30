@@ -30,7 +30,7 @@ class IngestSerializer(serializers.Serializer):
     has_active_job = serializers.BooleanField(required=False, default=False)
 
     def validate_schema_version(self, value):
-            if value not in ('1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8', '1.9', '1.10', '1.11', '1.12', '1.13', '1.14'):
+            if value not in ('1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8', '1.9', '1.10', '1.11', '1.12', '1.13', '1.14', '1.15'):
                 raise serializers.ValidationError(f"Unsupported schema_version: {value}")
             return value
 
@@ -224,6 +224,10 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
             storage_devices = []
             storage_fstypes = []
             storage_mountpoints = []
+            storage_models = []
+            storage_vendors = []
+            storage_serials = []
+            storage_wwns = []
             storage_capacities = []
             storage_usage_pcts = []
             storage_temps = []
@@ -305,6 +309,11 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
 
                 # Build storage summary arrays for LatestSnapshot (same loop)
                 storage_devices.append(device_name)
+                # Static hardware identifiers (None when unavailable on the rig)
+                storage_models.append(disk.get('model') or '')
+                storage_vendors.append(disk.get('vendor') or '')
+                storage_serials.append(disk.get('serial') or '')
+                storage_wwns.append(disk.get('wwn') or '')
                 storage_fstypes.append(disk.get('fstype', ''))
                 storage_mountpoints.append(disk.get('mountpoint', ''))
                 storage_capacities.append(disk.get('capacity_bytes'))
@@ -510,6 +519,10 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                 'storage_usage_pcts_json': storage_usage_pcts,
                 'storage_temps_json': storage_temps,
                 'storage_smart_json': storage_smart,
+                'storage_models_json': storage_models,
+                'storage_vendors_json': storage_vendors,
+                'storage_serials_json': storage_serials,
+                'storage_wwns_json': storage_wwns,
                 'storage_read_bytes_delta_json': storage_read_bytes_delta,
                 'storage_write_bytes_delta_json': storage_write_bytes_delta,
                 'storage_read_iops_delta_json': storage_read_iops_delta,

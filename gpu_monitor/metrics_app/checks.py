@@ -1,5 +1,5 @@
 from django.core.checks import Error, register
-from metrics_app.models import MetricSnapshot
+from metrics_app.models import MetricSnapshot, LatestSnapshot
 from metrics_app.views import ChartDataView
 from metrics_app.serializers import IngestSerializer
 
@@ -120,5 +120,46 @@ def check_chart_query_budget(app_configs, **kwargs):
                                 obj='metrics_app.views.ChartDataView', id='metrics_app.E009'))
     except FileNotFoundError:
         errors.append(Error('views.py not found', id='metrics_app.E010'))
+    return errors
+
+
+@register('metrics_app')
+def check_storage_hardware_identifiers(app_configs, **kwargs):
+    """Defense in depth: disk hardware identifiers must be stored and written.
+
+    (W001 style) model fields exist AND the serializer writes the arrays.
+    Static disk identifiers live ONLY in LatestSnapshot (no time-series, no
+    compaction) — see storage_models_json / storage_vendors_json /
+    storage_serials_json / storage_wwns_json.
+    """
+    errors = []
+    expected = ('storage_models_json', 'storage_vendors_json',
+                'storage_serials_json', 'storage_wwns_json')
+    for field in expected:
+        try:
+            LatestSnapshot._meta.get_field(field)
+        except Exception:
+            errors.append(Error(
+                f'LatestSnapshot missing {field} field',
+                hint='Run migration adding disk hardware identifiers to LatestSnapshot',
+                obj='metrics_app.LatestSnapshot',
+                id='metrics_app.E011',
+            ))
+
+    # Layer 2: serializer must append all four arrays per disk
+    try:
+        import inspect
+        import metrics_app.serializers as s
+        process_src = inspect.getsource(s.process_ingest)
+        for field in expected:
+            if f"'{field}': storage_" not in process_src and f"'{field}':" not in process_src:
+                errors.append(Error(
+                    f"serializer process_ingest does not write '{field}' to LatestSnapshot",
+                    hint="Add the array to ls_defaults in process_ingest",
+                    obj='metrics_app.serializers.process_ingest',
+                    id='metrics_app.E012',
+                ))
+    except Exception:
+        pass  # source inspection is best-effort; model-field check above is durable
     return errors
 

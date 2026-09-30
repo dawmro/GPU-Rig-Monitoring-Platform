@@ -217,6 +217,26 @@ def _build_gpu_metrics(snapshot):
     return metrics
 
 
+def _disk_model_label(vendor, model):
+    """Build a 'vendor model' display label without duplicating the
+    vendor when the model string already contains it.
+    'Samsung' + 'SSD 870 EVO 1TB'      -> 'Samsung SSD 870 EVO 1TB'
+    'Samsung' + 'Samsung SSD 870 ...'  -> 'Samsung SSD 870 ...'  (dedup)
+    'Western Digital' + 'WD Blue ...'  -> 'Western Digital WD Blue ...' (kept: vendor prefix not in model)
+    """
+    vendor = (vendor or '').strip()
+    model = (model or '').strip()
+    if not vendor and not model:
+        return ''
+    if not vendor:
+        return model
+    if not model:
+        return vendor
+    if model.lower().startswith(vendor.lower()):
+        return model
+    return f'{vendor} {model}'
+
+
 def _build_storage_metrics(snapshot):
     """Build storage metrics list from LatestSnapshot JSON arrays."""
     if not snapshot or not snapshot.storage_count:
@@ -232,6 +252,19 @@ def _build_storage_metrics(snapshot):
             'usage_pct': _json_get(snapshot.storage_usage_pcts_json, i),
             'temp_c': _json_get(snapshot.storage_temps_json, i),
             'smart_health': _json_get(snapshot.storage_smart_json, i, ''),
+            # Static hardware identifiers (sysfs) — '' when unavailable
+            'model': _json_get(snapshot.storage_models_json, i, ''),
+            'vendor': _json_get(snapshot.storage_vendors_json, i, ''),
+            'serial': _json_get(snapshot.storage_serials_json, i, ''),
+            'wwn': _json_get(snapshot.storage_wwns_json, i, ''),
+            # Pre-joined 'vendor model' label (Django templates can't
+            # inline a Python ternary inside a {{ }} output tag).
+            # sysfs 'model' often already starts with the vendor name
+            # (e.g. 'Samsung SSD 870 EVO 1TB') — avoid 'Samsung Samsung …'.
+            'model_label': _disk_model_label(
+                _json_get(snapshot.storage_vendors_json, i, ''),
+                _json_get(snapshot.storage_models_json, i, ''),
+            ),
             # Disk I/O metrics — deltas (since last sample) and cumulative totals (since boot)
             'read_bytes_delta': _json_get(snapshot.storage_read_bytes_delta_json, i),
             'write_bytes_delta': _json_get(snapshot.storage_write_bytes_delta_json, i),

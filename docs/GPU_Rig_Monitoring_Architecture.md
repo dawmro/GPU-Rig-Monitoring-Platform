@@ -433,8 +433,8 @@ debug_mode: false         # Verbose logging
 | Windows | 1.6.16-win | 1.10 | Windows 10/11 | Task Scheduler (1 min) with `pythonw.exe` (hidden window) |
 
 **Versioning rules:**
-- `agent_version` (e.g. `1.9.1`): incremented for agent-side changes (collectors, payload format, bug fixes). Format: `MAJOR.MINOR.PATCH`.
-- `schema_version` (e.g. `1.14`): incremented only when the payload structure changes in a way that affects the server's serialization/storage. Format: `MAJOR.MINOR`.
+- `agent_version` (e.g. `1.10.0`): incremented for agent-side changes (collectors, payload format, bug fixes). Format: `MAJOR.MINOR.PATCH`.
+- `schema_version` (e.g. `1.15`): incremented only when the payload structure changes in a way that affects the server's serialization/storage. Format: `MAJOR.MINOR`.
 - Schema versions 1.0 through 1.15 are supported (backward compatible via `validate_schema_version` in `IngestSerializer`).
 - When schema versions change, the `validate_schema_version` method in `IngestSerializer` is updated to accept the new version. The same serializer handles all supported versions.
 - See §11.5 for the contract testing strategy.
@@ -1675,18 +1675,18 @@ sudo -u postgres psql gpu_monitor
 
 ### A. Full JSON Schema Definitions (Agent Payload)
 
-**Current: v1.14** (see changelog below)
+**Current: v1.15** (see changelog below)
 
 ```json
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "GPU Rig Monitoring Agent Payload v1.14",
+  "title": "GPU Rig Monitoring Agent Payload v1.15",
   "type": "object",
   "required": ["rig_uuid", "schema_version", "timestamp", "metrics"],
   "properties": {
     "rig_uuid": { "type": "string", "format": "uuid" },
     "rig_name": { "type": "string", "maxLength": 128 },
-    "schema_version": { "type": "string", "enum": ["1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "1.10", "1.11", "1.12", "1.13", "1.14"] },
+    "schema_version": { "type": "string", "enum": ["1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9", "1.10", "1.11", "1.12", "1.13", "1.14", "1.15"] },
     "agent_version": { "type": "string" },
     "timestamp": { "type": "string", "format": "date-time" },
     "metrics": {
@@ -1733,7 +1733,11 @@ sudo -u postgres psql gpu_monitor
               "capacity_bytes": { "type": "integer" },
               "usage_pct": { "type": "number" },
               "temp_c": { "type": ["number", "null"] },
-              "smart_health": { "type": "string" }
+              "smart_health": { "type": "string" },
+              "model": { "type": ["string", "null"] },
+              "vendor": { "type": ["string", "null"] },
+              "serial": { "type": ["string", "null"] },
+              "wwn": { "type": ["string", "null"] }
             }
           }
         },
@@ -2072,7 +2076,7 @@ A new GPU metric `mem_controller_util_pct` distinct from `mem_util_pct`:
 
 #### D.5 Process Details Card (Live Metrics)
 
-**Added:** 2026-08 — agent 1.6.0+; current: 1.9.1 / schema 1.14.
+**Added:** 2026-08 — agent 1.6.0+; current: 1.10.0 / schema 1.15.
 
 A new "Process Details" card displays **top-10 by CPU + top-10 by memory** processes (deduplicated by PID, sorted by `cpu_pct desc then mem_pct desc`).
 

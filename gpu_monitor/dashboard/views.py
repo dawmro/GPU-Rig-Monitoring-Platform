@@ -197,6 +197,9 @@ def _build_gpu_metrics(snapshot):
             'gpu_index': i,
             'gpu_uuid': _json_get(snapshot.gpu_uuids_json, i, ''),
             'model': _json_get(snapshot.gpu_models_json, i, ''),
+            # Static GPU identifiers (brand, AIB board part number)
+            'gpu_brand': _json_get(snapshot.gpu_brands_json, i, ''),
+            'gpu_board_part_number': _json_get(snapshot.gpu_board_part_numbers_json, i, ''),
             'gpu_temp_c': _json_get(snapshot.gpu_temps_json, i),
             'gpu_util_pct': _json_get(snapshot.gpu_utils_json, i),
             'fan_speed_pct': _json_get(snapshot.gpu_fans_json, i),

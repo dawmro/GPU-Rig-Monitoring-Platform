@@ -43,8 +43,8 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.10.0'
-__schema_version__ = '1.15'
+__version__ = '1.11.0'
+__schema_version__ = '1.16'
 
 # ── Config ──────────────────────────────────────────────────────────────────
 
@@ -643,8 +643,32 @@ def collect_network():
         return []
 
 
+# NVML Brand enum -> human-readable label (pynvml.NVML_BRAND_*)
+NVML_BRAND_LABELS = {
+    0: 'Unknown', 1: 'Quadro', 2: 'Tesla', 3: 'NVS', 4: 'Grid',
+    5: 'GeForce', 6: 'Titan', 7: 'NVIDIA Virtual Applications',
+    8: 'NVIDIA Virtual PC', 9: 'NVIDIA vGPU for Compute',
+    10: 'NVIDIA RTX Virtual Workstation', 11: 'NVIDIA Cloud Gaming',
+    12: 'Quadro RTX', 13: 'NVIDIA RTX', 14: 'NVIDIA',
+    15: 'GeForce RTX', 16: 'Titan RTX', 17: 'NVIDIA DLA',
+    18: 'NVIDIA vGameDev', 19: 'NVIDIA NPU',
+}
+
+
+def _nvml_bytes_to_str(value):
+    """pynvml returns bytes on Python 3; decode to str (None-safe)."""
+    if value is None:
+        return None
+    if isinstance(value, bytes):
+        value = value.decode('utf-8', errors='replace')
+    value = value.strip() if isinstance(value, str) else value
+    return value or None
+
+
 def collect_gpus():
-    """Collect all GPU metrics: uuid, model, memory, utilization, temp, fan, power."""
+    """Collect all GPU metrics: uuid, model, memory, utilization, temp, fan, power,
+    plus static identifiers (brand, board part number)."""
+
     try:
         import pynvml
         pynvml.nvmlInit()
@@ -699,9 +723,26 @@ def collect_gpus():
             if isinstance(raw_name, bytes):
                 raw_name = raw_name.decode('utf-8')
 
+            # Collect static GPU identifiers: brand and AIB board part number
+            gpu_brand = None
+            try:
+                brand_int = pynvml.nvmlDeviceGetBrand(handle)
+                gpu_brand = NVML_BRAND_LABELS.get(brand_int, 'Unknown')
+            except pynvml.NVMLError:
+                pass  # NOT_SUPPORTED on some GPUs
+
+            gpu_board_part = None
+            try:
+                gpu_board_part = _nvml_bytes_to_str(pynvml.nvmlDeviceGetBoardPartNumber(handle))
+            except pynvml.NVMLError:
+                pass  # NOT_SUPPORTED on some GPUs
+
             gpus.append({
                 'uuid': raw_uuid,
                 'model': raw_name,
+                # Static identifiers
+                'gpu_brand': gpu_brand,
+                'gpu_board_part_number': gpu_board_part,
                 'mem_total_mb': info.total // (1024 * 1024),
                 'mem_used_mb': info.used // (1024 * 1024),
                 'mem_free_mb': info.free // (1024 * 1024),

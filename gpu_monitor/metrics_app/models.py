@@ -73,6 +73,10 @@ class GPUMetric(models.Model):
     model = models.CharField(max_length=255, blank=True, default='')
     gpu_uuid = models.CharField(db_index=True, max_length=64, blank=True, default='',
                            help_text='Stable GPU UUID or GPU-prefixed identifier for identity tracking; full value shown in charts')
+    # Static GPU identifiers (brand, AIB board part number) — rarely change,
+    # preserved through compaction via static_fields (like model)
+    gpu_brand = models.CharField(max_length=64, blank=True, default='')
+    gpu_board_part_number = models.CharField(max_length=128, blank=True, default='')
     gpu_util_pct = models.FloatField(null=True)
     mem_controller_util_pct = models.FloatField(null=True)
     gpu_temp_c = models.FloatField(null=True)
@@ -263,6 +267,10 @@ class LatestSnapshot(models.Model):
     gpu_count = models.PositiveSmallIntegerField(default=0)
     gpu_uuids_json = models.JSONField(default=list, blank=True)         # ["GPU-abc-123", "GPU-def-456"]
     gpu_models_json = models.JSONField(default=list, blank=True)       # ["RTX 3060", "RTX 3060"]
+    # Static GPU identifiers (brand, AIB board part number) — one entry
+    # per GPU, same order as gpu_models_json. Blank when unavailable.
+    gpu_brands_json = models.JSONField(default=list, blank=True)       # ["GeForce RTX", "Tesla"]
+    gpu_board_part_numbers_json = models.JSONField(default=list, blank=True)  # ["ASUS Astral", ""]
     gpu_temps_json = models.JSONField(default=list, blank=True)         # [72.5, 73.1]
     gpu_utils_json = models.JSONField(default=list, blank=True)         # [98.0, 100.0]
     gpu_mem_controller_utils_json = models.JSONField(default=list, blank=True)  # [45.2, 47.1]

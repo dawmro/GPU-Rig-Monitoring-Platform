@@ -363,7 +363,8 @@ store it**: `GPUMetric` has no `gpu_subvendor` column and the serializer does
 not read it (only `gpu_board_part_number` is persisted, plus the
 `gpu_board_part_numbers_json` summary array on `LatestSnapshot`). It is
 currently transport-only — a candidate for Phase 2 server storage if we want
-subvendor in the GPU card / fleet overview.
+subvendor in the GPU card / fleet overview. **Status 2026-10-01:** still
+true — see §6 (why it is invisible on Live Metrics and the full fix plan).
 
 ### 4b. DEFERRED (later phase) — the remaining keys
 The full blueprint (gpu_vbios, gpu_inforom_versions, gpu_serial,
@@ -383,11 +384,196 @@ except pynvml.NVMLError:
 
 Immediate payload keys per GPU entry (as shipped): `gpu_subvendor`,
 `gpu_board_part_number` (both nullable; `gpu_subvendor` is agent-side only).
-(Deferred, later phase: `gpu_vbios`, `gpu_inforom_versions`, `gpu_serial`,
+(deferred, later phase: `gpu_vbios`, `gpu_inforom_versions`, `gpu_serial`,
 `pci_bus_id`, `pci_info_ext`, `board_id`, `gpu_architecture`,
 `gpu_vendor`, `gpu_device_id`, `gpu_pci_subsystem`, `gpu_bus_type`,
 `gpu_bar1_memory`, `gpu_thermal_settings`, `gpu_pstates_info`,
 `gpu_max_clocks`, `gpu_mig_mode` — all nullable.)
+
+---
+
+## 6. Why `gpu_subvendor` / `gpu_board_part_number` are NOT visible on Live Metrics — root cause + fix (verified 2026-10-01, static analysis + live payload on `feat/agent-gpu-brand-board-part` @ `ffa3528`)
+
+> **Agent side is confirmed DONE (live payload, 2026-10-01).** The Windows
+> agent (RTX 3060, `GPU-a322…38aa`) already sends both keys:
+> `"gpu_subvendor": "MSI"`, `"gpu_board_part_number": null` — i.e. it emits
+> schema-1.17 fields and the server accepts `1.17`. **All remaining work is
+> server-side**: ingest passes the keys through untouched, but the
+> serializer drops `gpu_subvendor` and the board-part value arrives as
+> `null` → hidden. No agent change is needed for either field.
+
+### 6.1 Full pipeline audit (static)
+
+| Step | `gpu_board_part_number` | `gpu_subvendor` |
+|------|-------------------------|-----------------|
+| Agent payload (Linux `agent/run.py:769-774`, Windows `agent_windows/run.py:927-931`) | ✅ emitted | ✅ emitted |
+| Ingest serializer (`metrics_app/serializers.py:161` GPUMetric default; `:185` + `:502` `gpu_board_part_numbers_json`) | ✅ read + persisted | ❌ **never read** |
+| Model (`metrics_app/models.py:76` `GPUMetric.gpu_board_part_number`; `:269` `LatestSnapshot.gpu_board_part_numbers_json`) | ✅ both columns exist (migrations `0055`/`0056`, applied) | ❌ no column anywhere |
+| View (`dashboard/views.py:201` in `_build_gpu_metrics`, single builder shared by `rig_detail` + `htmx_metrics`) | ✅ key exposed | ❌ key never built |
+| Template (`_metrics_cards.html:396-400`, GPU card, renders only when value truthy) | ✅ line exists | ❌ nothing to render |
+
+**Conclusion: the `gpu_board_part_number` pipeline is complete and correct in
+code.** Both render paths (initial page load and the 30s HTMX poll) funnel
+through the same `_build_gpu_metrics()`, so there is no second builder that
+skips the field. The template's `{% if %}` is the only silent no-op: an empty
+string simply shows no "Board:" line.
+
+### 6.2 Root cause — exactly what the server does (and does not do)
+
+1. **`gpu_subvendor` — dropped entirely on the server side (the real bug).**
+   It arrives in the payload (verified above), but:
+   - `IngestSerializer.metrics` is a plain `JSONField`
+     (`metrics_app/serializers.py:25`) and `IngestView.post`
+     (`metrics_app/views.py:44-117`) passes it through — **no change needed
+     at the API layer**; `process_ingest` receives the key via
+     `gpu_list = metrics_data.get('gpus', [])` (`serializers.py:65`).
+   - `process_ingest` **never reads `gpu_subvendor`** — it is not in the
+     `GPUMetric` `defaults` (`serializers.py:158-179`) and not appended to
+     any `LatestSnapshot` summary array (`serializers.py:181-201`,
+     `:498-518`).
+   - No model column exists (`GPUMetric.gpu_subvendor`,
+     `LatestSnapshot.gpu_subvendors_json` are absent).
+   - `_build_gpu_metrics` (`dashboard/views.py:181-219`) never builds the
+     key, so the GPU-card dict on Live Metrics has no subvendor.
+   → **It cannot display today, and never will — until §6.3 items 1-5 land.**
+
+2. **`gpu_board_part_number` — pipeline complete; `null` is correctly hidden.**
+   The serializer writes `gpu.get('gpu_board_part_number', '')` into
+   `GPUMetric` (`serializers.py:161`; field is `null=True`, so `None` stores
+   as NULL) and `gpu.get('gpu_board_part_number') or ''` into
+   `LatestSnapshot` (`:185`); the view exposes it
+   (`dashboard/views.py:201`); the template renders the "Board:" line only
+   when truthy (`_metrics_cards.html:396-400`). A payload value of `null`
+   therefore yields **no** "Board:" line by design:
+   - The MSI RTX 3060 above reports `null` because NVML
+     `nvmlDeviceGetBoardPartNumber` returns nothing for it (consumer card
+     without a marketing board-part string) — a legitimate value, not a bug.
+   - The 2026-09-30 dev-DB snapshot (1086 empty `GPUMetric` rows, rig
+     `6746…817d` on `1.10.0-win`) pre-dated the agent update; the live
+     payload confirms the current agent now sends the field.
+   - Any card that *does* have a board-part string will display it with
+     **zero** further server-side code.
+
+**Summary: subvendor = 5 server fragments to add (§6.3); board-part = no
+display code to change (only add it to compaction `static_fields`, §6.3
+item 6).**
+
+### 6.3 Exact code fragments to change (follow-up branch `feat/gpu-subvendor-display`, server-only)
+
+**0. Ingest / API layer — NO changes.** `IngestView.post`
+(`metrics_app/views.py:44-117`) and `IngestSerializer`
+(`metrics_app/serializers.py:19-35`) pass `metrics` through as `JSONField`;
+both keys already reach `process_ingest` via
+`gpu_list = metrics_data.get('gpus', [])` (`serializers.py:65`).
+`schema_version` 1.17 is already accepted (`serializers.py:33`). (Nit: that
+accepted-version tuple contains a duplicate `'1.16'` token — harmless; clean
+up when that line is touched.)
+
+**1. `metrics_app/models.py` — two new fields**
+- `GPUMetric`, next to `gpu_board_part_number` (`models.py:76`):
+```python
+gpu_subvendor = models.CharField(max_length=64, blank=True, default='', null=True)  # AIB partner: MSI/ASUS/Gigabyte/…
+```
+- `LatestSnapshot`, next to `gpu_board_part_numbers_json` (`models.py:269`):
+```python
+gpu_subvendors_json = models.JSONField(default=list, blank=True)  # ["MSI", ""]
+```
+
+**2. New migration `metrics_app/migrations/0057_gpumetric_gpu_subvendor.py`**
+```python
+dependencies = [('metrics_app', '0056_remove_gpu_brands_json')]
+operations = [
+    migrations.AddField(model_name='gpumetric', name='gpu_subvendor',
+        field=models.CharField(blank=True, default='', max_length=64, null=True)),
+    migrations.AddField(model_name='latestsnapshot', name='gpu_subvendors_json',
+        field=models.JSONField(blank=True, default=list)),
+]
+```
+Additive only (existing rows → `''`/`[]`); `makemigrations --check` must
+come back clean after item 1.
+
+**3. `metrics_app/serializers.py` — `process_ingest`, four spots**
+- List init, next to `gpu_board_part_numbers = []` (`:136`):
+```python
+gpu_subvendors = []
+```
+- `GPUMetric.objects.update_or_create(... defaults={...})`, next to
+  `'gpu_board_part_number'` (`:161`):
+```python
+'gpu_subvendor': gpu.get('gpu_subvendor', ''),
+```
+- Summary-array loop, next to `:185`:
+```python
+gpu_subvendors.append(gpu.get('gpu_subvendor') or '')
+```
+- `LatestSnapshot` defaults, next to `'gpu_board_part_numbers_json'` (`:502`):
+```python
+'gpu_subvendors_json': gpu_subvendors,
+```
+Older payloads without the key → `''`/`[]` — backward-compatible by
+construction (`or ''` also normalizes JSON `null`).
+
+**4. `dashboard/views.py` — `_build_gpu_metrics`, next to `:201`**
+```python
+'gpu_subvendor': _json_get(snapshot.gpu_subvendors_json, i, ''),
+```
+No other view change: `rig_detail` (`:572`) and `htmx_metrics` (`:587`) both
+route through `_fetch_rig_metrics` → `_build_gpu_metrics` (single builder;
+the 50 s `LatestSnapshot` cache needs no key change — same object shape).
+
+**5. Template `dashboard/_metrics_cards.html` — after the Board block (`:396-400`)**
+```html
+{# AIB Subvendor (e.g., MSI, ASUS, Gigabyte) #}
+{% if gpu.gpu_subvendor %}
+<div class="text-xs text-gray-500 mb-1">
+    Subvendor: <span class="text-gray-300 font-mono">{{ gpu.gpu_subvendor }}</span>
+</div>
+{% endif %}
+```
+
+**6. Compaction `metrics_app/management/commands/compact_data.py` (table
+`metrics_gpumetric`, `:72`) — closes gap 2 in the same branch:**
+```python
+'static_fields': ['model', 'gpu_uuid', 'snapshot_id', 'gpu_board_part_number', 'gpu_subvendor'],
+```
+Without this BOTH statics are lost at tier-2/3 compaction (W001/W004 bug
+class — `model`/`gpu_uuid` survive today, these two would not).
+
+**7. Defense in depth (project rule: code + check + test + docs)**
+- `metrics_app/checks.py`: add a W001-style system check that every
+  `GPUMetric` field written in the serializer `defaults` is covered by
+  compaction `agg_fields` ∪ `static_fields` (extend the existing
+  `check_gpu_uuid_compaction_defense` pattern).
+- `metrics_app/tests.py`: serializer unit test — a 1.17 payload with
+  `gpu_subvendor: "MSI"` + `gpu_board_part_number: null` must yield
+  `GPUMetric.gpu_subvendor == "MSI"`,
+  `LatestSnapshot.gpu_subvendors_json == ["MSI"]`, and board part stored as
+  `None`/`''`.
+- Docs sync: agent READMEs — close gap 1 ("subvendor transport-only" is no
+  longer true after this branch) and gap 3 (version/field-table drift;
+  Windows table should advertise subvendor + board part, not "brand").
+
+### 6.4 Deploy & verify
+
+1. `python3 manage.py makemigrations metrics_app` → must produce exactly
+   `0057_gpumetric_gpu_subvendor`; then `python3 manage.py check` (W001
+   check green).
+2. `python3 manage.py test metrics_app dashboard` (new serializer test
+   green; existing `_build_gpu_metrics` tests in
+   `dashboard/tests.py:1151+` still pass — they tolerate extra keys).
+3. Deploy: apply `0057`, restart gunicorn. No `collectstatic` needed
+   (template change, no static files).
+4. Within ~60 s of the next heartbeat:
+   ```sql
+   SELECT agent_version, gpu_subvendors_json, gpu_board_part_numbers_json
+   FROM metrics_latest_snapshot
+   WHERE rig_uuid = '67462048-dbd9-42bc-9987-d3b48d0a817d';
+   -- expected: 1.17-era agent, ["MSI"], [""]
+   ```
+5. Live Metrics → rig → GPU card: **"Subvendor: MSI"** visible; "Board:"
+   line stays hidden (correct — NVML returned `null` for that card).
+6. Regression guard: a rig still on an older agent (no `gpu_subvendor`
+   key) ingests fine, shows no Subvendor line, and produces no 500s.
 
 **Bumps (as shipped):** Phase 1: `__version__` 1.11.0 /
 `__schema_version__` 1.16 (`4645286`). "Phase 1 revised" (`bd2a5bb`) kept
@@ -417,6 +603,8 @@ bumped to schema 1.17 in the same commit but its version line stayed
 **Known server-side gaps after Phase 1 (fix before relying on the data):**
 1. `gpu_subvendor` is not persisted anywhere (no `GPUMetric` column, no
    `LatestSnapshot` array, serializer ignores it) — transport-only today.
+   **Visible consequence on Live Metrics: subvendor can never render in the
+   GPU card (no data source). Fix: §6.3 (items 1-5).**
 2. `gpu_board_part_number` is **not** in `compact_data.py`
    `static_fields` (currently `['model', 'gpu_uuid', 'snapshot_id']`) →
    it is lost at tier-2/3 compaction (W001/W004 defense class). `model`

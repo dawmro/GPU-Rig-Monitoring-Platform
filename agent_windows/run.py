@@ -53,7 +53,7 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.13.0-win'
+__version__ = '1.13.1-win'
 __schema_version__ = '1.18'
 
 # == Config ==================================================================
@@ -917,20 +917,17 @@ def collect_gpus():
             # Collect AIB board part number (e.g., "ASUS Astral", "MSI Suprim")
             gpu_board_part = None
             try:
+                # Some pynvml versions may not have this function - catch AttributeError too
                 gpu_board_part = _nvml_bytes_to_str(pynvml.nvmlDeviceGetBoardPartNumber(handle))
-            except pynvml.NVMLError_NotSupported:
-                pass  # NOT_SUPPORTED on some GPUs
-            except pynvml.NVMLError:
-                pass  # Other NVML errors
+            except (pynvml.NVMLError_NotSupported, pynvml.NVMLError, AttributeError):
+                pass  # NOT_SUPPORTED on some GPUs or function not available in this pynvml version
 
             # Phase 2: Collect additional static identifiers
             # VBIOS version
             gpu_vbios = None
             try:
                 gpu_vbios = _nvml_bytes_to_str(pynvml.nvmlDeviceGetVbiosVersion(handle))
-            except pynvml.NVMLError_NotSupported:
-                pass
-            except pynvml.NVMLError:
+            except (pynvml.NVMLError_NotSupported, pynvml.NVMLError, AttributeError):
                 pass
 
             # PCIe bus ID (from pci_info already collected)
@@ -947,9 +944,7 @@ def collect_gpus():
                     5: 'Volta', 6: 'Turing', 7: 'Ampere', 8: 'Ada', 9: 'Hopper', 10: 'Blackwell'
                 }
                 gpu_architecture = arch_map.get(arch_val, f'Unknown({arch_val})')
-            except pynvml.NVMLError_NotSupported:
-                pass
-            except pynvml.NVMLError:
+            except (pynvml.NVMLError_NotSupported, pynvml.NVMLError, AttributeError):
                 pass
 
             # Bus type (PCIe/NVLink) - NVML_BUS_TYPE_*: PCI=0, NVLINK=1, but some drivers return 2 for PCIe Gen3/4
@@ -957,27 +952,21 @@ def collect_gpus():
             try:
                 bus_type = pynvml.nvmlDeviceGetBusType(handle)
                 gpu_bus_type = "PCIe" if bus_type == 0 else "NVLink" if bus_type == 1 else "PCIe" if bus_type == 2 else f"Unknown({bus_type})"
-            except pynvml.NVMLError_NotSupported:
-                pass
-            except pynvml.NVMLError:
+            except (pynvml.NVMLError_NotSupported, pynvml.NVMLError, AttributeError):
                 pass
 
             # Board ID
             gpu_board_id = None
             try:
                 gpu_board_id = pynvml.nvmlDeviceGetBoardId(handle)
-            except pynvml.NVMLError_NotSupported:
-                pass
-            except pynvml.NVMLError:
+            except (pynvml.NVMLError_NotSupported, pynvml.NVMLError, AttributeError):
                 pass
 
             # Serial number
             gpu_serial = None
             try:
                 gpu_serial = _nvml_bytes_to_str(pynvml.nvmlDeviceGetSerial(handle))
-            except pynvml.NVMLError_NotSupported:
-                pass
-            except pynvml.NVMLError:
+            except (pynvml.NVMLError_NotSupported, pynvml.NVMLError, AttributeError):
                 pass
 
             # Extended PCI info (PciInfoExt) - subsystem vendor:device
@@ -992,9 +981,7 @@ def collect_gpus():
                     subsys_device = (pci_info_ext.pciSubSystemId >> 16) & 0xFFFF
                     if subsys_vendor != 0 or subsys_device != 0:
                         gpu_pci_subsystem = f"{subsys_vendor:04x}:{subsys_device:04x}"
-            except pynvml.NVMLError_NotSupported:
-                pass
-            except pynvml.NVMLError:
+            except (pynvml.NVMLError_NotSupported, pynvml.NVMLError, AttributeError):
                 pass
             # Fallback: use PciInfo (v3) subsystem ID if PciInfoExt failed or returned 0
             if gpu_pci_subsystem is None and pci_info and hasattr(pci_info, 'pciSubSystemId'):
@@ -1009,14 +996,15 @@ def collect_gpus():
                 inforom_versions = {}
                 for rom_type, rom_name in [(0, 'OEM'), (1, 'EFI'), (2, 'VBIOS')]:
                     try:
+                        # Some pynvml versions may not have this function - catch AttributeError too
                         ver = _nvml_bytes_to_str(pynvml.nvmlDeviceGetInforomVersion(handle, rom_type))
                         if ver:
                             inforom_versions[rom_name] = ver
-                    except pynvml.NVMLError:
+                    except (pynvml.NVMLError, AttributeError):
                         continue
                 if inforom_versions:
                     gpu_inforom = inforom_versions
-            except pynvml.NVMLError:
+            except (pynvml.NVMLError, AttributeError):
                 pass
 
             gpus.append({

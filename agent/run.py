@@ -43,7 +43,7 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.13.0'
+__version__ = '1.13.1'
 __schema_version__ = '1.18'
 
 # ── Config ──────────────────────────────────────────────────────────────────
@@ -760,11 +760,10 @@ def collect_gpus():
             # Collect AIB board part number (e.g., "ASUS Astral", "MSI Suprim")
             gpu_board_part = None
             try:
+                # Some pynvml versions may not have this function - catch AttributeError too
                 gpu_board_part = _nvml_bytes_to_str(pynvml.nvmlDeviceGetBoardPartNumber(handle))
-            except pynvml.NVMLError_NotSupported:
-                pass  # NOT_SUPPORTED on some GPUs
-            except pynvml.NVMLError:
-                pass  # Other NVML errors
+            except (pynvml.NVMLError_NotSupported, pynvml.NVMLError, AttributeError):
+                pass  # NOT_SUPPORTED on some GPUs or function not available in this pynvml version
 
             # Phase 2: Collect additional static identifiers
             # VBIOS version
@@ -853,14 +852,15 @@ def collect_gpus():
                 inforom_versions = {}
                 for rom_type, rom_name in [(0, 'OEM'), (1, 'EFI'), (2, 'VBIOS')]:
                     try:
+                        # Some pynvml versions may not have this function - catch AttributeError too
                         ver = _nvml_bytes_to_str(pynvml.nvmlDeviceGetInforomVersion(handle, rom_type))
                         if ver:
                             inforom_versions[rom_name] = ver
-                    except pynvml.NVMLError:
+                    except (pynvml.NVMLError, AttributeError):
                         continue
                 if inforom_versions:
                     gpu_inforom = inforom_versions
-            except pynvml.NVMLError:
+            except (pynvml.NVMLError, AttributeError):
                 pass
 
             gpus.append({

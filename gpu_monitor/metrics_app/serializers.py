@@ -30,7 +30,7 @@ class IngestSerializer(serializers.Serializer):
     has_active_job = serializers.BooleanField(required=False, default=False)
 
     def validate_schema_version(self, value):
-            if value not in ('1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8', '1.9', '1.10', '1.11', '1.12', '1.13', '1.14', '1.15', '1.16', '1.17', '1.16'):
+            if value not in ('1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8', '1.9', '1.10', '1.11', '1.12', '1.13', '1.14', '1.15', '1.16', '1.17', '1.18'):
                 raise serializers.ValidationError(f"Unsupported schema_version: {value}")
             return value
 
@@ -151,6 +151,15 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
             gpu_pcie_max_gen = []
             gpu_pcie_width = []
             gpu_pcie_max_width = []
+            # Phase 2 static identifiers arrays
+            gpu_vbios = []
+            gpu_pci_bus_ids = []
+            gpu_architecture = []
+            gpu_bus_type = []
+            gpu_board_ids = []
+            gpu_serials = []
+            gpu_pci_subsystems = []
+            gpu_inforom = []
             for idx, gpu in enumerate(gpu_list):
                 GPUMetric.objects.update_or_create(
                     rig_uuid=rig_uuid,
@@ -161,6 +170,15 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                         'model': gpu.get('model', ''),
                         'gpu_board_part_number': gpu.get('gpu_board_part_number', ''),
                         'gpu_subvendor': gpu.get('gpu_subvendor', ''),
+                         # Phase 2 static identifiers
+                         'gpu_vbios': gpu.get('gpu_vbios', ''),
+                         'pci_bus_id': gpu.get('pci_bus_id', ''),
+                         'gpu_architecture': gpu.get('gpu_architecture', ''),
+                         'gpu_bus_type': gpu.get('gpu_bus_type', ''),
+                         'gpu_board_id': gpu.get('gpu_board_id') if gpu.get('gpu_board_id') is not None else 0,
+                         'gpu_serial': gpu.get('gpu_serial', ''),
+                         'gpu_pci_subsystem': gpu.get('gpu_pci_subsystem', ''),
+                         'gpu_inforom': gpu.get('gpu_inforom'),
                         'gpu_util_pct': gpu.get('gpu_util_pct'),
                         'mem_controller_util_pct': gpu.get('mem_controller_util_pct'),
                         'gpu_temp_c': gpu.get('temp_c'),
@@ -187,6 +205,17 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                 gpu_board_part_numbers.append(gpu.get('gpu_board_part_number') or '')
                 # AIB subvendor (board partner, e.g. MSI/ASUS/Gigabyte)
                 gpu_subvendors.append(gpu.get('gpu_subvendor') or '')
+                # Phase 2 static identifiers
+                gpu_vbios.append(gpu.get('gpu_vbios') or '')
+                gpu_pci_bus_ids.append(gpu.get('pci_bus_id') or '')
+                gpu_architecture.append(gpu.get('gpu_architecture') or '')
+                gpu_bus_type.append(gpu.get('gpu_bus_type') or '')
+                # Board ID defaults to 0 if not present
+                board_id_val = gpu.get('gpu_board_id')
+                gpu_board_ids.append(board_id_val if board_id_val is not None else 0)
+                gpu_serials.append(gpu.get('gpu_serial') or '')
+                gpu_pci_subsystems.append(gpu.get('gpu_pci_subsystem') or '')
+                gpu_inforom.append(gpu.get('gpu_inforom') or {})
                 gpu_temps.append(gpu.get('temp_c'))
                 gpu_utils.append(gpu.get('gpu_util_pct'))
                 gpu_mem_controller_utils.append(gpu.get('mem_controller_util_pct'))
@@ -521,6 +550,15 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                 'gpu_pcie_max_gen_json': gpu_pcie_max_gen,
                 'gpu_pcie_width_json': gpu_pcie_width,
                 'gpu_pcie_max_width_json': gpu_pcie_max_width,
+                 # Phase 2 static identifiers arrays
+                 'gpu_vbios_json': gpu_vbios,
+                 'gpu_pci_bus_ids_json': gpu_pci_bus_ids,
+                 'gpu_architecture_json': gpu_architecture,
+                 'gpu_bus_type_json': gpu_bus_type,
+                 'gpu_board_ids_json': gpu_board_ids,
+                 'gpu_serials_json': gpu_serials,
+                 'gpu_pci_subsystems_json': gpu_pci_subsystems,
+                 'gpu_inforom_json': gpu_inforom,
                 'storage_count': len(storage_list),
                 'storage_devices_json': storage_devices,
                 'storage_fstypes_json': storage_fstypes,

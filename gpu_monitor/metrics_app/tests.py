@@ -349,3 +349,144 @@ class GPUSubvendorTestCase(TestCase):
         self.assertEqual(len(metrics), 1)
         self.assertEqual(metrics[0]['gpu_subvendor'], 'MSI')
         self.assertEqual(metrics[0]['gpu_board_part_number'], 'MSI Ventus')
+
+
+
+
+class GPUPhase2StaticIdentifiersTestCase(TestCase):
+    """GPU Phase 2 static identifiers (VBIOS, PCIe bus ID, Architecture, etc.)
+    flow from the agent payload (schema 1.18+) into GPUMetric + LatestSnapshot
+    via process_ingest, and surface in the Live Metrics GPU card builder.
+    (W001-style regression test for the GPU Phase 2 static identifier pipeline.)"""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email='phase2@example.com', password='testpass123',
+            username='phase2user'
+        )
+        self.rig = Rig.objects.create(uuid=uuid.uuid4(), owner=self.user)
+
+    def _payload(self, gpus, schema_version='1.18', agent_version='1.13.0'):
+        return {
+            'rig_uuid': str(self.rig.uuid),
+            'schema_version': schema_version,
+            'agent_version': agent_version,
+            'timestamp': '2026-10-01T02:35:00Z',
+            'metrics': {
+                'cpu': {'utilization_pct': 1.0},
+                'memory': {'total_bytes': 1000, 'used_bytes': 500},
+                'gpus': gpus,
+            },
+            'software': {'hostname': 'x'},
+            'errors': [],
+        }
+
+    def test_ingest_writes_phase2_static_identifiers(self):
+        """Schema 1.18 payload with all Phase 2 fields."""
+        gpus = [{
+            'uuid': 'GPU-phase2-test-001',
+            'model': 'NVIDIA GeForce RTX 4090',
+            'gpu_subvendor': 'ASUS',
+            'gpu_board_part_number': 'ROG Strix',
+            # Phase 2 fields
+            'gpu_vbios': '95.02.xx',
+            'pci_bus_id': '0000:01:00.0',
+            'gpu_architecture': 'Ada',
+            'gpu_bus_type': 'PCIe',
+            'gpu_board_id': 1234,
+            'gpu_serial': 'SN123456789',
+            'gpu_pci_subsystem': '1043:2951',
+            'gpu_inforom': {'OEM': '1.0', 'VBIOS': '95.02.xx', 'EFI': '2.1'},
+            'mem_total_mb': 24576, 'mem_used_mb': 100, 'mem_free_mb': 24476,
+        }]
+        result, code = process_ingest(str(self.rig.uuid), self._payload(gpus),
+                                     self.user.id, rig=self.rig)
+        self.assertIn(code, (200, 202))
+        ls = LatestSnapshot.objects.get(rig_uuid=self.rig.uuid)
+        # Check all Phase 2 arrays in LatestSnapshot
+        self.assertEqual(ls.gpu_vbios_json, ['95.02.xx'])
+        self.assertEqual(ls.gpu_pci_bus_ids_json, ['0000:01:00.0'])
+        self.assertEqual(ls.gpu_architecture_json, ['Ada'])
+        self.assertEqual(ls.gpu_bus_type_json, ['PCIe'])
+        self.assertEqual(ls.gpu_board_ids_json, [1234])
+        self.assertEqual(ls.gpu_serials_json, ['SN123456789'])
+        self.assertEqual(ls.gpu_pci_subsystems_json, ['1043:2951'])
+        self.assertEqual(ls.gpu_inforom_json, [{'OEM': '1.0', 'VBIOS': '95.02.xx', 'EFI': '2.1'}])
+        # Check GPUMetric per-row fields
+        gm = GPUMetric.objects.get(rig_uuid=self.rig.uuid, gpu_index=0)
+        self.assertEqual(gm.gpu_vbios, '95.02.xx')
+        self.assertEqual(gm.pci_bus_id, '0000:01:00.0')
+        self.assertEqual(gm.gpu_architecture, 'Ada')
+        self.assertEqual(gm.gpu_bus_type, 'PCIe')
+        self.assertEqual(gm.gpu_board_id, 1234)
+        self.assertEqual(gm.gpu_serial, 'SN123456789')
+        self.assertEqual(gm.gpu_pci_subsystem, '1043:2951')
+        self.assertEqual(gm.gpu_inforom, {'OEM': '1.0', 'VBIOS': '95.02.xx', 'EFI': '2.1'})
+
+    def test_ingest_phase2_missing_fields_uses_defaults(self):
+        """Older agents (schema 1.17) without Phase 2 keys — server must
+        default to empty string/0/{}, not crash."""
+        gpus = [{
+            'uuid': 'GPU-phase2-missing-001',
+            'model': 'NVIDIA GeForce RTX 4090',
+            'gpu_subvendor': 'ASUS',
+            'gpu_board_part_number': 'ROG Strix',
+            # No Phase 2 keys
+            'mem_total_mb': 24576, 'mem_used_mb': 100, 'mem_free_mb': 24476,
+        }]
+        result, code = process_ingest(
+            str(self.rig.uuid),
+            self._payload(gpus, schema_version='1.17', agent_version='1.12.0'),
+            self.user.id, rig=self.rig)
+        self.assertIn(code, (200, 202))
+        ls = LatestSnapshot.objects.get(rig_uuid=self.rig.uuid)
+        self.assertEqual(ls.gpu_vbios_json, [''])
+        self.assertEqual(ls.gpu_pci_bus_ids_json, [''])
+        self.assertEqual(ls.gpu_architecture_json, [''])
+        self.assertEqual(ls.gpu_bus_type_json, [''])
+        self.assertEqual(ls.gpu_board_ids_json, [0])
+        self.assertEqual(ls.gpu_serials_json, [''])
+        self.assertEqual(ls.gpu_pci_subsystems_json, [''])
+        self.assertEqual(ls.gpu_inforom_json, [{}])
+        gm = GPUMetric.objects.get(rig_uuid=self.rig.uuid, gpu_index=0)
+        self.assertEqual(gm.gpu_vbios, '')
+        self.assertEqual(gm.pci_bus_id, '')
+        self.assertEqual(gm.gpu_architecture, '')
+        self.assertEqual(gm.gpu_bus_type, '')
+        self.assertEqual(gm.gpu_board_id, 0)
+        self.assertEqual(gm.gpu_serial, '')
+        self.assertEqual(gm.gpu_pci_subsystem, '')
+        self.assertIsNone(gm.gpu_inforom)
+
+    def test_build_gpu_metrics_exposes_phase2_fields(self):
+        from dashboard.views import _build_gpu_metrics
+        gpus = [{
+            'uuid': 'GPU-phase2-view-001',
+            'model': 'NVIDIA GeForce RTX 4090',
+            'gpu_subvendor': 'ASUS',
+            'gpu_board_part_number': 'ROG Strix',
+            'gpu_vbios': '95.02.xx',
+            'pci_bus_id': '0000:01:00.0',
+            'gpu_architecture': 'Ada',
+            'gpu_bus_type': 'PCIe',
+            'gpu_board_id': 1234,
+            'gpu_serial': 'SN123456789',
+            'gpu_pci_subsystem': '1043:2951',
+            'gpu_inforom': {'OEM': '1.0', 'VBIOS': '95.02.xx'},
+            'mem_total_mb': 24576, 'mem_used_mb': 100, 'mem_free_mb': 24476,
+        }]
+        result, code = process_ingest(str(self.rig.uuid), self._payload(gpus),
+                                     self.user.id, rig=self.rig)
+        self.assertIn(code, (200, 202))
+        ls = LatestSnapshot.objects.get(rig_uuid=self.rig.uuid)
+        metrics = _build_gpu_metrics(ls)
+        self.assertEqual(len(metrics), 1)
+        m = metrics[0]
+        self.assertEqual(m['gpu_vbios'], '95.02.xx')
+        self.assertEqual(m['pci_bus_id'], '0000:01:00.0')
+        self.assertEqual(m['gpu_architecture'], 'Ada')
+        self.assertEqual(m['gpu_bus_type'], 'PCIe')
+        self.assertEqual(m['gpu_board_id'], 1234)
+        self.assertEqual(m['gpu_serial'], 'SN123456789')
+        self.assertEqual(m['gpu_pci_subsystem'], '1043:2951')
+        self.assertEqual(m['gpu_inforom'], {'OEM': '1.0', 'VBIOS': '95.02.xx'})

@@ -200,6 +200,15 @@ def _build_gpu_metrics(snapshot):
             # Static GPU identifiers (AIB board part number + subvendor)
             'gpu_board_part_number': _json_get(snapshot.gpu_board_part_numbers_json, i, ''),
             'gpu_subvendor': _json_get(snapshot.gpu_subvendors_json, i, ''),
+             # Phase 2 static GPU identifiers
+             'gpu_vbios': _json_get(snapshot.gpu_vbios_json, i, ''),
+             'pci_bus_id': _json_get(snapshot.gpu_pci_bus_ids_json, i, ''),
+             'gpu_architecture': _json_get(snapshot.gpu_architecture_json, i, ''),
+             'gpu_bus_type': _json_get(snapshot.gpu_bus_type_json, i, ''),
+             'gpu_board_id': _json_get(snapshot.gpu_board_ids_json, i),
+             'gpu_serial': _json_get(snapshot.gpu_serials_json, i, ''),
+             'gpu_pci_subsystem': _json_get(snapshot.gpu_pci_subsystems_json, i, ''),
+             'gpu_inforom': _json_get(snapshot.gpu_inforom_json, i),
             'gpu_temp_c': _json_get(snapshot.gpu_temps_json, i),
             'gpu_util_pct': _json_get(snapshot.gpu_utils_json, i),
             'fan_speed_pct': _json_get(snapshot.gpu_fans_json, i),

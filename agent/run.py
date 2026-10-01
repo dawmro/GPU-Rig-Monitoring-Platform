@@ -770,9 +770,7 @@ def collect_gpus():
             gpu_vbios = None
             try:
                 gpu_vbios = _nvml_bytes_to_str(pynvml.nvmlDeviceGetVbiosVersion(handle))
-            except pynvml.NVMLError_NotSupported:
-                pass
-            except pynvml.NVMLError:
+            except (pynvml.NVMLError_NotSupported, pynvml.NVMLError, AttributeError):
                 pass
 
             # PCIe bus ID (from pci_info already collected)
@@ -798,18 +796,14 @@ def collect_gpus():
             try:
                 bus_type = pynvml.nvmlDeviceGetBusType(handle)
                 gpu_bus_type = "PCIe" if bus_type == 0 else "NVLink" if bus_type == 1 else "PCIe" if bus_type == 2 else f"Unknown({bus_type})"
-            except pynvml.NVMLError_NotSupported:
-                pass
-            except pynvml.NVMLError:
+            except (pynvml.NVMLError_NotSupported, pynvml.NVMLError, AttributeError):
                 pass
 
             # Board ID
             gpu_board_id = None
             try:
                 gpu_board_id = pynvml.nvmlDeviceGetBoardId(handle)
-            except pynvml.NVMLError_NotSupported:
-                pass
-            except pynvml.NVMLError:
+            except (pynvml.NVMLError_NotSupported, pynvml.NVMLError, AttributeError):
                 pass
 
             # Serial number
@@ -833,9 +827,7 @@ def collect_gpus():
                     subsys_device = (pci_info_ext.pciSubSystemId >> 16) & 0xFFFF
                     if subsys_vendor != 0 or subsys_device != 0:
                         gpu_pci_subsystem = f"{subsys_vendor:04x}:{subsys_device:04x}"
-            except pynvml.NVMLError_NotSupported:
-                pass
-            except pynvml.NVMLError:
+            except (pynvml.NVMLError_NotSupported, pynvml.NVMLError, AttributeError):
                 pass
             # Fallback: use PciInfo (v3) subsystem ID if PciInfoExt failed or returned 0
             if gpu_pci_subsystem is None and pci_info and hasattr(pci_info, 'pciSubSystemId'):

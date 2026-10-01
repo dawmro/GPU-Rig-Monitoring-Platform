@@ -612,6 +612,127 @@ Server must accept 1.15, 1.16, 1.17, and later.
 6. pynvml is deprecated in favor of `nvidia-ml-py` — the API surface used
    here is identical in both, so no migration risk.
 
+---
+
+## 7. Critical Findings / Lessons Learned (2026-10-01 — Phase 2 Implementation)
+
+The following issues were discovered during Phase 2 implementation and
+MUST be followed in all future agent development to prevent regressions:
+
+### 7.1 AttributeError on Missing NVML Functions (CRITICAL)
+**Problem:** Older `pynvml` versions lack newer NVML functions
+(`nvmlDeviceGetArchitecture`, `nvmlDeviceGetBusType`, `nvmlDeviceGetBoardId`,
+`nvmlDeviceGetVbiosVersion`, `nvmlDeviceGetPciInfoExt`, `nvmlDeviceGetBoardPartNumber`,
+`nvmlDeviceGetInforomVersion`, `nvmlDeviceGetSerial`). Calling them raises
+`AttributeError: module 'pynvml' has no attribute '...'`, which crashes the
+**entire GPU collection** and returns empty GPU data.
+
+**Root Cause:** Only `NVMLError_NotSupported` and `NVMLError` were caught.
+`AttributeError` from missing functions was unhandled.
+
+**Fix (Mandatory for ALL optional NVML calls):**
+```python
+try:
+    value = pynvml.nvmlDeviceGetXXXX(handle)
+except (pynvml.NVMLError_NotSupported, pynvml.NVMLError, AttributeError):
+    value = None  # Graceful degradation — field defaults to None
+```
+
+**Affected Functions (must all have this pattern):**
+- `nvmlDeviceGetArchitecture`
+- `nvmlDeviceGetBusType`
+- `nvmlDeviceGetBoardId`
+- `nvmlDeviceGetVbiosVersion`
+- `nvmlDeviceGetPciInfoExt` (also requires `version` field set)
+- `nvmlDeviceGetBoardPartNumber`
+- `nvmlDeviceGetInforomVersion`
+- `nvmlDeviceGetSerial`
+
+**Verification:** Every field must default to `None` and the GPU collection
+must continue for other GPUs/fields even if one call fails.
+
+### 7.2 nvmlDeviceGetPciInfoExt Requires Version Field
+**Problem:** `nvmlDeviceGetPciInfoExt` requires the structure's `version`
+field to be set to `nvmlPciInfoExt_v1` constant BEFORE the call.
+Without it, the call fails silently or returns garbage.
+
+**Correct Pattern:**
+```python
+pci_info_ext = pynvml.nvmlPciInfoExt_v1_t()
+pci_info_ext.version = pynvml.nvmlPciInfoExt_v1  # REQUIRED
+pynvml.nvmlDeviceGetPciInfoExt(handle, pci_info_ext)
+```
+
+**Fallback:** Always implement fallback to `pci_info` (v3) `pciSubSystemId`
+if PciInfoExt fails or returns zero subsystem IDs.
+
+### 7.3 Per-Field Try/Except Isolation (MANDATORY)
+**Rule:** Every NVML call MUST have its own independent try/except block.
+
+**Anti-pattern (WRONG):**
+```python
+try:
+    a = nvmlDeviceGetA(handle)
+    b = nvmlDeviceGetB(handle)
+    c = nvmlDeviceGetC(handle)
+except NVMLError:
+    pass  # One failure kills ALL fields
+```
+
+**Correct Pattern (REQUIRED):**
+```python
+a = None
+try: a = nvmlDeviceGetA(handle) except (NVMLError, AttributeError): pass
+
+b = None
+try: b = nvmlDeviceGetB(handle) except (NVMLError, AttributeError): pass
+
+c = None
+try: c = nvmlDeviceGetC(handle) except (NVMLError, AttributeError): pass
+```
+
+**Rationale:** One GPU field failure MUST NOT block other fields or other GPUs.
+
+### 7.4 Architecture Enum Mapping
+`nvmlDeviceGetArchitecture` returns an **int enum**, not bytes/string.
+Must map to string names:
+
+```python
+arch_map = {
+    0: 'Unknown', 1: 'Fermi', 2: 'Kepler', 3: 'Maxwell', 4: 'Pascal',
+    5: 'Volta', 6: 'Turing', 7: 'Ampere', 8: 'Ada', 9: 'Hopper', 10: 'Blackwell'
+}
+arch_val = pynvml.nvmlDeviceGetArchitecture(handle)
+gpu_architecture = arch_map.get(arch_val, f'Unknown({arch_val})')
+```
+
+### 7.5 Bus Type Value 2 = PCIe
+Some drivers return `2` for PCIe (Gen3/4). Map to "PCIe":
+
+```python
+bus_type = pynvml.nvmlDeviceGetBusType(handle)
+gpu_bus_type = "PCIe" if bus_type in (0, 2) else "NVLink" if bus_type == 1 else f"Unknown({bus_type})"
+```
+
+### 7.6 PCI Subsystem Zero Filtering & Fallback
+PciInfoExt may return `0000:0000`. Must filter out and fallback to PciInfo v3:
+
+```python
+if subsys_vendor != 0 or subsys_device != 0:
+    gpu_pci_subsystem = f"{subsys_vendor:04x}:{subsys_device:04x}"
+# Fallback to PciInfo v3
+if gpu_pci_subsystem is None and pci_info and hasattr(pci_info, 'pciSubSystemId'):
+    # ... same extraction from pci_info
+```
+
+### 7.7 Version Bump Rules
+- **PATCH** (1.13.x → 1.13.x+1): Bug fixes, AttributeError handling, minor tweaks
+- **MINOR** (1.x → 1.x+1): New collectors, new payload fields
+- **MAJOR** (x → x+1): Breaking payload changes
+- Schema version only bumps on payload structure changes
+
+---
+
 ## 5. Effort estimate
 
 **Immediate (AIB subvendor + board part number; model already collected):**

@@ -385,12 +385,24 @@ on the page. This keeps the bar from being noise.
         <div class="mb-3 pb-3 border-b border-gray-700/50 last:border-0 last:mb-0 last:pb-0">
             <div class="flex items-center justify-between mb-1">
                 <span class="text-sm font-medium text-gray-200">
-                    <span class="text-gray-500">GPU{{ gpu.gpu_index }}</span> {{ gpu.model|default:"Unknown GPU" }}
+                    <span class="text-gray-500">GPU{{ gpu.gpu_index }}</span> 
+                    {{ gpu.model|default:"Unknown GPU" }}
                 </span>
                 {% if gpu.gpu_uuid %}
                 <span class="text-[10px] text-gray-500 font-mono break-all" title="{{ gpu.gpu_uuid }}">{{ gpu.gpu_uuid }}</span>
                 {% endif %}
             </div>
+            {# AIB Board Part Number (e.g., ASUS Astral, MSI Suprim) + Subvendor #}
+            {% if gpu.gpu_board_part_number %}
+            <div class="text-xs text-gray-500 mb-1">
+                Board: <span class="text-gray-300 font-mono">{{ gpu.gpu_board_part_number }}</span>
+            </div>
+            {% endif %}
+            {% if gpu.gpu_subvendor %}
+            <div class="text-xs text-gray-500 mb-1">
+                Subvendor: <span class="text-gray-300 font-mono">{{ gpu.gpu_subvendor }}</span>
+            </div>
+            {% endif %}
             <div class="flex items-center gap-3 mb-1">
                 <span class="text-xs text-gray-500 w-16 text-right">Core</span>
                 <div class="flex-1">

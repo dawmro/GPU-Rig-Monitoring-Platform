@@ -163,3 +163,79 @@ def check_storage_hardware_identifiers(app_configs, **kwargs):
         pass  # source inspection is best-effort; model-field check above is durable
     return errors
 
+
+@register('metrics_app')
+def check_gpu_subvendor_pipeline(app_configs, **kwargs):
+    """Defense in depth: AIB subvendor must be persisted and kept through
+    compaction (W001-style, mirrors check_storage_hardware_identifiers).
+
+    Layer 1: model fields exist (GPUMetric.gpu_subvendor,
+             LatestSnapshot.gpu_subvendors_json).
+    Layer 2: serializer process_ingest writes both the per-row value and
+             the LatestSnapshot summary array.
+    Layer 3: compact_data.py keeps both static GPU identifiers
+             (gpu_subvendor AND gpu_board_part_number) in the
+             metrics_gpumetric static_fields.
+    """
+    errors = []
+    from metrics_app.models import GPUMetric
+
+    # Layer 1: model fields
+    try:
+        GPUMetric._meta.get_field('gpu_subvendor')
+    except Exception:
+        errors.append(Error(
+            'GPUMetric missing gpu_subvendor field',
+            hint='Run migration 0057_gpumetric_gpu_subvendor',
+            obj='metrics_app.GPUMetric',
+            id='metrics_app.E013',
+        ))
+    try:
+        LatestSnapshot._meta.get_field('gpu_subvendors_json')
+    except Exception:
+        errors.append(Error(
+            'LatestSnapshot missing gpu_subvendors_json field',
+            hint='Run migration 0057_gpumetric_gpu_subvendor',
+            obj='metrics_app.LatestSnapshot',
+            id='metrics_app.E014',
+        ))
+
+    # Layer 2: serializer must persist subvendor (per-row + summary array)
+    try:
+        import inspect
+        import metrics_app.serializers as s
+        process_src = inspect.getsource(s.process_ingest)
+        if "'gpu_subvendor': gpu.get('gpu_subvendor'" not in process_src:
+            errors.append(Error(
+                "serializer process_ingest does not write 'gpu_subvendor' to GPUMetric",
+                hint="Add 'gpu_subvendor' to the GPUMetric defaults dict",
+                obj='metrics_app.serializers.process_ingest',
+                id='metrics_app.E015',
+            ))
+        if "'gpu_subvendors_json': gpu_subvendors" not in process_src:
+            errors.append(Error(
+                "serializer process_ingest does not write 'gpu_subvendors_json' to LatestSnapshot",
+                hint="Add 'gpu_subvendors_json': gpu_subvendors to LatestSnapshot defaults",
+                obj='metrics_app.serializers.process_ingest',
+                id='metrics_app.E016',
+            ))
+    except Exception:
+        pass  # source inspection is best-effort; model-field checks above are durable
+
+    # Layer 3: compaction must keep both static identifiers
+    try:
+        import re
+        src = open('gpu_monitor/metrics_app/management/commands/compact_data.py').read()
+        block = re.search(r"'table': 'metrics_gpumetric'.*?'static_fields': \[.*?\]", src, re.S)
+        if block:
+            for field in ('gpu_subvendor', 'gpu_board_part_number'):
+                if field not in block.group(0):
+                    errors.append(Error(
+                        f'compact_data: metrics_gpumetric static_fields missing {field}',
+                        hint='Static GPU identifiers must survive tier-2/3 compaction',
+                        obj='metrics_app.management.commands.compact_data',
+                        id='metrics_app.E017',
+                    ))
+    except FileNotFoundError:
+        pass
+    return errors

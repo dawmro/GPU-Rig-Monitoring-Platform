@@ -30,7 +30,7 @@ class IngestSerializer(serializers.Serializer):
     has_active_job = serializers.BooleanField(required=False, default=False)
 
     def validate_schema_version(self, value):
-            if value not in ('1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8', '1.9', '1.10', '1.11', '1.12', '1.13', '1.14', '1.15'):
+            if value not in ('1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8', '1.9', '1.10', '1.11', '1.12', '1.13', '1.14', '1.15', '1.16', '1.17', '1.16'):
                 raise serializers.ValidationError(f"Unsupported schema_version: {value}")
             return value
 
@@ -133,6 +133,8 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
             # Store per-GPU metrics AND build summary arrays in one loop
             gpu_uuids = []
             gpu_models = []
+            gpu_board_part_numbers = []
+            gpu_subvendors = []
             gpu_temps = []
             gpu_utils = []
             gpu_mem_controller_utils = []
@@ -157,6 +159,8 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                     defaults={
                         'snapshot': snapshot,
                         'model': gpu.get('model', ''),
+                        'gpu_board_part_number': gpu.get('gpu_board_part_number', ''),
+                        'gpu_subvendor': gpu.get('gpu_subvendor', ''),
                         'gpu_util_pct': gpu.get('gpu_util_pct'),
                         'mem_controller_util_pct': gpu.get('mem_controller_util_pct'),
                         'gpu_temp_c': gpu.get('temp_c'),
@@ -179,6 +183,10 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                 # Build summary arrays for LatestSnapshot
                 gpu_uuids.append(gpu.get('uuid', ''))
                 gpu_models.append(gpu.get('model', ''))
+                # Static GPU identifiers (AIB board part number)
+                gpu_board_part_numbers.append(gpu.get('gpu_board_part_number') or '')
+                # AIB subvendor (board partner, e.g. MSI/ASUS/Gigabyte)
+                gpu_subvendors.append(gpu.get('gpu_subvendor') or '')
                 gpu_temps.append(gpu.get('temp_c'))
                 gpu_utils.append(gpu.get('gpu_util_pct'))
                 gpu_mem_controller_utils.append(gpu.get('mem_controller_util_pct'))
@@ -495,6 +503,8 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                 'gpu_count': len(gpu_list),
                 'gpu_uuids_json': gpu_uuids,
                 'gpu_models_json': gpu_models,
+                'gpu_board_part_numbers_json': gpu_board_part_numbers,
+                'gpu_subvendors_json': gpu_subvendors,
                 'gpu_temps_json': gpu_temps,
                 'gpu_utils_json': gpu_utils,
                 'gpu_mem_controller_utils_json': gpu_mem_controller_utils,

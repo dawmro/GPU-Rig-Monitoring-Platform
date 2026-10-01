@@ -43,8 +43,8 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.10.0'
-__schema_version__ = '1.15'
+__version__ = '1.12.0'
+__schema_version__ = '1.17'
 
 # ── Config ──────────────────────────────────────────────────────────────────
 
@@ -643,8 +643,56 @@ def collect_network():
         return []
 
 
+# PCI Subvendor ID -> Human-readable name mapping
+# Based on PCI ID Repository and common GPU subvendor IDs
+GPU_SUBVENDOR_MAP = {
+    0x10DE: "NVIDIA (Founders Edition)",
+    0x1043: "ASUS",
+    0x1458: "Gigabyte",
+    0x1462: "MSI",
+    0x19DA: "Zotac",
+    0x3842: "EVGA",
+    0x1569: "Palit",
+    0x107D: "Leadtek",
+    0x1E04: "Inno3D",
+    0x152D: "Quanta",
+    0x11A9: "InnoVISION",
+    0x1B4C: "Galax / KFA2",
+    0x1ACC: "PNY",
+    0x19BE: "Gainward",
+    0x107D: "Leadtek",
+    0x103C: "HP",
+    0x17AA: "Lenovo",
+    0x1028: "Dell",
+    0x144D: "Samsung",
+    0x1014: "IBM",
+    0x1002: "AMD",
+}
+
+
+def _get_gpu_subvendor_name(pci_subsystem_id):
+    """Extract subvendor name from PCI subsystem ID."""
+    if pci_subsystem_id is None:
+        return None
+    # Extract lower 16 bits = subvendor ID
+    subvendor_id = pci_subsystem_id & 0xFFFF
+    return GPU_SUBVENDOR_MAP.get(subvendor_id, f"Unknown (0x{subvendor_id:04X})")
+
+
+def _nvml_bytes_to_str(value):
+    """pynvml returns bytes on Python 3; decode to str (None-safe)."""
+    if value is None:
+        return None
+    if isinstance(value, bytes):
+        value = value.decode('utf-8', errors='replace')
+    value = value.strip() if isinstance(value, str) else value
+    return value or None
+
+
 def collect_gpus():
-    """Collect all GPU metrics: uuid, model, memory, utilization, temp, fan, power."""
+    """Collect all GPU metrics: uuid, model, memory, utilization, temp, fan, power,
+    plus static identifiers (AIB board part number)."""
+
     try:
         import pynvml
         pynvml.nvmlInit()
@@ -699,9 +747,31 @@ def collect_gpus():
             if isinstance(raw_name, bytes):
                 raw_name = raw_name.decode('utf-8')
 
+            # Collect PCI info for subvendor identification
+            gpu_subvendor = None
+            gpu_board_part = None
+            try:
+                pci_info = pynvml.nvmlDeviceGetPciInfo(handle)
+                if pci_info and hasattr(pci_info, 'pciSubSystemId'):
+                    gpu_subvendor = _get_gpu_subvendor_name(pci_info.pciSubSystemId)
+            except pynvml.NVMLError:
+                pass  # PCI info not available
+
+            # Collect AIB board part number (e.g., "ASUS Astral", "MSI Suprim")
+            gpu_board_part = None
+            try:
+                gpu_board_part = _nvml_bytes_to_str(pynvml.nvmlDeviceGetBoardPartNumber(handle))
+            except pynvml.NVMLError_NotSupported:
+                pass  # NOT_SUPPORTED on some GPUs
+            except pynvml.NVMLError:
+                pass  # Other NVML errors
+
             gpus.append({
                 'uuid': raw_uuid,
                 'model': raw_name,
+                # Static identifiers
+                'gpu_subvendor': gpu_subvendor,
+                'gpu_board_part_number': gpu_board_part,
                 'mem_total_mb': info.total // (1024 * 1024),
                 'mem_used_mb': info.used // (1024 * 1024),
                 'mem_free_mb': info.free // (1024 * 1024),

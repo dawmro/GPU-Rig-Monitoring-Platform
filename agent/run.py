@@ -43,8 +43,8 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.13.2'
-__schema_version__ = '1.18'
+__version__ = '1.14.0'
+__schema_version__ = '1.19'
 
 # ── Config ──────────────────────────────────────────────────────────────────
 
@@ -689,6 +689,29 @@ def _nvml_bytes_to_str(value):
     return value or None
 
 
+# ── Phase 3 NVML constants ──────────────────────────────────────────────────
+# Thermal thresholds (nvmlDeviceGetTemperatureThreshold)
+NVML_TEMP_THRESHOLDS = (
+    (pynvml.NVML_TEMPERATURE_THRESHOLD_SHUTDOWN,      'shutdown_c'),
+    (pynvml.NVML_TEMPERATURE_THRESHOLD_SLOWDOWN,       'slowdown_c'),
+    (pynvml.NVML_TEMPERATURE_THRESHOLD_MEM_MAX,        'mem_max_c'),
+    (pynvml.NVML_TEMPERATURE_THRESHOLD_GPU_MAX,        'gpu_max_c'),
+    (pynvml.NVML_TEMPERATURE_THRESHOLD_ACOUSTIC_MAX,   'acoustic_max_c'),
+    (pynvml.NVML_TEMPERATURE_THRESHOLD_GPS_CURR,       'gps_current_c'),
+)
+
+# Clock domains for max clock info (nvmlDeviceGetMaxClockInfo)
+NVML_CLOCK_DOMAINS = (
+    (pynvml.NVML_CLOCK_GRAPHICS, 'graphics_mhz'),
+    (pynvml.NVML_CLOCK_MEM,      'mem_mhz'),
+    (pynvml.NVML_CLOCK_SM,       'sm_mhz'),
+    (pynvml.NVML_CLOCK_VIDEO,    'video_mhz'),
+)
+
+# P-states (nvmlDeviceGetDynamicPstatesInfo) - max P-states
+NVML_MAX_PSTATES = pynvml.NVML_MAX_GPU_PERF_PSTATES  # = 16
+
+
 def collect_gpus():
     """Collect all GPU metrics: uuid, model, memory, utilization, temp, fan, power,
     plus static identifiers (AIB board part number)."""
@@ -853,6 +876,69 @@ def collect_gpus():
             except (pynvml.NVMLError, AttributeError):
                 pass
 
+            # ── Phase 3: GPU performance / thermal / topology ────────────────────────
+            # 1) Thermal thresholds (per-sensor slowdown/shutdown/acoustic/mem-max/GPS)
+            gpu_thermal = None
+            try:
+                gpu_thermal = {}
+                for t_enum, t_name in NVML_TEMP_THRESHOLDS:
+                    try:
+                        v = pynvml.nvmlDeviceGetTemperatureThreshold(handle, t_enum)
+                        # 0 means "not supported" per NVML docs; store as None to avoid misleading 0°C
+                        gpu_thermal[t_name] = int(v) if v != 0 else None
+                    except (pynvml.NVMLError, AttributeError):
+                        gpu_thermal[t_name] = None
+            except (pynvml.NVMLError, AttributeError):
+                gpu_thermal = None
+
+            # 2) Dynamic P-states (residency % + transition thresholds, P0..P7)
+            gpu_pstates = None
+            try:
+                pinfo = pynvml.nvmlDeviceGetDynamicPstatesInfo(handle)
+                if pinfo is not None:
+                    gpu_pstates = {
+                        'flags': int(pinfo.flags),
+                        'util': [
+                            {'p': i, 'present': bool(pinfo.utilization[i].bIsPresent),
+                             'pct': int(pinfo.utilization[i].percentage),
+                             'inc': int(pinfo.utilization[i].incThreshold),
+                             'dec': int(pinfo.utilization[i].decThreshold)}
+                            for i in range(len(pinfo.utilization))
+                        ],
+                    }
+            except (pynvml.NVMLError, AttributeError):
+                gpu_pstates = None
+
+            # 3) Max clocks per domain (graphics/mem/sm/video)
+            gpu_max_clocks = {}
+            for clock_enum, clock_name in NVML_CLOCK_DOMAINS:
+                try:
+                    gpu_max_clocks[clock_name] = int(pynvml.nvmlDeviceGetMaxClockInfo(handle, clock_enum))
+                except (pynvml.NVMLError, AttributeError):
+                    gpu_max_clocks[clock_name] = None
+            if not any(v is not None for v in gpu_max_clocks.values()):
+                gpu_max_clocks = None
+
+            # 4) MIG mode (datacenter; consumer fleets → 0/DISABLE)
+            gpu_mig_mode = None
+            try:
+                gpu_mig_mode = int(pynvml.nvmlDeviceGetMigMode(handle))
+            except (pynvml.NVMLError, AttributeError):
+                gpu_mig_mode = None
+
+            # 5) BAR1 memory (pinned-memory aperture; bytes → MB)
+            gpu_bar1 = None
+            try:
+                b = pynvml.nvmlDeviceGetBAR1MemoryInfo(handle)
+                if b is not None:
+                    gpu_bar1 = {
+                        'total_mb': int(b.bar1Total) // (1024 * 1024),
+                        'used_mb':  int(b.bar1Used)  // (1024 * 1024),
+                        'free_mb':  int(b.bar1Free)  // (1024 * 1024),
+                    }
+            except (pynvml.NVMLError, AttributeError):
+                gpu_bar1 = None
+
             gpus.append({
                 'uuid': raw_uuid,
                 'model': raw_name,
@@ -868,6 +954,12 @@ def collect_gpus():
                 'gpu_serial': gpu_serial,
                 'gpu_pci_subsystem': gpu_pci_subsystem,
                 'gpu_inforom': gpu_inforom,
+                # Phase 3 performance / thermal / topology
+                'gpu_thermal_thresholds': gpu_thermal,    # dict or None
+                'gpu_pstates_util':       gpu_pstates,    # dict or None
+                'gpu_max_clocks':         gpu_max_clocks, # dict or None
+                'gpu_mig_mode':           gpu_mig_mode,   # int or None
+                'gpu_bar1_mb':            gpu_bar1,       # dict or None
                 'mem_total_mb': info.total // (1024 * 1024),
                 'mem_used_mb': info.used // (1024 * 1024),
                 'mem_free_mb': info.free // (1024 * 1024),

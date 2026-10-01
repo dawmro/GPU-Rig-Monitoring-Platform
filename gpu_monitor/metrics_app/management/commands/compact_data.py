@@ -71,7 +71,10 @@ COMPACT_TABLES = [
         },
         'static_fields': ['model', 'gpu_uuid', 'snapshot_id', 'gpu_board_part_number', 'gpu_subvendor',
                          'gpu_vbios', 'pci_bus_id', 'gpu_architecture', 'gpu_bus_type', 'gpu_board_id',
-                         'gpu_serial', 'gpu_pci_subsystem', 'gpu_inforom'],
+                         'gpu_serial', 'gpu_pci_subsystem', 'gpu_inforom',
+                         # Phase 3 performance / thermal / topology
+                         'gpu_thermal_thresholds', 'gpu_pstates_util',
+                         'gpu_max_clocks', 'gpu_mig_mode', 'gpu_bar1_mb'],
     },
     {
         'table': 'metrics_storagemetric',

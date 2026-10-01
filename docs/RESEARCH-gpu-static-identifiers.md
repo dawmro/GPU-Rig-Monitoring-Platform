@@ -458,7 +458,7 @@ string simply shows no "Board:" line.
 display code to change (only add it to compaction `static_fields`, §6.3
 item 6).**
 
-### 6.3 Exact code fragments to change (follow-up branch `feat/gpu-subvendor-display`, server-only)
+### 6.3 Exact code fragments to change (implemented 2026-10-01 on `feat/agent-gpu-brand-board-part`, server-only + Windows agent version sync)
 
 **0. Ingest / API layer — NO changes.** `IngestView.post`
 (`metrics_app/views.py:44-117`) and `IngestSerializer`
@@ -601,20 +601,28 @@ bumped to schema 1.17 in the same commit but its version line stayed
 - `validate_schema_version` accepts up to `1.17`.
 
 **Known server-side gaps after Phase 1 (fix before relying on the data):**
-1. `gpu_subvendor` is not persisted anywhere (no `GPUMetric` column, no
-   `LatestSnapshot` array, serializer ignores it) — transport-only today.
-   **Visible consequence on Live Metrics: subvendor can never render in the
-   GPU card (no data source). Fix: §6.3 (items 1-5).**
-2. `gpu_board_part_number` is **not** in `compact_data.py`
-   `static_fields` (currently `['model', 'gpu_uuid', 'snapshot_id']`) →
-   it is lost at tier-2/3 compaction (W001/W004 defense class). `model`
-   and `gpu_uuid` are the only statics kept.
+1. ~~`gpu_subvendor` is not persisted anywhere~~ **CLOSED 2026-10-01** —
+   `GPUMetric.gpu_subvendor` + `LatestSnapshot.gpu_subvendors_json`
+   (migration `0057_gpumetric_gpu_subvendor`), serializer persists both
+   per-row and array, view + template render the "Subvendor:" line.
+   Empirically verified against the live 1.17 payload shape
+   (`gpu_subvendor: "MSI"`, `gpu_board_part_number: null`) — 13/13 checks
+   pass; see §6.4.
+2. ~~`gpu_board_part_number` is not in `compact_data.py` `static_fields`~~
+   **CLOSED 2026-10-01** — `static_fields` is now
+   `['model', 'gpu_uuid', 'snapshot_id', 'gpu_board_part_number',
+   'gpu_subvendor']`; both static identifiers survive tier-2/3 compaction.
 3. Agent READMEs are out of sync: Linux README says `1.10.0 / 1.15`
    (agent is `1.12.0 / 1.17`); Windows README says `1.10.0-win / 1.16`
    (payload now includes the `gpu_subvendor` field → schema 1.17) and its
    GPU table row still advertises "**brand**".
-4. `checks.py` has no W001-style check for board part / subvendor
-   (only `check_gpu_uuid_compaction_defense`).
+   **CLOSED 2026-10-01:** `agent_windows/run.py` bumped to
+   `1.12.0-win` / schema `1.17` and `agent_windows/README.md` header
+   updated to match.
+4. ~~`checks.py` has no W001-style check for board part / subvendor~~
+   **CLOSED 2026-10-01** — `check_gpu_subvendor_pipeline` (E013–E017)
+   verifies model fields, serializer writes, and compaction `static_fields`
+   coverage for both identifiers.
 
 **Schema versioning:** 1.14 → **1.15** (disk identifiers, shipped in
 `feat/disk-hardware-identifiers`, agent 1.10.0) → **1.16** (GPU AIB board

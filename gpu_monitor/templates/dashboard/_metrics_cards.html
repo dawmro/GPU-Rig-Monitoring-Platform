@@ -392,10 +392,15 @@ on the page. This keeps the bar from being noise.
                 <span class="text-[10px] text-gray-500 font-mono break-all" title="{{ gpu.gpu_uuid }}">{{ gpu.gpu_uuid }}</span>
                 {% endif %}
             </div>
-            {# AIB Board Part Number (e.g., ASUS Astral, MSI Suprim) #}
+            {# AIB Board Part Number (e.g., ASUS Astral, MSI Suprim) + Subvendor #}
             {% if gpu.gpu_board_part_number %}
             <div class="text-xs text-gray-500 mb-1">
                 Board: <span class="text-gray-300 font-mono">{{ gpu.gpu_board_part_number }}</span>
+            </div>
+            {% endif %}
+            {% if gpu.gpu_subvendor %}
+            <div class="text-xs text-gray-500 mb-1">
+                Subvendor: <span class="text-gray-300 font-mono">{{ gpu.gpu_subvendor }}</span>
             </div>
             {% endif %}
             <div class="flex items-center gap-3 mb-1">

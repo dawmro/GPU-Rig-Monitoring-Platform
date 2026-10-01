@@ -5,6 +5,7 @@ from django.contrib.auth import get_user_model
 from accounts.models import ApiKey
 from rigs.models import Rig
 from metrics_app.models import MetricSnapshot, LatestSnapshot
+from metrics_app.models import GPUMetric
 from metrics_app.serializers import process_ingest
 
 User = get_user_model()
@@ -260,3 +261,91 @@ class DiskHardwareIdentifierTestCase(TestCase):
         self.assertEqual(metrics[0]['vendor'], 'Western Digital')
         self.assertEqual(metrics[0]['serial'], 'S7K5NZABF999')
         self.assertEqual(metrics[0]['wwn'], '')
+
+
+class GPUSubvendorTestCase(TestCase):
+    """AIB subvendor + board part number flow from the agent payload
+    (schema 1.17) into GPUMetric + LatestSnapshot via process_ingest,
+    and surface in the Live Metrics GPU card builder.
+    (W001-style regression test for the GPU static identifier pipeline.)"""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email='gpudesc@example.com', password='testpass123',
+            username='gpudescuser'
+        )
+        self.rig = Rig.objects.create(uuid=uuid.uuid4(), owner=self.user)
+
+    def _payload(self, gpus, schema_version='1.17', agent_version='1.12.0'):
+        return {
+            'rig_uuid': str(self.rig.uuid),
+            'schema_version': schema_version,
+            'agent_version': agent_version,
+            'timestamp': '2024-05-20T14:32:00Z',
+            'metrics': {
+                'cpu': {'utilization_pct': 1.0},
+                'memory': {'total_bytes': 1000, 'used_bytes': 500},
+                'gpus': gpus,
+            },
+            'software': {'hostname': 'x'},
+            'errors': [],
+        }
+
+    def test_ingest_writes_gpu_subvendor_and_board_part(self):
+        """Schema 1.17 payload: subvendor 'MSI', board part null — the
+        exact shape the Windows agent sends for the MSI RTX 3060."""
+        gpus = [{
+            'uuid': 'GPU-a322cff7-19cf-f056-4a38-b676c04a38aa',
+            'model': 'NVIDIA GeForce RTX 3060',
+            'gpu_subvendor': 'MSI',
+            'gpu_board_part_number': None,
+            'mem_total_mb': 12288, 'mem_used_mb': 9393, 'mem_free_mb': 2894,
+            'gpu_util_pct': 39, 'temp_c': 46,
+        }]
+        result, code = process_ingest(str(self.rig.uuid), self._payload(gpus),
+                                     self.user.id, rig=self.rig)
+        self.assertIn(code, (200, 202))
+        ls = LatestSnapshot.objects.get(rig_uuid=self.rig.uuid)
+        self.assertEqual(ls.gpu_subvendors_json, ['MSI'])
+        self.assertEqual(ls.gpu_board_part_numbers_json, [''])
+        gm = GPUMetric.objects.get(rig_uuid=self.rig.uuid, gpu_index=0)
+        self.assertEqual(gm.gpu_subvendor, 'MSI')
+        # null board part -> stored as NULL (null=True column)
+        self.assertIsNone(gm.gpu_board_part_number)
+
+    def test_ingest_without_subvendor_uses_default(self):
+        """Older agents (schema 1.16) send no gpu_subvendor key —
+        server must default to empty string, not crash."""
+        gpus = [{
+            'uuid': 'GPU-aaaaaaaa-0000-0000-0000-000000000000',
+            'model': 'NVIDIA GeForce RTX 3060',
+            'mem_total_mb': 12288, 'mem_used_mb': 100, 'mem_free_mb': 12188,
+        }]
+        result, code = process_ingest(
+            str(self.rig.uuid),
+            self._payload(gpus, schema_version='1.16', agent_version='1.10.0'),
+            self.user.id, rig=self.rig)
+        self.assertIn(code, (200, 202))
+        ls = LatestSnapshot.objects.get(rig_uuid=self.rig.uuid)
+        self.assertEqual(ls.gpu_subvendors_json, [''])
+        self.assertEqual(ls.gpu_board_part_numbers_json, [''])
+        gm = GPUMetric.objects.get(rig_uuid=self.rig.uuid, gpu_index=0)
+        self.assertEqual(gm.gpu_subvendor, '')
+
+    def test_build_gpu_metrics_exposes_subvendor(self):
+        from dashboard.views import _build_gpu_metrics
+        gpus = [{
+            'uuid': 'GPU-bbbbbbbb-0000-0000-0000-000000000000',
+            'model': 'NVIDIA GeForce RTX 3060',
+            'gpu_subvendor': 'MSI',
+            'gpu_board_part_number': 'MSI Ventus',
+            'mem_total_mb': 12288, 'mem_used_mb': 100, 'mem_free_mb': 12188,
+        }]
+        result, code = process_ingest(str(self.rig.uuid), self._payload(gpus),
+                                     self.user.id, rig=self.rig)
+        self.assertIn(code, (200, 202))
+        ls = LatestSnapshot.objects.get(rig_uuid=self.rig.uuid)
+        metrics = _build_gpu_metrics(ls)
+        self.assertEqual(len(metrics), 1)
+        self.assertEqual(metrics[0]['gpu_subvendor'], 'MSI')
+        self.assertEqual(metrics[0]['gpu_board_part_number'], 'MSI Ventus')

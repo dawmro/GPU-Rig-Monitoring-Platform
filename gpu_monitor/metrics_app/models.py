@@ -74,6 +74,8 @@ class GPUMetric(models.Model):
     gpu_uuid = models.CharField(db_index=True, max_length=64, blank=True, default='',
                            help_text='Stable GPU UUID or GPU-prefixed identifier for identity tracking; full value shown in charts')
     gpu_board_part_number = models.CharField(max_length=128, blank=True, default='', null=True)
+    gpu_subvendor = models.CharField(max_length=64, blank=True, default='', null=True,
+                           help_text='AIB board partner (e.g. MSI, ASUS, Gigabyte); "" when unknown')
     gpu_util_pct = models.FloatField(null=True)
     mem_controller_util_pct = models.FloatField(null=True)
     gpu_temp_c = models.FloatField(null=True)
@@ -267,6 +269,7 @@ class LatestSnapshot(models.Model):
     # Static GPU identifiers (AIB board part number) — one entry
     # per GPU, same order as gpu_models_json. Blank when unavailable.
     gpu_board_part_numbers_json = models.JSONField(default=list, blank=True)  # ["ASUS Astral", ""]
+    gpu_subvendors_json = models.JSONField(default=list, blank=True)          # ["MSI", ""]
     gpu_temps_json = models.JSONField(default=list, blank=True)         # [72.5, 73.1]
     gpu_utils_json = models.JSONField(default=list, blank=True)         # [98.0, 100.0]
     gpu_mem_controller_utils_json = models.JSONField(default=list, blank=True)  # [45.2, 47.1]

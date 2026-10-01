@@ -737,6 +737,40 @@ if gpu_pci_subsystem is None and pci_info and hasattr(pci_info, 'pciSubSystemId'
 - **MAJOR** (x → x+1): Breaking payload changes
 - Schema version only bumps on payload structure changes
 
+### 7.8 Phase 3 Lessons Learned (2026-10-01 — Phase 3 Implementation)
+
+**Problem:** Phase 3 constants (`NVML_TEMP_THRESHOLDS`, `NVML_CLOCK_DOMAINS`) were
+defined at module level referencing `pynvml` before it was imported, causing
+`NameError: name 'pynvml' is not defined` on startup.
+
+**Root Cause:** Constants defined at module top-level where `pynvml` is not yet
+imported (it's imported lazily inside `collect_gpus()`).
+
+**Fix:** Define NVML constants **locally inside `collect_gus()`** after
+`import pynvml`, guarded by `try/except AttributeError` for older pynvml
+versions that may lack these constants:
+```python
+try:
+    NVML_TEMP_THRESHOLDS = (
+        (pynvml.NVML_TEMPERATURE_THRESHOLD_SHUTDOWN,      'shutdown_c'),
+        ...
+    )
+    NVML_CLOCK_DOMAINS = (
+        (pynvml.NVML_CLOCK_GRAPHICS, 'graphics_mhz'),
+        ...
+    )
+except AttributeError:
+    # Older pynvml may not have these constants
+    NVML_TEMP_THRESHOLDS = ()
+    NVML_CLOCK_DOMAINS = ()
+```
+
+**Additional Safety:** Every Phase 3 collector wrapped in its own
+`try/except (pynvml.NVMLError, AttributeError)` block, with an extra check:
+if all values are `None`, set the field to `None` (not an empty dict) to
+avoid sending misleading data. This follows the §7.3 per-field isolation rule
+and ensures GPU collection never crashes due to missing NVML functions.
+
 ---
 
 ## 8. PHASE 2 PREREQUISITE DEFECTS — verified 2026-10-01, FIXED on `plan/phase3-gpu-monitoring-features`
@@ -1012,34 +1046,40 @@ NVML_TEMPERATURE_THRESHOLD_*       = SHUTDOWN=0, SLOWDOWN=1, MEM_MAX=2,
 
 **Location:** in both `agent/run.py` and `agent_windows/run.py`, inside the
 per-GPU `for i in range(count)` loop, **after the Phase 2 static identifiers
-block** (Linux `run.py` ≈ line 855; Windows `run.py` ≈ line 1008) and
+block** (Linux `run.py` ≈ line 880; Windows `run.py` ≈ line 1030) and
 **before `gpus.append({...})`**. Each metric gets its own independent
 `try/except (pynvml.NVMLError, AttributeError)` block (Phase 2 §7.3
 mandatory rule), and bytes are decoded via the existing
 `_nvml_bytes_to_str` helper where applicable.
 
-**Enum constants needed (define once at module top, next to
-`GPU_SUBVENDOR_MAP`):**
+**NVML constants (defined locally inside `collect_gpus()` after `import pynvml`,
+guarded by try/except for older pynvml versions that may lack these constants):**
 ```python
-# Phase 3 NVML constants
-NVML_CLOCK_DOMAINS = (
-    (pynvml.NVML_CLOCK_GRAPHICS, 'graphics_mhz'),
-    (pynvml.NVML_CLOCK_MEM,      'mem_mhz'),
-    (pynvml.NVML_CLOCK_SM,       'sm_mhz'),
-    (pynvml.NVML_CLOCK_VIDEO,    'video_mhz'),
-)
-NVML_TEMP_THRESHOLDS = (
-    (pynvml.NVML_TEMPERATURE_THRESHOLD_SHUTDOWN,      'shutdown_c'),
-    (pynvml.NVML_TEMPERATURE_THRESHOLD_SLOWDOWN,       'slowdown_c'),
-    (pynvml.NVML_TEMPERATURE_THRESHOLD_MEM_MAX,        'mem_max_c'),
-    (pynvml.NVML_TEMPERATURE_THRESHOLD_GPU_MAX,        'gpu_max_c'),
-    (pynvml.NVML_TEMPERATURE_THRESHOLD_ACOUSTIC_MAX,   'acoustic_max_c'),
-    (pynvml.NVML_TEMPERATURE_THRESHOLD_GPS_CURR,       'gps_current_c'),
-)
-NVML_PSTATE_MAX = 16   # pynvml.NVML_MAX_GPU_PERF_PSTATES
+# Define NVML constants locally (pynvml is available here after import)
+try:
+    NVML_TEMP_THRESHOLDS = (
+        (pynvml.NVML_TEMPERATURE_THRESHOLD_SHUTDOWN,      'shutdown_c'),
+        (pynvml.NVML_TEMPERATURE_THRESHOLD_SLOWDOWN,       'slowdown_c'),
+        (pynvml.NVML_TEMPERATURE_THRESHOLD_MEM_MAX,        'mem_max_c'),
+        (pynvml.NVML_TEMPERATURE_THRESHOLD_GPU_MAX,        'gpu_max_c'),
+        (pynvml.NVML_TEMPERATURE_THRESHOLD_ACOUSTIC_MAX,   'acoustic_max_c'),
+        (pynvml.NVML_TEMPERATURE_THRESHOLD_GPS_CURR,       'gps_current_c'),
+    )
+    NVML_CLOCK_DOMAINS = (
+        (pynvml.NVML_CLOCK_GRAPHICS, 'graphics_mhz'),
+        (pynvml.NVML_CLOCK_MEM,      'mem_mhz'),
+        (pynvml.NVML_CLOCK_SM,       'sm_mhz'),
+        (pynvml.NVML_CLOCK_VIDEO,    'video_mhz'),
+    )
+except AttributeError:
+    # Older pynvml may not have these constants
+    NVML_TEMP_THRESHOLDS = ()
+    NVML_CLOCK_DOMAINS = ()
 ```
 
-**Per-GPU collection code (insert before `gpus.append`):**
+**Per-GPU collection code (insert before `gpus.append`):** Each collector is
+wrapped in its own `try/except (pynvml.NVMLError, AttributeError)` block,
+and if all values are `None` the field is set to `None` (not an empty dict).
 ```python
 # ── Phase 3: GPU performance / thermal / topology ────────────────────────
 # 1) Thermal thresholds (per-sensor slowdown/shutdown/acoustic/mem-max/GPS)
@@ -1049,9 +1089,12 @@ try:
     for t_enum, t_name in NVML_TEMP_THRESHOLDS:
         try:
             v = pynvml.nvmlDeviceGetTemperatureThreshold(handle, t_enum)
-            gpu_thermal[t_name] = int(v)
+            # 0 means "not supported" per NVML docs; store as None to avoid misleading 0°C
+            gpu_thermal[t_name] = int(v) if v != 0 else None
         except (pynvml.NVMLError, AttributeError):
             gpu_thermal[t_name] = None
+    if not any(v is not None for v in gpu_thermal.values()):
+        gpu_thermal = None
 except (pynvml.NVMLError, AttributeError):
     gpu_thermal = None
 
@@ -1074,13 +1117,17 @@ except (pynvml.NVMLError, AttributeError):
     gpu_pstates = None
 
 # 3) Max clocks per domain (graphics/mem/sm/video)
-gpu_max_clocks = {}
-for clock_enum, clock_name in NVML_CLOCK_DOMAINS:
-    try:
-        gpu_max_clocks[clock_name] = int(pynvml.nvmlDeviceGetMaxClockInfo(handle, clock_enum))
-    except (pynvml.NVMLError, AttributeError):
-        gpu_max_clocks[clock_name] = None
-if not any(v is not None for v in gpu_max_clocks.values()):
+gpu_max_clocks = None
+try:
+    gpu_max_clocks = {}
+    for clock_enum, clock_name in NVML_CLOCK_DOMAINS:
+        try:
+            gpu_max_clocks[clock_name] = int(pynvml.nvmlDeviceGetMaxClockInfo(handle, clock_enum))
+        except (pynvml.NVMLError, AttributeError):
+            gpu_max_clocks[clock_name] = None
+    if not any(v is not None for v in gpu_max_clocks.values()):
+        gpu_max_clocks = None
+except (pynvml.NVMLError, AttributeError):
     gpu_max_clocks = None
 
 # 4) MIG mode (datacenter; consumer fleets → 0/DISABLE)

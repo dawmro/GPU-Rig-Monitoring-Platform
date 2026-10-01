@@ -209,6 +209,12 @@ def _build_gpu_metrics(snapshot):
              'gpu_serial': _json_get(snapshot.gpu_serials_json, i, ''),
              'gpu_pci_subsystem': _json_get(snapshot.gpu_pci_subsystems_json, i, ''),
              'gpu_inforom': _json_get(snapshot.gpu_inforom_json, i),
+            # Phase 3 performance / thermal / topology
+            'gpu_thermal_thresholds': _json_get(snapshot.gpu_thermal_thresholds_json, i),
+            'gpu_pstates_util':       _json_get(snapshot.gpu_pstates_util_json, i),
+            'gpu_max_clocks':         _json_get(snapshot.gpu_max_clocks_json, i),
+            'gpu_mig_mode':           _json_get(snapshot.gpu_mig_modes_json, i),
+            'gpu_bar1_mb':            _json_get(snapshot.gpu_bar1_mb_json, i),
             'gpu_temp_c': _json_get(snapshot.gpu_temps_json, i),
             'gpu_util_pct': _json_get(snapshot.gpu_utils_json, i),
             'fan_speed_pct': _json_get(snapshot.gpu_fans_json, i),

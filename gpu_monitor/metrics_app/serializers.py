@@ -30,7 +30,7 @@ class IngestSerializer(serializers.Serializer):
     has_active_job = serializers.BooleanField(required=False, default=False)
 
     def validate_schema_version(self, value):
-            if value not in ('1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8', '1.9', '1.10', '1.11', '1.12', '1.13', '1.14', '1.15', '1.16', '1.17', '1.18'):
+            if value not in ('1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8', '1.9', '1.10', '1.11', '1.12', '1.13', '1.14', '1.15', '1.16', '1.17', '1.18', '1.19'):
                 raise serializers.ValidationError(f"Unsupported schema_version: {value}")
             return value
 
@@ -160,6 +160,12 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
             gpu_serials = []
             gpu_pci_subsystems = []
             gpu_inforom = []
+            # Phase 3 performance / thermal / topology arrays
+            gpu_thermal_thresholds = []
+            gpu_pstates_util = []
+            gpu_max_clocks = []
+            gpu_mig_modes = []
+            gpu_bar1_mb = []
             for idx, gpu in enumerate(gpu_list):
                 GPUMetric.objects.update_or_create(
                     rig_uuid=rig_uuid,
@@ -179,6 +185,12 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                          'gpu_serial': gpu.get('gpu_serial', ''),
                          'gpu_pci_subsystem': gpu.get('gpu_pci_subsystem', ''),
                          'gpu_inforom': gpu.get('gpu_inforom'),
+                        # Phase 3 performance / thermal / topology
+                        'gpu_thermal_thresholds': gpu.get('gpu_thermal_thresholds') or {},
+                        'gpu_pstates_util':        gpu.get('gpu_pstates_util') or {},
+                        'gpu_max_clocks':          gpu.get('gpu_max_clocks') or {},
+                        'gpu_mig_mode':            (gpu.get('gpu_mig_mode') if gpu.get('gpu_mig_mode') is not None else 0),
+                        'gpu_bar1_mb':             gpu.get('gpu_bar1_mb') or {},
                         'gpu_util_pct': gpu.get('gpu_util_pct'),
                         'mem_controller_util_pct': gpu.get('mem_controller_util_pct'),
                         'gpu_temp_c': gpu.get('temp_c'),
@@ -216,6 +228,12 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                 gpu_serials.append(gpu.get('gpu_serial') or '')
                 gpu_pci_subsystems.append(gpu.get('gpu_pci_subsystem') or '')
                 gpu_inforom.append(gpu.get('gpu_inforom') or {})
+                # Phase 3 performance / thermal / topology
+                gpu_thermal_thresholds.append(gpu.get('gpu_thermal_thresholds') or {})
+                gpu_pstates_util.append(gpu.get('gpu_pstates_util') or {})
+                gpu_max_clocks.append(gpu.get('gpu_max_clocks') or {})
+                gpu_mig_modes.append(gpu.get('gpu_mig_mode') if gpu.get('gpu_mig_mode') is not None else 0)
+                gpu_bar1_mb.append(gpu.get('gpu_bar1_mb') or {})
                 gpu_temps.append(gpu.get('temp_c'))
                 gpu_utils.append(gpu.get('gpu_util_pct'))
                 gpu_mem_controller_utils.append(gpu.get('mem_controller_util_pct'))
@@ -559,6 +577,12 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                  'gpu_serials_json': gpu_serials,
                  'gpu_pci_subsystems_json': gpu_pci_subsystems,
                  'gpu_inforom_json': gpu_inforom,
+                # Phase 3 performance / thermal / topology arrays
+                'gpu_thermal_thresholds_json': gpu_thermal_thresholds,
+                'gpu_pstates_util_json':       gpu_pstates_util,
+                'gpu_max_clocks_json':         gpu_max_clocks,
+                'gpu_mig_modes_json':          gpu_mig_modes,
+                'gpu_bar1_mb_json':            gpu_bar1_mb,
                 'storage_count': len(storage_list),
                 'storage_devices_json': storage_devices,
                 'storage_fstypes_json': storage_fstypes,

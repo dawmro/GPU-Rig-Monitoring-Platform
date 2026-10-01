@@ -93,6 +93,17 @@ class GPUMetric(models.Model):
                                        help_text='PCI subsystem vendor:device (hex)')
     gpu_inforom = models.JSONField(blank=True, default=dict, null=True,
                                  help_text='INFOROM versions (OEM/EFI/VBIOS)')
+    # Phase 3: performance / thermal / topology
+    gpu_thermal_thresholds = models.JSONField(blank=True, default=dict, null=True,
+                                              help_text='Per-sensor thermal thresholds (shutdown/slowdown/mem_max/gpu_max/acoustic_max/gps_current, °C); {} when unavailable')
+    gpu_pstates_util = models.JSONField(blank=True, default=dict, null=True,
+                                        help_text='Dynamic P-state residency + transition thresholds (P0..P7); {} when unavailable')
+    gpu_max_clocks = models.JSONField(blank=True, default=dict, null=True,
+                                      help_text='Theoretical max clocks per domain (graphics/mem/sm/video, MHz); {} when unavailable')
+    gpu_mig_mode = models.PositiveSmallIntegerField(blank=True, default=0, null=True,
+                                                    help_text='MIG mode (0=DISABLE, 1=ENABLE); 0 when unavailable')
+    gpu_bar1_mb = models.JSONField(blank=True, default=dict, null=True,
+                                   help_text='BAR1 memory aperture total/used/free (MB); {} when unavailable')
     gpu_util_pct = models.FloatField(null=True)
     mem_controller_util_pct = models.FloatField(null=True)
     gpu_temp_c = models.FloatField(null=True)
@@ -296,6 +307,12 @@ class LatestSnapshot(models.Model):
     gpu_serials_json = models.JSONField(default=list, blank=True)            # ["12345", ""]
     gpu_pci_subsystems_json = models.JSONField(default=list, blank=True)     # ["1043:1234", ""]
     gpu_inforom_json = models.JSONField(default=list, blank=True)            # [{"OEM": "1.2", "VBIOS": "95.02.xx"}, {}]
+    # Phase 3 performance / thermal / topology arrays
+    gpu_thermal_thresholds_json = models.JSONField(default=list, blank=True)
+    gpu_pstates_util_json = models.JSONField(default=list, blank=True)
+    gpu_max_clocks_json = models.JSONField(default=list, blank=True)
+    gpu_mig_modes_json = models.JSONField(default=list, blank=True)
+    gpu_bar1_mb_json = models.JSONField(default=list, blank=True)
     gpu_temps_json = models.JSONField(default=list, blank=True)         # [72.5, 73.1]
     gpu_utils_json = models.JSONField(default=list, blank=True)         # [98.0, 100.0]
     gpu_mem_controller_utils_json = models.JSONField(default=list, blank=True)  # [45.2, 47.1]

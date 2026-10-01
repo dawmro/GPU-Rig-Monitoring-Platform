@@ -1,6 +1,6 @@
 # GPU Rig Monitoring Agent — Linux
 
-**Version:** 1.13.2 | **Schema:** 1.18
+**Version:** 1.14.0 | **Schema:** 1.19
 
 Linux agent for the GPU Rig Monitoring Platform. Collects hardware/software metrics via `psutil`, `pynvml`, and system interfaces, then POSTs them to the monitoring server every 60 seconds via cron.
 
@@ -140,7 +140,8 @@ The cron job will start automatically within 1 minute.
 | Storage (partitions, capacity, usage, SMART/NVMe, temp, read/write bytes, IOPS) | psutil + `smartctl`/`nvme` | ✅ | ✅ |
 | Disk hardware identifiers (model, vendor, serial, WWN per physical disk) | `/sys/block/<disk>/device/{model,vendor,serial,wwn}` (read-only sysfs, no sudo) | ✅ | — |
 | Network (interfaces, bytes, errors, speed) | psutil + sysfs | ✅ | ✅ |
-| GPU (model, memory, util, temp, power, fan, PCIe link, core/mem clocks, **AIB subvendor**, **board part number**) | `pynvml` | ✅* | ✅* |
+|| GPU (model, memory, util, temp, power, fan, PCIe link, core/mem clocks, **AIB subvendor**, **board part number**) | `pynvml` | ✅* | ✅* ||
+|| GPU **Phase 3: thermal thresholds (shutdown/slowdown/mem_max/gpu_max/acoustic/gps), dynamic P-states (P0–P7 residency + thresholds), max clocks (graphics/mem/SM/video), MIG mode, BAR1 memory** | `pynvml` | ✅* | ✅* ||
 | GPU processes (per-process: name, type C/G/C+G, memory) | `pynvml` | ✅* | ✅* |
 | Docker containers (name, image, status, container_id, uptime) | `docker` CLI (subprocess) | ✅† | ✅† |
 | Top processes (top 20 by CPU and memory) | psutil two-pass | ✅ | ✅ |

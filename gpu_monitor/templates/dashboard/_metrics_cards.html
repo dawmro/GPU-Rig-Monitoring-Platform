@@ -440,11 +440,51 @@ on the page. This keeps the bar from being noise.
              </div>
              {% endif %}
              {% if gpu.gpu_inforom %}
-             <div class="text-xs text-gray-500 mb-1">
-                 INFOROM: <span class="text-gray-300 font-mono">{{ gpu.gpu_inforom }}</span>
-             </div>
-             {% endif %}
-            <div class="flex items-center gap-3 mb-1">
+                         <div class="text-xs text-gray-500 mb-1">
+                             INFOROM: <span class="text-gray-300 font-mono">{{ gpu.gpu_inforom }}</span>
+                         </div>
+                         {% endif %}
+                         {% if gpu.gpu_thermal_thresholds %}
+                         <div class="text-xs text-gray-500 mb-1">
+                             Thermal: <span class="text-gray-300 font-mono">
+                                 {% with t=gpu.gpu_thermal_thresholds %}
+                                 shutdown={{ t.shutdown_c|default:"?" }}°C slowdown={{ t.slowdown_c|default:"?" }}°C mem_max={{ t.mem_max_c|default:"?" }}°C
+                                 {% endwith %}
+                             </span>
+                         </div>
+                         {% endif %}
+
+                         {% if gpu.gpu_max_clocks %}
+                         <div class="text-xs text-gray-500 mb-1">
+                             Max clocks: <span class="text-gray-300 font-mono">
+                                 Gfx={{ gpu.gpu_max_clocks.graphics_mhz|default:"?" }}
+                                 Mem={{ gpu.gpu_max_clocks.mem_mhz|default:"?" }}
+                                 SM={{ gpu.gpu_max_clocks.sm_mhz|default:"?" }} MHz
+                             </span>
+                         </div>
+                         {% endif %}
+
+                         {% if gpu.gpu_pstates_util %}
+                         <div class="text-xs text-gray-500 mb-1">
+                             P-states: <span class="text-gray-300 font-mono"
+                                 title="{{ gpu.gpu_pstates_util.util }}">{{ gpu.gpu_pstates_util.flags }}</span>
+                         </div>
+                         {% endif %}
+
+                         {% if gpu.gpu_mig_mode == 1 %}
+                         <div class="text-xs text-gray-500 mb-1">
+                             MIG: <span class="text-yellow-300 font-mono">ENABLED</span>
+                         </div>
+                         {% endif %}
+
+                         {% if gpu.gpu_bar1_mb %}
+                         <div class="text-xs text-gray-500 mb-1">
+                             BAR1: <span class="text-gray-300 font-mono">
+                                 {{ gpu.gpu_bar1_mb.used_mb }}/{{ gpu.gpu_bar1_mb.total_mb }} MB
+                             </span>
+                         </div>
+                         {% endif %}
+                        <div class="flex items-center gap-3 mb-1">
                 <span class="text-xs text-gray-500 w-16 text-right">Core</span>
                 <div class="flex-1">
                     <div class="w-full bg-gray-700 rounded-full h-2 overflow-hidden">

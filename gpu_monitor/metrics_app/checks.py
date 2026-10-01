@@ -428,3 +428,62 @@ def check_gpu_subvendor_pipeline(app_configs, **kwargs):
     except Exception:
         pass
     return errors
+
+
+@register('metrics_app')
+def check_gpu_phase3_performance_thermal(app_configs, **kwargs):
+    """Defense in depth: Phase 3 GPU performance/thermal metrics must be
+    persisted AND survive compaction. CWD-independent (in-memory
+    COMPACT_TABLES, not a file read)."""
+    errors = []
+    from metrics_app.models import GPUMetric, LatestSnapshot
+    from metrics_app.management.commands.compact_data import COMPACT_TABLES
+
+    gpumetric_fields = ('gpu_thermal_thresholds','gpu_pstates_util',
+                        'gpu_max_clocks','gpu_mig_mode','gpu_bar1_mb')
+    latestsnapshot_fields = ('gpu_thermal_thresholds_json','gpu_pstates_util_json',
+                             'gpu_max_clocks_json','gpu_mig_modes_json','gpu_bar1_mb_json')
+
+    # Layer 1: model fields exist
+    for f in gpumetric_fields:
+        try: GPUMetric._meta.get_field(f)
+        except Exception:
+            errors.append(Error(f'GPUMetric missing Phase 3 field: {f}',
+                hint='Run migration 0059_gpumetric_phase3_performance_thermal',
+                obj='metrics_app.GPUMetric', id=f'metrics_app.E060'))
+    for f in latestsnapshot_fields:
+        try: LatestSnapshot._meta.get_field(f)
+        except Exception:
+            errors.append(Error(f'LatestSnapshot missing Phase 3 field: {f}',
+                hint='Run migration 0059_gpumetric_phase3_performance_thermal',
+                obj='metrics_app.LatestSnapshot', id=f'metrics_app.E065'))
+
+    # Layer 2: serializer writes per-row + summary arrays
+    import re
+    import inspect
+    import metrics_app.serializers as s
+    src = inspect.getsource(s.process_ingest)
+    for f in gpumetric_fields:
+        # Use regex to match with flexible whitespace; gpu_mig_mode uses a ternary pattern
+        if f == 'gpu_mig_mode':
+            pattern = rf"'{re.escape(f)}'\s*:\s*\(gpu\.get\('{re.escape(f)}'\).*?is not None"
+        else:
+            pattern = rf"'{re.escape(f)}'\s*:\s*gpu\.get\('{re.escape(f)}'"
+        if not re.search(pattern, src, re.DOTALL):
+            errors.append(Error(f"serializer does not write Phase 3 '{f}' to GPUMetric",
+                hint=f"Add '{f}' to GPUMetric defaults", obj='metrics_app.serializers.process_ingest',
+                id='metrics_app.E070'))
+
+    # Layer 3: compaction preserves all Phase 3 fields (in-memory, CWD-safe)
+    try:
+        gpu_cfg = next(c for c in COMPACT_TABLES if c['table'] == 'metrics_gpumetric')
+        for f in gpumetric_fields:
+            if f not in gpu_cfg['static_fields']:
+                errors.append(Error(f'compaction static_fields missing Phase 3 {f}',
+                    hint='Static/semi-static GPU metrics must survive tier-2/3',
+                    obj='metrics_app.management.commands.compact_data',
+                    id='metrics_app.E075'))
+    except Exception as e:
+        errors.append(Error(f'could not read COMPACT_TABLES: {e}',
+            id='metrics_app.E080'))
+    return errors

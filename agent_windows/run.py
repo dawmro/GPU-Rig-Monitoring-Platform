@@ -938,20 +938,25 @@ def collect_gpus():
             if pci_info and hasattr(pci_info, 'busId'):
                 pci_bus_id = _nvml_bytes_to_str(pci_info.busId)
 
-            # GPU Architecture
+            # GPU Architecture - returns nvmlDeviceArchitecture_t enum (int)
             gpu_architecture = None
             try:
-                gpu_architecture = _nvml_bytes_to_str(pynvml.nvmlDeviceGetArchitecture(handle))
+                arch_val = pynvml.nvmlDeviceGetArchitecture(handle)
+                arch_map = {
+                    0: 'Unknown', 1: 'Fermi', 2: 'Kepler', 3: 'Maxwell', 4: 'Pascal',
+                    5: 'Volta', 6: 'Turing', 7: 'Ampere', 8: 'Ada', 9: 'Hopper', 10: 'Blackwell'
+                }
+                gpu_architecture = arch_map.get(arch_val, f'Unknown({arch_val})')
             except pynvml.NVMLError_NotSupported:
                 pass
             except pynvml.NVMLError:
                 pass
 
-            # Bus type (PCIe/NVLink)
+            # Bus type (PCIe/NVLink) - NVML_BUS_TYPE_*: PCI=0, NVLINK=1, but some drivers return 2 for PCIe Gen3/4
             gpu_bus_type = None
             try:
                 bus_type = pynvml.nvmlDeviceGetBusType(handle)
-                gpu_bus_type = "PCIe" if bus_type == 0 else "NVLink" if bus_type == 1 else f"Unknown({bus_type})"
+                gpu_bus_type = "PCIe" if bus_type == 0 else "NVLink" if bus_type == 1 else "PCIe" if bus_type == 2 else f"Unknown({bus_type})"
             except pynvml.NVMLError_NotSupported:
                 pass
             except pynvml.NVMLError:
@@ -985,11 +990,18 @@ def collect_gpus():
                 if pci_info_ext and hasattr(pci_info_ext, 'pciSubSystemId'):
                     subsys_vendor = pci_info_ext.pciSubSystemId & 0xFFFF
                     subsys_device = (pci_info_ext.pciSubSystemId >> 16) & 0xFFFF
-                    gpu_pci_subsystem = f"{subsys_vendor:04x}:{subsys_device:04x}"
+                    if subsys_vendor != 0 or subsys_device != 0:
+                        gpu_pci_subsystem = f"{subsys_vendor:04x}:{subsys_device:04x}"
             except pynvml.NVMLError_NotSupported:
                 pass
             except pynvml.NVMLError:
                 pass
+            # Fallback: use PciInfo (v3) subsystem ID if PciInfoExt failed or returned 0
+            if gpu_pci_subsystem is None and pci_info and hasattr(pci_info, 'pciSubSystemId'):
+                subsys_vendor = pci_info.pciSubSystemId & 0xFFFF
+                subsys_device = (pci_info.pciSubSystemId >> 16) & 0xFFFF
+                if subsys_vendor != 0 or subsys_device != 0:
+                    gpu_pci_subsystem = f"{subsys_vendor:04x}:{subsys_device:04x}"
 
             # INFOROM versions
             gpu_inforom = None

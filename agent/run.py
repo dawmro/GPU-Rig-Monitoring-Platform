@@ -821,8 +821,9 @@ def collect_gpus():
             # Extended PCI info (PciInfoExt) - subsystem vendor:device
             gpu_pci_subsystem = None
             try:
-                # nvmlDeviceGetPciInfoExt requires a structure to fill
-                pci_info_ext = pynvml.nvmlPciInfoExt_t()
+                # nvmlDeviceGetPciInfoExt requires a structure with version field set
+                pci_info_ext = pynvml.nvmlPciInfoExt_v1_t()
+                pci_info_ext.version = pynvml.nvmlPciInfoExt_v1  # Must set version before call
                 pynvml.nvmlDeviceGetPciInfoExt(handle, pci_info_ext)
                 if pci_info_ext and hasattr(pci_info_ext, 'pciSubSystemId'):
                     subsys_vendor = pci_info_ext.pciSubSystemId & 0xFFFF

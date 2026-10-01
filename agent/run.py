@@ -790,9 +790,7 @@ def collect_gpus():
                     5: 'Volta', 6: 'Turing', 7: 'Ampere', 8: 'Ada', 9: 'Hopper', 10: 'Blackwell'
                 }
                 gpu_architecture = arch_map.get(arch_val, f'Unknown({arch_val})')
-            except pynvml.NVMLError_NotSupported:
-                pass
-            except pynvml.NVMLError:
+            except (pynvml.NVMLError_NotSupported, pynvml.NVMLError, AttributeError):
                 pass
 
             # Bus type (PCIe/NVLink) - NVML_BUS_TYPE_*: PCI=0, NVLINK=1, but some drivers return 2 for PCIe Gen3/4

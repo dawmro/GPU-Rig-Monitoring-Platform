@@ -1,7 +1,57 @@
+"""Django system checks for metrics_app.
+
+All checks are registered via @register('metrics_app') and run by
+`manage.py check`, `manage.py test`, and any management command that
+invokes the check framework.
+
+Registration happens at app-ready time: metrics_app/apps.py `ready()`
+imports this module (`from . import checks`). Without that import the
+@register decorators never fire, `manage.py check` reports 0 issues
+(false comfort), and every defense check in this module is dead code
+(the exact defect that let the `gpu_inforom` compaction gap ship —
+see docs/RESEARCH-gpu-static-identifiers.md §8.2).
+
+CWD independence (defect class from §8.4): checks that inspect
+compaction behavior read COMPACT_TABLES in-memory (imported from the
+compact_data command module) or use inspect.getsource() on the command
+class. They NEVER use `open('gpu_monitor/...')` relative paths, which
+only resolve from the repo root and silently no-op (or false-positive)
+when run from gpu_monitor/ — where manage.py actually runs.
+"""
 from django.core.checks import Error, register
 from metrics_app.models import MetricSnapshot, LatestSnapshot
 from metrics_app.views import ChartDataView
 from metrics_app.serializers import IngestSerializer
+
+
+def _compaction_table(config_table):
+    """Return the COMPACT_TABLES entry for `config_table` (in-memory,
+    CWD-independent). Returns None if the table is not configured."""
+    from metrics_app.management.commands.compact_data import COMPACT_TABLES
+    for cfg in COMPACT_TABLES:
+        if cfg['table'] == config_table:
+            return cfg
+    return None
+
+
+def _gpumetric_static_fields():
+    cfg = _compaction_table('metrics_gpumetric')
+    return cfg.get('static_fields', []) if cfg else None
+
+
+def _snapshot_agg_fields():
+    cfg = _compaction_table('metrics_metricsnapshot')
+    return cfg.get('agg_fields', {}) if cfg else None
+
+
+def _compact_table_source():
+    """Source of Command._compact_table (the SQL generator) — used to
+    verify the bool-max INTEGER cast defense without reading a file
+    path that depends on the current working directory."""
+    import inspect
+    from metrics_app.management.commands.compact_data import Command
+    return inspect.getsource(Command._compact_table)
+
 
 @register('metrics_app')
 def check_has_active_job_system_checks(app_configs, **kwargs):
@@ -29,37 +79,52 @@ def check_has_active_job_system_checks(app_configs, **kwargs):
         ))
 
     # Layer 3: Serializer must write to MetricSnapshot defaults
-    serializer_defaults_keys = None
     try:
-        # Inspect the defaults dict construction in serializers process_ingest
-        # We verify the source contains the write; full runtime verification
-        # would require running ingest, which is out of scope for a check.
+        # has_active_job is validated by IngestSerializer (BooleanField)
+        # and written into MetricSnapshot defaults by process_ingest.
+        # Model + chart layers above are the durable checks; this layer
+        # is best-effort source inspection.
         import inspect
         src = inspect.getsource(IngestSerializer)
-        # The serializer reads has_active_job (line 30), so verify model write exists
-        # by checking models have the field (already checked) and that serializer
-        # validated_data reads it (implied by serializer definition)
+        if 'has_active_job' not in src:
+            errors.append(Error(
+                'IngestSerializer does not declare has_active_job',
+                hint='Add has_active_job BooleanField to IngestSerializer',
+                obj='metrics_app.serializers.IngestSerializer',
+                id='metrics_app.E003',
+            ))
     except Exception:
-        pass  # Source inspection not critical; model + chart checks are durable
+        pass  # source inspection is best-effort; model + chart checks are durable
 
-    # Layer 4: Compaction must aggregate the field
+    # Layer 4: Compaction must aggregate the field (in-memory, CWD-safe)
     try:
-        compact_path = 'gpu_monitor/metrics_app/management/commands/compact_data.py'
-        compact_src = open(compact_path).read()
-        if "'has_active_job': 'max'" not in compact_src:
+        agg = _snapshot_agg_fields()
+        if agg is None:
+            errors.append(Error(
+                'compaction: metrics_metricsnapshot not found in COMPACT_TABLES',
+                hint='Verify metrics_metricsnapshot entry in compact_data.COMPACT_TABLES',
+                obj='metrics_app.management.commands.compact_data',
+                id='metrics_app.E004',
+            ))
+        elif agg.get('has_active_job') != 'max':
             errors.append(Error(
                 "compact_data.py missing 'has_active_job': 'max'",
                 hint='Run Step C: add to MetricSnapshot agg_fields (use max, not avg)',
                 obj='metrics_app.management.commands.compact_data',
-                id='metrics_app.E003',
+                id='metrics_app.E004',
             ))
-    except FileNotFoundError:
-        errors.append(Error(
-            'compact_data.py not found for verification',
-            hint='Verify path: ' + compact_path,
-            obj='metrics_app',
-            id='metrics_app.E004',
-        ))
+        else:
+            # bool max must use INTEGER cast, not raw MAX(bool) (NULL-propagation)
+            compact_src = _compact_table_source()
+            if "if agg == 'max' and f == 'has_active_job':" not in compact_src:
+                errors.append(Error(
+                    "compact_data: bool max missing INTEGER cast defense for has_active_job",
+                    hint='Add MAX(CAST(has_active_job AS INTEGER)) branch in _compact_table',
+                    obj='metrics_app.management.commands.compact_data',
+                    id='metrics_app.E004',
+                ))
+    except Exception:
+        pass  # compaction structure read is best-effort; E004 covers config absence
 
     return errors
 
@@ -80,32 +145,39 @@ def check_gpu_uuid_compaction_defense(app_configs, **kwargs):
                                 obj='metrics_app.GPUMetric.gpu_uuid', id='metrics_app.E006'))
     except Exception as e:
         errors.append(Error(f'GPUMetric missing gpu_uuid: {e}', id='metrics_app.E007'))
+
+    # Layer 3: gpu_uuid must survive compaction (in-memory, CWD-safe)
     try:
-        src = open('gpu_monitor/metrics_app/management/commands/compact_data.py').read()
-        import re
-        block = re.search(r"'table': 'metrics_gpumetric'.*?'static_fields': \[.*?\]", src, re.S)
-        if block and 'gpu_uuid' not in block.group(0):
+        static_fields = _gpumetric_static_fields()
+        if static_fields is None:
+            errors.append(Error(
+                'compaction: metrics_gpumetric not found in COMPACT_TABLES',
+                hint='Verify metrics_gpumetric entry in compact_data.COMPACT_TABLES',
+                obj='metrics_app.management.commands.compact_data',
+                id='metrics_app.E008',
+            ))
+        elif 'gpu_uuid' not in static_fields:
             errors.append(Error("compact_data: metrics_gpumetric static_fields missing gpu_uuid",
                                 hint='Preserve identity through compaction',
                                 obj='metrics_app.management.commands.compact_data',
                                 id='metrics_app.E008'))
-    except FileNotFoundError:
+    except Exception:
         pass
-    # Layer 4 (bool aggregation defense): has_active_job must use INTEGER cast, not raw MAX(bool)
+
+    # Layer 4 (bool aggregation defense): has_active_job must use INTEGER cast,
+    # not raw MAX(bool). Verified against the in-memory SQL generator source.
     try:
-        src = open('gpu_monitor/metrics_app/management/commands/compact_data.py').read()
-        if "'has_active_job': 'max'" in src:
-            # Verify the SQL emission uses CAST(... AS INTEGER) for bool max
-            if 'CAST(' not in src or 'AS INTEGER' not in src:
-                # Check more precisely: the SQL generation must emit CAST for has_active_job max
-                # The defensive code adds a special case; verify it's present in generation logic
-                if 'if agg == \'max\' and f == \'has_active_job\':' not in src:
-                    errors.append(Error("compact_data: bool max missing INTEGER cast defense",
-                                        hint='Add Cast(has_active_job, IntegerField()) for bool aggregation',
-                                        obj='metrics_app.management.commands.compact_data',
-                                        id='metrics_app.E009'))
-    except FileNotFoundError:
-        errors.append(Error('compact_data.py not found', id='metrics_app.E010'))
+        agg = _snapshot_agg_fields()
+        if agg and agg.get('has_active_job') == 'max':
+            compact_src = _compact_table_source()
+            if "if agg == 'max' and f == 'has_active_job':" not in compact_src:
+                errors.append(Error("compact_data: bool max missing INTEGER cast defense",
+                                    hint='Add Cast(has_active_job, IntegerField()) for bool aggregation',
+                                    obj='metrics_app.management.commands.compact_data',
+                                    id='metrics_app.E009'))
+    except Exception:
+        errors.append(Error('compact_data: could not read SQL generator source',
+                            id='metrics_app.E010'))
     return errors
 
 
@@ -113,13 +185,16 @@ def check_gpu_uuid_compaction_defense(app_configs, **kwargs):
 def check_chart_query_budget(app_configs, **kwargs):
     errors = []
     try:
-        src = open('gpu_monitor/metrics_app/views.py').read()
+        import inspect
+        import metrics_app.views as views_mod
+        src = inspect.getsource(views_mod)
         if '_safe_gpu_label' not in src:
             errors.append(Error('Chart endpoint missing _safe_gpu_label defense',
                                 hint='Add safe identity label helper',
-                                obj='metrics_app.views.ChartDataView', id='metrics_app.E009'))
-    except FileNotFoundError:
-        errors.append(Error('views.py not found', id='metrics_app.E010'))
+                                obj='metrics_app.views.ChartDataView', id='metrics_app.E011'))
+    except Exception:
+        errors.append(Error('could not read metrics_app.views source for verification',
+                            id='metrics_app.E012'))
     return errors
 
 
@@ -143,7 +218,7 @@ def check_storage_hardware_identifiers(app_configs, **kwargs):
                 f'LatestSnapshot missing {field} field',
                 hint='Run migration adding disk hardware identifiers to LatestSnapshot',
                 obj='metrics_app.LatestSnapshot',
-                id='metrics_app.E011',
+                id='metrics_app.E013',
             ))
 
     # Layer 2: serializer must append all four arrays per disk
@@ -152,12 +227,12 @@ def check_storage_hardware_identifiers(app_configs, **kwargs):
         import metrics_app.serializers as s
         process_src = inspect.getsource(s.process_ingest)
         for field in expected:
-            if f"'{field}': storage_" not in process_src and f"'{field}':" not in process_src:
+            if f"'{field}':" not in process_src:
                 errors.append(Error(
                     f"serializer process_ingest does not write '{field}' to LatestSnapshot",
                     hint="Add the array to ls_defaults in process_ingest",
                     obj='metrics_app.serializers.process_ingest',
-                    id='metrics_app.E012',
+                    id='metrics_app.E014',
                 ))
     except Exception:
         pass  # source inspection is best-effort; model-field check above is durable
@@ -173,7 +248,7 @@ def check_gpu_phase2_static_identifiers(app_configs, **kwargs):
     Layer 2: serializer process_ingest writes both per-row values and
              LatestSnapshot summary arrays.
     Layer 3: compact_data.py keeps all Phase 2 static GPU identifiers
-             in the metrics_gpumetric static_fields.
+             in the metrics_gpumetric static_fields (in-memory, CWD-safe).
     """
     errors = []
     from metrics_app.models import GPUMetric, LatestSnapshot
@@ -183,12 +258,19 @@ def check_gpu_phase2_static_identifiers(app_configs, **kwargs):
         'gpu_vbios', 'pci_bus_id', 'gpu_architecture', 'gpu_bus_type',
         'gpu_board_id', 'gpu_serial', 'gpu_pci_subsystem', 'gpu_inforom',
     )
-    # Phase 2 fields on LatestSnapshot (JSONField arrays)
-    latestsnapshot_fields = (
-        'gpu_vbios_json', 'gpu_pci_bus_ids_json', 'gpu_architecture_json',
-        'gpu_bus_type_json', 'gpu_board_ids_json', 'gpu_serials_json',
-        'gpu_pci_subsystems_json', 'gpu_inforom_json',
-    )
+    # Phase 2 fields on LatestSnapshot (JSONField arrays) and the actual
+    # array variable names used by process_ingest (NOT field.replace('_json','s')
+    # — that produced false positives like 'gpu_vbioss'; see research doc §8.3)
+    phase2_array_variables = {
+        'gpu_vbios_json': 'gpu_vbios',
+        'gpu_pci_bus_ids_json': 'gpu_pci_bus_ids',
+        'gpu_architecture_json': 'gpu_architecture',
+        'gpu_bus_type_json': 'gpu_bus_type',
+        'gpu_board_ids_json': 'gpu_board_ids',
+        'gpu_serials_json': 'gpu_serials',
+        'gpu_pci_subsystems_json': 'gpu_pci_subsystems',
+        'gpu_inforom_json': 'gpu_inforom',
+    }
 
     # Layer 1: model fields exist on GPUMetric
     for field in gpumetric_fields:
@@ -199,11 +281,11 @@ def check_gpu_phase2_static_identifiers(app_configs, **kwargs):
                 f'GPUMetric missing Phase 2 field: {field}',
                 hint='Run migration 0058_gpumetric_phase2_static_identifiers',
                 obj='metrics_app.GPUMetric',
-                id=f'metrics_app.E01{8 + gpumetric_fields.index(field)}',
+                id='metrics_app.E015',
             ))
 
     # Layer 1: model fields exist on LatestSnapshot
-    for field in latestsnapshot_fields:
+    for field in phase2_array_variables:
         try:
             LatestSnapshot._meta.get_field(field)
         except Exception:
@@ -211,7 +293,7 @@ def check_gpu_phase2_static_identifiers(app_configs, **kwargs):
                 f'LatestSnapshot missing Phase 2 field: {field}',
                 hint='Run migration 0058_gpumetric_phase2_static_identifiers',
                 obj='metrics_app.LatestSnapshot',
-                id=f'metrics_app.E02{6 + latestsnapshot_fields.index(field)}',
+                id='metrics_app.E016',
             ))
 
     # Layer 2: serializer must persist Phase 2 fields (per-row + summary arrays)
@@ -227,37 +309,41 @@ def check_gpu_phase2_static_identifiers(app_configs, **kwargs):
                     f"serializer process_ingest does not write Phase 2 '{field}' to GPUMetric",
                     hint=f"Add '{field}' to the GPUMetric defaults dict",
                     obj='metrics_app.serializers.process_ingest',
-                    id=f'metrics_app.E03{4 + gpumetric_fields.index(field)}',
+                    id='metrics_app.E017',
                 ))
-        # Check summary arrays in LatestSnapshot defaults
-        for field in latestsnapshot_fields:
-            array_name = field.replace('_json', 's')
-            key = f"'{field}': {array_name}"
+        # Check summary arrays in LatestSnapshot defaults (correct variable names)
+        for field, var in phase2_array_variables.items():
+            key = f"'{field}': {var}"
             if key not in process_src:
                 errors.append(Error(
                     f"serializer process_ingest does not write Phase 2 '{field}' to LatestSnapshot",
-                    hint=f"Add '{field}': {array_name} to LatestSnapshot defaults",
+                    hint=f"Add '{field}': {var} to LatestSnapshot defaults",
                     obj='metrics_app.serializers.process_ingest',
-                    id=f'metrics_app.E04{2 + latestsnapshot_fields.index(field)}',
+                    id='metrics_app.E018',
                 ))
     except Exception:
         pass  # source inspection is best-effort; model-field checks above are durable
 
-    # Layer 3: compaction must keep all Phase 2 static identifiers
+    # Layer 3: compaction must keep all Phase 2 static identifiers (in-memory)
     try:
-        import re
-        src = open('gpu_monitor/metrics_app/management/commands/compact_data.py').read()
-        block = re.search(r"'table': 'metrics_gpumetric'.*?'static_fields': \[.*?\]", src, re.S)
-        if block:
+        static_fields = _gpumetric_static_fields()
+        if static_fields is None:
+            errors.append(Error(
+                'compaction: metrics_gpumetric not found in COMPACT_TABLES',
+                hint='Verify metrics_gpumetric entry in compact_data.COMPACT_TABLES',
+                obj='metrics_app.management.commands.compact_data',
+                id='metrics_app.E019',
+            ))
+        else:
             for field in gpumetric_fields:
-                if field not in block.group(0):
+                if field not in static_fields:
                     errors.append(Error(
                         f'compact_data: metrics_gpumetric static_fields missing Phase 2 {field}',
                         hint='Static GPU identifiers must survive tier-2/3 compaction',
                         obj='metrics_app.management.commands.compact_data',
-                        id=f'metrics_app.E05{0 + gpumetric_fields.index(field)}',
+                        id='metrics_app.E019',
                     ))
-    except FileNotFoundError:
+    except Exception:
         pass
     return errors
 
@@ -273,7 +359,7 @@ def check_gpu_subvendor_pipeline(app_configs, **kwargs):
              the LatestSnapshot summary array.
     Layer 3: compact_data.py keeps both static GPU identifiers
              (gpu_subvendor AND gpu_board_part_number) in the
-             metrics_gpumetric static_fields.
+             metrics_gpumetric static_fields (in-memory, CWD-safe).
     """
     errors = []
     from metrics_app.models import GPUMetric
@@ -286,7 +372,7 @@ def check_gpu_subvendor_pipeline(app_configs, **kwargs):
             'GPUMetric missing gpu_subvendor field',
             hint='Run migration 0057_gpumetric_gpu_subvendor',
             obj='metrics_app.GPUMetric',
-            id='metrics_app.E013',
+            id='metrics_app.E020',
         ))
     try:
         LatestSnapshot._meta.get_field('gpu_subvendors_json')
@@ -295,7 +381,7 @@ def check_gpu_subvendor_pipeline(app_configs, **kwargs):
             'LatestSnapshot missing gpu_subvendors_json field',
             hint='Run migration 0057_gpumetric_gpu_subvendor',
             obj='metrics_app.LatestSnapshot',
-            id='metrics_app.E014',
+            id='metrics_app.E021',
         ))
 
     # Layer 2: serializer must persist subvendor (per-row + summary array)
@@ -308,32 +394,37 @@ def check_gpu_subvendor_pipeline(app_configs, **kwargs):
                 "serializer process_ingest does not write 'gpu_subvendor' to GPUMetric",
                 hint="Add 'gpu_subvendor' to the GPUMetric defaults dict",
                 obj='metrics_app.serializers.process_ingest',
-                id='metrics_app.E015',
+                id='metrics_app.E022',
             ))
         if "'gpu_subvendors_json': gpu_subvendors" not in process_src:
             errors.append(Error(
                 "serializer process_ingest does not write 'gpu_subvendors_json' to LatestSnapshot",
                 hint="Add 'gpu_subvendors_json': gpu_subvendors to LatestSnapshot defaults",
                 obj='metrics_app.serializers.process_ingest',
-                id='metrics_app.E016',
+                id='metrics_app.E023',
             ))
     except Exception:
         pass  # source inspection is best-effort; model-field checks above are durable
 
-    # Layer 3: compaction must keep both static identifiers
+    # Layer 3: compaction must keep both static identifiers (in-memory)
     try:
-        import re
-        src = open('gpu_monitor/metrics_app/management/commands/compact_data.py').read()
-        block = re.search(r"'table': 'metrics_gpumetric'.*?'static_fields': \[.*?\]", src, re.S)
-        if block:
+        static_fields = _gpumetric_static_fields()
+        if static_fields is None:
+            errors.append(Error(
+                'compaction: metrics_gpumetric not found in COMPACT_TABLES',
+                hint='Verify metrics_gpumetric entry in compact_data.COMPACT_TABLES',
+                obj='metrics_app.management.commands.compact_data',
+                id='metrics_app.E024',
+            ))
+        else:
             for field in ('gpu_subvendor', 'gpu_board_part_number'):
-                if field not in block.group(0):
+                if field not in static_fields:
                     errors.append(Error(
                         f'compact_data: metrics_gpumetric static_fields missing {field}',
                         hint='Static GPU identifiers must survive tier-2/3 compaction',
                         obj='metrics_app.management.commands.compact_data',
-                        id='metrics_app.E017',
+                        id='metrics_app.E024',
                     ))
-    except FileNotFoundError:
+    except Exception:
         pass
     return errors

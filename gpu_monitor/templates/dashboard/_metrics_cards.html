@@ -403,6 +403,47 @@ on the page. This keeps the bar from being noise.
                 Subvendor: <span class="text-gray-300 font-mono">{{ gpu.gpu_subvendor }}</span>
             </div>
             {% endif %}
+             {# Phase 2 static GPU identifiers #}
+             {% if gpu.gpu_vbios %}
+             <div class="text-xs text-gray-500 mb-1">
+                 VBIOS: <span class="text-gray-300 font-mono">{{ gpu.gpu_vbios }}</span>
+             </div>
+             {% endif %}
+             {% if gpu.pci_bus_id %}
+             <div class="text-xs text-gray-500 mb-1">
+                 PCI Bus: <span class="text-gray-300 font-mono">{{ gpu.pci_bus_id }}</span>
+             </div>
+             {% endif %}
+             {% if gpu.gpu_architecture %}
+             <div class="text-xs text-gray-500 mb-1">
+                 Arch: <span class="text-gray-300 font-mono">{{ gpu.gpu_architecture }}</span>
+             </div>
+             {% endif %}
+             {% if gpu.gpu_bus_type %}
+             <div class="text-xs text-gray-500 mb-1">
+                 Bus: <span class="text-gray-300 font-mono">{{ gpu.gpu_bus_type }}</span>
+             </div>
+             {% endif %}
+             {% if gpu.gpu_board_id and gpu.gpu_board_id != 0 %}
+             <div class="text-xs text-gray-500 mb-1">
+                 Board ID: <span class="text-gray-300 font-mono">{{ gpu.gpu_board_id }}</span>
+             </div>
+             {% endif %}
+             {% if gpu.gpu_serial %}
+             <div class="text-xs text-gray-500 mb-1">
+                 Serial: <span class="text-gray-300 font-mono">{{ gpu.gpu_serial }}</span>
+             </div>
+             {% endif %}
+             {% if gpu.gpu_pci_subsystem %}
+             <div class="text-xs text-gray-500 mb-1">
+                 PCI Subsystem: <span class="text-gray-300 font-mono">{{ gpu.gpu_pci_subsystem }}</span>
+             </div>
+             {% endif %}
+             {% if gpu.gpu_inforom %}
+             <div class="text-xs text-gray-500 mb-1">
+                 INFOROM: <span class="text-gray-300 font-mono">{{ gpu.gpu_inforom }}</span>
+             </div>
+             {% endif %}
             <div class="flex items-center gap-3 mb-1">
                 <span class="text-xs text-gray-500 w-16 text-right">Core</span>
                 <div class="flex-1">

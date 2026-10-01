@@ -75,7 +75,24 @@ class GPUMetric(models.Model):
                            help_text='Stable GPU UUID or GPU-prefixed identifier for identity tracking; full value shown in charts')
     gpu_board_part_number = models.CharField(max_length=128, blank=True, default='', null=True)
     gpu_subvendor = models.CharField(max_length=64, blank=True, default='', null=True,
-                           help_text='AIB board partner (e.g. MSI, ASUS, Gigabyte); "" when unknown')
+                          help_text='AIB board partner (e.g. MSI, ASUS, Gigabyte); "" when unknown')
+    # Phase 2 static identifiers
+    gpu_vbios = models.CharField(max_length=64, blank=True, default='', null=True,
+                               help_text='VBIOS version string')
+    pci_bus_id = models.CharField(max_length=32, blank=True, default='', null=True,
+                                help_text='PCIe bus ID (domain:bus:device.function)')
+    gpu_architecture = models.CharField(max_length=32, blank=True, default='', null=True,
+                                      help_text='GPU architecture (e.g. Ampere, Hopper, Ada)')
+    gpu_bus_type = models.CharField(max_length=16, blank=True, default='', null=True,
+                                  help_text='Bus type: PCIe or NVLink')
+    gpu_board_id = models.PositiveIntegerField(blank=True, default=0, null=True,
+                                             help_text='Board ID (0 = unavailable)')
+    gpu_serial = models.CharField(max_length=64, blank=True, default='', null=True,
+                                help_text='GPU serial number')
+    gpu_pci_subsystem = models.CharField(max_length=16, blank=True, default='', null=True,
+                                       help_text='PCI subsystem vendor:device (hex)')
+    gpu_inforom = models.JSONField(blank=True, default=dict, null=True,
+                                 help_text='INFOROM versions (OEM/EFI/VBIOS)')
     gpu_util_pct = models.FloatField(null=True)
     mem_controller_util_pct = models.FloatField(null=True)
     gpu_temp_c = models.FloatField(null=True)
@@ -270,6 +287,15 @@ class LatestSnapshot(models.Model):
     # per GPU, same order as gpu_models_json. Blank when unavailable.
     gpu_board_part_numbers_json = models.JSONField(default=list, blank=True)  # ["ASUS Astral", ""]
     gpu_subvendors_json = models.JSONField(default=list, blank=True)          # ["MSI", ""]
+    # Phase 2 static identifiers arrays
+    gpu_vbios_json = models.JSONField(default=list, blank=True)              # ["95.02.xx", ""]
+    gpu_pci_bus_ids_json = models.JSONField(default=list, blank=True)        # ["0000:01:00.0", ""]
+    gpu_architecture_json = models.JSONField(default=list, blank=True)       # ["Ampere", ""]
+    gpu_bus_type_json = models.JSONField(default=list, blank=True)           # ["PCIe", ""]
+    gpu_board_ids_json = models.JSONField(default=list, blank=True)          # [0, 0]
+    gpu_serials_json = models.JSONField(default=list, blank=True)            # ["12345", ""]
+    gpu_pci_subsystems_json = models.JSONField(default=list, blank=True)     # ["1043:1234", ""]
+    gpu_inforom_json = models.JSONField(default=list, blank=True)            # [{"OEM": "1.2", "VBIOS": "95.02.xx"}, {}]
     gpu_temps_json = models.JSONField(default=list, blank=True)         # [72.5, 73.1]
     gpu_utils_json = models.JSONField(default=list, blank=True)         # [98.0, 100.0]
     gpu_mem_controller_utils_json = models.JSONField(default=list, blank=True)  # [45.2, 47.1]

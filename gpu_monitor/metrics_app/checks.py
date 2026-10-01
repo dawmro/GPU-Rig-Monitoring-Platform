@@ -165,6 +165,104 @@ def check_storage_hardware_identifiers(app_configs, **kwargs):
 
 
 @register('metrics_app')
+def check_gpu_phase2_static_identifiers(app_configs, **kwargs):
+    """Defense in depth: GPU Phase 2 static identifiers must be persisted and
+    kept through compaction (W001-style, mirrors check_gpu_subvendor_pipeline).
+
+    Layer 1: model fields exist on GPUMetric and LatestSnapshot.
+    Layer 2: serializer process_ingest writes both per-row values and
+             LatestSnapshot summary arrays.
+    Layer 3: compact_data.py keeps all Phase 2 static GPU identifiers
+             in the metrics_gpumetric static_fields.
+    """
+    errors = []
+    from metrics_app.models import GPUMetric, LatestSnapshot
+
+    # Phase 2 fields on GPUMetric (CharField/IntegerField/JSONField)
+    gpumetric_fields = (
+        'gpu_vbios', 'pci_bus_id', 'gpu_architecture', 'gpu_bus_type',
+        'gpu_board_id', 'gpu_serial', 'gpu_pci_subsystem', 'gpu_inforom',
+    )
+    # Phase 2 fields on LatestSnapshot (JSONField arrays)
+    latestsnapshot_fields = (
+        'gpu_vbios_json', 'gpu_pci_bus_ids_json', 'gpu_architecture_json',
+        'gpu_bus_type_json', 'gpu_board_ids_json', 'gpu_serials_json',
+        'gpu_pci_subsystems_json', 'gpu_inforom_json',
+    )
+
+    # Layer 1: model fields exist on GPUMetric
+    for field in gpumetric_fields:
+        try:
+            GPUMetric._meta.get_field(field)
+        except Exception:
+            errors.append(Error(
+                f'GPUMetric missing Phase 2 field: {field}',
+                hint='Run migration 0058_gpumetric_phase2_static_identifiers',
+                obj='metrics_app.GPUMetric',
+                id=f'metrics_app.E01{8 + gpumetric_fields.index(field)}',
+            ))
+
+    # Layer 1: model fields exist on LatestSnapshot
+    for field in latestsnapshot_fields:
+        try:
+            LatestSnapshot._meta.get_field(field)
+        except Exception:
+            errors.append(Error(
+                f'LatestSnapshot missing Phase 2 field: {field}',
+                hint='Run migration 0058_gpumetric_phase2_static_identifiers',
+                obj='metrics_app.LatestSnapshot',
+                id=f'metrics_app.E02{6 + latestsnapshot_fields.index(field)}',
+            ))
+
+    # Layer 2: serializer must persist Phase 2 fields (per-row + summary arrays)
+    try:
+        import inspect
+        import metrics_app.serializers as s
+        process_src = inspect.getsource(s.process_ingest)
+        # Check per-row writes in GPUMetric defaults
+        for field in gpumetric_fields:
+            key = f"'{field}': gpu.get('{field}'"
+            if key not in process_src:
+                errors.append(Error(
+                    f"serializer process_ingest does not write Phase 2 '{field}' to GPUMetric",
+                    hint=f"Add '{field}' to the GPUMetric defaults dict",
+                    obj='metrics_app.serializers.process_ingest',
+                    id=f'metrics_app.E03{4 + gpumetric_fields.index(field)}',
+                ))
+        # Check summary arrays in LatestSnapshot defaults
+        for field in latestsnapshot_fields:
+            array_name = field.replace('_json', 's')
+            key = f"'{field}': {array_name}"
+            if key not in process_src:
+                errors.append(Error(
+                    f"serializer process_ingest does not write Phase 2 '{field}' to LatestSnapshot",
+                    hint=f"Add '{field}': {array_name} to LatestSnapshot defaults",
+                    obj='metrics_app.serializers.process_ingest',
+                    id=f'metrics_app.E04{2 + latestsnapshot_fields.index(field)}',
+                ))
+    except Exception:
+        pass  # source inspection is best-effort; model-field checks above are durable
+
+    # Layer 3: compaction must keep all Phase 2 static identifiers
+    try:
+        import re
+        src = open('gpu_monitor/metrics_app/management/commands/compact_data.py').read()
+        block = re.search(r"'table': 'metrics_gpumetric'.*?'static_fields': \[.*?\]", src, re.S)
+        if block:
+            for field in gpumetric_fields:
+                if field not in block.group(0):
+                    errors.append(Error(
+                        f'compact_data: metrics_gpumetric static_fields missing Phase 2 {field}',
+                        hint='Static GPU identifiers must survive tier-2/3 compaction',
+                        obj='metrics_app.management.commands.compact_data',
+                        id=f'metrics_app.E05{0 + gpumetric_fields.index(field)}',
+                    ))
+    except FileNotFoundError:
+        pass
+    return errors
+
+
+@register('metrics_app')
 def check_gpu_subvendor_pipeline(app_configs, **kwargs):
     """Defense in depth: AIB subvendor must be persisted and kept through
     compaction (W001-style, mirrors check_storage_hardware_identifiers).

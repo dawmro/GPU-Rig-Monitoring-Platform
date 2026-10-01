@@ -53,8 +53,8 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.12.0-win'
-__schema_version__ = '1.17'
+__version__ = '1.13.0-win'
+__schema_version__ = '1.18'
 
 # == Config ==================================================================
 
@@ -923,12 +923,102 @@ def collect_gpus():
             except pynvml.NVMLError:
                 pass  # Other NVML errors
 
+            # Phase 2: Collect additional static identifiers
+            # VBIOS version
+            gpu_vbios = None
+            try:
+                gpu_vbios = _nvml_bytes_to_str(pynvml.nvmlDeviceGetVbiosVersion(handle))
+            except pynvml.NVMLError_NotSupported:
+                pass
+            except pynvml.NVMLError:
+                pass
+
+            # PCIe bus ID (from pci_info already collected)
+            pci_bus_id = None
+            if pci_info and hasattr(pci_info, 'busId'):
+                pci_bus_id = _nvml_bytes_to_str(pci_info.busId)
+
+            # GPU Architecture
+            gpu_architecture = None
+            try:
+                gpu_architecture = _nvml_bytes_to_str(pynvml.nvmlDeviceGetArchitecture(handle))
+            except pynvml.NVMLError_NotSupported:
+                pass
+            except pynvml.NVMLError:
+                pass
+
+            # Bus type (PCIe/NVLink)
+            gpu_bus_type = None
+            try:
+                bus_type = pynvml.nvmlDeviceGetBusType(handle)
+                gpu_bus_type = "PCIe" if bus_type == 0 else "NVLink" if bus_type == 1 else f"Unknown({bus_type})"
+            except pynvml.NVMLError_NotSupported:
+                pass
+            except pynvml.NVMLError:
+                pass
+
+            # Board ID
+            gpu_board_id = None
+            try:
+                gpu_board_id = pynvml.nvmlDeviceGetBoardId(handle)
+            except pynvml.NVMLError_NotSupported:
+                pass
+            except pynvml.NVMLError:
+                pass
+
+            # Serial number
+            gpu_serial = None
+            try:
+                gpu_serial = _nvml_bytes_to_str(pynvml.nvmlDeviceGetSerial(handle))
+            except pynvml.NVMLError_NotSupported:
+                pass
+            except pynvml.NVMLError:
+                pass
+
+            # Extended PCI info (PciInfoExt) - subsystem vendor:device
+            gpu_pci_subsystem = None
+            try:
+                pci_info_ext = pynvml.nvmlDeviceGetPciInfoExt(handle)
+                if pci_info_ext and hasattr(pci_info_ext, 'pciSubSystemId'):
+                    subsys_vendor = pci_info_ext.pciSubSystemId & 0xFFFF
+                    subsys_device = (pci_info_ext.pciSubSystemId >> 16) & 0xFFFF
+                    gpu_pci_subsystem = f"{subsys_vendor:04x}:{subsys_device:04x}"
+            except pynvml.NVMLError_NotSupported:
+                pass
+            except pynvml.NVMLError:
+                pass
+
+            # INFOROM versions
+            gpu_inforom = None
+            try:
+                inforom_versions = {}
+                for rom_type, rom_name in [(0, 'OEM'), (1, 'EFI'), (2, 'VBIOS')]:
+                    try:
+                        ver = _nvml_bytes_to_str(pynvml.nvmlDeviceGetInforomVersion(handle, rom_type))
+                        if ver:
+                            inforom_versions[rom_name] = ver
+                    except pynvml.NVMLError:
+                        continue
+                if inforom_versions:
+                    gpu_inforom = inforom_versions
+            except pynvml.NVMLError:
+                pass
+
             gpus.append({
                 'uuid': raw_uuid,
                 'model': raw_name,
                 # Static identifiers
                 'gpu_subvendor': gpu_subvendor,
                 'gpu_board_part_number': gpu_board_part,
+                # Phase 2 static identifiers
+                'gpu_vbios': gpu_vbios,
+                'pci_bus_id': pci_bus_id,
+                'gpu_architecture': gpu_architecture,
+                'gpu_bus_type': gpu_bus_type,
+                'gpu_board_id': gpu_board_id,
+                'gpu_serial': gpu_serial,
+                'gpu_pci_subsystem': gpu_pci_subsystem,
+                'gpu_inforom': gpu_inforom,
                 'mem_total_mb': info.total // (1024 * 1024),
                 'mem_used_mb': info.used // (1024 * 1024),
                 'mem_free_mb': info.free // (1024 * 1024),

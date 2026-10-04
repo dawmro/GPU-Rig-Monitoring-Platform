@@ -505,10 +505,19 @@ def check_report_job_saturation(app_configs, **kwargs):
         import inspect
         from gpu_monitor.dashboard.views import _build_report_context
         src = inspect.getsource(_build_report_context)
+        # Check for Cast import from django.db.models.functions and usage
         if "has_active_job_avg=Avg(Cast('has_active_job', IntegerField()))" not in src:
             errors.append(Error(
                 'Report context missing has_active_job_avg in MetricSnapshot aggregate',
                 hint='Add has_active_job_avg=Avg(Cast("has_active_job", IntegerField())) to snap_agg',
+                obj='gpu_monitor.dashboard.views._build_report_context',
+                id='metrics_app.E085',
+            ))
+        # Also verify Cast is imported from correct location
+        if "from django.db.models.functions import Cast" not in src:
+            errors.append(Error(
+                'Report context missing correct Cast import',
+                hint='Add "from django.db.models.functions import Cast" to imports',
                 obj='gpu_monitor.dashboard.views._build_report_context',
                 id='metrics_app.E085',
             ))

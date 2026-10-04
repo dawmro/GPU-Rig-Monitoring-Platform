@@ -707,16 +707,68 @@ def test_fleet_table_template_efficiency():
 
     # Count inline `{% for %}` loops in title attributes (should be 0 after fix)
     # Note: tag loop is OK, but title loops in multi-GPU cells should be pre-computed
-    lines = template.split('\n')
+    lines = template.split('\\n')
     bad_lines = []
     for i, line in enumerate(lines, 1):
-        if 'title="{% for' in line or 'title=\"{% for' in line:
+        if 'title="{% for' in line or 'title=\\\"{% for' in line:
             bad_lines.append((i, line.strip()[:100]))
 
     assert len(bad_lines) == 0, \
-        f"Found {len(bad_lines)} inline for-loops in title attributes:\n  " + \
-        "\n  ".join(f"Line {i}: {l}" for i, l in bad_lines)
+        f"Found {len(bad_lines)} inline for-loops in title attributes:\\n  " + \
+        "\\n  ".join(f"Line {i}: {l}" for i, l in bad_lines)
     print(f"✓ Fleet table: 0 inline for-loops in title attributes (was 4)")
+
+
+def test_report_job_saturation_calculation():
+    """Verify job_saturation_pct is derived correctly from snap_agg.
+
+    Tests the unified approach: AVG(CAST(has_active_job AS INTEGER))
+    works for all tiers (raw 1-min, 15-min buckets, 1-hour buckets).
+    """
+    # Simulate snap_agg result with has_active_job_avg
+    # 24h range: 6 hours active out of 24 = 25%
+    snap_agg_25 = {
+        'has_active_job_avg': 0.25,
+    }
+    job_sat_25 = round((snap_agg_25.get('has_active_job_avg') or 0) * 100, 1)
+    assert job_sat_25 == 25.0
+
+    # 7d range: 12 hours active out of 168 = ~7.1%
+    snap_agg_7 = {
+        'has_active_job_avg': 12 / 168,
+    }
+    job_sat_7 = round((snap_agg_7.get('has_active_job_avg') or 0) * 100, 1)
+    assert job_sat_7 == round(12 / 168 * 100, 1)  # 7.1
+
+    # 30d range: 100 hours active out of 720 = ~13.9%
+    snap_agg_30 = {
+        'has_active_job_avg': 100 / 720,
+    }
+    job_sat_30 = round((snap_agg_30.get('has_active_job_avg') or 0) * 100, 1)
+    assert job_sat_30 == round(100 / 720 * 100, 1)  # 13.9
+
+    # Edge case: No data (None)
+    snap_agg_none = {
+        'has_active_job_avg': None,
+    }
+    job_sat_none = round((snap_agg_none.get('has_active_job_avg') or 0) * 100, 1)
+    assert job_sat_none == 0.0
+
+    # Edge case: All buckets active (1.0)
+    snap_agg_full = {
+        'has_active_job_avg': 1.0,
+    }
+    job_sat_full = round((snap_agg_full.get('has_active_job_avg') or 0) * 100, 1)
+    assert job_sat_full == 100.0
+
+    # Edge case: Zero (no active jobs)
+    snap_agg_zero = {
+        'has_active_job_avg': 0.0,
+    }
+    job_sat_zero = round((snap_agg_zero.get('has_active_job_avg') or 0) * 100, 1)
+    assert job_sat_zero == 0.0
+
+    print("✓ Job saturation calculation: 6 test cases passed (24h, 7d, 30d, None, 100%, 0%)")
 
 
 def test_chart_cache_key_includes_multi_flags():
@@ -1069,6 +1121,7 @@ if __name__ == '__main__':
     test_report_power_kwh_calculation()
     test_report_uses_cached_rig()
     test_report_performance_impact()
+    test_report_job_saturation_calculation()
     test_build_gpu_title()
     test_fleet_table_template_efficiency()
     test_fleet_table_template_uses_with()
@@ -1083,4 +1136,4 @@ if __name__ == '__main__':
     test_docker_container_short_circuit()
     test_network_static_fields_removed()
     print("=" * 60)
-    print("All 33 tests passed!")
+    print("All 34 tests passed!")

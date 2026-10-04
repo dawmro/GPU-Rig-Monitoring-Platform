@@ -758,6 +758,8 @@ def _build_report_context(uuid, uuid_str, range_hours):
     base_filter = dict(rig_uuid=uuid_str, timestamp__gte=start, timestamp__lte=now)
 
     from django.db.models import Avg, Max, Min, Sum
+    from django.db.models.functions import Cast
+    from django.db.models.fields import IntegerField
 
     # Query 1a: GPU raw scan for identity change detection
     # Fetches all needed fields in chronological order per GPU index
@@ -859,6 +861,7 @@ def _build_report_context(uuid, uuid_str, range_hours):
         total_system_power_w_avg=Avg('total_system_power_w'),
         total_system_power_w_max=Max('total_system_power_w'),
         error_count_sum=Sum('error_count'),
+        has_active_job_avg=Avg(Cast('has_active_job', IntegerField())),
     )
 
     # Query 3: Storage metrics per device
@@ -895,6 +898,11 @@ def _build_report_context(uuid, uuid_str, range_hours):
     avg_power_w = snap_agg.get('total_system_power_w_avg') or 0
     power_total_kwh = round((avg_power_w * range_hours) / 1000, 3)
 
+    # Job saturation: percentage of time buckets with active job.
+    # Uses the same MetricSnapshot query — AVG(CAST(has_active_job AS INTEGER))
+    # works for all tiers: raw 1-min (24h), 15-min buckets (7d), 1-hour buckets (30d).
+    job_saturation_pct = round((snap_agg.get('has_active_job_avg') or 0) * 100, 1)
+
     return {
         'range_hours': range_hours,
         'gpu_devices': gpu_devices,
@@ -903,5 +911,6 @@ def _build_report_context(uuid, uuid_str, range_hours):
         'net_interfaces': net_interfaces,
         'power_total_kwh': power_total_kwh,
         'power_cost_estimate': None,
+        'job_saturation_pct': job_saturation_pct,
         **snap_agg,
     }

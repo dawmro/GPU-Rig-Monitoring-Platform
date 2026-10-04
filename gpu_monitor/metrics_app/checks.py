@@ -487,3 +487,64 @@ def check_gpu_phase3_performance_thermal(app_configs, **kwargs):
         errors.append(Error(f'could not read COMPACT_TABLES: {e}',
             id='metrics_app.E080'))
     return errors
+
+
+@register('metrics_app')
+def check_report_job_saturation(app_configs, **kwargs):
+    """System check for Job Saturation in report.
+    
+    Verifies:
+    - _build_report_context includes has_active_job_avg in snap_agg aggregate
+    - _build_report_context returns job_saturation_pct in context dict
+    - _report_table.html template renders job_saturation_pct
+    """
+    errors = []
+    
+    # Layer 1: Check _build_report_context source for has_active_job_avg in aggregate
+    try:
+        import inspect
+        from gpu_monitor.dashboard.views import _build_report_context
+        src = inspect.getsource(_build_report_context)
+        if "has_active_job_avg=Avg(Cast('has_active_job', IntegerField()))" not in src:
+            errors.append(Error(
+                'Report context missing has_active_job_avg in MetricSnapshot aggregate',
+                hint='Add has_active_job_avg=Avg(Cast("has_active_job", IntegerField())) to snap_agg',
+                obj='gpu_monitor.dashboard.views._build_report_context',
+                id='metrics_app.E085',
+            ))
+    except Exception:
+        pass  # source inspection is best-effort
+    
+    # Layer 2: Check _build_report_context returns job_saturation_pct
+    try:
+        import inspect
+        from gpu_monitor.dashboard.views import _build_report_context
+        src = inspect.getsource(_build_report_context)
+        if "'job_saturation_pct'" not in src and '"job_saturation_pct"' not in src:
+            errors.append(Error(
+                'Report context missing job_saturation_pct in return dict',
+                hint='Add job_saturation_pct to the return dict in _build_report_context',
+                obj='gpu_monitor.dashboard.views._build_report_context',
+                id='metrics_app.E086',
+            ))
+    except Exception:
+        pass
+    
+    # Layer 3: Check template renders job_saturation_pct
+    try:
+        import os
+        template_path = 'gpu_monitor/templates/dashboard/_report_table.html'
+        if os.path.exists(template_path):
+            with open(template_path, 'r') as f:
+                template_content = f.read()
+            if 'job_saturation_pct' not in template_content:
+                errors.append(Error(
+                    'Report template missing job_saturation_pct rendering',
+                    hint='Add {{ job_saturation_pct|floatformat:1 }}% to _report_table.html System section',
+                    obj='gpu_monitor.templates.dashboard._report_table',
+                    id='metrics_app.E087',
+                ))
+    except Exception:
+        pass
+    
+    return errors

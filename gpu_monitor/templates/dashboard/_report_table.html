@@ -353,6 +353,12 @@
                 <td class="py-1.5 pr-3">Total Errors</td>
                 <td class="text-right py-1.5 px-2">{{ error_count_sum|default:"0" }}</td>
             </tr>
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">Job Saturation</td>
+                <td class="text-right py-1.5 px-2 font-semibold text-yellow-300">
+                    {{ job_saturation_pct|floatformat:1 }}%
+                </td>
+            </tr>
         </tbody>
     </table>
 </div>

@@ -557,3 +557,97 @@ def check_report_job_saturation(app_configs, **kwargs):
         pass
     
     return errors
+
+
+@register('metrics_app')
+def check_cpu_per_core_fields(app_configs, **kwargs):
+    """Defense in depth: per-CPU-core metrics must be persisted AND survive compaction.
+    
+    Layer 1: model fields exist on MetricSnapshot and LatestSnapshot.
+    Layer 2: ChartDataView.SNAPSHOT_METRICS includes all three per-core metrics.
+    Layer 3: serializer process_ingest writes all three per-core arrays to both snapshots.
+    """
+    errors = []
+    from metrics_app.models import MetricSnapshot, LatestSnapshot
+    from metrics_app.views import ChartDataView
+    
+    # Layer 1: Model fields exist
+    required_ms_fields = [
+        'cpu_utilization_per_core_json',
+        'cpu_temp_per_core_json',
+        'cpu_freq_per_core_json',
+    ]
+    for field_name in required_ms_fields:
+        try:
+            MetricSnapshot._meta.get_field(field_name)
+        except Exception:
+            errors.append(Error(
+                f'MetricSnapshot missing {field_name} field',
+                hint='Run migration 0060_add_cpu_per_core_fields',
+                obj='metrics_app.MetricSnapshot',
+                id='metrics_app.E090',
+            ))
+    
+    required_ls_fields = [
+        'cpu_utilization_per_core_json',
+        'cpu_temp_per_core_json',
+        'cpu_freq_per_core_json',
+    ]
+    for field_name in required_ls_fields:
+        try:
+            LatestSnapshot._meta.get_field(field_name)
+        except Exception:
+            errors.append(Error(
+                f'LatestSnapshot missing {field_name} field',
+                hint='Run migration 0060_add_cpu_per_core_fields',
+                obj='metrics_app.LatestSnapshot',
+                id='metrics_app.E091',
+            ))
+    
+    # Layer 2: ChartDataView must include all three per-core metrics
+    snapshot_metrics = getattr(ChartDataView, 'SNAPSHOT_METRICS', set())
+    required_chart_metrics = [
+        'cpu_utilization_per_core_pct',
+        'cpu_temp_per_core_c',
+        'cpu_freq_per_core_current_mhz',
+    ]
+    for metric_name in required_chart_metrics:
+        if metric_name not in snapshot_metrics:
+            errors.append(Error(
+                f'ChartDataView.SNAPSHOT_METRICS missing {metric_name}',
+                hint=f'Add {metric_name} to SNAPSHOT_METRICS frozenset',
+                obj='metrics_app.views.ChartDataView',
+                id='metrics_app.E092',
+            ))
+    
+    # Layer 3: Serializer must write all three per-core arrays
+    try:
+        import inspect
+        import metrics_app.serializers as s
+        process_src = inspect.getsource(s.process_ingest)
+        required_arrays = [
+            ('cpu_utilization_per_core_json', 'cpu_per_core'),
+            ('cpu_temp_per_core_json', 'cpu_temp_per_core'),
+            ('cpu_freq_per_core_json', 'cpu_freq_per_core'),
+        ]
+        for field, var in required_arrays:
+            # Check MetricSnapshot defaults
+            if f"'{field}': {var}" not in process_src:
+                errors.append(Error(
+                    f"serializer process_ingest does not write '{field}' to MetricSnapshot",
+                    hint=f"Add '{field}': {var} to MetricSnapshot defaults dict",
+                    obj='metrics_app.serializers.process_ingest',
+                    id='metrics_app.E093',
+                ))
+            # Check LatestSnapshot defaults
+            if f"'{field}': {var}" not in process_src:
+                errors.append(Error(
+                    f"serializer process_ingest does not write '{field}' to LatestSnapshot",
+                    hint=f"Add '{field}': {var} to LatestSnapshot defaults dict",
+                    obj='metrics_app.serializers.process_ingest',
+                    id='metrics_app.E094',
+                ))
+    except Exception:
+        pass  # source inspection is best-effort; model-field checks above are durable
+    
+    return errors

@@ -229,6 +229,10 @@ class ChartDataView(APIView):
         'swap_used_bytes', 'swap_total_bytes',
         'cpu_power_w', 'total_system_power_w',
         'has_active_job',
+        # NEW: Per-core metrics (JSON arrays, not compacted)
+        'cpu_utilization_per_core_pct',   # Per-core utilization chart
+        'cpu_temp_per_core_c',            # Per-core temperature chart
+        'cpu_freq_per_core_current_mhz',  # Per-core current frequency chart
     })
 
     # Map chart metric -> GPUMetric DB column.
@@ -618,6 +622,109 @@ class ChartDataView(APIView):
             return {'labels': labels, 'datasets': [
                 {'label': 'Active Job', 'data': values}
             ]}
+
+        # NEW: Per-core utilization metric (multi-series chart)
+        if metric == 'cpu_utilization_per_core_pct':
+            # Returns multiple datasets — one per logical core
+            # Uses single GROUP BY query with JSON extraction
+            rows = base_qs.annotate(bucket=trunc('timestamp')).values(
+                'bucket', 'cpu_utilization_per_core_json'
+            ).order_by('bucket')
+
+            # Determine max cores from first non-empty row
+            max_cores = 0
+            for row in rows:
+                if row['cpu_utilization_per_core_json']:
+                    max_cores = max(max_cores, len(row['cpu_utilization_per_core_json']))
+                    break
+
+            if max_cores == 0:
+                return {'labels': labels, 'datasets': []}
+
+            # Build datasets: one per core
+            datasets = [
+                {'label': f'Core {i}', 'data': [None] * total_buckets}
+                for i in range(max_cores)
+            ]
+
+            for row in rows:
+                idx = self._bucket_index(row['bucket'], start_bucket, bucket_seconds)
+                if idx is None or idx >= total_buckets:
+                    continue
+                per_core = row['cpu_utilization_per_core_json']
+                if not per_core:
+                    continue
+                for core_idx, val in enumerate(per_core):
+                    if core_idx < max_cores and val is not None:
+                        datasets[core_idx]['data'][idx] = round(val, 2)
+
+            return {'labels': labels, 'datasets': datasets}
+
+        # NEW: Per-core temperature metric (multi-series chart)
+        if metric == 'cpu_temp_per_core_c':
+            rows = base_qs.annotate(bucket=trunc('timestamp')).values(
+                'bucket', 'cpu_temp_per_core_json'
+            ).order_by('bucket')
+
+            max_cores = 0
+            for row in rows:
+                if row['cpu_temp_per_core_json']:
+                    max_cores = max(max_cores, len(row['cpu_temp_per_core_json']))
+                    break
+
+            if max_cores == 0:
+                return {'labels': labels, 'datasets': []}
+
+            datasets = [
+                {'label': f'Core {i}', 'data': [None] * total_buckets}
+                for i in range(max_cores)
+            ]
+
+            for row in rows:
+                idx = self._bucket_index(row['bucket'], start_bucket, bucket_seconds)
+                if idx is None or idx >= total_buckets:
+                    continue
+                per_core = row['cpu_temp_per_core_json']
+                if not per_core:
+                    continue
+                for core_idx, val in enumerate(per_core):
+                    if core_idx < max_cores and val is not None:
+                        datasets[core_idx]['data'][idx] = round(val, 1)
+
+            return {'labels': labels, 'datasets': datasets}
+
+        # NEW: Per-core frequency metric (multi-series chart)
+        if metric == 'cpu_freq_per_core_current_mhz':
+            rows = base_qs.annotate(bucket=trunc('timestamp')).values(
+                'bucket', 'cpu_freq_per_core_json'
+            ).order_by('bucket')
+
+            max_cores = 0
+            for row in rows:
+                if row['cpu_freq_per_core_json']:
+                    max_cores = max(max_cores, len(row['cpu_freq_per_core_json']))
+                    break
+
+            if max_cores == 0:
+                return {'labels': labels, 'datasets': []}
+
+            datasets = [
+                {'label': f'Core {i}', 'data': [None] * total_buckets}
+                for i in range(max_cores)
+            ]
+
+            for row in rows:
+                idx = self._bucket_index(row['bucket'], start_bucket, bucket_seconds)
+                if idx is None or idx >= total_buckets:
+                    continue
+                per_core = row['cpu_freq_per_core_json']
+                if not per_core:
+                    continue
+                for core_idx, freq_obj in enumerate(per_core):
+                    if core_idx < max_cores and freq_obj and freq_obj.get('current_mhz') is not None:
+                        datasets[core_idx]['data'][idx] = round(freq_obj['current_mhz'], 0)
+
+            return {'labels': labels, 'datasets': datasets}
 
         # Single metric from MetricSnapshot (other metrics)
         agg = Avg(metric)

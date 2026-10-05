@@ -114,6 +114,80 @@ on the page. This keeps the bar from being noise.
             {% else %}—{% endif %}
         </span>
     </div>
+
+    <!-- NEW: PER-CORE UTILIZATION (collapsible) -->
+    {% if snapshot.cpu_utilization_per_core_json %}
+    <details class="mb-2 group">
+        <summary class="cursor-pointer text-xs text-gray-400 hover:text-gray-200 flex items-center gap-1">
+            <span>Per-Core Utilization ({{ snapshot.cpu_logical_cores }} logical cores)</span>
+            <svg class="w-4 h-4 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+        </summary>
+        <div class="mt-2 space-y-1 max-h-64 overflow-y-auto">
+            {% for core_val in snapshot.cpu_utilization_per_core_json %}
+            <div class="flex items-center gap-2 text-xs">
+                <span class="font-mono text-gray-400 w-8 text-right">Core {{ forloop.counter0 }}:</span>
+                <div class="flex-1 bg-gray-700 rounded-full h-1.5 overflow-hidden">
+                    <div class="h-full rounded-full transition-all duration-200 ease-out {{ core_val|tier_fill:cpu_util_t|default:"bg-gray-400" }}"
+                         style="width: {% if core_val != None %}{{ core_val }}{% else %}0{% endif %}%"></div>
+                </div>
+                <span class="font-mono text-right w-10 {% if core_val != None %}{{ core_val|tier_text:cpu_util_t }}{% endif %}">
+                    {% if core_val != None %}{{ core_val|floatformat:1 }}%{% else %}—{% endif %}
+                </span>
+            </div>
+            {% endfor %}
+        </div>
+    </details>
+    {% endif %}
+
+    <!-- NEW: PER-CORE TEMPERATURE (collapsible) -->
+    {% if snapshot.cpu_temp_per_core_json %}
+    <details class="mb-2 group">
+        <summary class="cursor-pointer text-xs text-gray-400 hover:text-gray-200 flex items-center gap-1">
+            <span>Per-Core Temperature ({{ snapshot.cpu_logical_cores }} logical cores)</span>
+            <svg class="w-4 h-4 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+        </summary>
+        <div class="mt-2 space-y-1 max-h-64 overflow-y-auto">
+            {% for core_temp in snapshot.cpu_temp_per_core_json %}
+            <div class="flex items-center gap-2 text-xs">
+                <span class="font-mono text-gray-400 w-8 text-right">Core {{ forloop.counter0 }}:</span>
+                <div class="flex-1 bg-gray-700 rounded-full h-1.5 overflow-hidden">
+                    <div class="h-full rounded-full transition-all duration-200 ease-out {{ core_temp|tier_fill:cpu_temp_t|default:"bg-gray-400" }}"
+                         style="width: {% if core_temp != None %}{{ core_temp|divide:100|floatformat:0 }}{% else %}0{% endif %}%"></div>
+                </div>
+                <span class="font-mono text-right w-10 {% if core_temp != None %}{{ core_temp|tier_text:cpu_temp_t }}{% endif %}">
+                    {% if core_temp != None %}{{ core_temp|floatformat:1 }}°C{% else %}—{% endif %}
+                </span>
+            </div>
+            {% endfor %}
+        </div>
+    </details>
+    {% endif %}
+
+    <!-- NEW: PER-CORE FREQUENCY (collapsible) -->
+    {% if snapshot.cpu_freq_per_core_json %}
+    <details class="mb-2 group">
+        <summary class="cursor-pointer text-xs text-gray-400 hover:text-gray-200 flex items-center gap-1">
+            <span>Per-Core Frequency ({{ snapshot.cpu_logical_cores }} logical cores)</span>
+            <svg class="w-4 h-4 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+        </summary>
+        <div class="mt-2 space-y-1 max-h-64 overflow-y-auto">
+            {% for freq_obj in snapshot.cpu_freq_per_core_json %}
+            <div class="flex items-center gap-2 text-xs">
+                <span class="font-mono text-gray-400 w-8 text-right">Core {{ forloop.counter0 }}:</span>
+                {% if freq_obj.current_mhz != None %}
+                <span class="text-cyan-400 font-mono">{{ freq_obj.current_mhz|floatformat:0 }} MHz</span>
+                {% if freq_obj.min_mhz or freq_obj.max_mhz %}
+                <span class="text-gray-600">({{ freq_obj.min_mhz|floatformat:0|default:"?" }}-{{ freq_obj.max_mhz|floatformat:0|default:"?" }})</span>
+                {% endif %}
+                {% else %}
+                <span class="text-gray-500">—</span>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </details>
+    {% endif %}
+
     <div class="flex items-center gap-4 text-xs text-gray-500">
         <span>
             Temp:

@@ -43,8 +43,8 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.14.0'
-__schema_version__ = '1.19'
+__version__ = '1.15.0'
+__schema_version__ = '1.20'
 
 # ── Config ──────────────────────────────────────────────────────────────────
 
@@ -129,51 +129,64 @@ def collect_cpu():
     """Collect all CPU metrics: static info + time-series data."""
     try:
         import psutil
-        cpu_percent = psutil.cpu_percent(interval=1)
+        # Single call with percpu=True — blocks 1s, returns per-logical-core utilization
+        # This replaces the separate aggregate call; aggregate is derived from per-core
+        cpu_per_core = psutil.cpu_percent(interval=1, percpu=True)
+
+        # Derive system-wide aggregate from per-core values (average across all logical cores)
+        # This matches the semantics of the old psutil.cpu_percent(interval=1) call
+        cpu_percent = sum(cpu_per_core) / len(cpu_per_core) if cpu_per_core else 0.0
+
         cpu_count_phys = psutil.cpu_count(logical=False)
         cpu_count_log = psutil.cpu_count(logical=True)
         load_avg = os.getloadavg()
 
-        temp_c = None
+        # NEW: Per-core frequency (Linux/FreeBSD only; returns list with single element on other platforms)
+        cpu_freq_per_core = []
+        try:
+            freq_list = psutil.cpu_freq(percpu=True)
+            if freq_list:
+                cpu_freq_per_core = [
+                    {
+                        'current_mhz': round(f.current, 1) if f.current is not None else None,
+                        'min_mhz': round(f.min, 1) if f.min is not None else None,
+                        'max_mhz': round(f.max, 1) if f.max is not None else None,
+                    }
+                    for f in freq_list
+                ]
+        except (AttributeError, OSError, NotImplementedError):
+            pass  # Per-core freq not supported on this platform
+
+        # NEW: Per-core temperature (from sensors_temperatures)
+        # Strategy: find coretemp/k10temp sensors, extract Core 0, Core 1, etc. temps
+        cpu_temp_per_core = []
         try:
             temps = psutil.sensors_temperatures()
-            if temps:
-                # Strategy: find the highest temperature among CPU core sensors.
-                # Priority:
-                #   1. Known CPU sensor names (coretemp, k10temp) — take highest core temp
-                #   2. Any sensor with "Core" in label — take highest
-                #   3. Fallback: first available reading
-                cpu_sensor_names = ('coretemp', 'k10temp')
-                best_temp = None
+            # Priority order for CPU temperature sensors
+            cpu_sensor_names = ('coretemp', 'k10temp')
+            core_temps = {}
+            for name in cpu_sensor_names:
+                if name in temps:
+                    for entry in temps[name]:
+                        # Match "Core 0", "Core 1", etc. labels
+                        if entry.label and entry.label.startswith('Core '):
+                            try:
+                                core_idx = int(entry.label.split()[1])
+                                if entry.current is not None:
+                                    core_temps[core_idx] = entry.current
+                            except (ValueError, IndexError):
+                                pass
+                    if core_temps:
+                        break  # Found core temps in preferred sensor
 
-                # First pass: known CPU sensors
-                for name in cpu_sensor_names:
-                    if name in temps:
-                        for entry in temps[name]:
-                            if entry.current is not None:
-                                if best_temp is None or entry.current > best_temp:
-                                    best_temp = entry.current
-
-                # Second pass: any entry with "Core" in label
-                if best_temp is None:
-                    for name, entries in temps.items():
-                        for entry in entries:
-                            if entry.current is not None and 'Core' in entry.label:
-                                if best_temp is None or entry.current > best_temp:
-                                    best_temp = entry.current
-
-                # Third pass: any temperature reading at all
-                if best_temp is None:
-                    for name, entries in temps.items():
-                        if entries and entries[0].current is not None:
-                            best_temp = entries[0].current
-                            break
-
-                temp_c = best_temp
+            # Build ordered list matching logical core indices
+            # If we have fewer core temps than logical cores, fill with None
+            for i in range(cpu_count_log):
+                cpu_temp_per_core.append(core_temps.get(i))
         except Exception:
             pass
 
-        # CPU frequency via psutil
+        # Existing aggregate frequency (for backward compat + non-Linux)
         cpu_freq = None
         try:
             freq = psutil.cpu_freq(percpu=False)
@@ -188,6 +201,34 @@ def collect_cpu():
         except Exception as e:
             logging.getLogger('cpu').warning('CPU frequency collection failed: %s', e)
 
+        # Existing aggregate temp (for backward compat)
+        temp_c = None
+        try:
+            temps = psutil.sensors_temperatures()
+            if temps:
+                cpu_sensor_names = ('coretemp', 'k10temp')
+                best_temp = None
+                for name in cpu_sensor_names:
+                    if name in temps:
+                        for entry in temps[name]:
+                            if entry.current is not None:
+                                if best_temp is None or entry.current > best_temp:
+                                    best_temp = entry.current
+                if best_temp is None:
+                    for name, entries in temps.items():
+                        for entry in entries:
+                            if entry.current is not None and 'Core' in entry.label:
+                                if best_temp is None or entry.current > best_temp:
+                                    best_temp = entry.current
+                if best_temp is None:
+                    for name, entries in temps.items():
+                        if entries and entries[0].current is not None:
+                            best_temp = entries[0].current
+                            break
+                temp_c = best_temp
+        except Exception:
+            pass
+
         model = 'Unknown'
         try:
             import cpuinfo
@@ -201,9 +242,12 @@ def collect_cpu():
             'physical_cores': cpu_count_phys,
             'logical_cores': cpu_count_log,
             'load_avg': list(load_avg),
-            'utilization_pct': cpu_percent,
-            'temp_c': temp_c,
-            'freq': cpu_freq,
+            'utilization_pct': cpu_percent,                    # ← Derived aggregate (backward compatible)
+            'utilization_per_core_pct': cpu_per_core,           # ← NEW: list of floats per logical core
+            'temp_c': temp_c,                                   # ← Existing aggregate temp (backward compatible)
+            'temp_per_core_c': cpu_temp_per_core,               # ← NEW: list of temps per logical core
+            'freq': cpu_freq,                                   # ← Existing aggregate freq (backward compatible)
+            'freq_per_core': cpu_freq_per_core,                 # ← NEW: list of {current,min,max} per logical core
         }
     except Exception as e:
         logging.getLogger('cpu').warning('CPU collection failed: %s', e)

@@ -650,4 +650,39 @@ def check_cpu_per_core_fields(app_configs, **kwargs):
     except Exception:
         pass  # source inspection is best-effort; model-field checks above are durable
     
+    # Layer 4: Compaction must include per-core JSON fields with 'last' aggregation
+    try:
+        from metrics_app.management.commands.compact_data import COMPACT_TABLES
+        snapshot_config = next((c for c in COMPACT_TABLES if c['table'] == 'metrics_metricsnapshot'), None)
+        if snapshot_config is None:
+            errors.append(Error(
+                'compaction: metrics_metricsnapshot not found in COMPACT_TABLES',
+                hint='Add metrics_metricsnapshot entry to compact_data.COMPACT_TABLES',
+                obj='metrics_app.management.commands.compact_data',
+                id='metrics_app.E095',
+            ))
+        else:
+            required_compact_fields = {
+                'cpu_utilization_per_core_json': 'last',
+                'cpu_temp_per_core_json': 'last',
+                'cpu_freq_per_core_json': 'last',
+            }
+            for field, agg in required_compact_fields.items():
+                if field not in snapshot_config.get('agg_fields', {}):
+                    errors.append(Error(
+                        f'compact_data: metrics_metricsnapshot agg_fields missing {field}',
+                        hint=f'Add {field}: {agg} to MetricSnapshot agg_fields for tier-2/3 compaction',
+                        obj='metrics_app.management.commands.compact_data',
+                        id='metrics_app.E096',
+                    ))
+                elif snapshot_config['agg_fields'][field] != agg:
+                    errors.append(Error(
+                        f'compact_data: metrics_metricsnapshot agg_fields[{field}] must be {agg} (got {snapshot_config["agg_fields"][field]})',
+                        hint=f'JSON arrays use last aggregation to preserve most recent per-core data',
+                        obj='metrics_app.management.commands.compact_data',
+                        id='metrics_app.E097',
+                    ))
+    except Exception:
+        pass  # compaction structure read is best-effort
+    
     return errors

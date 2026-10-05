@@ -121,6 +121,10 @@ COMPACT_TABLES = [
             # Job status: MAX(bool) — any True in bucket -> True (1), else False (0)
             'has_active_job': 'max',
             'cpu_power_w': 'avg', 'total_system_power_w': 'avg',
+            # NEW: Per-core metrics — use 'last' to preserve most recent array per bucket
+            'cpu_utilization_per_core_json': 'last',
+            'cpu_temp_per_core_json': 'last',
+            'cpu_freq_per_core_json': 'last',
         },
         'static_fields': [
             'schema_version',

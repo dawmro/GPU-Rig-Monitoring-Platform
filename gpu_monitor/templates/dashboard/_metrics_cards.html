@@ -100,6 +100,40 @@ on the page. This keeps the bar from being noise.
     <div class="text-sm text-gray-300 mb-2">
         {{ snapshot.cpu_physical_cores|default:"?" }} cores / {{ snapshot.cpu_logical_cores|default:"?" }} threads
     </div>
+
+    <!-- Temp / Freq / Load (moved here for readability) -->
+    <div class="flex items-center gap-4 text-xs text-gray-500 mb-3">
+        <span>
+            Temp:
+            {% if snapshot.cpu_temp_c != None %}
+                <span class="{{ snapshot.cpu_temp_c|tier_text:cpu_temp_t }}">
+                    {{ snapshot.cpu_temp_c|floatformat:1 }}°C
+                </span>
+            {% else %}—{% endif %}
+        </span>
+        {% if snapshot.cpu_freq_current_mhz != None %}
+        <span>
+            Freq:
+            <span class="text-cyan-400">
+                {{ snapshot.cpu_freq_current_mhz|floatformat:0 }} MHz
+            </span>
+            {% if snapshot.cpu_freq_min_mhz or snapshot.cpu_freq_max_mhz %}
+            <span class="text-gray-600">
+                ({{ snapshot.cpu_freq_min_mhz|floatformat:0|default:"?" }}-{{ snapshot.cpu_freq_max_mhz|floatformat:0|default:"?" }})
+            </span>
+            {% endif %}
+        </span>
+        {% endif %}
+        {% if snapshot.cpu_load_avg_json %}
+        <span>
+            Load:
+            {% for val in snapshot.cpu_load_avg_json %}
+                <span class="text-gray-300">{{ val|floatformat:2 }}</span>{% if not forloop.last %} / {% endif %}
+            {% endfor %}
+        </span>
+        {% endif %}
+    </div>
+
     <div class="flex items-center gap-3 mb-2">
         <div class="flex-1">
             <div class="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
@@ -188,37 +222,6 @@ on the page. This keeps the bar from being noise.
     </details>
     {% endif %}
 
-    <div class="flex items-center gap-4 text-xs text-gray-500">
-        <span>
-            Temp:
-            {% if snapshot.cpu_temp_c != None %}
-                <span class="{{ snapshot.cpu_temp_c|tier_text:cpu_temp_t }}">
-                    {{ snapshot.cpu_temp_c|floatformat:1 }}°C
-                </span>
-            {% else %}—{% endif %}
-        </span>
-        {% if snapshot.cpu_freq_current_mhz != None %}
-        <span>
-            Freq:
-            <span class="text-cyan-400">
-                {{ snapshot.cpu_freq_current_mhz|floatformat:0 }} MHz
-            </span>
-            {% if snapshot.cpu_freq_min_mhz or snapshot.cpu_freq_max_mhz %}
-            <span class="text-gray-600">
-                ({{ snapshot.cpu_freq_min_mhz|floatformat:0|default:"?" }}-{{ snapshot.cpu_freq_max_mhz|floatformat:0|default:"?" }})
-            </span>
-            {% endif %}
-        </span>
-        {% endif %}
-        {% if snapshot.cpu_load_avg_json %}
-        <span>
-            Load:
-            {% for val in snapshot.cpu_load_avg_json %}
-                <span class="text-gray-300">{{ val|floatformat:2 }}</span>{% if not forloop.last %} / {% endif %}
-            {% endfor %}
-        </span>
-        {% endif %}
-    </div>
     {% elif snapshot %}
     <div class="text-sm text-gray-300 mb-2">
         Utilization: {% if snapshot.cpu_utilization_pct != None %}

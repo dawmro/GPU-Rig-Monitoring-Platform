@@ -754,6 +754,23 @@ This approach:
 - Handles variable core counts (pads missing with NULL, excluded from avg)
 - More complex SQL but consistent with GPU metric treatment
 
+### GPU vs Per-Core CPU Compaction Comparison
+
+| Aspect | GPU Metrics | Per-Core CPU Metrics |
+|--------|-------------|---------------------|
+| **Data Structure** | Scalar columns (float) | JSON arrays (one value per logical core) |
+| **Grouping** | `['rig_uuid', 'gpu_index']` (1 row per GPU) | `['rig_uuid']` (1 row per rig, all cores in array) |
+| **Scalar Aggregation** | `'avg'` for utilization, temp, clocks | `'avg_elementwise'` (equivalent) |
+| **Static/Config Fields** | `'last'` for model, UUID, limits | `'last'` for `cpu_load_avg_json`, `schema_version` |
+| **Grouping Granularity** | Per GPU (`rig_uuid`, `gpu_index`) | Per rig (`rig_uuid`), all cores in array |
+| **Compaction Logic** | Simple `AVG(column)` | CTE: unnest → group by core_index → AVG → re-aggregate |
+| **SQL Complexity** | Single `GROUP BY` with simple aggregates | CTE: unnest → group by core_index → re-aggregate |
+
+**Why Different Implementation?**
+- **GPU**: One row per GPU per minute; each GPU is an independent entity with scalar columns
+- **Per-Core CPU**: One row per rig per minute; all cores stored as JSON array in single column
+- **Semantic Consistency**: Both use "average per entity per bucket" - GPU per GPU, CPU per core
+
 ---
 
 ### Step 8: Windows Agent Parity

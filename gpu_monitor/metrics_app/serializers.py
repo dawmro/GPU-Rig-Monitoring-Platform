@@ -30,7 +30,7 @@ class IngestSerializer(serializers.Serializer):
     has_active_job = serializers.BooleanField(required=False, default=False)
 
     def validate_schema_version(self, value):
-            if value not in ('1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8', '1.9', '1.10', '1.11', '1.12', '1.13', '1.14', '1.15', '1.16', '1.17', '1.18', '1.19'):
+            if value not in ('1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8', '1.9', '1.10', '1.11', '1.12', '1.13', '1.14', '1.15', '1.16', '1.17', '1.18', '1.19', '1.20'):
                 raise serializers.ValidationError(f"Unsupported schema_version: {value}")
             return value
 
@@ -68,6 +68,11 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
     network_list = metrics_data.get('network', [])
     docker_containers = metrics_data.get('docker_containers', [])
     top_processes = metrics_data.get('top_processes')
+
+    # Extract per-core CPU data from payload (schema 1.20+)
+    cpu_per_core = cpu.get('utilization_per_core_pct', [])
+    cpu_temp_per_core = cpu.get('temp_per_core_c', [])
+    cpu_freq_per_core = cpu.get('freq_per_core', [])
 
     # Fetch previous LatestSnapshot for delta calculation baseline.
     # This avoids per-device queries on the timeseries tables during ingest.
@@ -109,6 +114,10 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                 'cpu_freq_current_mhz': cpu.get('freq', {}).get('current_mhz') if cpu.get('freq') else None,
                 'cpu_freq_min_mhz': cpu.get('freq', {}).get('min_mhz') if cpu.get('freq') else None,
                 'cpu_freq_max_mhz': cpu.get('freq', {}).get('max_mhz') if cpu.get('freq') else None,
+                # NEW: Per-core CPU metrics
+                'cpu_utilization_per_core_json': cpu_per_core,
+                'cpu_temp_per_core_json': cpu_temp_per_core,
+                'cpu_freq_per_core_json': cpu_freq_per_core,
                 'mem_total_bytes': memory.get('total_bytes'),
                 'mem_used_bytes': memory.get('used_bytes'),
                 'mem_free_bytes': memory.get('free_bytes'),
@@ -529,6 +538,10 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                 'cpu_freq_current_mhz': cpu.get('freq', {}).get('current_mhz') if cpu.get('freq') else None,
                 'cpu_freq_min_mhz': cpu.get('freq', {}).get('min_mhz') if cpu.get('freq') else None,
                 'cpu_freq_max_mhz': cpu.get('freq', {}).get('max_mhz') if cpu.get('freq') else None,
+                # NEW: Per-core CPU metrics
+                'cpu_utilization_per_core_json': cpu_per_core,
+                'cpu_temp_per_core_json': cpu_temp_per_core,
+                'cpu_freq_per_core_json': cpu_freq_per_core,
                 # CPU static (updated in-place — can change on CPU swap)
                 'cpu_model': cpu.get('model', ''),
                 'cpu_physical_cores': cpu.get('physical_cores'),

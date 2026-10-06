@@ -229,6 +229,10 @@ class ChartDataView(APIView):
         'swap_used_bytes', 'swap_total_bytes',
         'cpu_power_w', 'total_system_power_w',
         'has_active_job',
+        # NEW: Per-core metrics (JSON arrays, not compacted)
+        'cpu_utilization_per_core_pct',   # Per-core utilization chart
+        'cpu_temp_per_core_c',            # Per-core temperature chart
+        'cpu_freq_per_core_current_mhz',  # Per-core current frequency chart
     })
 
     # Map chart metric -> GPUMetric DB column.
@@ -619,6 +623,12 @@ class ChartDataView(APIView):
                 {'label': 'Active Job', 'data': values}
             ]}
 
+        # NEW: Per-core metrics (multi-series charts)
+        if metric in ('cpu_utilization_per_core_pct', 'cpu_temp_per_core_c', 'cpu_freq_per_core_current_mhz'):
+            return self._handle_per_core_metric(
+                metric, uuid, start_bucket, end_bucket, total_buckets, labels, bucket_minutes
+            )
+
         # Single metric from MetricSnapshot (other metrics)
         agg = Avg(metric)
         rows = base_qs.annotate(bucket=trunc('timestamp')).values(
@@ -684,6 +694,78 @@ class ChartDataView(APIView):
                 'label': label_text,
                 'data': values,
             })
+        return {'labels': labels, 'datasets': datasets}
+
+    def _handle_per_core_metric(self, metric, uuid, start_bucket, end_bucket,
+                                 total_buckets, labels, bucket_minutes):
+        """Handle per-core CPU metrics (utilization, temperature, frequency).
+
+        Generic handler for per-core metrics stored as JSON arrays.
+        Each metric has different JSON field, value extraction, and rounding.
+        """
+        # Configuration per metric
+        config = {
+            'cpu_utilization_per_core_pct': {
+                'json_field': 'cpu_utilization_per_core_json',
+                'value_extractor': lambda v: v,
+                'round_precision': 2,
+                'label_prefix': 'Core',
+            },
+            'cpu_temp_per_core_c': {
+                'json_field': 'cpu_temp_per_core_json',
+                'value_extractor': lambda v: v,
+                'round_precision': 1,
+                'label_prefix': 'Core',
+            },
+            'cpu_freq_per_core_current_mhz': {
+                'json_field': 'cpu_freq_per_core_json',
+                'value_extractor': lambda v: v.get('current_mhz') if v else None,
+                'round_precision': 0,
+                'label_prefix': 'Core',
+            },
+        }
+
+        cfg = config[metric]
+        trunc = self._trunc_for_bucket(bucket_minutes)
+        bucket_seconds = bucket_minutes * 60
+
+        rows = MetricSnapshot.objects.filter(
+            rig_uuid=uuid,
+            timestamp__gte=start_bucket,
+            timestamp__lte=end_bucket,
+        ).annotate(bucket=trunc('timestamp')).values(
+            'bucket', cfg['json_field']
+        ).order_by('bucket')
+
+        # Determine max cores from first non-empty row
+        max_cores = 0
+        for row in rows:
+            if row[cfg['json_field']]:
+                max_cores = max(max_cores, len(row[cfg['json_field']]))
+                break
+
+        if max_cores == 0:
+            return {'labels': labels, 'datasets': []}
+
+        # Build datasets: one per core
+        datasets = [
+            {'label': f'{cfg["label_prefix"]} {i}', 'data': [None] * total_buckets}
+            for i in range(max_cores)
+        ]
+
+        for row in rows:
+            idx = self._bucket_index(row['bucket'], start_bucket, bucket_seconds)
+            if idx is None or idx >= total_buckets:
+                continue
+            per_core = row[cfg['json_field']]
+            if not per_core:
+                continue
+            for core_idx, val in enumerate(per_core):
+                if core_idx < max_cores:
+                    actual_val = cfg['value_extractor'](val)
+                    if actual_val is not None:
+                        datasets[core_idx]['data'][idx] = round(actual_val, cfg['round_precision'])
+
         return {'labels': labels, 'datasets': datasets}
 
     def _handle_storage_metric(self, metric, uuid, start_bucket, end_bucket,

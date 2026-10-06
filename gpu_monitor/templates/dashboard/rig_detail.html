@@ -146,12 +146,21 @@
 
             <!-- CPU Utilization Chart -->
             {% include "partials/_chart_card.html" with canvas_id="chartCpuUtil" title="CPU Utilization" %}
+            
+            <!-- CPU Utilization Per-Core Chart -->
+            {% include "partials/_chart_card.html" with canvas_id="chartCpuUtilPerCore" title="CPU Utilization Per Core" %}
 
             <!-- CPU Temperature Chart -->
             {% include "partials/_chart_card.html" with canvas_id="chartCpuTemp" title="CPU Temperature" %}
+            
+            <!-- CPU Temperature Per-Core Chart -->
+            {% include "partials/_chart_card.html" with canvas_id="chartCpuTempPerCore" title="CPU Temperature Per Core" %}
 
             <!-- CPU Frequency Chart -->
             {% include "partials/_chart_card.html" with canvas_id="chartCpuFreq" title="CPU Frequency" %}
+            
+            <!-- CPU Frequency Per-Core Chart -->
+            {% include "partials/_chart_card.html" with canvas_id="chartCpuFreqPerCore" title="CPU Frequency Per Core" %}
 
             <!-- CPU Power Chart -->
             {% include "partials/_chart_card.html" with canvas_id="chartCpuPower" title="CPU Power" %}

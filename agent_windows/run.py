@@ -53,8 +53,8 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.14.0-win'
-__schema_version__ = '1.19'
+__version__ = '1.15.0-win'
+__schema_version__ = '1.20'
 
 # == Config ==================================================================
 
@@ -139,29 +139,61 @@ def collect_cpu():
     """Collect all CPU metrics: static info + time-series data."""
     try:
         import psutil
-        cpu_percent = psutil.cpu_percent(interval=1)
+        # Single call with percpu=True — blocks 1s, returns per-logical-core utilization
+        # This replaces the separate aggregate call; aggregate is derived from per-core
+        cpu_per_core = psutil.cpu_percent(interval=1, percpu=True)
+
+        # Derive system-wide aggregate from per-core values (average across all logical cores)
+        # This matches the semantics of the old psutil.cpu_percent(interval=1) call
+        cpu_percent = sum(cpu_per_core) / len(cpu_per_core) if cpu_per_core else 0.0
+
         cpu_count_phys = psutil.cpu_count(logical=False)
         cpu_count_log = psutil.cpu_count(logical=True)
 
         # Windows doesn't have os.getloadavg(); use CPU percent as proxy
         load_avg = [cpu_percent / 100.0 * cpu_count_log] * 3
 
-        temp_c = None
+        # NEW: Per-core frequency (Windows psutil may not support percpu=True)
+        cpu_freq_per_core = []
+        try:
+            freq_list = psutil.cpu_freq(percpu=True)
+            if freq_list:
+                cpu_freq_per_core = [
+                    {
+                        'current_mhz': round(f.current, 1) if f.current is not None else None,
+                        'min_mhz': round(f.min, 1) if f.min is not None else None,
+                        'max_mhz': round(f.max, 1) if f.max is not None else None,
+                    }
+                    for f in freq_list
+                ]
+        except (AttributeError, OSError, NotImplementedError):
+            pass  # Per-core freq not supported on this platform
+
+        # NEW: Per-core temperature (Windows psutil sensors_temperatures may not have core labels)
+        cpu_temp_per_core = []
         try:
             temps = psutil.sensors_temperatures()
             if temps:
+                # On Windows, try to find CPU core temperatures
+                # Windows may not have "Core N" labels; fall back to first available per sensor
+                core_temps = {}
                 for name, entries in temps.items():
-                    if entries:
-                        temp_c = entries[0].current
-                        break
+                    for i, entry in enumerate(entries):
+                        if entry.current is not None:
+                            # Use index as core index if no explicit label
+                            core_temps[i] = entry.current
+                    if core_temps:
+                        break  # Use first sensor with data
+
+                # Build ordered list matching logical core indices
+                for i in range(cpu_count_log):
+                    cpu_temp_per_core.append(core_temps.get(i))
         except Exception:
-            # sensors_temperatures() may not be available on Windows
             pass
 
-        # CPU frequency via psutil
+        # Existing aggregate frequency (for backward compat)
         cpu_freq = None
         try:
-            import psutil
             freq = psutil.cpu_freq(percpu=False)
             if freq is not None and freq.current is not None:
                 cpu_freq = {
@@ -173,6 +205,18 @@ def collect_cpu():
             logging.getLogger('cpu').debug('CPU frequency unavailable: %s', e)
         except Exception as e:
             logging.getLogger('cpu').warning('CPU frequency collection failed: %s', e)
+
+        # Existing aggregate temp (for backward compat)
+        temp_c = None
+        try:
+            temps = psutil.sensors_temperatures()
+            if temps:
+                for name, entries in temps.items():
+                    if entries:
+                        temp_c = entries[0].current
+                        break
+        except Exception:
+            pass
 
         model = 'Unknown'
         try:
@@ -198,9 +242,12 @@ def collect_cpu():
             'physical_cores': cpu_count_phys,
             'logical_cores': cpu_count_log,
             'load_avg': load_avg,
-            'utilization_pct': cpu_percent,
-            'temp_c': temp_c,
-            'freq': cpu_freq,
+            'utilization_pct': cpu_percent,                    # ← Derived aggregate (backward compatible)
+            'utilization_per_core_pct': cpu_per_core,           # ← NEW: list of floats per logical core
+            'temp_c': temp_c,                                   # ← Existing aggregate temp (backward compatible)
+            'temp_per_core_c': cpu_temp_per_core,               # ← NEW: list of temps per logical core
+            'freq': cpu_freq,                                   # ← Existing aggregate freq (backward compatible)
+            'freq_per_core': cpu_freq_per_core,                 # ← NEW: list of {current,min,max} per logical core
         }
     except Exception as e:
         logging.getLogger('cpu').warning('CPU collection failed: %s', e)

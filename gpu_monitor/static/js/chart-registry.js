@@ -18,10 +18,13 @@
         { id: 'chartGpuMem', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChartMultiGpu('chartGpuMem', 'gpu_mem_used_mb', uuid, range, ' MB'); } },
         { id: 'chartGpuCoreClock', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChartMultiGpu('chartGpuCoreClock', 'gpu_core_clock_mhz', uuid, range, ' MHz'); } },
         { id: 'chartGpuMemClock', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChartMultiGpu('chartGpuMemClock', 'gpu_mem_clock_mhz', uuid, range, ' MHz'); } },
-        // CPU charts (5)
+        // CPU charts (8)
         { id: 'chartCpuUtil', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChart('chartCpuUtil', 'cpu_utilization_pct', uuid, range, '%', 'rgba(16, 185, 129, 0.8)', 'rgba(16, 185, 129, 0.15)'); } },
+        { id: 'chartCpuUtilPerCore', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChartMultiCore('chartCpuUtilPerCore', 'cpu_utilization_per_core_pct', uuid, range, '%', 'rgba(16, 185, 129, 0.8)', 'rgba(16, 185, 129, 0.15)'); } },
         { id: 'chartCpuTemp', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChart('chartCpuTemp', 'cpu_temp_c', uuid, range, '°C', 'rgba(245, 158, 11, 0.8)', 'rgba(245, 158, 11, 0.15)'); } },
+        { id: 'chartCpuTempPerCore', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChartMultiCore('chartCpuTempPerCore', 'cpu_temp_per_core_c', uuid, range, '°C', 'rgba(245, 158, 11, 0.8)', 'rgba(245, 158, 11, 0.15)'); } },
         { id: 'chartCpuFreq', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChart('chartCpuFreq', 'cpu_freq_current_mhz', uuid, range, ' MHz', 'rgba(59, 130, 246, 0.8)', 'rgba(59, 130, 246, 0.15)'); } },
+        { id: 'chartCpuFreqPerCore', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChartMultiCore('chartCpuFreqPerCore', 'cpu_freq_per_core_current_mhz', uuid, range, ' MHz', 'rgba(59, 130, 246, 0.8)', 'rgba(59, 130, 246, 0.15)'); } },
         { id: 'chartCpuPower', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChart('chartCpuPower', 'cpu_power_w', uuid, range, 'W', 'rgba(168, 85, 247, 0.8)', 'rgba(168, 85, 247, 0.15)'); } },
         { id: 'chartCpuLoad', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChartLoadAvg('chartCpuLoad', uuid, range); } },
         // Disk charts (4)

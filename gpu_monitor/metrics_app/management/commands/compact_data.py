@@ -121,6 +121,10 @@ COMPACT_TABLES = [
             # Job status: MAX(bool) — any True in bucket -> True (1), else False (0)
             'has_active_job': 'max',
             'cpu_power_w': 'avg', 'total_system_power_w': 'avg',
+            # NEW: Per-core metrics — element-wise average for smooth trends (consistent with GPU scalar metrics)
+            'cpu_utilization_per_core_json': 'avg_elementwise',
+            'cpu_temp_per_core_json': 'avg_elementwise',
+            'cpu_freq_per_core_json': 'avg_elementwise',
         },
         'static_fields': [
             'schema_version',
@@ -153,7 +157,7 @@ class Command(BaseCommand):
 
         # Tier 3 cutoff (retention boundary)
         tier3_cutoff = now - timedelta(days=retention_days)
-        
+
         if phase in ('all', 'tier2'):
             self._compact_tier2(now, dry_run, verbose)
         if phase in ('all', 'tier3'):
@@ -205,16 +209,78 @@ class Command(BaseCommand):
         group_cols = ', '.join(config['group_by'])
         agg_fields = config['agg_fields']
         static_fields = config['static_fields']
+        group_by_cols = ', '.join(config['group_by'])
 
         # Build bucket expression based on bucket size
         bucket_expr = self._bucket_expression(bucket_minutes)
-        select_parts = [f"{bucket_expr} AS bucket_ts"] + list(config['group_by'])
+
+        # Check if any field uses avg_elementwise aggregation
+        has_elementwise = any(agg == 'avg_elementwise' for agg in agg_fields.values())
+
+        # Separate elementwise and regular fields
+        elementwise_fields = [f for f, agg in agg_fields.items() if agg == 'avg_elementwise']
+        regular_fields = {f: agg for f, agg in agg_fields.items() if agg != 'avg_elementwise'}
+
+        # Build bucket expression based on bucket size
+        bucket_expr = self._bucket_expression(bucket_minutes)
+
+        # Build FK-safe WHERE for parent table
+        if table_name == 'metrics_metricsnapshot':
+            fk_where = """
+                AND NOT EXISTS (SELECT 1 FROM metrics_gpumetric g WHERE g.snapshot_id = metrics_metricsnapshot.id)
+                AND NOT EXISTS (SELECT 1 FROM metrics_storagemetric s WHERE s.snapshot_id = metrics_metricsnapshot.id)
+                AND NOT EXISTS (SELECT 1 FROM metrics_networkmetric n WHERE n.snapshot_id = metrics_metricsnapshot.id)
+            """
+        else:
+            fk_where = ""
+
+        # Get total rows and oldest timestamp in window
+        with connection.cursor() as c:
+            c.execute(
+                f"SELECT COUNT(*) FROM {table_name} WHERE timestamp >= %s AND timestamp < %s",
+                [window_start, window_end]
+            )
+            total_rows = c.fetchone()[0]
+            c.execute(
+                f"SELECT MIN(timestamp) FROM {table_name} WHERE timestamp >= %s AND timestamp < %s",
+                [window_start, window_end]
+            )
+            oldest = c.fetchone()[0]
+
+        if total_rows == 0 or oldest is None:
+            if verbose:
+                self.stdout.write(f'  {table_name}: nothing to compact in this window')
+            return
+
+        if verbose:
+            self.stdout.write(f'  {table_name}: {total_rows:,} rows to compact')
+
+        if dry_run:
+            return
+
+        # Build FK-safe WHERE for parent table
+        if table_name == 'metrics_metricsnapshot':
+            fk_where = """
+                AND NOT EXISTS (SELECT 1 FROM metrics_gpumetric g WHERE g.snapshot_id = metrics_metricsnapshot.id)
+                AND NOT EXISTS (SELECT 1 FROM metrics_storagemetric s WHERE s.snapshot_id = metrics_metricsnapshot.id)
+                AND NOT EXISTS (SELECT 1 FROM metrics_networkmetric n WHERE n.snapshot_id = metrics_metricsnapshot.id)
+            """
+        else:
+            fk_where = ""
+
+        # Build regular select clause (non-elementwise fields)
+        bucket_expr = self._bucket_expression(bucket_minutes)
+        group_by_cols = ', '.join(config['group_by'] + ['bucket_ts'])
+
+        # Regular fields select
+        regular_select_parts = [f"{bucket_expr} AS bucket_ts"] + list(config['group_by'])
         for f, agg in agg_fields.items():
-            # Professional defense: bool fields need Cast to IntegerField before MAX.
+            if agg == 'avg_elementwise':
+                continue  # handled separately
             if agg == 'max' and f == 'has_active_job':
-                select_parts.append(f"MAX(CAST({f} AS INTEGER)) AS {f}")
+                regular_select_parts.append(f"MAX(CAST({f} AS INTEGER)) AS {f}")
             else:
-                select_parts.append(
+                regular_select_parts.append(
                     f"AVG({f}) AS {f}" if agg == 'avg' else
                     f"SUM({f}) AS {f}" if agg == 'sum' else
                     f"MAX({f}) AS {f}" if agg == 'max' else
@@ -222,13 +288,15 @@ class Command(BaseCommand):
                     f"(ARRAY_AGG({f} ORDER BY timestamp DESC))[1] AS {f}"
                 )
         for f in static_fields:
-            select_parts.append(f"(ARRAY_AGG({f} ORDER BY timestamp DESC))[1] AS {f}")
-        select_clause = ',\n            '.join(select_parts)
+            regular_select_parts.append(f"(ARRAY_AGG({f} ORDER BY timestamp DESC))[1] AS {f}")
+
+        regular_select_sql = ', '.join(regular_select_parts)
+        group_by_cols = ', '.join(config['group_by'] + ['bucket_ts'])
 
         # Build insert columns
         insert_fields = ['timestamp'] + list(agg_fields.keys()) + static_fields + list(config['group_by'])
         insert_cols = ', '.join(insert_fields)
-        # Build insert expressions — bool fields must be cast back to boolean for PostgreSQL
+
         def insert_expr(col):
             if col == 'timestamp':
                 return 'bucket_ts'
@@ -263,8 +331,6 @@ class Command(BaseCommand):
 
         # Build FK-safe WHERE for parent table
         if table_name == 'metrics_metricsnapshot':
-            # 'metrics_gpu_process' FK check removed (table is no longer written
-            # to by the serializer; only child tables still written are listed)
             fk_where = """
                 AND NOT EXISTS (SELECT 1 FROM metrics_gpumetric g WHERE g.snapshot_id = metrics_metricsnapshot.id)
                 AND NOT EXISTS (SELECT 1 FROM metrics_storagemetric s WHERE s.snapshot_id = metrics_metricsnapshot.id)
@@ -272,6 +338,50 @@ class Command(BaseCommand):
             """
         else:
             fk_where = ""
+
+        # Elementwise fields for this config
+        elementwise_fields = [f for f, agg in agg_fields.items() if agg == 'avg_elementwise']
+        regular_agg_fields = {f: agg for f, agg in agg_fields.items() if agg != 'avg_elementwise'}
+
+        # Build select clause with CTEs for elementwise fields
+        bucket_expr = self._bucket_expression(bucket_minutes)
+        group_cols = ', '.join(config['group_by'])
+        group_by_cols = ', '.join(config['group_by'] + ['bucket_ts'])
+
+        # Build regular SELECT parts (non-elementwise fields + group by)
+        regular_select_parts = [f"{bucket_expr} AS bucket_ts"] + list(config['group_by'])
+        for f, agg in regular_agg_fields.items():
+            if agg == 'max' and f == 'has_active_job':
+                regular_select_parts.append(f"MAX(CAST({f} AS INTEGER)) AS {f}")
+            else:
+                regular_select_parts.append(
+                    f"AVG({f}) AS {f}" if agg == 'avg' else
+                    f"SUM({f}) AS {f}" if agg == 'sum' else
+                    f"MAX({f}) AS {f}" if agg == 'max' else
+                    f"MIN({f}) AS {f}" if agg == 'min' else
+                    f"(ARRAY_AGG({f} ORDER BY timestamp DESC))[1] AS {f}"
+                )
+        for f in static_fields:
+            regular_select_parts.append(f"(ARRAY_AGG({f} ORDER BY timestamp DESC))[1] AS {f}")
+
+        regular_select_sql = ', '.join(regular_select_parts)
+        group_by_cols = ', '.join(config['group_by'] + ['bucket_ts'])
+
+        # Build WHERE clause
+        where_sql = f"timestamp >= %s AND timestamp < %s {fk_where}"
+        params = [current, batch_end]
+
+        # Build insert columns
+        insert_fields = ['timestamp'] + list(agg_fields.keys()) + static_fields + list(config['group_by'])
+        insert_cols = ', '.join(insert_fields)
+
+        def insert_expr(col):
+            if col == 'timestamp':
+                return 'bucket_ts'
+            if col == 'has_active_job':
+                return f"CAST({col} AS BOOLEAN)"
+            return col
+        insert_vals = ', '.join([insert_expr(f) for f in insert_fields])
 
         # Process in bucket-sized windows
         batch_window = timedelta(minutes=bucket_minutes)
@@ -300,12 +410,68 @@ class Command(BaseCommand):
                         current = batch_end
                         continue
 
+                    # Build SELECT clause for this batch
+                    if elementwise_fields and table_name == 'metrics_metricsnapshot':
+                        # Build CTEs for elementwise fields
+                        elementwise_ctes = []
+                        elementwise_selects = []
+                        for f in elementwise_fields:
+                            cte_name = f"elem_{f}_{batch_num}"
+                            elementwise_ctes.append(
+                                f"{cte_name} AS ("
+                                f"  SELECT {group_cols}, {bucket_expr} AS bucket_ts, core_idx, AVG((elem)::float) AS val "
+                                f"  FROM {table_name}, "
+                                f"       jsonb_array_elements_text({f}) WITH ORDINALITY AS arr(val, core_idx) "
+                                f"  WHERE {where_sql} AND (elem)::float IS NOT NULL "
+                                f"  GROUP BY {group_cols}, bucket_ts, core_idx"
+                                f")"
+                            )
+                            elementwise_selects.append(
+                                f"(SELECT jsonb_agg(val ORDER BY core_idx) FROM {cte_name} "
+                                f" WHERE {group_cols} = m.{group_cols} AND bucket_ts = m.bucket_ts "
+                                f" GROUP BY core_idx ORDER BY core_idx) AS {f}"
+                            )
+
+                        elementwise_cte_sql = ',\n            '.join(elementwise_ctes)
+                        elementwise_select_sql = ', '.join(elementwise_selects)
+
+                        # Build regular select
+                        regular_select_parts = [f"{bucket_expr} AS bucket_ts"] + list(config['group_by'])
+                        for f, agg in regular_agg_fields.items():
+                            if agg == 'max' and f == 'has_active_job':
+                                regular_select_parts.append(f"MAX(CAST({f} AS INTEGER)) AS {f}")
+                            else:
+                                regular_select_parts.append(
+                                    f"AVG({f}) AS {f}" if agg == 'avg' else
+                                    f"SUM({f}) AS {f}" if agg == 'sum' else
+                                    f"MAX({f}) AS {f}" if agg == 'max' else
+                                    f"MIN({f}) AS {f}" if agg == 'min' else
+                                    f"(ARRAY_AGG({f} ORDER BY timestamp DESC))[1] AS {f}"
+                                )
+                        for f in static_fields:
+                            regular_select_parts.append(f"(ARRAY_AGG({f} ORDER BY timestamp DESC))[1] AS {f}")
+
+                        regular_select_sql = ', '.join(regular_select_parts)
+                        group_by_cols = ', '.join(config['group_by'] + ['bucket_ts'])
+
+                        elementwise_cte_sql = ',\n            '.join(elementwise_ctes)
+                        elementwise_select_sql = ', '.join(elementwise_selects)
+
+                        select_clause = (
+                            f"WITH {elementwise_cte_sql} "
+                            f"SELECT {regular_select_sql}, {elementwise_select_sql} "
+                            f"FROM {table_name} m "
+                            f"WHERE {where_sql} GROUP BY {group_by_cols}"
+                        )
+                    else:
+                        select_clause = self._build_regular_select_clause(config, bucket_minutes, bucket_expr)
+
                     # Aggregate into temp table
                     c.execute(f"DROP TABLE IF EXISTS {tmp_table}")
                     c.execute(
                         f"CREATE TEMP TABLE {tmp_table} AS "
-                        f"SELECT {select_clause} FROM {table_name} "
-                        f"WHERE {where_sql} GROUP BY {group_cols}, bucket_ts",
+                        f"{select_clause} FROM {table_name} m "
+                        f"WHERE {where_sql} GROUP BY {group_by_cols}",
                         params
                     )
 

@@ -26,6 +26,17 @@ class MetricSnapshot(models.Model):
     # CPU power (estimated or measured via RAPL, AC watts)
     cpu_power_w = models.FloatField(null=True, blank=True)
 
+    # NEW: Per-core utilization (JSON array, one float per logical core)
+    # Index 0 = logical core 0, index 1 = logical core 1, etc.
+    cpu_utilization_per_core_json = models.JSONField(default=list, blank=True)
+
+    # NEW: Per-core temperature (JSON array, one float per logical core, °C)
+    cpu_temp_per_core_json = models.JSONField(default=list, blank=True)
+
+    # NEW: Per-core frequency (JSON array, one object per logical core)
+    # Each object: {current_mhz, min_mhz, max_mhz}
+    cpu_freq_per_core_json = models.JSONField(default=list, blank=True)
+
     # Total system power (AC watts, PSU efficiency already factored in)
     total_system_power_w = models.FloatField(null=True, blank=True)
 
@@ -266,6 +277,11 @@ class LatestSnapshot(models.Model):
     cpu_freq_current_mhz = models.FloatField(null=True, blank=True)
     cpu_freq_min_mhz = models.FloatField(null=True, blank=True)
     cpu_freq_max_mhz = models.FloatField(null=True, blank=True)
+
+    # NEW: Per-core metrics (dynamic — updated every heartbeat)
+    cpu_utilization_per_core_json = models.JSONField(default=list, blank=True)
+    cpu_temp_per_core_json = models.JSONField(default=list, blank=True)
+    cpu_freq_per_core_json = models.JSONField(default=list, blank=True)
 
     # CPU info (static — can change on CPU swap, updated in-place)
     cpu_model = models.CharField(max_length=255, blank=True, default='')

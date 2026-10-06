@@ -115,9 +115,9 @@ on the page. This keeps the bar from being noise.
         </span>
     </div>
 
-    <!-- NEW: PER-CORE UTILIZATION (collapsible) -->
+    <!-- NEW: PER-CORE UTILIZATION (collapsible, open by default) -->
     {% if snapshot.cpu_utilization_per_core_json %}
-    <details class="mb-2 group">
+    <details class="mb-2 group" open>
         <summary class="cursor-pointer text-xs text-gray-400 hover:text-gray-200 flex items-center gap-1">
             <span>Per-Core Utilization ({{ snapshot.cpu_logical_cores }} logical cores)</span>
             <svg class="w-4 h-4 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
@@ -139,9 +139,9 @@ on the page. This keeps the bar from being noise.
     </details>
     {% endif %}
 
-    <!-- NEW: PER-CORE TEMPERATURE (collapsible) -->
+    <!-- NEW: PER-CORE TEMPERATURE (collapsible, open by default) -->
     {% if snapshot.cpu_temp_per_core_json %}
-    <details class="mb-2 group">
+    <details class="mb-2 group" open>
         <summary class="cursor-pointer text-xs text-gray-400 hover:text-gray-200 flex items-center gap-1">
             <span>Per-Core Temperature ({{ snapshot.cpu_logical_cores }} logical cores)</span>
             <svg class="w-4 h-4 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
@@ -163,9 +163,9 @@ on the page. This keeps the bar from being noise.
     </details>
     {% endif %}
 
-    <!-- NEW: PER-CORE FREQUENCY (collapsible) -->
+    <!-- NEW: PER-CORE FREQUENCY (collapsible, open by default) -->
     {% if snapshot.cpu_freq_per_core_json %}
-    <details class="mb-2 group">
+    <details class="mb-2 group" open>
         <summary class="cursor-pointer text-xs text-gray-400 hover:text-gray-200 flex items-center gap-1">
             <span>Per-Core Frequency ({{ snapshot.cpu_logical_cores }} logical cores)</span>
             <svg class="w-4 h-4 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>

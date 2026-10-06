@@ -186,7 +186,7 @@ on the page. This keeps the bar from being noise.
                 <span class="font-mono text-gray-400 w-14 text-right">Core {{ forloop.counter0 }}:</span>
                 <div class="flex-1 bg-gray-700 rounded-full h-1.5 overflow-hidden">
                     <div class="h-full rounded-full transition-all duration-200 ease-out {{ core_temp|tier_fill:cpu_temp_t|default:'bg-gray-400' }}"
-                         style="width: {% if core_temp != None %}{{ core_temp|divide:100|floatformat:0 }}{% else %}0{% endif %}%"></div>
+                         style="width: {% if core_temp != None %}{% if core_temp|floatformat:0 < 20 %}0{% elif core_temp|floatformat:0 > 100 %}100{% else %}{% widthratio core_temp|add:"-20" 80 100 %}{% endif %}{% else %}0{% endif %}%"></div>
                 </div>
                 <span class="font-mono text-right w-14 {% if core_temp != None %}{{ core_temp|tier_text:cpu_temp_t }}{% endif %}">
                     {% if core_temp != None %}{{ core_temp|floatformat:1 }}°C{% else %}—{% endif %}

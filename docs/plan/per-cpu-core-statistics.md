@@ -268,14 +268,14 @@ def collect_cpu():
 - **Aggregate derived** as arithmetic mean of per-core values — semantically equivalent to old aggregate call
 - **No double-blocking**: Only 1 second total (not 2) per collection cycle
 - **Per-core frequency**: `psutil.cpu_freq(percpu=True)` returns list of namedtuples; convert to list of dicts
-- **Per-core temperature**: Parse `sensors_temperatures()` for 'coretemp'/'k10temp' sensors with "Core N" labels; map to logical core indices
+- **Per-core temperature**: Parse `sensors_temperatures()` for 'coretemp'/'k10temp'/'zenpower' sensors with "Core N" labels (Intel) and AMD labels (Tctl, Tdie, Tccd1-4, zenpower Core N); map to logical core indices; fallback to package temp (Tctl/Tdie) for all cores if no per-core data
 - **Backward compatibility**: All existing fields (`utilization_pct`, `temp_c`, `freq`) preserved and populated
 - `cpu_per_core` length == `logical_cores` (consistent ordering guaranteed by psutil)
 - First call with `interval=1` returns real measured values (not zeros) — no warm-up issue
 - On platforms without per-core freq/temp support, new fields are empty lists `[]`
 
 **Version Bump:**
-- `__version__ = '1.15.0'` (MINOR: new payload fields)
+- `__version__ = '1.15.1'` (PATCH: AMD Ryzen per-core temperature fix)
 - `__schema_version__ = '1.20'` (MINOR: new fields in cpu object)
 
 ---

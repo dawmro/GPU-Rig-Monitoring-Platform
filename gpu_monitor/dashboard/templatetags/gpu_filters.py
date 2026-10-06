@@ -604,6 +604,35 @@ def subtract(value, arg):
     except (TypeError, ValueError):
         return value
 
+@register.filter
+def cpu_temp_bar_width(value):
+    """Calculate temperature bar width percentage with 20-100°C clamping.
+    
+    Maps 20°C -> 0%, 100°C -> 100%, linear interpolation in between.
+    Below 20°C -> 0%, Above 100°C -> 100%.
+    """
+    if value is None:
+        return 0
+    try:
+        temp = float(value)
+        if temp <= 20:
+            return 0
+        elif temp >= 100:
+            return 100
+        else:
+            # Linear interpolation: (temp - 20) / (100 - 20) * 100
+            return round((temp - 20) * 100 / 80)
+    except (TypeError, ValueError):
+        return 0
+
+
+@register.filter
+def subtract(value, arg):
+    try:
+        return float(value) - float(arg)
+    except (TypeError, ValueError):
+        return value
+
 @register.filter(name="tier_fill")
 def tier_fill(value, thresholds):
     """Convenience filter: return the full Tailwind bg-{color}-400 class.

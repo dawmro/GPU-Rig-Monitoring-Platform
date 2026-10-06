@@ -771,6 +771,58 @@ This approach:
 - **Per-Core CPU**: One row per rig per minute; all cores stored as JSON array in single column
 - **Semantic Consistency**: Both use "average per entity per bucket" - GPU per GPU, CPU per core
 
+### Per-Core Temperature Bar Implementation
+
+**Problem Solved:**
+- Temperature bars were empty due to `widthratio` arithmetic limitation
+- VPS environments lack temperature sensors (`temp_per_core_c: [null, null]`)
+- Need 20-100°C clamping with linear interpolation
+
+**Solution Implemented:**
+
+1. **Custom Template Filter** (`gpu_monitor/dashboard/templatetags/gpu_filters.py`):
+```python
+@register.filter
+def cpu_temp_bar_width(value):
+    """Calculate temperature bar width percentage with 20-100°C clamping.
+    
+    Maps 20°C -> 0%, 100°C -> 100%, linear interpolation in between.
+    Below 20°C -> 0%, Above 100°C -> 100%.
+    """
+    if value is None:
+        return 0
+    try:
+        temp = float(value)
+        if temp <= 20:
+            return 0
+        elif temp >= 100:
+            return 100
+        else:
+            # Linear interpolation: (temp - 20) / (100 - 20) * 100
+            return round((temp - 20) * 100 / 80)
+    except (TypeError, ValueError):
+        return 0
+```
+
+2. **Template Usage** (`_metrics_cards.html`):
+```html
+style="width: {% if core_temp != None %}{{ core_temp|cpu_temp_bar_width }}{% else %}0{% endif %}%"
+```
+
+**Behavior:**
+| Temperature | Bar Width |
+|-------------|-----------|
+| ≤ 20°C | 0% (minimum) |
+| 20-100°C | Linear interpolation (20°C=0%, 100°C=100%) |
+| ≥ 100°C | 100% (maximum) |
+| `null` (no sensor) | 0% (empty bar) |
+
+**Fix Applied:**
+- Fixed `widthratio` arithmetic limitation by moving logic to Python filter
+- Added clamping at 20°C (min) and 100°C (max)
+- Linear interpolation between 20-100°C
+- VPS environments with no sensors show empty bars (not broken)
+
 ---
 
 ### Step 8: Windows Agent Parity

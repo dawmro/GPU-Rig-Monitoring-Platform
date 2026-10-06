@@ -159,12 +159,12 @@ on the page. This keeps the bar from being noise.
         <div class="mt-2 space-y-1 max-h-64 overflow-y-auto pr-2">
             {% for core_val in snapshot.cpu_utilization_per_core_json %}
             <div class="flex items-center gap-2 text-xs whitespace-nowrap">
-                <span class="font-mono text-gray-400 w-10 text-right">Core {{ forloop.counter0 }}:</span>
+                <span class="font-mono text-gray-400 w-12 text-right">Core {{ forloop.counter0 }}:</span>
                 <div class="flex-1 bg-gray-700 rounded-full h-1.5 overflow-hidden">
                     <div class="h-full rounded-full transition-all duration-200 ease-out {{ core_val|tier_fill:cpu_util_t|default:"bg-gray-400" }}"
                          style="width: {% if core_val != None %}{{ core_val }}{% else %}0{% endif %}%"></div>
                 </div>
-                <span class="font-mono text-right w-10 {% if core_val != None %}{{ core_val|tier_text:cpu_util_t }}{% endif %}">
+                <span class="font-mono text-right w-12 {% if core_val != None %}{{ core_val|tier_text:cpu_util_t }}{% endif %}">
                     {% if core_val != None %}{{ core_val|floatformat:1 }}%{% else %}—{% endif %}
                 </span>
             </div>
@@ -183,12 +183,12 @@ on the page. This keeps the bar from being noise.
         <div class="mt-2 space-y-1 max-h-64 overflow-y-auto pr-2">
             {% for core_temp in snapshot.cpu_temp_per_core_json %}
             <div class="flex items-center gap-2 text-xs whitespace-nowrap">
-                <span class="font-mono text-gray-400 w-10 text-right">Core {{ forloop.counter0 }}:</span>
+                <span class="font-mono text-gray-400 w-12 text-right">Core {{ forloop.counter0 }}:</span>
                 <div class="flex-1 bg-gray-700 rounded-full h-1.5 overflow-hidden">
-                    <div class="h-full rounded-full transition-all duration-200 ease-out {{ core_temp|tier_fill:cpu_temp_t|default:"bg-gray-400" }}"
+                    <div class="h-full rounded-full transition-all duration-200 ease-out {{ core_temp|tier_fill:cpu_temp_t|default:'bg-gray-400' }}"
                          style="width: {% if core_temp != None %}{{ core_temp|divide:100|floatformat:0 }}{% else %}0{% endif %}%"></div>
                 </div>
-                <span class="font-mono text-right w-10 {% if core_temp != None %}{{ core_temp|tier_text:cpu_temp_t }}{% endif %}">
+                <span class="font-mono text-right w-12 {% if core_temp != None %}{{ core_temp|tier_text:cpu_temp_t }}{% endif %}">
                     {% if core_temp != None %}{{ core_temp|floatformat:1 }}°C{% else %}—{% endif %}
                 </span>
             </div>
@@ -207,7 +207,7 @@ on the page. This keeps the bar from being noise.
         <div class="mt-2 space-y-1 max-h-64 overflow-y-auto pr-2">
             {% for freq_obj in snapshot.cpu_freq_per_core_json %}
             <div class="flex items-center gap-2 text-xs whitespace-nowrap">
-                <span class="font-mono text-gray-400 w-10 text-right">Core {{ forloop.counter0 }}:</span>
+                <span class="font-mono text-gray-400 w-12 text-right">Core {{ forloop.counter0 }}:</span>
                 {% if freq_obj.current_mhz != None %}
                 <span class="text-cyan-400 font-mono">{{ freq_obj.current_mhz|floatformat:0 }} MHz</span>
                 {% if freq_obj.min_mhz or freq_obj.max_mhz %}

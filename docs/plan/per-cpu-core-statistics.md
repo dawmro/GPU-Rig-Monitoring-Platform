@@ -866,7 +866,32 @@ style="width: {% if core_temp != None %}{{ core_temp|cpu_temp_bar_width }}{% els
 
 ---
 
-### Step 8: Windows Agent Parity
+### Agent Per-Core Temperature Collection Fix (AMD Ryzen Support)
+
+**Problem:** Per-core temperature collection was returning empty values on AMD Ryzen CPUs (e.g., Ryzen 3600). The general CPU temperature was displayed correctly, but per-core values were `null`.
+
+**Root Cause:** The original implementation only looked for sensor labels starting with "Core " (e.g., "Core 0", "Core 1"), which is the Intel naming convention. AMD Ryzen CPUs use different sensor labels:
+- `Tctl` - Control temperature
+- `Tdie` - Die temperature  
+- `Tccd1`, `Tccd2`, etc. - CCD (Core Complex Die) temperatures
+- `zenpower` driver: "Core 0", "Core 1", etc.
+
+**Solution Implemented:**
+
+1. **Extended sensor detection** in `agent/run.py`:
+   - Added `zenpower` to sensor priority list
+   - Added AMD label matching: `Tctl`, `Tdie`, `Tccd1-4`, `zenpower` "Core N"
+   - Fallback to package temperature (Tctl/Tdie) for all cores if no per-core data
+
+2. **Key changes in `agent/run.py`:**
+   - Added `zenpower` to sensor priority list
+   - Added AMD label matching: `Tctl`, `Tdie`, `Tccd1-4`, `zenpower` "Core N"
+   - Fallback to package temperature (Tctl/Tdie) for all cores if no per-core data
+   - Log warnings instead of silently failing
+
+3. **Updated sensor priority:** `('coretemp', 'k10temp', 'zenpower')`
+
+This fix enables per-core temperature monitoring on AMD Ryzen CPUs (tested on Ryzen 3600) while maintaining compatibility with Intel CPUs.
 
 **File:** `agent_windows/run.py`
 

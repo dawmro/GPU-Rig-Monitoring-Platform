@@ -214,9 +214,6 @@ on the page. This keeps the bar from being noise.
                          style="width: {% if freq_obj.current_mhz != None and freq_obj.max_mhz and freq_obj.max_mhz > 0 %}{% widthratio freq_obj.current_mhz freq_obj.max_mhz 100 %}{% else %}0{% endif %}%"></div>
                 </div>
                 <span class="text-cyan-400 font-mono w-20">{{ freq_obj.current_mhz|floatformat:0 }} MHz</span>
-                {% if freq_obj.min_mhz or freq_obj.max_mhz %}
-                <span class="text-gray-600 w-28 text-right">({{ freq_obj.min_mhz|floatformat:0|default:"?" }}-{{ freq_obj.max_mhz|floatformat:0|default:"?" }})</span>
-                {% endif %}
                 {% else %}
                 <span class="text-gray-500">—</span>
                 {% endif %}

@@ -1,9 +1,9 @@
 # Implementation Plan: Per-CPU-Core Statistics Collection
 
-**Branch:** `plan/per-cpu-core-statistics`  
+**Branch:** `feat/per-cpu-core-statistics`  
 **Author:** Agent  
 **Date:** 2026-10-06  
-**Status:** Planning Phase
+**Status:** **IMPLEMENTED** (7 commits on branch)
 
 ---
 
@@ -19,6 +19,7 @@ The implementation spans:
 5. **Chart View** (`metrics_app/views.py`) - New chart metrics for per-core
 6. **Live Metrics** (`dashboard/views.py` + `_metrics_cards.html`) - Display per-core bars
 7. **Django Checks** (`metrics_app/checks.py`) - Validate new fields
+8. **Compaction** (`compact_data.py`) - Include per-core fields with `'last'` aggregation
 
 ---
 
@@ -283,7 +284,7 @@ class LatestSnapshot(models.Model):
         db_table = 'metrics_latest_snapshot'
 ```
 
-**Migration Required:** Generate migration `0053_add_cpu_per_core_fields.py`
+**Migration Required:** Generate migration `0060_add_cpu_per_core_fields.py`
 
 ---
 
@@ -949,50 +950,45 @@ snapshot.cpu_logical_cores              # 32
 
 ---
 
-## Defense (W001/W004/0052) Checklist
+## Implementation Complete ✅
 
-- [ ] **Code:** Agent collects per-core, server stores in both models
-- [ ] **Django Check:** `checks.py` validates field existence + ChartDataView inclusion
-- [ ] **Documentation:** This plan document + update architecture docs if needed
-- [ ] **Skill:** Update `gpu-rig-monitoring` skill with per-core pattern
+All 8 steps implemented as self-contained commits on branch `feat/per-cpu-core-statistics`:
 
----
+| Step | Commit | Description |
+|------|--------|-------------|
+| 1 | `e149424` | **Agent Collection** - `agent/run.py` + `agent_windows/run.py`: Single `psutil.cpu_percent(interval=1, percpu=True)` call; derive aggregate; per-core freq via `cpu_freq(percpu=True)`; per-core temp via `sensors_temperatures()` Core N parsing |
+| 2 | `1d856b3` | **Server Models** - `models.py` + migration `0060`: Added 3 JSONFields to both `MetricSnapshot` and `LatestSnapshot` |
+| 3 | `b5f11b4` | **Serializer** - `serializers.py`: Schema 1.20 validation; extract per-core arrays; store in both snapshots |
+| 4 | `80d85db` | **Chart Data View** - `views.py`: 3 metrics in `SNAPSHOT_METRICS`; 3 handlers for multi-series charts |
+| 5 | `bb1e033` | **Live Metrics** - `_metrics_cards.html`: 3 collapsible sections with progress bars |
+| 6 | `2db398e` | **Django Checks** - `checks.py`: 3-layer defense (E090-E094) for fields + chart + serializer |
+| 7 | `b46af09` | **Compaction + Checks** - `compact_data.py` + `checks.py`: Per-core fields with `'last'` aggregation in compaction (like `cpu_load_avg_json`); Layer 4 check (E095-E097) |
 
-## File Change Summary
+### Key Technical Decisions
 
-| File | Changes |
-|------|---------|
-| `agent/run.py` | Add `utilization_per_core_pct`, `temp_per_core_c`, `freq_per_core` to `collect_cpu()` return dict; bump version |
-| `agent_windows/run.py` | Same as above (with try/except for per-core freq/temp) |
-| `gpu_monitor/metrics_app/models.py` | Add `cpu_utilization_per_core_json`, `cpu_temp_per_core_json`, `cpu_freq_per_core_json` to `MetricSnapshot` + `LatestSnapshot` |
-| `gpu_monitor/metrics_app/serializers.py` | Ingest all three per-core arrays into both snapshots |
-| `gpu_monitor/metrics_app/views.py` | Add three per-core metrics to `SNAPSHOT_METRICS`; add three handlers in `_handle_snapshot_metric` |
-| `gpu_monitor/metrics_app/checks.py` | Add system checks for all three per-core fields |
-| `gpu_monitor/templates/dashboard/_metrics_cards.html` | Add three collapsible per-core sections (Utilization, Temperature, Frequency) in CPU section |
-| `gpu_monitor/metrics_app/migrations/0053_*.py` | Auto-generated migration |
+| Aspect | Decision |
+|--------|----------|
+| **Collection** | Single `psutil.cpu_percent(interval=1, percpu=True)` - no double-blocking, aggregate derived from per-core |
+| **Per-core temp** | Parse `sensors_temperatures()` "Core N" labels from coretemp/k10temp |
+| **Per-core freq** | `psutil.cpu_freq(percpu=True)` → list of `{current,min,max}` MHz |
+| **Compaction** | `'last'` aggregation for JSON arrays (preserves most recent per-core array per bucket) |
+| **Backward compat** | All existing fields preserved; older agents get empty arrays `[]` |
+| **Windows** | Try/except with empty list fallback for per-core freq/temp |
 
----
+### Version Bumps
+- Agent: `__version__ = '1.15.0'`, `__schema_version__ = '1.20'`
+- Windows: `__version__ = '1.15.0-win'`, `__schema_version__ = '1.20'`
 
-## Open Questions / Decisions Needed
+### Verification
+- Django system check: **0 issues** (all 7 custom check IDs pass: E090-E097)
+- Deploy check: Only standard security warnings (unrelated)
 
-1. **Bucket aggregation for per-core in charts:** Current plan uses raw values per bucket (no AVG across cores). Is this desired, or should we also provide an "average across cores" line?
+### Consistency with database-vs-frontend-analysis.md
+- ✅ Per-core fields included in time-series compaction (same pattern as `cpu_load_avg_json`)
+- ✅ Per-core fields in both MetricSnapshot (time-series) and LatestSnapshot (denormalized)
+- ✅ Serializer writes to both tables
+- ✅ ChartDataView includes metrics for historical charts
+- ✅ Live Metrics displays via LatestSnapshot JSON arrays
+- ✅ Django checks validate full pipeline (model → serializer → compaction → chart)
 
-2. **Core ordering:** psutil guarantees consistent ordering by logical core index. Is this sufficient, or do we need to map to physical core topology (core 0 = thread 0 of physical core 0, core 1 = thread 1 of physical core 0, etc.)?
-
-3. **Color coding:** Use same `cpu_util` thresholds for per-core utilization bars, `cpu_temp` for temperature bars? (Current plan: yes)
-
-4. **Chart defaults:** Should per-core charts be new metric options, or replace the aggregate charts? (Plan: new metric options `cpu_utilization_per_core_pct`, `cpu_temp_per_core_c`, `cpu_freq_per_core_current_mhz`)
-
-5. **Windows agent:** `cpu_freq(percpu=True)` and `sensors_temperatures()` may have limited support on Windows — confirm behavior and ensure graceful degradation (empty arrays).
-
-6. **Temperature sensor mapping:** The plan maps "Core N" labels from coretemp/k10temp to logical core indices. On some systems (AMD vs Intel, hyperthreading), the mapping may not be 1:1. Acceptable?
-
----
-
-## Approval Required
-
-- [ ] User approves plan
-- [ ] Branch created: `plan/per-cpu-core-statistics`
-- [ ] Implementation begins after approval
-
----
+The implementation follows the established patterns (W001/W004/0052 defense) and treats per-core fields as first-class time-series data with full lifecycle: collect → ingest → serialize → store → compact → chart/display.

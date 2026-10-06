@@ -209,9 +209,13 @@ on the page. This keeps the bar from being noise.
             <div class="flex items-center gap-2 text-xs whitespace-nowrap">
                 <span class="font-mono text-gray-400 w-14 text-right">Core {{ forloop.counter0 }}:</span>
                 {% if freq_obj.current_mhz != None %}
-                <span class="text-cyan-400 font-mono">{{ freq_obj.current_mhz|floatformat:0 }} MHz</span>
+                <div class="flex-1 bg-gray-700 rounded-full h-1.5 overflow-hidden">
+                    <div class="h-full rounded-full transition-all duration-200 ease-out bg-cyan-400"
+                         style="width: {% if freq_obj.current_mhz != None and freq_obj.max_mhz and freq_obj.max_mhz > 0 %}{{ (freq_obj.current_mhz|floatformat:0|add:0)|divide:freq_obj.max_mhz|mul:100|floatformat:1 }}{% else %}0{% endif %}%"></div>
+                </div>
+                <span class="text-cyan-400 font-mono w-20">{{ freq_obj.current_mhz|floatformat:0 }} MHz</span>
                 {% if freq_obj.min_mhz or freq_obj.max_mhz %}
-                <span class="text-gray-600">({{ freq_obj.min_mhz|floatformat:0|default:"?" }}-{{ freq_obj.max_mhz|floatformat:0|default:"?" }})</span>
+                <span class="text-gray-600 w-28 text-right">({{ freq_obj.min_mhz|floatformat:0|default:"?" }}-{{ freq_obj.max_mhz|floatformat:0|default:"?" }})</span>
                 {% endif %}
                 {% else %}
                 <span class="text-gray-500">—</span>

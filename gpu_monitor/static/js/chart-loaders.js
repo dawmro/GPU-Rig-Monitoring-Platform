@@ -544,6 +544,59 @@
         });
     }
 
+    // ---------------------------------------------------------------
+    // loadChartMultiCore — N-series from per-core CPU metrics
+    // ---------------------------------------------------------------
+    // Used for per-core CPU utilization, temperature, frequency.
+    // The number of series is not known ahead of time (depends on core count),
+    // so we use the GPU_COLORS palette and cycle through.
+    function loadChartMultiCore(canvasId, metric, uuid, range, unit, borderColor, bgColor) {
+        var ctx = document.getElementById(canvasId);
+        if (!ctx) return Promise.resolve();
+
+        var url = Base.buildChartUrl(uuid, range, { metric: metric });
+
+        return fetchChartData(url).then(function (data) {
+            if (!data || !data.datasets || data.datasets.length === 0) {
+                ctx.parentElement.innerHTML = Base.noDataMessage();
+                return;
+            }
+            Base.safeDestroy(canvasId, window.GRM.ChartRuntime.instances);
+
+            window.GRM.ChartRuntime.instances[canvasId] = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.labels,
+                    datasets: data.datasets.map(function (ds, i) {
+                        var color = Colors.colorAt(Colors.GPU_COLORS, i);
+                        return {
+                            label: ds.label,
+                            data: ds.data,
+                            borderColor: color.border,
+                            backgroundColor: color.bg,
+                            borderWidth: Base.STYLE.borderWidth,
+                            fill: false,
+                            tension: Base.STYLE.tension,
+                            pointRadius: Base.STYLE.pointRadius,
+                            pointHitRadius: Base.STYLE.pointHitRadius,
+                            spanGaps: Base.STYLE.lineSpanGaps,
+                        };
+                    }),
+                },
+                options: Base.baseOptions({
+                    unit: unit,
+                    legend: Base.legendOptions({ fontSize: 10 }),
+                    tooltip: Base.tooltipMulti(function (y, label) {
+                        return label + ': ' + (y !== null ? y.toFixed(1) + unit : '—');
+                    }),
+                }),
+            });
+        }).catch(function (e) {
+            console.error('Failed to load multi-core chart ' + metric + ':', e);
+            ctx.parentElement.innerHTML = Base.noDataMessage();
+        });
+    }
+
     // Public API
     window.GRM = window.GRM || {};
     window.GRM.ChartLoaders = {
@@ -556,5 +609,6 @@
         loadChartMultiKey: loadChartMultiKey,
         loadChartMultiKeyDual: loadChartMultiKeyDual,
         loadChartMultiGpu: loadChartMultiGpu,
+        loadChartMultiCore: loadChartMultiCore,
     };
 })();

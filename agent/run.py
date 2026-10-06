@@ -179,11 +179,9 @@ def collect_cpu():
                         # Also match AMD Ryzen labels: Tctl, Tdie, Tccd1, etc.
                         if entry.label and entry.current is not None:
                             label_lower = entry.label.lower()
-                            # AMD Zen: Tctl (control temp), Tdie (die temp), Tccd1/2 (CCD temps)
-                            # zenpower: "Core 0", "Core 1", etc.
                             if label_lower in ('tctl', 'tdie'):
-                                # Package temperature - assign to all cores if no per-core data yet
-                                pass
+                                # Package temperature - store for fallback
+                                package_temp = entry.current
                             elif label_lower.startswith('tccd'):
                                 # CCD temperature - could map to cores in that CCD
                                 pass

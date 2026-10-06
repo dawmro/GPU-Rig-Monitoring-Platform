@@ -663,9 +663,9 @@ def check_cpu_per_core_fields(app_configs, **kwargs):
             ))
         else:
             required_compact_fields = {
-                'cpu_utilization_per_core_json': 'last',
-                'cpu_temp_per_core_json': 'last',
-                'cpu_freq_per_core_json': 'last',
+                'cpu_utilization_per_core_json': 'avg_elementwise',
+                'cpu_temp_per_core_json': 'avg_elementwise',
+                'cpu_freq_per_core_json': 'avg_elementwise',
             }
             for field, agg in required_compact_fields.items():
                 if field not in snapshot_config.get('agg_fields', {}):
@@ -678,7 +678,7 @@ def check_cpu_per_core_fields(app_configs, **kwargs):
                 elif snapshot_config['agg_fields'][field] != agg:
                     errors.append(Error(
                         f'compact_data: metrics_metricsnapshot agg_fields[{field}] must be {agg} (got {snapshot_config["agg_fields"][field]})',
-                        hint=f'JSON arrays use last aggregation to preserve most recent per-core data',
+                        hint=f'JSON arrays use avg_elementwise aggregation for element-wise average (consistent with GPU scalar metrics)',
                         obj='metrics_app.management.commands.compact_data',
                         id='metrics_app.E097',
                     ))

@@ -726,22 +726,33 @@ def check_cpu_per_core_fields(app_configs, **kwargs):
 
 ---
 
-### Step 7: Compact Data — Handle Per-Core JSON
+### Step 7: Compact Data — Handle Per-Core JSON with Element-Wise Average
 
 **File:** `gpu_monitor/metrics_app/management/commands/compact_data.py`
 
-The per-core fields (`cpu_utilization_per_core_json`, `cpu_temp_per_core_json`, `cpu_freq_per_core_json`) are **JSON arrays** — they cannot be meaningfully averaged across buckets like scalar values. 
+The per-core fields (`cpu_utilization_per_core_json`, `cpu_temp_per_core_json`, `cpu_freq_per_core_json`) are **JSON arrays** (one value per logical core). To be consistent with how GPU scalar metrics are handled (which use `'avg'` aggregation), we use **element-wise average** per core per bucket instead of `'last'`.
 
-**Decision: Use 'last' aggregation** — Preserve the most recent per-core array in each bucket (same approach as `cpu_load_avg_json`). This allows per-core charts to work at all time ranges (tier 2/3) while keeping storage efficient.
+**Decision: Use 'avg' aggregation (element-wise)** — Compute the average value for each core position across all minutes in the bucket. This provides smooth trend lines consistent with GPU scalar metrics.
+
+**Implementation:** Custom SQL in `_compact_table` to unnest JSON arrays and compute element-wise averages.
 
 ```python
 # In COMPACT_TABLES for metrics_metricsnapshot:
-'cpu_utilization_per_core_json': 'last',
-'cpu_temp_per_core_json': 'last',
-'cpu_freq_per_core_json': 'last',
+'cpu_utilization_per_core_json': 'avg_elementwise',
+'cpu_temp_per_core_json': 'avg_elementwise', 
+'cpu_freq_per_core_json': 'avg_elementwise',
 ```
 
-This follows the same pattern as other JSON array fields in the time-series tables.
+**Implementation in `_compact_table`:**
+1. Use `jsonb_array_elements_text` to unnest each array with ordinality (core index)
+2. Group by `(rig_uuid, bucket_ts, core_index)` and compute `AVG(value)`
+3. Re-aggregate with `jsonb_agg` ordered by core_index to reconstruct array
+
+This approach:
+- Produces smooth per-core trend lines at all tiers (consistent with GPU `avg` metrics)
+- Preserves core ordering via ordinality
+- Handles variable core counts (pads missing with NULL, excluded from avg)
+- More complex SQL but consistent with GPU metric treatment
 
 ---
 

@@ -43,7 +43,7 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.15.0'
+__version__ = '1.15.1'
 __schema_version__ = '1.20'
 
 # ── Config ──────────────────────────────────────────────────────────────────
@@ -158,17 +158,17 @@ def collect_cpu():
             pass  # Per-core freq not supported on this platform
 
         # NEW: Per-core temperature (from sensors_temperatures)
-        # Strategy: find coretemp/k10temp sensors, extract Core 0, Core 1, etc. temps
+        # Strategy: find coretemp/k10temp/zenpower sensors, extract Core 0, Core 1, etc. temps
         cpu_temp_per_core = []
         try:
             temps = psutil.sensors_temperatures()
             # Priority order for CPU temperature sensors
-            cpu_sensor_names = ('coretemp', 'k10temp')
+            cpu_sensor_names = ('coretemp', 'k10temp', 'zenpower')
             core_temps = {}
             for name in cpu_sensor_names:
                 if name in temps:
                     for entry in temps[name]:
-                        # Match "Core 0", "Core 1", etc. labels
+                        # Match "Core 0", "Core 1", etc. labels (Intel)
                         if entry.label and entry.label.startswith('Core '):
                             try:
                                 core_idx = int(entry.label.split()[1])
@@ -176,14 +176,53 @@ def collect_cpu():
                                     core_temps[core_idx] = entry.current
                             except (ValueError, IndexError):
                                 pass
+                        # Also match AMD Ryzen labels: Tctl, Tdie, Tccd1, etc.
+                        if entry.label and entry.current is not None:
+                            label_lower = entry.label.lower()
+                            if label_lower in ('tctl', 'tdie'):
+                                # Package temperature - store for fallback
+                                package_temp = entry.current
+                            elif label_lower.startswith('tccd'):
+                                # CCD temperature - could map to cores in that CCD
+                                pass
                     if core_temps:
                         break  # Found core temps in preferred sensor
+            # If still no core_temps, try zenpower for per-core temps
+            if not core_temps and 'zenpower' in temps:
+                for entry in temps['zenpower']:
+                    if entry.label and entry.current is not None:
+                        label_lower = entry.label.lower()
+                        if label_lower.startswith('core') and entry.current is not None:
+                            try:
+                                core_idx = int(''.join(filter(str.isdigit, entry.label)))
+                                core_temps[core_idx] = entry.current
+                            except (ValueError, IndexError):
+                                pass
+            # If still no core_temps, use package temperature for all cores as fallback
+            if not core_temps:
+                # Find package temperature (Tctl, Tdie, or first available)
+                package_temp = None
+                for name in cpu_sensor_names:
+                    if name in temps:
+                        for entry in temps[name]:
+                            if entry.current is not None:
+                                label_lower = entry.label.lower() if entry.label else ''
+                                if label_lower in ('tctl', 'tdie', 'package', 'cpu'):
+                                    package_temp = entry.current
+                                    break
+                        if package_temp is not None:
+                            break
+                if package_temp is not None:
+                    # Assign package temp to all cores as fallback
+                    for i in range(cpu_count_log):
+                        core_temps[i] = package_temp
 
             # Build ordered list matching logical core indices
             # If we have fewer core temps than logical cores, fill with None
             for i in range(cpu_count_log):
                 cpu_temp_per_core.append(core_temps.get(i))
-        except Exception:
+        except Exception as e:
+            logging.getLogger('cpu').warning('Per-core temperature collection failed: %s', e)
             pass
 
         # Existing aggregate frequency (for backward compat + non-Linux)

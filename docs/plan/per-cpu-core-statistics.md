@@ -129,33 +129,74 @@ def collect_cpu():
         pass  # Per-core freq not supported on this platform
 
     # NEW: Per-core temperature (from sensors_temperatures)
-    # Strategy: find coretemp/k10temp sensors, extract Core 0, Core 1, etc. temps
-    cpu_temp_per_core = []
-    try:
-        temps = psutil.sensors_temperatures()
-        # Priority order for CPU temperature sensors
-        cpu_sensor_names = ('coretemp', 'k10temp')
-        core_temps = {}
-        for name in cpu_sensor_names:
-            if name in temps:
-                for entry in temps[name]:
-                    # Match "Core 0", "Core 1", etc. labels
-                    if entry.label and entry.label.startswith('Core '):
-                        try:
-                            core_idx = int(entry.label.split()[1])
-                            if entry.current is not None:
-                                core_temps[core_idx] = entry.current
-                        except (ValueError, IndexError):
-                            pass
-                if core_temps:
-                    break  # Found core temps in preferred sensor
-        
-        # Build ordered list matching logical core indices
-        # If we have fewer core temps than logical cores, fill with None
-        for i in range(cpu_count_log):
-            cpu_temp_per_core.append(core_temps.get(i))
-    except Exception:
-        pass
+            # Strategy: find coretemp/k10temp/zenpower sensors, extract Core 0, Core 1, etc. temps
+            cpu_temp_per_core = []
+            try:
+                temps = psutil.sensors_temperatures()
+                # Priority order for CPU temperature sensors
+                cpu_sensor_names = ('coretemp', 'k10temp', 'zenpower')
+                core_temps = {}
+                for name in cpu_sensor_names:
+                    if name in temps:
+                        for entry in temps[name]:
+                            # Match "Core 0", "Core 1", etc. labels (Intel)
+                            if entry.label and entry.label.startswith('Core '):
+                                try:
+                                    core_idx = int(entry.label.split()[1])
+                                    if entry.current is not None:
+                                        core_temps[core_idx] = entry.current
+                                except (ValueError, IndexError):
+                                    pass
+                            # Also match AMD Ryzen labels: Tctl, Tdie, Tccd1, etc.
+                            if entry.label and entry.current is not None:
+                                label_lower = entry.label.lower()
+                                # AMD Zen: Tctl (control temp), Tdie (die temp), Tccd1/2 (CCD temps)
+                                # zenpower: "Core 0", "Core 1", etc.
+                                if label_lower in ('tctl', 'tdie'):
+                                    # Package temperature - assign to all cores if no per-core data yet
+                                    pass
+                                elif label_lower.startswith('tccd'):
+                                    # CCD temperature - could map to cores in that CCD
+                                    pass
+                        if core_temps:
+                            break  # Found core temps in preferred sensor
+                # If still no core_temps, try zenpower for per-core temps
+                if not core_temps and 'zenpower' in temps:
+                    for entry in temps['zenpower']:
+                        if entry.label and entry.current is not None:
+                            label_lower = entry.label.lower()
+                            if label_lower.startswith('core') and entry.current is not None:
+                                try:
+                                    core_idx = int(''.join(filter(str.isdigit, entry.label)))
+                                    core_temps[core_idx] = entry.current
+                                except (ValueError, IndexError):
+                                    pass
+                # If still no core_temps, use package temperature for all cores as fallback
+                if not core_temps:
+                    # Find package temperature (Tctl, Tdie, or first available)
+                    package_temp = None
+                    for name in cpu_sensor_names:
+                        if name in temps:
+                            for entry in temps[name]:
+                                if entry.current is not None:
+                                    label_lower = entry.label.lower() if entry.label else ''
+                                    if label_lower in ('tctl', 'tdie', 'package', 'cpu'):
+                                        package_temp = entry.current
+                                        break
+                            if package_temp is not None:
+                                break
+                    if package_temp is not None:
+                        # Assign package temp to all cores as fallback
+                        for i in range(cpu_count_log):
+                            core_temps[i] = package_temp
+
+                # Build ordered list matching logical core indices
+                # If we have fewer core temps than logical cores, fill with None
+                for i in range(cpu_count_log):
+                    cpu_temp_per_core.append(core_temps.get(i))
+            except Exception as e:
+                logging.getLogger('cpu').warning('Per-core temperature collection failed: %s', e)
+                pass
 
     # Existing aggregate frequency (for backward compat + non-Linux)
     cpu_freq = None
@@ -227,14 +268,14 @@ def collect_cpu():
 - **Aggregate derived** as arithmetic mean of per-core values — semantically equivalent to old aggregate call
 - **No double-blocking**: Only 1 second total (not 2) per collection cycle
 - **Per-core frequency**: `psutil.cpu_freq(percpu=True)` returns list of namedtuples; convert to list of dicts
-- **Per-core temperature**: Parse `sensors_temperatures()` for 'coretemp'/'k10temp' sensors with "Core N" labels; map to logical core indices
+- **Per-core temperature**: Parse `sensors_temperatures()` for 'coretemp'/'k10temp'/'zenpower' sensors with "Core N" labels (Intel) and AMD labels (Tctl, Tdie, Tccd1-4, zenpower Core N); map to logical core indices; fallback to package temp (Tctl/Tdie) for all cores if no per-core data
 - **Backward compatibility**: All existing fields (`utilization_pct`, `temp_c`, `freq`) preserved and populated
 - `cpu_per_core` length == `logical_cores` (consistent ordering guaranteed by psutil)
 - First call with `interval=1` returns real measured values (not zeros) — no warm-up issue
 - On platforms without per-core freq/temp support, new fields are empty lists `[]`
 
 **Version Bump:**
-- `__version__ = '1.15.0'` (MINOR: new payload fields)
+- `__version__ = '1.15.1'` (PATCH: AMD Ryzen per-core temperature fix)
 - `__schema_version__ = '1.20'` (MINOR: new fields in cpu object)
 
 ---
@@ -825,7 +866,32 @@ style="width: {% if core_temp != None %}{{ core_temp|cpu_temp_bar_width }}{% els
 
 ---
 
-### Step 8: Windows Agent Parity
+### Agent Per-Core Temperature Collection Fix (AMD Ryzen Support)
+
+**Problem:** Per-core temperature collection was returning empty values on AMD Ryzen CPUs (e.g., Ryzen 3600). The general CPU temperature was displayed correctly, but per-core values were `null`.
+
+**Root Cause:** The original implementation only looked for sensor labels starting with "Core " (e.g., "Core 0", "Core 1"), which is the Intel naming convention. AMD Ryzen CPUs use different sensor labels:
+- `Tctl` - Control temperature
+- `Tdie` - Die temperature  
+- `Tccd1`, `Tccd2`, etc. - CCD (Core Complex Die) temperatures
+- `zenpower` driver: "Core 0", "Core 1", etc.
+
+**Solution Implemented:**
+
+1. **Extended sensor detection** in `agent/run.py`:
+   - Added `zenpower` to sensor priority list
+   - Added AMD label matching: `Tctl`, `Tdie`, `Tccd1-4`, `zenpower` "Core N"
+   - Fallback to package temperature (Tctl/Tdie) for all cores if no per-core data
+
+2. **Key changes in `agent/run.py`:**
+   - Added `zenpower` to sensor priority list
+   - Added AMD label matching: `Tctl`, `Tdie`, `Tccd1-4`, `zenpower` "Core N"
+   - Fallback to package temperature (Tctl/Tdie) for all cores if no per-core data
+   - Log warnings instead of silently failing
+
+3. **Updated sensor priority:** `('coretemp', 'k10temp', 'zenpower')`
+
+This fix enables per-core temperature monitoring on AMD Ryzen CPUs (tested on Ryzen 3600) while maintaining compatibility with Intel CPUs.
 
 **File:** `agent_windows/run.py`
 

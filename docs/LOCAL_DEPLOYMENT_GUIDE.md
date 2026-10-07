@@ -148,6 +148,17 @@ sudo apt install -y python3-venv python3-pip postgresql postgresql-contrib \
 sudo systemctl enable postgresql
 sudo systemctl start postgresql
 
+# Remove the existing database and user, including active connections
+sudo -u postgres psql << 'EOF'
+SELECT pg_terminate_backend(pid)
+FROM pg_stat_activity
+WHERE datname = 'gpu_monitor'
+  AND pid <> pg_backend_pid();
+
+DROP DATABASE IF EXISTS gpu_monitor;
+DROP USER IF EXISTS gpu_monitor;
+EOF
+
 # Create database user and database
 sudo -u postgres psql << 'EOF'
 CREATE USER gpu_monitor WITH PASSWORD 'local_dev_password';

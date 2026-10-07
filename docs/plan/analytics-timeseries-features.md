@@ -2,7 +2,7 @@
 
 ## 1. Executive Summary
 
-This document analyzes 21 proposed analytics metrics derived from GPU rig timeseries data, categorizes them by **where they belong** (Historical Charts subtab vs. Statistical Analysis report tab), and defines the **calculation architecture** — whether values are pre-computed at ingest time (stored in new DB models) or computed on-demand when the user opens the relevant tab.
+This document analyzes proposed analytics metrics derived from GPU rig timeseries data, categorizes them by **where they belong** (Historical Charts subtab vs. report tab), and defines the **calculation architecture** — whether values are pre-computed at ingest time (stored in new DB models) or computed on-demand when the user opens the report tab.
 
 ## 2. Architecture Decision: Two Calculation Modes
 
@@ -23,9 +23,9 @@ This document analyzes 21 proposed analytics metrics derived from GPU rig timese
 
 **Verdict: Suitable for single-point derived metrics** (ratios, differences, flags computable from one payload row). **Not suitable for windowed/cumulative metrics** (correlations, slopes, transition counts).
 
-### Mode B: On-Demand Calculation (for Report tab / Statistical Analysis)
+### Mode B: On-Demand Calculation (for Report tab)
 
-**What it is:** When the user opens the Report tab (or a new Statistical Analysis subtab), the server runs SQL aggregation queries against the existing timeseries tables and computes derived metrics in Python. Results are cached at the view level (55s TTL, matching existing report caching pattern).
+**What it is:** When the user opens the Report tab, the server runs SQL aggregation queries against the existing timeseries tables and computes derived metrics in Python. Results are cached at the view level (55s TTL, matching existing report caching pattern).
 
 **Pros:**
 - No additional ingest load
@@ -40,99 +40,239 @@ This document analyzes 21 proposed analytics metrics derived from GPU rig timese
 
 **Verdict: Suitable for all report-tab metrics.** The existing report already does on-the-fly aggregation for 5 queries; adding 2-3 more for derived metrics is proportionate.
 
-### Hybrid Approach (Recommended)
 
-| Metric type | Calculation mode | Rationale |
-|---|---|---|
-| Single-point ratios/differences (Cooling Efficiency, Fan-to-Temp Gain, VRAM Saturation, CPU-to-GPU Power Ratio) | **Pre-compute at ingest** → store in GPUMetric or new AnalyticsMetric model | These are point-in-time values computable from one snapshot row. Charts can plot them directly like any other metric. |
-| Windowed statistics (Thermal Degradation Slope, Clock Stability Index, Thermal Hysteresis, Temp-to-PowerLimit Stability) | **On-demand in Report tab** | These need rolling windows (7d, 30d) and regression. Not feasible at ingest. |
-| Transition counts (Job State Transition Frequency) | **On-demand in Report tab** | Needs ordered sequence of `has_active_job` values across the time range. |
-| Cumulative sums (Idle-to-Peak Delta, Idle Power Waste, Cost per GPU-Hour, Power-on Hours) | **On-demand in Report tab** | These are range aggregations (Sum/Max/Min over the period). |
-| Correlations (Memory vs. Core Utilization) | **On-demand in Report tab** | Needs paired (mem_controller_util_pct, gpu_util_pct) values across the window. |
 ## 3. Metric Classification: Charts vs. Report Tab
 
 ### 3.1 Metrics That Belong in Historical Charts Subtab
 
 These are **time-series visualizations** — they plot a derived value over time, just like existing charts (GPU Temp, Fan Speed, etc.). They follow the same pattern: fetch from ChartDataView, render with Chart.js.
 
-| # | Metric | Chart Name | Data Source | Calculation | Chart Type |
-|---|--------|-----------|-------------|-------------|------------|
-| 1 | **Cooling Efficiency Index** | GPU Cooling Efficiency | GPUMetric | `ΔTemp / ΔPower` = `(gpu_temp_c - ambient) / power_draw_w` | Line, per-GPU |
-| 2 | **Fan Speed-to-Temperature Gain** | Fan-to-Temp Gain | GPUMetric | `ΔFanSpeed% / ΔTemp°C` = derivative of fan response vs temp change | Line, per-GPU |
+| # | Metric                                  | Chart Name                    | Data Source | Calculation                                                                                              | Chart Type    |
+| - | --------------------------------------- | ----------------------------- | ----------- | -------------------------------------------------------------------------------------------------------- | ------------- |
+| 1 | **Cooling Efficiency Index**            | GPU Cooling Efficiency        | GPUMetric   | `ΔTemp / ΔPower` = temperature change per watt of GPU power change                                       | Line, per-GPU |
+| 2 | **Fan-Adjusted Cooling Response Index** | Fan-Adjusted Cooling Response | GPUMetric   | `(ΔTemp / ΔPower) / (1 + ΔFan% / 100)` = temperature response per watt, adjusted for change in fan speed | Line, per-GPU |
 | 3 | **VRAM Bandwidth Saturation Index** | VRAM Bandwidth Saturation | GPUMetric | `mem_controller_util_pct / gpu_util_pct` | Line, per-GPU |
 | 4 | **CPU-to-GPU Power Ratio** | CPU/GPU Power Ratio | GPUMetric + MetricSnapshot | `power_cpu_w / power_gpu_w` (or `cpu_power_w / sum(power_draw_w)`) | Line, single |
-| 5 | **Fan Bearing Wear Indicator** | Fan Bearing Wear | GPUMetric | `fan_speed_pct / gpu_temp_c` at constant power_draw_w (requires filtering) | Line, per-GPU |
 
-**Rationale for Chart placement:** These are **point-in-time derived metrics** — each data point is computed from a single snapshot row. They can be pre-computed at ingest time and stored as new fields on GPUMetric (or a new AnalyticsMetric model), then exposed through the existing ChartDataView → chart-registry pipeline with zero changes to the fetch/render flow.
+**Rationale for Chart placement:** These are **point-in-time derived metrics** — each data point is computed from a single snapshot row. Delatas can be pre-computed at ingest time from last snapshot json vs current payload and stored as new fields on GPUMetric (or a new AnalyticsMetric model), then exposed through the existing ChartDataView → chart-registry pipeline with zero changes to the fetch/render flow.
 
-### 3.2 Metrics That Belong in Statistical Analysis (Report Tab)
+### 3.2 Metrics That Belong in Report Tab
 
-These are **aggregate statistics over a time window** (24h/7d/30d). They don't make sense as continuous time-series charts — they're summary numbers for a period. They belong in the Report tab as an additional section.
+These are **aggregate statistics over a time window** (24h/7d/30d). They don't make sense as continuous time-series charts — they're summary numbers for a period. They belong in the Report tab in per gpu section or System section.
 
 | # | Metric | Calculation Method | SQL/Python |
 |---|--------|-------------------|-------------|
-| 6 | **Thermal Hysteresis** | Temp difference between heating and cooling phases at same utilization | Python: pair rows by utilization bucket, compute ΔTemp |
-| 7 | **Temperature-to-PowerLimit Ratio Stability** | Std dev of `power_limit_w` grouped by `gpu_temp_c` ranges | SQL: GROUP BY temp bucket, compute STDDEV(power_limit_w) |
-| 8 | **Memory vs. Core Utilization Correlation** | Pearson r between `mem_controller_util_pct` and `gpu_util_pct` | Python: `scipy.stats.pearsonr` or manual formula |
-| 9 | **Compute-to-Memory Ratio Trend** | Rolling average of `gpu_util_pct / mem_controller_util_pct` over time | Python: compute ratio per bucket, then linear regression slope |
-| 10 | **Clock Stability Index** | Std dev of `gpu_core_clock_mhz` over rolling windows | SQL: STDDEV(gpu_core_clock_mhz) grouped by time window |
-| 11 | **Frequency-to-PowerLimit Ratio Stability** | Std dev of `power_limit_w` grouped by `gpu_core_clock_mhz` ranges | SQL: GROUP BY clock bucket, STDDEV(power_limit_w) |
-| 12 | **Idle-to-Peak Power Delta** | `Max(power_draw_w) - Min(power_draw_w)` over the period | SQL: `Max - Min` in the existing GPU aggregation query |
-| 13 | **Idle Power Waste Ratio** | `Avg(power_draw_w when has_active_job=False) / Avg(power_draw_w when has_active_job=True)` | SQL: conditional aggregation |
-| 14 | **Job State Transition Frequency** | Count of `has_active_job` state changes (0→1 and 1→0) | Python: ordered scan of `has_active_job` values |
-| 15 | **Underutilization Duration** | Sum of continuous minutes where `gpu_util_pct < 5` AND `has_active_job=True` | Python: scan ordered rows, accumulate gaps |
-| 16 | **Power-on Hours Before Restart** | Max `uptime_s` before a drop (indicating reboot) | Python: scan ordered `uptime_s`, detect decreases |
-| 17 | **Thermal Degradation Slope** | Linear regression slope of `gpu_temp_c` at constant utilization over 30d | Python: filter rows where `gpu_util_pct` is within ±5% of median, then `np.polyfit` |
-| 18 | **Cost per Active GPU-Hour** | `Sum(total_system_power_w) * interval / 3600 * rate / active_gpu_hours` | SQL + Python: reuse existing power aggregation, divide by active GPU count |
-| 19 | **Idle Power Waste Cost** | Same as #18 but filtered to `has_active_job=False` periods | SQL + Python |
+| 1 | **Cooling Efficiency Index** | Avg of `GPUMetric.cooling_efficiency_index` for a given period 24h, 7d, 30d per gpu | Avg |
+| 2 | **Fan-Adjusted Cooling Response Index** | Avg of `GPUMetric.fan_adjusted_cooling_response` for a given period 24h, 7d, 30d per gpu | Avg |
+| 3 | **Temperature-to-PowerLimit Ratio Stability** | Std dev of `power_limit_w` grouped by `gpu_temp_c` ranges | SQL: GROUP BY temp bucket, compute STDDEV(power_limit_w) |
+| 4 | **Memory vs. Core Utilization Correlation** | Pearson r between `mem_controller_util_pct` and `gpu_util_pct` | Python: `scipy.stats.pearsonr` or manual formula |
+| 5 | **Compute-to-Memory Ratio Trend** | Rolling average of `gpu_util_pct / mem_controller_util_pct` over time | Python: compute ratio per bucket, then linear regression slope |
+| 6 | **Clock Stability Index** | Std dev of `gpu_core_clock_mhz` over rolling windows | SQL: STDDEV(gpu_core_clock_mhz) grouped by time window |
+| 7 | **Frequency-to-PowerLimit Ratio Stability** | Std dev of `power_limit_w` grouped by `gpu_core_clock_mhz` ranges | SQL: GROUP BY clock bucket, STDDEV(power_limit_w) |
+| 8 | **Idle-to-Peak Power Delta** | `Max(power_draw_w) - Min(power_draw_w)` over the period | SQL: `Max - Min` in the existing GPU aggregation query |
+| 9 | **Idle Power Waste Ratio** | `Avg(power_draw_w when has_active_job=False) / Avg(power_draw_w when has_active_job=True)` | SQL: conditional aggregation |
+| 10 | **Job State Transition Frequency** | Count of `has_active_job` state changes (0→1 and 1→0) | Python: ordered scan of `has_active_job` values |
+| 11 | **Underutilization Duration** | Sum of continuous minutes where `gpu_util_pct < 5` AND `has_active_job=True` | Python: scan ordered rows, accumulate gaps |
+| 12 | **Power-on Hours Before Restart** | Max `uptime_s` before a drop (indicating reboot). Calculate average for multiple restart in range 24h, 7d, 30d | Python: scan ordered `uptime_s`, detect decreases |
+| 13 | **Thermal Degradation Slope** | Linear regression slope of `gpu_temp_c` at constant utilization over given report range 24h, 7d, 30d | Python: filter rows where `gpu_util_pct` is within ±10% of median, then `np.polyfit` |
+| 14 | **Cost per Active GPU-Hour** | `Sum(total_system_power_w) * interval / 3600 * rate / active_gpu_hours` | SQL + Python: reuse existing power aggregation, divide by active GPU count |
+| 15 | **Idle Power Waste Cost** | Same as #18 but filtered to `has_active_job=False` periods | SQL + Python |
 
-## 4. Direct Answers to Your Questions
 
-### Q1: "Will those statistical analysis charts be included in Historical Charts subtab as new chats? Do we calculate them during ingest and serialization...?"
 
-**Answer: Split by metric type.**
+## 4. Detailed Computation Specifications
 
-**YES — Pre-compute at ingest (Historical Charts subtab):**
-- Cooling Efficiency Index (a)
-- Fan Speed-to-Temperature Gain (b) 
-- VRAM Bandwidth Saturation Index (f) — **NOT the same as correlation; see below**
-- CPU-to-GPU Power Ratio (j)
-- Fan Bearing Wear Indicator (k)
+### 4.1 Cooling Efficiency Index
+- **Definition:** `ΔGPU_Temp / ΔGPU_Power` (°C/W) — how much temperature rises per watt of power increase
+- **Data Source:** `LatestSnapshot` (fetched as `prev_ls` before transaction) → `prev_ls.gpu_temps_json[0]`, `prev_ls.gpu_power_draws_json[0]`
+- **Current Values:** `GPUMetric` being created: `gpu_temp_c`, `power_draw_w`
+- **Time Range:** **2 consecutive snapshots** (1-minute interval)
+- **Computation:** At ingest, point-in-time delta
+- **Minimum Power Delta:** 1 W, using the same denominator handling as the Cooling Efficiency Index
+- **Real Data Example:**
+  - Previous: temp=72.0°C, power=350.0W
+  - Current: temp=74.0°C, power=360.0W
+  - Delta: 2.0°C / 10.0W = **0.2 °C/W**
+- **Storage:** `GPUMetric.cooling_efficiency_index` (per-rig, per-minute)
+- **Compaction:** `avg` at 15m/1h tiers
 
-These are **point-in-time derived metrics**. Each data point = one snapshot row. Computed in `process_ingest()` serializer, stored in new fields on GPUMetric (or new AnalyticsMetric model), exposed via existing ChartDataView.
+- **Interpretation:**
+Lower values generally indicate a smaller temperature response for a given power change.
+Higher values indicate a larger temperature response and may indicate weaker thermal response.
+The metric is primarily useful for trend and anomaly detection, because GPU temperature is also affected by ambient temperature, fan speed, workload, and thermal inertia.
+Negative values are possible when temperature decreases while power increases, or vice versa.
 
-**NO — On-demand in Report/Statistical Analysis tab:**
-- Thermal Hysteresis (c) — needs heating/cooling phase pairing across time
-- Temperature-to-PowerLimit Ratio Stability (d) — needs grouped std dev across window
-- Memory vs. Core Utilization Correlation (e) — needs paired values across window
-- Compute-to-Memory Ratio Trend (g) — needs rolling ratio + regression slope
-- Frequency-to-PowerLimit Ratio Stability (h) — needs grouped std dev
-- Clock Stability Index (i) — needs rolling std dev
+**Code (serializers.py):**
+```python
+MIN_POWER_DELTA_W = 1.0
 
-These are **windowed statistics**. They don't exist as a "value at time T" — they exist as "statistic over window W". Cannot be pre-computed at single-point ingest.
+prev_ls = LatestSnapshot.objects.filter(
+    rig_uuid=rig_uuid
+).first()
 
-### Q2: "Will Statistical Analysis be new subtab after Historical Charts subtab? Calculate them only when user request it?"
+prev_gpu_temp = (
+    prev_ls.gpu_temps_json[0]
+    if prev_ls and prev_ls.gpu_temps_json
+    else None
+)
 
-**Yes.** Add a "Statistical Analysis" subtab (or section within Report tab) that:
-1. Loads on-demand when user clicks the tab (HTMX, like Report tab)
-2. Runs SQL aggregations + Python post-processing against existing timeseries tables
-3. Caches results at view level (55s TTL, matching existing report pattern)
-4. Shows 24h / 7d / 30d columns side-by-side (like Report tab)
+prev_gpu_power = (
+    prev_ls.gpu_power_draws_json[0]
+    if prev_ls and prev_ls.gpu_power_draws_json
+    else None
+)
 
-This is **exactly the existing Report tab pattern** — extend `_build_report_context` with additional computed fields, render in template.
+curr_gpu_temp = curr_gpu.gpu_temp_c
+curr_gpu_power = curr_gpu.power_draw_w
 
-### Q3: "Memory vs. Core Utilization Correlation (e) vs VRAM Bandwidth Saturation Index (f) — same thing?"
+cooling_efficiency_index = None
 
-**No, they are different:**
+if (
+    prev_gpu_temp is not None
+    and prev_gpu_power is not None
+    and curr_gpu_temp is not None
+    and curr_gpu_power is not None
+):
+    delta_temp = curr_gpu_temp - prev_gpu_temp
+    delta_power = curr_gpu_power - prev_gpu_power
 
-| Metric | Formula | Purpose |
-|---|---|---|
-| **Memory vs. Core Utilization Correlation (e)** | Pearson r(`mem_controller_util_pct`, `gpu_util_pct`) over time window | **Statistical relationship**: Are the two metrics correlated? r ≈ 1 = memory-bound; r ≈ 0 = independent; r < 0 = inverse relationship. Single number per time window. |
-| **VRAM Bandwidth Saturation Index (f)** | `mem_controller_util_pct / gpu_util_pct` **per snapshot** | **Point-in-time ratio**: At this moment, how much memory bandwidth is used per unit of compute? > 1.0 = memory bottleneck right now; < 0.5 = compute bottleneck right now. Time-series chartable. |
+    if abs(delta_power) < MIN_POWER_DELTA_W:
+        effective_delta_power = MIN_POWER_DELTA_W
+    else:
+        effective_delta_power = delta_power
 
-**Placement:**
-- (f) → **Historical Charts** (pre-computed per snapshot)
-- (e) → **Statistical Analysis Report tab** (single number per 24h/7d/30d window)
+    cooling_efficiency_index = (
+        delta_temp / effective_delta_power
+    )
+
+```
+
+---
+
+### 4.2 Fan-Adjusted Cooling Response Index
+- **Definition:** `(ΔTemp / effective ΔPower) / (1 + ΔFan% / 100)` (°C/W) — temperature response per watt of GPU power change, adjusted for the change in fan speed
+- **Data Source:** `LatestSnapshot` → `prev_ls.gpu_fans_json[0]`, `prev_ls.gpu_temps_json[0]`, `prev_ls.gpu_power_draws_json[0]`
+- **Current Values:** `GPUMetric` being created: `fan_speed_pct`, `gpu_temp_c`, `power_draw_w`
+- **Time Range:** **2 consecutive snapshots** (1-minute interval)
+- **Computation:** At ingest, point-in-time delta
+- **Storage:** `GPUMetric.fan_adjusted_cooling_response` (per-rig, per-minute)
+- **Compaction:** `avg` at 15m/1h tiers
+- **Interpretation:** Lower values generally indicate a smaller temperature response relative to power change after accounting for fan-speed change. The metric is intended primarily for thermal trend and anomaly detection rather than as a physically exact cooling-efficiency measurement.
+
+**Code (serializers.py):**
+```python
+MIN_POWER_DELTA_W = 1.0
+
+prev_ls = LatestSnapshot.objects.filter(
+    rig_uuid=rig_uuid
+).first()
+
+prev_gpu_temp = (
+    prev_ls.gpu_temps_json[0]
+    if prev_ls and prev_ls.gpu_temps_json
+    else None
+)
+
+prev_gpu_power = (
+    prev_ls.gpu_power_draws_json[0]
+    if prev_ls and prev_ls.gpu_power_draws_json
+    else None
+)
+
+prev_gpu_fan = (
+    prev_ls.gpu_fans_json[0]
+    if prev_ls and prev_ls.gpu_fans_json
+    else None
+)
+
+curr_gpu_temp = curr_gpu.gpu_temp_c
+curr_gpu_power = curr_gpu.power_draw_w
+curr_gpu_fan = curr_gpu.fan_speed_pct
+
+fan_adjusted_cooling_response = None
+
+if (
+    prev_gpu_temp is not None
+    and prev_gpu_power is not None
+    and prev_gpu_fan is not None
+    and curr_gpu_temp is not None
+    and curr_gpu_power is not None
+    and curr_gpu_fan is not None
+):
+    delta_temp = curr_gpu_temp - prev_gpu_temp
+    delta_power = curr_gpu_power - prev_gpu_power
+    delta_fan = curr_gpu_fan - prev_gpu_fan
+
+    if abs(delta_power) < MIN_POWER_DELTA_W:
+        effective_delta_power = MIN_POWER_DELTA_W
+    else:
+        effective_delta_power = delta_power
+
+    fan_adjustment = 1 + (delta_fan / 100.0)
+
+    fan_adjusted_cooling_response = (
+        (delta_temp / effective_delta_power)
+        / fan_adjustment
+    )
+```
+
+---
+
+### 4.3 VRAM Bandwidth Saturation Index
+- **Definition:** `mem_controller_util_pct / gpu_util_pct` The VRAM Bandwidth Saturation Index estimates how heavily the GPU's memory subsystem is being utilized relative to overall GPU utilization.
+- **Data Source:** `LatestSnapshot` → `prev_ls.mem_controller_util_pct_json[0]`, `prev_ls.gpu_util_pct_json[0]` (verify in database model and correct those names, they can be incorrect)
+- **Current Values:** `GPUMetric` being created: `mem_controller_util_pct`, `gpu_util_pct`, 
+- **Time Range:** **2 consecutive snapshots** (1-minute interval)
+- **Computation:** At ingest, point-in-time delta
+- **Storage:** `GPUMetric.fan_adjusted_cooling_response` (per-rig, per-minute)
+- **Compaction:** `avg` at 15m/1h tiers
+- **Interpretation:** 
+Index	Interpretation
+< 0.5	Memory subsystem is relatively lightly utilized compared with GPU compute
+0.5–1.0	Increasing memory pressure
+≈ 1.0	Memory controller utilization is comparable to GPU utilization
+> 1.0	Memory controller is more heavily utilized than overall GPU compute
+
+**Code (serializers.py):**
+```python
+MIN_GPU_UTIL_PCT = 1.0
+MIN_MEM_CONTROLLER_UTIL_PCT = 1.0
+
+curr_gpu_util = curr_gpu.gpu_util_pct
+curr_mem_controller_util = curr_gpu.mem_controller_util_pct
+
+vram_bandwidth_saturation = None
+
+if (
+    curr_gpu_util is not None
+    and curr_mem_controller_util is not None
+):
+    effective_gpu_util = curr_gpu_util
+    effective_mem_controller_util = curr_mem_controller_util
+
+    if (
+        curr_gpu_util == 0
+        and curr_mem_controller_util == 0
+    ):
+        effective_gpu_util = MIN_GPU_UTIL_PCT
+        effective_mem_controller_util = MIN_MEM_CONTROLLER_UTIL_PCT
+
+    vram_bandwidth_saturation = (
+        effective_mem_controller_util / effective_gpu_util
+    )
+```
+
+---
+
+### 4.4 CPU-to-GPU Power Ratio
+- **Definition:** TODO
+- **Data Source:** TODO
+- **Current Values:** TODO
+- **Time Range:** **2 consecutive snapshots** (1-minute interval)
+- **Computation:** At ingest, point-in-time delta
+- **Storage:** TODO
+- **Compaction:** `avg` at 15m/1h tiers
+- **Interpretation:** TODO
 
 ## 5. Implementation Architecture
 
@@ -145,88 +285,68 @@ class GPUMetric(models.Model):
     # ... existing fields ...
     
     # NEW: Pre-computed derived metrics (point-in-time)
-    cooling_efficiency_index = models.FloatField(null=True, blank=True,
-        help_text='(gpu_temp_c - ambient_estimate) / power_draw_w; higher = worse cooling')
-    fan_to_temp_gain = models.FloatField(null=True, blank=True,
-        help_text='Derivative: fan_speed_pct change per degree temp change')
+    cooling_efficiency_index = models.FloatField(
+        null=True,
+        blank=True,
+        help_text=(
+            '°C/W — temperature change per watt of GPU power change; '
+            'higher values indicate a larger temperature response to power changes'
+        ),
+    )
+    fan_adjusted_cooling_response = models.FloatField(
+        null=True,
+        blank=True,
+        help_text=(
+            '°C/W — temperature change per watt of GPU power change, '
+            'adjusted for the change in fan speed; higher values indicate a larger '
+            'temperature response after accounting for fan-speed changes'
+        ),
+    )
     vram_bandwidth_saturation = models.FloatField(null=True, blank=True,
-        help_text='mem_controller_util_pct / gpu_util_pct; >1.0 = memory bottleneck')
+        help_text=(
+            'Ratio of memory-controller utilization to GPU utilization; '
+            'higher values indicate greater memory-bandwidth pressure relative '
+            'to GPU compute utilization'
+        )
+    )
     cpu_to_gpu_power_ratio = models.FloatField(null=True, blank=True,
         help_text='cpu_power_w / sum(gpu_power_draw_w); high = CPU-bound workload')
-    fan_bearing_wear_indicator = models.FloatField(null=True, blank=True,
-        help_text='fan_speed_pct / gpu_temp_c at constant power; rising = bearing wear')
 ```
 
-**Ingest serializer update** (`serializers.py`): Compute these 5 values in `process_ingest()` when GPU data is present, store in GPUMetric row.
+**Ingest serializer update** (`serializers.py`): Compute these values in `process_ingest()` when GPU data is present, store in GPUMetric row.
 
-**Compaction** (`compact_data.py`): Add these 5 fields to `COMPACT_TABLES[0]['agg_fields']` with `'avg'` aggregation (they're ratios, average of ratios is acceptable).
+**Compaction** (`compact_data.py`): Add these fields to `COMPACT_TABLES[0]['agg_fields']` with `'avg'` aggregation (they're ratios, average of ratios is acceptable).
 
-**Chart registry** (`chart-registry.js`): Add 5 new entries pointing to the new metric names.
+**Chart registry** (`chart-registry.js`): Add new entries pointing to the new metric names.
 
 ### 5.2 Report Tab Extension (for windowed statistics)
 
-Extend `_build_report_context()` in `dashboard/views.py` to compute the 14 report-tab metrics:
+Extend `_build_report_context()` in `dashboard/views.py` to compute the report-tab metrics:
 
-```python
-# Additional aggregations in the existing GPU query (Query 1b):
-gpu_agg = list(
-    GPUMetric.objects.filter(**base_filter)
-    .values('gpu_index', 'model')
-    .annotate(
-        # ... existing fields ...
-        # NEW: For windowed stats
-        gpu_temp_c_stddev=StdDev('gpu_temp_c'),
-        gpu_core_clock_mhz_stddev=StdDev('gpu_core_clock_mhz'),
-        power_limit_w_stddev=StdDev('power_limit_w'),
-        power_draw_w_min=Min('power_draw_w'),
-        power_draw_w_max=Max('power_draw_w'),
-        # For correlation: need raw paired values (fetch separately)
-    ).order_by('gpu_index')
-)
 
-# Additional MetricSnapshot aggregations:
-snap_agg = MetricSnapshot.objects.filter(**base_filter).aggregate(
-    # ... existing ...
-    # NEW:
-    cpu_power_w_min=Min('cpu_power_w'),
-    cpu_power_w_max=Max('cpu_power_w'),
-    total_system_power_w_min=Min('total_system_power_w'),
-    total_system_power_w_max=Max('total_system_power_w'),
-)
 
-# Python post-processing (after queries):
-# - Pearson correlation (mem_controller_util_pct, gpu_util_pct) per GPU
-# - Thermal hysteresis (paired heating/cooling phases)
-# - Thermal degradation slope (linear regression on temp@constant_util)
-# - Job state transitions (scan has_active_job ordered)
-# - Underutilization duration (scan gpu_util_pct < 5 with has_active_job=True)
-# - Power-on hours before restart (scan uptime_s for drops)
-# - Cost calculations (reuse power_total_kwh, divide by active GPU hours)
-```
-
-**Template** (`_report_table.html`): Add new "Statistical Analysis" section after System section with 24h/7d/30d columns.
+**Template** (`_report_table.html`): Place calculated values in correct sections either per GPU or System section with 24h/7d/30d columns.
 
 ### 5.3 UI Integration
 
-**Historical Charts tab:** 5 new chart cards added to `rig_detail.html` (after GPU Power chart, before VRAM chart).
+**Historical Charts tab:**  new chart cards added to `rig_detail.html` at the end.
 
-**Report tab:** New section "Statistical Analysis" with table rows for each metric, columns for 24h/7d/30d.
+**Report tab:**  table rows for each metric in correct sections, columns for 24h/7d/30d.
 
-**New subtab (optional):** If Report tab gets too long, add a 6th tab "Analysis" between Charts and Containers. But extending Report is simpler first.
 
 ## 6. Priority & Phasing
 
 ### Phase 1: Pre-computed Charts (1-2 days)
-1. Add 5 fields to GPUMetric model + migration
+1. Add fields to GPUMetric model + migration
 2. Update serializer `process_ingest()` to compute them
 3. Update `compact_data.py` to aggregate them
-4. Add 5 chart registry entries + 5 chart cards in rig_detail.html
+4. Add  chart registry entries +  chart cards in rig_detail.html
 5. Test: charts appear, data flows, compaction works
 
 ### Phase 2: Report Tab Statistical Analysis (2-3 days)
 1. Extend `_build_report_context()` with additional aggregations
 2. Add Python post-processing functions for correlations, slopes, transitions
-3. Extend `_report_table.html` with Statistical Analysis section
+3. Extend `_report_table.html` with new data in either per GPU or System section
 4. Add 24h/7d/30d columns (reuse existing range selector)
 5. Test: numbers make sense, performance acceptable
 
@@ -237,47 +357,15 @@ snap_agg = MetricSnapshot.objects.filter(**base_filter).aggregate(
 
 ## 7. Key Technical Decisions
 
-1. **Ambient temperature estimate** for Cooling Efficiency: Use `cpu_temp_c` as proxy when GPU is idle, or a configurable per-rig ambient offset (default 25°C). Store in Rig model.
-
-2. **Fan-to-Temp Gain derivative**: Compute as `(fan_speed_pct - prev_fan) / (gpu_temp_c - prev_temp)` using the previous snapshot for the same GPU. Requires access to previous row in serializer — doable via `LatestSnapshot.gpu_fans_json` / `gpu_temps_json`.
-
-3. **Fan Bearing Wear Indicator**: Only meaningful when `power_draw_w` is stable (±5%). Filter in serializer: if `abs(power_draw_w - prev_power) > threshold`, set to NULL.
 
 4. **Pearson correlation**: Use manual formula to avoid scipy dependency:
    ```python
    r = sum((x - x_mean) * (y - y_mean)) / sqrt(sum((x - x_mean)^2) * sum((y - y_mean)^2))
    ```
 
-5. **Thermal Degradation Slope**: Filter rows where `gpu_util_pct` within ±5% of median utilization in window. Then linear regression on `gpu_temp_c` vs time. Slope in °C/day.
+5. **Thermal Degradation Slope**: Filter rows where `gpu_util_pct` within ±10% of median utilization in window. Then linear regression on `gpu_temp_c` vs time. Slope in °C/day.
 
 6. **Job State Transitions**: Scan ordered `has_active_job` values (0/1). Count `0→1` and `1→0` separately. Report both.
 
 7. **Underutilization Duration**: Scan ordered `gpu_util_pct`. When `has_active_job=True` AND `gpu_util_pct < 5`, accumulate minutes. Reset on `gpu_util_pct >= 5` or `has_active_job=False`.
 
-## 8. Summary Table
-
-| Metric | Location | Calculation | Storage |
-|---|---|---|---|
-| Cooling Efficiency Index | Historical Charts | Per-snapshot: `(gpu_temp_c - ambient) / power_draw_w` | GPUMetric.cooling_efficiency_index |
-| Fan Speed-to-Temp Gain | Historical Charts | Per-snapshot: derivative vs prev snapshot | GPUMetric.fan_to_temp_gain |
-| VRAM Bandwidth Saturation | Historical Charts | Per-snapshot: `mem_controller_util_pct / gpu_util_pct` | GPUMetric.vram_bandwidth_saturation |
-| CPU-to-GPU Power Ratio | Historical Charts | Per-snapshot: `cpu_power_w / sum(gpu_power_draw_w)` | GPUMetric.cpu_to_gpu_power_ratio |
-| Fan Bearing Wear Indicator | Historical Charts | Per-snapshot: `fan_speed_pct / gpu_temp_c` (filtered) | GPUMetric.fan_bearing_wear_indicator |
-| Thermal Hysteresis | Report: Statistical Analysis | Window: paired heating/cooling ΔTemp at same util | Computed on-demand |
-| Temp-to-PowerLimit Stability | Report: Statistical Analysis | Window: STDDEV(power_limit_w) by temp buckets | Computed on-demand |
-| Mem vs Core Correlation | Report: Statistical Analysis | Window: Pearson r(mem_controller, gpu_util) | Computed on-demand |
-| Compute-to-Memory Ratio Trend | Report: Statistical Analysis | Window: regression slope of ratio over time | Computed on-demand |
-| Clock Stability Index | Report: Statistical Analysis | Window: STDDEV(gpu_core_clock_mhz) | Computed on-demand |
-| Freq-to-PowerLimit Stability | Report: Statistical Analysis | Window: STDDEV(power_limit_w) by clock buckets | Computed on-demand |
-| Idle-to-Peak Power Delta | Report: Statistical Analysis | Window: Max(power) - Min(power) | Computed on-demand |
-| Idle Power Waste Ratio | Report: Statistical Analysis | Window: Avg(power@idle) / Avg(power@active) | Computed on-demand |
-| Job State Transition Frequency | Report: Statistical Analysis | Window: count of 0↔1 transitions in has_active_job | Computed on-demand |
-| Underutilization Duration | Report: Statistical Analysis | Window: minutes(util<5 AND has_job=True) | Computed on-demand |
-| Power-on Hours Before Restart | Report: Statistical Analysis | Window: max uptime_s before drop | Computed on-demand |
-| Thermal Degradation Slope | Report: Statistical Analysis | Window: °C/day slope at constant utilization | Computed on-demand |
-| Cost per Active GPU-Hour | Report: Statistical Analysis | Window: energy_cost / active_gpu_hours | Computed on-demand |
-| Idle Power Waste Cost | Report: Statistical Analysis | Window: energy_cost during idle periods | Computed on-demand |
-
----
-
-**Next Step:** Approve plan → create branch `feat/analytics-timeseries` → implement Phase 1 (pre-computed charts).

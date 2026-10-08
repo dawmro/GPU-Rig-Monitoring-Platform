@@ -223,7 +223,7 @@ if (
 
 ### 4.3 VRAM Bandwidth Saturation Index
 - **Definition:** `mem_controller_util_pct / gpu_util_pct` The VRAM Bandwidth Saturation Index estimates how heavily the GPU's memory subsystem is being utilized relative to overall GPU utilization.
-- **Data Source:** `GPUMetric` current payload: `mem_controller_util_pct`, `gpu_util_pct`. **Note:** The existing code uses these directly from `gpu.get()` in serializer — NOT from `prev_ls`. `prev_ls.mem_controller_util_pct_json[0]` / `prev_ls.gpu_util_pct_json[0]` references in original plan are incorrect; `LatestSnapshot` does NOT store these as separate arrays named that way — they are in `gpu_mem_controller_utils_json` / `gpu_utils_json`. Verify DB field names in `models.py`: `mem_controller_util_pct` and `gpu_util_pct` on `GPUMetric`.
+- **Data Source:** Payload (`gpu.get('mem_controller_util_pct')`, `gpu.get('gpu_util_pct')`) — current snapshot values from agent payload (`serializers.py` 203-204 in `GPUMetric` update_or_create). `LatestSnapshot.gpu_mem_controller_utils_json` / `gpu_utils_json` arrays (line 334-337 `models.py`) for fast read. NOT `prev_ls`. NOT historical `GPUMetric` timeseries (this metric is current-state ratio at ingest time).
 - **Current Values:** `GPUMetric` being created: `mem_controller_util_pct`, `gpu_util_pct`, 
 - **Time Range:** **Single snapshot** (no delta needed — this is a point-in-time ratio, not a change-over-change metric). **Correction:** Original plan incorrectly said "2 consecutive snapshots (1-minute interval)"; the ratio uses current values only.
 - **Computation:** At ingest, direct division (no delta required). Effective denominator: `max(gpu_util_pct, MIN_GPU_UTIL_PCT)`.

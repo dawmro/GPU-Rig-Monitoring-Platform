@@ -124,6 +124,7 @@ COMPACT_TABLES = [
             # Job status: MAX(bool) — any True in bucket -> True (1), else False (0)
             'has_active_job': 'max',
             'cpu_power_w': 'avg', 'total_system_power_w': 'avg',
+            'cpu_to_gpu_power_ratio': 'avg',
             # NEW: Per-core metrics — element-wise average for smooth trends (consistent with GPU scalar metrics)
             'cpu_utilization_per_core_json': 'avg_elementwise',
             'cpu_temp_per_core_json': 'avg_elementwise',
@@ -131,6 +132,7 @@ COMPACT_TABLES = [
         },
         'static_fields': [
             'schema_version',
+            'cpu_to_gpu_power_ratio',
         ],
     },
 ]

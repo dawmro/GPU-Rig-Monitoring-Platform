@@ -248,7 +248,8 @@ vram_bandwidth_saturation = gpu.get('vram_bandwidth_saturation')
 `cpu_power_w / sum(all gpu_power_draw_w)` — a ratio (not workload-bound indicator).
 - **Source:** Latest payload (`power` dict) or `LatestSnapshot` (fast). **NOT `GPUMetric`** (that is historical timeseries; 4.4 is current-state). `LatestSnapshot.gpu_power_draws_json` (line 342 `models.py`) is the array; `power_cpu_w` is scalar (line 410 `models.py`).
 - **Single line (payload / snapshot, not GPUMetric):** `cpu_power / sum(gpu_power_draws_json)` — denominator from `LatestSnapshot` array or payload `power.gpu_power_w`. No reference to `GPUMetric.power_draw_w` for this metric.
-- **Storage / Compaction:** None — derived metric; compute from payload or `LatestSnapshot`. Not a timeseries feature by default.
+- **Implementation:** Agent computes `cpu_to_gpu_power_ratio = cpu_power_w / max(sum(gpu_power_draws), 1.0)` per payload; serializer receives it in `power.get('cpu_to_gpu_power_ratio')` and stores directly in `MetricSnapshot.cpu_to_gpu_power_ratio`. Server-side fallback if agent doesn't send it.
+- **Storage / Compaction:** `MetricSnapshot.cpu_to_gpu_power_ratio` (new FloatField). Compaction: `avg` at 15m/1h tiers. Single-line chart.
 - **Note:** Interpret as ratio only; do NOT label "CPU-bound" or "GPU-bound" from this number alone.
 
 ## 5. Implementation Architecture
@@ -297,6 +298,35 @@ class GPUMetric(models.Model):
 **Compaction** (`compact_data.py`): Add these fields to `COMPACT_TABLES[0]['agg_fields']` with `'avg'` aggregation (they're ratios, average of ratios is acceptable).
 
 **Chart registry** (`chart-registry.js`): Add new entries pointing to the new metric names.
+
+### 5.1b CPU-to-GPU Power Ratio — Single-line Chart (MetricSnapshot)
+
+```python
+# gpu_monitor/metrics_app/models.py — ADD to MetricSnapshot class
+
+class MetricSnapshot(models.Model):
+    # ... existing fields ...
+    cpu_power_w = models.FloatField(null=True, blank=True)
+    total_system_power_w = models.FloatField(null=True, blank=True)
+    # NEW: CPU-to-GPU Power Ratio (agent-computed for schema 1.22+)
+    cpu_to_gpu_power_ratio = models.FloatField(
+        null=True,
+        blank=True,
+        help_text=(
+            'Ratio of CPU power to total GPU power (cpu_power_w / sum(gpu_power_draw_w)); '
+            'computed at agent from payload power data; higher values indicate CPU draws '
+            'more power relative to GPUs; single-line chart (not per-GPU)'
+        )
+    )
+```
+
+**Agent update** (`agent/run.py`): In `collect_power()`, compute `cpu_to_gpu_power_ratio = cpu_power_w / max(gpu_power_w, 1.0)` and include in returned dict.
+
+**Ingest serializer update** (`serializers.py`): Read `power_data.get('cpu_to_gpu_power_ratio')` and store in `MetricSnapshot.cpu_to_gpu_power_ratio`. Server-side fallback if agent doesn't send it.
+
+**Compaction** (`compact_data.py`): Add `cpu_to_gpu_power_ratio` to `COMPACT_TABLES[-1]['agg_fields']` (metrics_metricsnapshot) with `'avg'`.
+
+**Chart registry** (`chart-registry.js`): Add entry for `cpu_to_gpu_power_ratio` using single-line loader.
 
 ### 5.2 Report Tab Extension (for windowed statistics)
 
@@ -356,11 +386,11 @@ Extend `_build_report_context()` in `dashboard/views.py` (line 734) to compute t
 
 ### 5.4 Verification Against Latest Architecture (Verified)
 
-- `models.py`: `GPUMetric` fields (`cooling_efficiency_index`, `fan_adjusted_cooling_response`, `vram_bandwidth_saturation`) — **ALL DONE**. `cpu_to_gpu_power_ratio` removed from model proposal (§4.4 correction).
-- `serializers.py`: `process_ingest()` (line 38) computes `GPUMetric` rows from payload. `prev_ls` fetched ONCE per rig using .get() (rig_uuid is PK). Code fragment corrected above to index by `gpu_index` (not hardcoded 0). **cooling_efficiency_index, fan_adjusted_cooling_response computed from prev_ls deltas — DONE**.
-- `compact_data.py`: `COMPACT_TABLES` line 51-77 (`metrics_gpumetric`) includes `gpu_util_pct`, `mem_controller_util_pct`, `gpu_core_clock_mhz`, `fan_speed_pct`, `power_draw_w`, `power_limit_w`. New derived fields (`cooling_efficiency_index`, `fan_adjusted_cooling_response`, `vram_bandwidth_saturation`) added to `agg_fields` with `'avg'` — **ALL DONE**.
-- `checks.py`: System checks (line 15-30) read `COMPACT_TABLES` in-memory (not file). Any new `GPUMetric` field added to model must also be added to `COMPACT_TABLES` static_fields (`COMPACT_TABLES[0]['static_fields']`) or defense checks will fail (line 154-155). See memory note `§Defense (W001/W004/0052)`: bug class → code + Django check + skill.
-- `ChartDataView` (line 194): `SNAPSHOT_METRICS` (line 226) and `GPU_METRICS` (line 239) define chart endpoint metrics. New chart metrics must be added to `GPU_METRICS` mapping (e.g., `'cooling_efficiency_index': 'cooling_efficiency_index'`). **cooling_efficiency_index, fan_adjusted_cooling_response, vram_bandwidth_saturation added — ALL DONE**.
+- `models.py`: `GPUMetric` fields (`cooling_efficiency_index`, `fan_adjusted_cooling_response`, `vram_bandwidth_saturation`) — **ALL DONE**. `MetricSnapshot` field `cpu_to_gpu_power_ratio` — **DONE** (migration 0063).
+- `serializers.py`: `process_ingest()` (line 38) computes `GPUMetric` rows from payload. `prev_ls` fetched ONCE per rig using .get() (rig_uuid is PK). Code fragment corrected above to index by `gpu_index` (not hardcoded 0). **cooling_efficiency_index, fan_adjusted_cooling_response computed from prev_ls deltas — DONE**. `MetricSnapshot.cpu_to_gpu_power_ratio` read from `power_data.get('cpu_to_gpu_power_ratio')` — **DONE**.
+- `compact_data.py`: `COMPACT_TABLES` line 51-77 (`metrics_gpumetric`) includes `gpu_util_pct`, `mem_controller_util_pct`, `gpu_core_clock_mhz`, `fan_speed_pct`, `power_draw_w`, `power_limit_w`. New derived fields (`cooling_efficiency_index`, `fan_adjusted_cooling_response`, `vram_bandwidth_saturation`) added to `agg_fields` with `'avg'` — **ALL DONE**. `COMPACT_TABLES[-1]` (`metrics_metricsnapshot`) `cpu_to_gpu_power_ratio` with `'avg'` in `agg_fields` and `static_fields` — **DONE**.
+- `checks.py`: System checks (line 15-30) read `COMPACT_TABLES` in-memory (not file). Any new `GPUMetric` field added to model must also be added to `COMPACT_TABLES` static_fields (`COMPACT_TABLES[0]['static_fields']`) or defense checks will fail (line 154-155). Same applies to `MetricSnapshot` fields in `COMPACT_TABLES[-1]`. See memory note `§Defense (W001/W004/0052)`: bug class → code + Django check + skill.
+- `ChartDataView` (line 194): `SNAPSHOT_METRICS` (line 226) and `GPU_METRICS` (line 239) define chart endpoint metrics. New chart metrics must be added to appropriate mapping (e.g., `'cpu_to_gpu_power_ratio': 'cpu_to_gpu_power_ratio'` in `SNAPSHOT_METRICS`). **cooling_efficiency_index, fan_adjusted_cooling_response, vram_bandwidth_saturation added to GPU_METRICS — ALL DONE**. `cpu_to_gpu_power_ratio` added to `SNAPSHOT_METRICS` — **DONE**.
 
 
 ## 6. Priority & Phasing
@@ -373,6 +403,13 @@ Extend `_build_report_context()` in `dashboard/views.py` (line 734) to compute t
 5. Test: charts appear, data flows, compaction works — **ALL DONE** (cooling_efficiency_index, fan_adjusted_cooling_response, vram_bandwidth_saturation)
 
 *Remaining for Phase 1: CPU-to-GPU Power Ratio*
+- ✅ Add `cpu_to_gpu_power_ratio` field to `MetricSnapshot` model + migration (0063_add_cpu_to_gpu_power_ratio)
+- ✅ Update agent (`agent/run.py` and `agent_windows/run.py`) to compute `cpu_to_gpu_power_ratio` in `collect_power()` and include in payload
+- ✅ Update serializer to read `power_data.get('cpu_to_gpu_power_ratio')` and store in `MetricSnapshot`
+- ✅ Update `compact_data.py` to aggregate with `'avg'` in both `agg_fields` and `static_fields`
+- ✅ Add chart registry entry + chart card in rig_detail.html
+- ✅ Bump agent version to 1.17.0 and schema version to 1.22
+- Test: chart appears, data flows, compaction works
 
 ### Phase 2: Report Tab Statistical Analysis (2-3 days)
 1. Extend `_build_report_context()` with additional aggregations

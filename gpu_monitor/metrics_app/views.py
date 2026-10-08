@@ -228,6 +228,7 @@ class ChartDataView(APIView):
         'mem_total_bytes', 'mem_used_bytes', 'mem_free_bytes', 'mem_cached_bytes',
         'swap_used_bytes', 'swap_total_bytes',
         'cpu_power_w', 'total_system_power_w',
+        'cpu_to_gpu_power_ratio',
         'has_active_job',
         # NEW: Per-core metrics (JSON arrays, not compacted)
         'cpu_utilization_per_core_pct',   # Per-core utilization chart

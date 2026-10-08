@@ -53,8 +53,8 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.16.0-win'
-__schema_version__ = '1.21'
+__version__ = '1.17.0'
+__schema_version__ = '1.22'
 
 # == Config ==================================================================
 
@@ -382,6 +382,10 @@ def collect_power(cpu_metrics):
             'gpu_power_w': round(gpu_power_w, 1),
             'other_power_w': other_power_w,
             'total_power_w': total_power_w,
+            'cpu_to_gpu_power_ratio': (
+                round(cpu_power_w / max(gpu_power_w, 1.0), 4)
+                if gpu_power_w > 0 else None
+            ),
         }
     except Exception as e:
         logging.getLogger('power').warning('Power collection failed: %s', e)

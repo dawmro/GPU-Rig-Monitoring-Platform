@@ -69,6 +69,8 @@ COMPACT_TABLES = [
             'gpu_core_clock_mhz': 'avg',
             'gpu_mem_clock_mhz': 'avg',
             'vram_bandwidth_saturation': 'avg',
+            'cooling_efficiency_index': 'avg',
+            'fan_adjusted_cooling_response': 'avg',
         },
         'static_fields': ['model', 'gpu_uuid', 'snapshot_id', 'gpu_board_part_number', 'gpu_subvendor',
                          'gpu_vbios', 'pci_bus_id', 'gpu_architecture', 'gpu_bus_type', 'gpu_board_id',

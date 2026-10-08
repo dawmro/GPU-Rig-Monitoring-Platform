@@ -143,6 +143,29 @@ class GPUMetric(models.Model):
         )
     )
 
+    # NEW: Cooling Efficiency Index - ΔGPU_Temp / ΔGPU_Power (°C/W)
+    # Computed at ingest from previous snapshot vs current; measures temperature change per watt
+    cooling_efficiency_index = models.FloatField(
+        null=True,
+        blank=True,
+        help_text=(
+            '°C/W — temperature change per watt of GPU power change; '
+            'higher values indicate a larger temperature response to power changes'
+        )
+    )
+
+    # NEW: Fan-Adjusted Cooling Response Index - (ΔTemp / effective ΔPower) / (1 + ΔFan% / 100)
+    # Temperature response per watt of GPU power change, adjusted for the change in fan speed
+    fan_adjusted_cooling_response = models.FloatField(
+        null=True,
+        blank=True,
+        help_text=(
+            '°C/W — temperature change per watt of GPU power change, '
+            'adjusted for the change in fan speed; higher values indicate a larger '
+            'temperature response after accounting for fan-speed changes'
+        )
+    )
+
     class Meta:
         db_table = 'metrics_gpumetric'
         unique_together = ('rig_uuid', 'timestamp', 'gpu_index')

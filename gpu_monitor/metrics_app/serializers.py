@@ -176,6 +176,80 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
             gpu_mig_modes = []
             gpu_bar1_mb = []
             for idx, gpu in enumerate(gpu_list):
+                # Compute Cooling Efficiency Index and Fan-Adjusted Cooling Response Index
+                # from previous snapshot (if available)
+                MIN_POWER_DELTA_W = 1.0
+
+                prev_ls = LatestSnapshot.objects.filter(rig_uuid=rig_uuid).first()
+                prev_idx = gpu.get('gpu_index', idx) if 'gpu_index' in gpu else idx
+
+                prev_gpu_temp = (
+                    prev_ls.gpu_temps_json[prev_idx]
+                    if prev_ls and prev_ls.gpu_temps_json and prev_idx < len(prev_ls.gpu_temps_json)
+                    else None
+                )
+
+                prev_gpu_power = (
+                    prev_ls.gpu_power_draws_json[prev_idx]
+                    if prev_ls and prev_ls.gpu_power_draws_json and prev_idx < len(prev_ls.gpu_power_draws_json)
+                    else None
+                )
+
+                prev_gpu_fan = (
+                    prev_ls.gpu_fans_json[prev_idx]
+                    if prev_ls and prev_ls.gpu_fans_json and prev_idx < len(prev_ls.gpu_fans_json)
+                    else None
+                )
+
+                curr_gpu_temp = gpu.get('temp_c')
+                curr_gpu_power = gpu.get('power_draw_w')
+                curr_gpu_fan = gpu.get('fan_speed_pct')
+
+                cooling_efficiency_index = None
+                fan_adjusted_cooling_response = None
+
+                if (
+                    prev_gpu_temp is not None
+                    and prev_gpu_power is not None
+                    and curr_gpu_temp is not None
+                    and curr_gpu_power is not None
+                ):
+                    delta_temp = curr_gpu_temp - prev_gpu_temp
+                    delta_power = curr_gpu_power - prev_gpu_power
+
+                    if abs(delta_power) < MIN_POWER_DELTA_W:
+                        effective_delta_power = MIN_POWER_DELTA_W
+                    else:
+                        effective_delta_power = delta_power
+
+                    cooling_efficiency_index = (
+                        delta_temp / effective_delta_power
+                    )
+
+                if (
+                    prev_gpu_temp is not None
+                    and prev_gpu_power is not None
+                    and prev_gpu_fan is not None
+                    and curr_gpu_temp is not None
+                    and curr_gpu_power is not None
+                    and curr_gpu_fan is not None
+                ):
+                    delta_temp = curr_gpu_temp - prev_gpu_temp
+                    delta_power = curr_gpu_power - prev_gpu_power
+                    delta_fan = curr_gpu_fan - prev_gpu_fan
+
+                    if abs(delta_power) < MIN_POWER_DELTA_W:
+                        effective_delta_power = MIN_POWER_DELTA_W
+                    else:
+                        effective_delta_power = delta_power
+
+                    fan_adjustment = 1 + (delta_fan / 100.0)
+
+                    fan_adjusted_cooling_response = (
+                        (delta_temp / effective_delta_power)
+                        / fan_adjustment
+                    )
+
                 GPUMetric.objects.update_or_create(
                     rig_uuid=rig_uuid,
                     timestamp=ts,
@@ -219,6 +293,9 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                         'gpu_mem_clock_mhz': gpu.get('gpu_mem_clock_mhz'),
                         # NEW: VRAM Bandwidth Saturation Index (agent-computed, schema 1.21+)
                         'vram_bandwidth_saturation': gpu.get('vram_bandwidth_saturation'),
+                        # NEW: Cooling Efficiency Index and Fan-Adjusted Cooling Response
+                        'cooling_efficiency_index': cooling_efficiency_index,
+                        'fan_adjusted_cooling_response': fan_adjusted_cooling_response,
                     },
                 )
                 # Build summary arrays for LatestSnapshot

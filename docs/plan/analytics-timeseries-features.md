@@ -243,15 +243,6 @@ MIN_MEM_CONTROLLER_UTIL_PCT = 1.0
 
 curr_gpu_util = curr_gpu.gpu_util_pct
 curr_mem_controller_util = curr_gpu.mem_controller_util_pct
-
-vram_bandwidth_saturation = None
-
-# Simplified — guards both denominator and numerator (no zero division, no undefined vars)
-MIN_GPU_UTIL_PCT = 1.0
-MIN_MEM_CONTROLLER_UTIL_PCT = 1.0
-
-curr_gpu_util = curr_gpu.gpu_util_pct
-curr_mem_controller_util = curr_gpu.mem_controller_util_pct
 vram_bandwidth_saturation = None
 
 if (curr_gpu_util is not None and curr_mem_controller_util is not None):

@@ -261,9 +261,9 @@ if (
 ---
 
 ### 4.4 CPU-to-GPU Power Ratio (Single-line, multi-GPU)
-`cpu_power_w / sum(all gpu_power_draw_w)` — a ratio, not a workload-bound indicator (different CPUs/GPUs have different TDPs; ratio alone doesn't prove CPU or GPU dominance).
-- **Source:** Payload `power` dict (`cpu_power_w`, each GPU `power_draw_w`). `LatestSnapshot` (`power_cpu_w` / `gpu_power_draws_json` sum) for fast read.
-- **Single line:** `cpu_power / sum(gpu.get('power_draw_w', 0) for gpu in gpu_list)` — multi-GPU denominator sums all GPUs (`serializers.py` 178-262 loop, 211 `GPUMetric.power_draw_w`).
+`cpu_power_w / sum(all gpu_power_draw_w)` — a ratio (not workload-bound indicator).
+- **Source:** Latest payload (`power` dict) or `LatestSnapshot` (fast). **NOT `GPUMetric`** (that is historical timeseries; 4.4 is current-state). `LatestSnapshot.gpu_power_draws_json` (line 342 `models.py`) is the array; `power_cpu_w` is scalar (line 410 `models.py`).
+- **Single line (payload / snapshot, not GPUMetric):** `cpu_power / sum(gpu_power_draws_json)` — denominator from `LatestSnapshot` array or payload `power.gpu_power_w`. No reference to `GPUMetric.power_draw_w` for this metric.
 - **Storage / Compaction:** None — derived metric; compute from payload or `LatestSnapshot`. Not a timeseries feature by default.
 - **Note:** Interpret as ratio only; do NOT label "CPU-bound" or "GPU-bound" from this number alone.
 

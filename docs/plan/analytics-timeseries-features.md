@@ -329,7 +329,7 @@ Extend `_build_report_context()` in `dashboard/views.py` (line 734) to compute t
 - `gpu_agg` (line 774) aggregates per `gpu_index`. Windowed GPU metrics reuse this.
 
 **Implementation rules verified against architecture:**
-1. **MetricSnapshot is NOT compacted** (line 212 comment: "MetricSnapshot is NOT compacted by compact_data"). Report metrics that rely on `MetricSnapshot` (CPU power for ratio, job state for transitions, uptime for restart detection) aggregate over raw rows — acceptable for 24h (~1.4K rows) but 30d (~43K rows) requires SQL-level aggregation (not Python scan). The existing `_build_report_context()` already uses `.aggregate()` — extend that.
+1. **MetricSnapshot IS compacted by `compact_data` (line 112-132)** — 0-1d raw, 1-7d 15m, 7-31d 1h (group `rig_uuid`). The `ChartDataView` comment (line 212) means charts aggregate SQL on-the-fly rather than reading pre-bucketed rows directly. Report metrics using `MetricSnapshot` (CPU power, job state, uptime) should aggregate via SQL `.aggregate()` over the range; this scans compacted rows (~720 for 30d) — much faster than raw scan. The existing `_build_report_context()` (line 848) already uses `.aggregate()` — extend that.
 2. **GPUMetric IS compacted** (`COMPACT_TABLES` line 51-77, `metrics_gpumetric`). Report-tab GPU metrics over 7d/30d read pre-bucketed 15m/1h rows (~700 / ~720 rows) — much faster than raw scan. Use the existing `GPUMetric` aggregation (`Avg`, `Max`, `Sum`) — do NOT read raw time-series.
 3. **LatestSnapshot for point-in-time ratios:** `cpu_to_gpu_power_ratio` for current state reads `LatestSnapshot` directly (no aggregation needed). This is faster than any time-series query.
 
@@ -405,6 +405,15 @@ Extend `_build_report_context()` in `dashboard/views.py` (line 734) to compute t
 - Add trend indicators (↑/↓) for degradation metrics
 - Add tooltips explaining each metric
 
+### 5.4 MetricSnapshot Compaction Status — CORRECTED (Verified against compact_data.py + ChartDataView)
+
+**Contradiction resolved:** `compact_data.py` line 112 (`COMPACT_TABLES`) includes `metrics_metricsnapshot`. `ChartDataView` line 212 comment says "MetricSnapshot is NOT compacted". **Both statements are partially true — clarification:**
+
+- `MetricSnapshot` IS in `COMPACT_TABLES` (line 112-132) and IS compacted: 0-1d raw → 1-7d 15m buckets → 7-31d 1h buckets. Group by `rig_uuid`. Aggregations: `avg`/`sum`/`max`/`min`/`last`/`avg_elementwise`. This is confirmed by reading `COMPACT_TABLES` directly (line 44-133 of `compact_data.py`).
+- `ChartDataView` (line 212) treats it as "not compacted" for chart-fetching purposes: charts aggregate with SQL (`.annotate(bucket=TruncMinute)`) rather than reading pre-bucketed `MetricSnapshot` rows via `_read_prebucketed()`. This is a design choice — snapshot-level charts aggregate at query time (like `SNAPSHOT_METRICS` line 226).
+- **Impact for analytics plan:** Report-tab metrics CAN (and should) aggregate from `MetricSnapshot` using SQL `.aggregate()` over the full time window. For 30d, the compacted table has ~720 rows (1h buckets) — much faster than scanning ~43K raw rows. The original plan's performance note needs correction: do NOT say "~43K rows — needs careful design" as a blocker; say "use SQL aggregation which handles both raw (<1d) and compacted (≥1d) transparently; for 30d this scans ~720 compacted rows."
+- **Verification against defense rules:** Any new `MetricSnapshot` derived metric added at compaction level must also be reflected in `COMPACT_TABLES` `agg_fields` (line 114-128) and `checks.py` verifies this (line 15-30, in-memory import from `compact_data` line 30). See memory (§Defense): new field needs `COMPACT_TABLES` entry.
+
 ## 7. Key Technical Decisions (Corrected & Verified)
 
 1. **LatestSnapshot vs Time-series for fast reads:** `LatestSnapshot` (single row per rig) is faster and cheaper than any time-series aggregation. Metrics that only need current state (`cpu_to_gpu_power_ratio` latest value, job status, GPU identity) must read `LatestSnapshot` first (`.first()` at line 833 of `dashboard/views.py`). Only historical aggregates (24h/7d/30d) should read `MetricSnapshot` (not compacted) or `GPUMetric` (compacted at 15m/1h). This is the core architecture principle applied to all metrics in this plan.
@@ -438,5 +447,5 @@ Extend `_build_report_context()` in `dashboard/views.py` (line 734) to compute t
    `{ id: 'chartGpuCoolingEfficiency', loader: function(uuid, range) { return window.GRM.ChartLoaders.loadChartMultiGpu('chartGpuCoolingEfficiency', 'cooling_efficiency_index', uuid, range, '°C/W'); } }`
    The loader uses `ChartDataView.GPU_METRICS` mapping at line 239 (`metrics_app/views.py`) — add `'cooling_efficiency_index': 'cooling_efficiency_index'` there.
 
-9. **Performance contract for 30d report:** Never scan raw `MetricSnapshot` (~43K rows) in Python. Aggregate at SQL level first (`.aggregate()` / `.annotate()`), then process bucket arrays (≤720 entries for 30d at 1h). This aligns with `ChartDataView` design (line 204-210).
+9. **Performance contract for 30d report:** `MetricSnapshot` IS compacted (`COMPACT_TABLES` 112-132), so SQL aggregation over 30d scans ~720 compacted 1h-bucket rows — not ~43K raw. Only ranges <1d (≤1.4K raw rows) read un-bucketed data. Aggregate at SQL level first (`.aggregate()` / `.annotate()`), then process bucket arrays. This aligns with `ChartDataView` design (line 204-210) and `compact_data` 3-tier strategy.
 

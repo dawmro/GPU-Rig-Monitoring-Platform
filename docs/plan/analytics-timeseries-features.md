@@ -238,18 +238,15 @@ Index	Interpretation
 
 **Code (serializers.py):**
 ```python
-MIN_GPU_UTIL_PCT = 1.0
-MIN_MEM_CONTROLLER_UTIL_PCT = 1.0
+# Agent-computed (agent/run.py 1054-1055); server reads pre-computed value from payload
+vram_bandwidth_saturation = curr_gpu.get('vram_bandwidth_saturation')
 
-curr_gpu_util = curr_gpu.gpu_util_pct
-curr_mem_controller_util = curr_gpu.mem_controller_util_pct
-vram_bandwidth_saturation = None
-
-if (curr_gpu_util is not None and curr_mem_controller_util is not None):
-    vram_bandwidth_saturation = (
-        max(curr_mem_controller_util, MIN_MEM_CONTROLLER_UTIL_PCT)
-        / max(curr_gpu_util, MIN_GPU_UTIL_PCT)
-    )
+# Fallback: server-side division only if agent did not compute (e.g. old agent)
+if vram_bandwidth_saturation is None:
+    curr_util = curr_gpu.gpu_util_pct
+    curr_mem = curr_gpu.mem_controller_util_pct
+    if curr_util is not None and curr_mem is not None and curr_util > 0:
+        vram_bandwidth_saturation = curr_mem / curr_util
 ```
 
 ---

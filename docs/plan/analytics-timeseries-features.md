@@ -260,15 +260,36 @@ if (
 
 ---
 
-### 4.4 CPU-to-GPU Power Ratio
-- **Definition:** `cpu_power_w / gpu_power_w` — CPU-bound (>1.0) vs GPU-bound (<0.5). Simplest derived metric; no historical window needed.
-- **Data Source:** Payload (`power` dict) — `cpu_power_w`, `gpu_power_w` delivered every ingest (`serializers.py` 641-642). `LatestSnapshot` denormalizes (`power_cpu_w`, `power_gpu_w` line 661-662) for fast reads.
-- **Current Values:** Direct from payload or `LatestSnapshot`: `cpu_power_w / gpu_power_w`. Per-GPU current from `GPUMetric.power_draw_w` sum.
-- **Time Range:** Point-in-time (current payload). Not a timeseries trend metric by design.
-- **Computation:** `cpu / gpu` from payload (`serializers.py` 641-645). No cross-table join, no SQL aggregation for current value.
-- **Storage:** None — compute from payload. Add derived field only if historical needed; `MetricSnapshot` already has `cpu_power_w`, `GPUMetric` has `power_draw_w`.
-- **Compaction:** Not needed for current-state metric.
-- **Interpretation:** >1.0 = CPU-bound; <0.5 = GPU-bound; ~0.2–0.8 = balanced workload.
+### 4.4 CPU-to-GPU Power Ratio (Multi-GPU corrected)
+- **Definition:** `cpu_power_w / sum(gpu_power_draw_w)` — CPU-bound (>1.0) vs GPU-bound (<0.5). **Multi-GPU rigs:** denominator must sum all GPU `power_draw_w` values (from payload array or `GPUMetric` per-GPU rows). Not `cpu_power_w / gpu_power_w` (that ignores additional GPUs).
+- **Data Source:** Payload (`power` dict) — `cpu_power_w` (line 641-642 serializers.py). Per-GPU power: `gpu.get('power_draw_w')` for each GPU in `gpu_list` (line 211 serializers.py). `LatestSnapshot.gpu_power_draws_json` (array, line 342 models.py) sums for current state; `GPUMetric.power_draw_w` per `gpu_index` for historical.
+- **Current Values:**
+  ```python
+  # From payload (serializers.py — inside gpu loop, line 178-262)
+  total_gpu_power = sum(
+      gpu.get('power_draw_w', 0) or 0 for gpu in gpu_list
+  )
+  cpu_power = float(power_data.get('cpu_power_w', 0) or 0)  # line 642
+  ratio = cpu_power / total_gpu_power if total_gpu_power else None
+  ```
+  `LatestSnapshot.power_cpu_w` / `sum(LatestSnapshot.gpu_power_draws_json)` for fast current-state read.
+- **Time Range:** Point-in-time (current payload / `LatestSnapshot`). For historical aggregate: `Avg('MetricSnapshot.cpu_power_w') / Avg(sum GPUMetric.power_draw_w per rig per bucket)` — but by design this is primarily current-state.
+- **Storage:** None — compute from payload / `LatestSnapshot`. If historical aggregate needed, use existing `MetricSnapshot.cpu_power_w` + aggregated `GPUMetric.power_draw_w` (no new DB field).
+- **Compaction:** Not needed (current-state metric derived from payload/LatestSnapshot).
+- **Multi-GPU code fragment (serializers.py — add after power processing, line 663-667):**
+  ```python
+  # Compute CPU-to-GPU ratio from payload (multi-GPU aware)
+  total_gpu_power_payload = sum(
+      (gpu.get('power_draw_w', 0) or 0) for gpu in gpu_list
+  )
+  cpu_power_payload = float(power_data.get('cpu_power_w', 0) or 0) if power_data else 0
+  cpu_to_gpu_power_ratio = (
+      cpu_power_payload / total_gpu_power_payload
+      if total_gpu_power_payload > 0 else None
+  )
+  # Store in response / Log if needed — NOT in GPUMetric (cross-rig metric)
+  ```
+- **Interpretation:** >1.0 = CPU-bound (more CPU watts than GPU); <0.5 = GPU-bound; ≈0.2–0.8 = balanced workload. For 2+ GPUs, denominator grows, so ratio naturally decreases — compare within same rig over time, not across rigs.
 
 ## 5. Implementation Architecture
 

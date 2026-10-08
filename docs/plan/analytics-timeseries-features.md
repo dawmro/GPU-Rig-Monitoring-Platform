@@ -47,12 +47,12 @@ This document analyzes proposed analytics metrics derived from GPU rig timeserie
 
 These are **time-series visualizations** — they plot a derived value over time, just like existing charts (GPU Temp, Fan Speed, etc.). They follow the same pattern: fetch from ChartDataView, render with Chart.js.
 
-| # | Metric                                  | Chart Name                    | Data Source | Calculation                                                                                              | Chart Type    |
-| - | --------------------------------------- | ----------------------------- | ----------- | -------------------------------------------------------------------------------------------------------- | ------------- |
-| 1 | **Cooling Efficiency Index**            | GPU Cooling Efficiency        | GPUMetric   | `ΔTemp / ΔPower` = temperature change per watt of GPU power change                                       | Line, per-GPU |
-| 2 | **Fan-Adjusted Cooling Response Index** | Fan-Adjusted Cooling Response | GPUMetric   | `(ΔTemp / ΔPower) / (1 + ΔFan% / 100)` = temperature response per watt, adjusted for change in fan speed | Line, per-GPU |
-| 3 | **VRAM Bandwidth Saturation Index** | VRAM Bandwidth Saturation | GPUMetric | `mem_controller_util_pct / gpu_util_pct` | Line, per-GPU |
-| 4 | **CPU-to-GPU Power Ratio** | CPU/GPU Power Ratio | GPUMetric + MetricSnapshot | `power_cpu_w / power_gpu_w` (or `cpu_power_w / sum(power_draw_w)`) | Line, single |
+| # | Metric                                  | Chart Name                    | Data Source | Calculation                                                                                              | Chart Type    | Status    |
+| - | --------------------------------------- | ----------------------------- | ----------- | -------------------------------------------------------------------------------------------------------- | ------------- | --------- |
+| 1 | **Cooling Efficiency Index**            | GPU Cooling Efficiency        | GPUMetric   | `ΔTemp / ΔPower` = temperature change per watt of GPU power change                                       | Line, per-GPU | Planned   |
+| 2 | **Fan-Adjusted Cooling Response Index** | Fan-Adjusted Cooling Response | GPUMetric   | `(ΔTemp / ΔPower) / (1 + ΔFan% / 100)` = temperature response per watt, adjusted for change in fan speed | Line, per-GPU | Planned   |
+| 3 | **VRAM Bandwidth Saturation Index** | VRAM Bandwidth Saturation | GPUMetric | `mem_controller_util_pct / gpu_util_pct` | Line, per-GPU | **Done**  |
+| 4 | **CPU-to-GPU Power Ratio** | CPU/GPU Power Ratio | GPUMetric + MetricSnapshot | `power_cpu_w / power_gpu_w` (or `cpu_power_w / sum(power_draw_w)`) | Line, single | Planned   |
 
 **Rationale for Chart placement:** These are **point-in-time derived metrics** — each data point is computed from a single snapshot row. Delatas can be pre-computed at ingest time from last snapshot json vs current payload and stored as new fields on GPUMetric (or a new AnalyticsMetric model), then exposed through the existing ChartDataView → chart-registry pipeline with zero changes to the fetch/render flow.
 
@@ -221,12 +221,12 @@ if (
 
 ---
 
-### 4.3 VRAM Bandwidth Saturation Index
+### 4.3 VRAM Bandwidth Saturation Index — **DONE**
 - **Definition:** `mem_controller_util_pct / gpu_util_pct` The VRAM Bandwidth Saturation Index estimates how heavily the GPU's memory subsystem is being utilized relative to overall GPU utilization.
 - **Data Source:** Payload (`gpu.get('mem_controller_util_pct')`, `gpu.get('gpu_util_pct')`) — current snapshot values from agent payload (`serializers.py` 203-204 in `GPUMetric` update_or_create). `LatestSnapshot.gpu_mem_controller_utils_json` / `gpu_utils_json` arrays (line 334-337 `models.py`) for fast read. NOT `prev_ls`. NOT historical `GPUMetric` timeseries (this metric is current-state ratio at ingest time).
 - **Current Values:** `GPUMetric` being created: `mem_controller_util_pct`, `gpu_util_pct`, 
 - **Time Range:** **Single snapshot** (no delta needed — this is a point-in-time ratio, not a change-over-change metric). **Correction:** Original plan incorrectly said "2 consecutive snapshots (1-minute interval)"; the ratio uses current values only.
-- **Computation:** Can be moved to agent code (`agent/run.py` 1054-1055: both values available in payload). Agent computes `vram_bandwidth_saturation = mem_controller_util_pct / max(gpu_util_pct, 1.0)` per GPU; serializer receives it in `gpu.get('vram_bandwidth_saturation')` and stores directly in `GPUMetric`. No server-side division needed — saves ingest CPU. If agent-side is not possible (e.g. Windows agent limit), server-side fallback uses same `max()` guard.
+- **Computation:** Moved to agent code (`agent/run.py` 1054-1055: both values available in payload). Agent computes `vram_bandwidth_saturation = mem_controller_util_pct / max(gpu_util_pct, 1.0)` per GPU; serializer receives it in `gpu.get('vram_bandwidth_saturation')` and stores directly in `GPUMetric`. No server-side division needed — saves ingest CPU.
 - **Storage:** `GPUMetric.vram_bandwidth_saturation` (new FloatField; NOT `fan_adjusted_cooling_response` — original plan had wrong storage field name for metric 3). Per-rig, per-minute.
 - **Compaction:** `avg` at 15m/1h tiers (same as other GPUMetric ratios).
 - **Interpretation:** 
@@ -236,20 +236,10 @@ Index	Interpretation
 ≈ 1.0	Memory controller utilization is comparable to GPU utilization
 > 1.0	Memory controller is more heavily utilized than overall GPU compute
 
-**Code (serializers.py):**
+**Implementation (serializers.py):**
 ```python
-MIN_GPU_UTIL_PCT = 1.0
-MIN_MEM_CONTROLLER_UTIL_PCT = 1.0
-
-curr_gpu_util = curr_gpu.gpu_util_pct
-curr_mem_controller_util = curr_gpu.mem_controller_util_pct
-vram_bandwidth_saturation = None
-
-if (curr_gpu_util is not None and curr_mem_controller_util is not None):
-    vram_bandwidth_saturation = (
-        max(curr_mem_controller_util, MIN_MEM_CONTROLLER_UTIL_PCT)
-        / max(curr_gpu_util, MIN_GPU_UTIL_PCT)
-    )
+# Agent-computed (schema 1.21+); serializer reads directly from payload
+vram_bandwidth_saturation = gpu.get('vram_bandwidth_saturation')
 ```
 
 ---
@@ -366,21 +356,23 @@ Extend `_build_report_context()` in `dashboard/views.py` (line 734) to compute t
 
 ### 5.4 Verification Against Latest Architecture (Verified)
 
-- `models.py`: `GPUMetric` fields (`cooling_efficiency_index`, `fan_adjusted_cooling_response`, `vram_bandwidth_saturation`) NOT yet added (plan only — no code changes made in this branch per user instruction). `cpu_to_gpu_power_ratio` removed from model proposal (§4.4 correction).
-- `serializers.py`: `process_ingest()` (line 38) computes `GPUMetric` rows from payload. `prev_ls` fetched at line 89-103. Code fragment corrected above to index by `gpu_index` (not hardcoded 0).
-- `compact_data.py`: `COMPACT_TABLES` line 51-77 (`metrics_gpumetric`) includes `gpu_util_pct`, `mem_controller_util_pct`, `gpu_core_clock_mhz`, `fan_speed_pct`, `power_draw_w`, `power_limit_w`. New derived fields (`cooling_efficiency_index`, `fan_adjusted_cooling_response`, `vram_bandwidth_saturation`) must be added to `agg_fields` with `'avg'` when implemented.
+- `models.py`: `GPUMetric` fields (`cooling_efficiency_index`, `fan_adjusted_cooling_response`, `vram_bandwidth_saturation`) — **`vram_bandwidth_saturation` DONE**, others NOT yet added (plan only — no code changes made in this branch per user instruction). `cpu_to_gpu_power_ratio` removed from model proposal (§4.4 correction).
+- `serializers.py`: `process_ingest()` (line 38) computes `GPUMetric` rows from payload. `prev_ls` fetched at line 89-103. Code fragment corrected above to index by `gpu_index` (not hardcoded 0). **`vram_bandwidth_saturation` reads from payload (agent-computed) — DONE**.
+- `compact_data.py`: `COMPACT_TABLES` line 51-77 (`metrics_gpumetric`) includes `gpu_util_pct`, `mem_controller_util_pct`, `gpu_core_clock_mhz`, `fan_speed_pct`, `power_draw_w`, `power_limit_w`. New derived fields (`cooling_efficiency_index`, `fan_adjusted_cooling_response`, `vram_bandwidth_saturation`) must be added to `agg_fields` with `'avg'` when implemented. **`vram_bandwidth_saturation` added — DONE**.
 - `checks.py`: System checks (line 15-30) read `COMPACT_TABLES` in-memory (not file). Any new `GPUMetric` field added to model must also be added to `COMPACT_TABLES` static_fields (`COMPACT_TABLES[0]['static_fields']`) or defense checks will fail (line 154-155). See memory note `§Defense (W001/W004/0052)`: bug class → code + Django check + skill.
-- `ChartDataView` (line 194): `SNAPSHOT_METRICS` (line 226) and `GPU_METRICS` (line 239) define chart endpoint metrics. New chart metrics must be added to `GPU_METRICS` mapping (e.g., `'cooling_efficiency_index': 'cooling_efficiency_index'`).
+- `ChartDataView` (line 194): `SNAPSHOT_METRICS` (line 226) and `GPU_METRICS` (line 239) define chart endpoint metrics. New chart metrics must be added to `GPU_METRICS` mapping (e.g., `'cooling_efficiency_index': 'cooling_efficiency_index'`). **`vram_bandwidth_saturation` added — DONE**.
 
 
 ## 6. Priority & Phasing
 
 ### Phase 1: Pre-computed Charts (1-2 days)
-1. Add fields to GPUMetric model + migration
-2. Update serializer `process_ingest()` to compute them
-3. Update `compact_data.py` to aggregate them
-4. Add  chart registry entries +  chart cards in rig_detail.html
-5. Test: charts appear, data flows, compaction works
+1. Add fields to GPUMetric model + migration — **VRAM Bandwidth Saturation Index: DONE**
+2. Update serializer `process_ingest()` to compute them — **VRAM Bandwidth Saturation Index: DONE** (agent-computed)
+3. Update `compact_data.py` to aggregate them — **VRAM Bandwidth Saturation Index: DONE**
+4. Add  chart registry entries +  chart cards in rig_detail.html — **VRAM Bandwidth Saturation Index: DONE**
+5. Test: charts appear, data flows, compaction works — **VRAM Bandwidth Saturation Index: DONE**
+
+*Remaining for Phase 1: Cooling Efficiency Index, Fan-Adjusted Cooling Response Index, CPU-to-GPU Power Ratio*
 
 ### Phase 2: Report Tab Statistical Analysis (2-3 days)
 1. Extend `_build_report_context()` with additional aggregations

@@ -226,7 +226,7 @@ if (
 - **Data Source:** Payload (`gpu.get('mem_controller_util_pct')`, `gpu.get('gpu_util_pct')`) — current snapshot values from agent payload (`serializers.py` 203-204 in `GPUMetric` update_or_create). `LatestSnapshot.gpu_mem_controller_utils_json` / `gpu_utils_json` arrays (line 334-337 `models.py`) for fast read. NOT `prev_ls`. NOT historical `GPUMetric` timeseries (this metric is current-state ratio at ingest time).
 - **Current Values:** `GPUMetric` being created: `mem_controller_util_pct`, `gpu_util_pct`, 
 - **Time Range:** **Single snapshot** (no delta needed — this is a point-in-time ratio, not a change-over-change metric). **Correction:** Original plan incorrectly said "2 consecutive snapshots (1-minute interval)"; the ratio uses current values only.
-- **Computation:** At ingest, direct division (no delta required). Effective denominator: `max(gpu_util_pct, MIN_GPU_UTIL_PCT)`.
+- **Computation:** Can be moved to agent code (`agent/run.py` 1054-1055: both values available in payload). Agent computes `vram_bandwidth_saturation = mem_controller_util_pct / max(gpu_util_pct, 1.0)` per GPU; serializer receives it in `gpu.get('vram_bandwidth_saturation')` and stores directly in `GPUMetric`. No server-side division needed — saves ingest CPU. If agent-side is not possible (e.g. Windows agent limit), server-side fallback uses same `max()` guard.
 - **Storage:** `GPUMetric.vram_bandwidth_saturation` (new FloatField; NOT `fan_adjusted_cooling_response` — original plan had wrong storage field name for metric 3). Per-rig, per-minute.
 - **Compaction:** `avg` at 15m/1h tiers (same as other GPUMetric ratios).
 - **Interpretation:** 

@@ -261,16 +261,14 @@ if (
 ---
 
 ### 4.4 CPU-to-GPU Power Ratio
-- **Definition:** `cpu_power_w / sum(gpu_power_draw_w per GPU for this rig)` — indicates whether workload is CPU-bound (high ratio) vs GPU-bound (low ratio). Uses `LatestSnapshot.power_cpu_w` (current snapshot) divided by aggregate GPU power from `LatestSnapshot.gpu_power_draws_json` (sum of array) or current `GPUMetric.power_draw_w` per GPU.
-- **Data Source:** `LatestSnapshot` (`power_cpu_w`, `gpu_power_draws_json`) for latest-state; `MetricSnapshot` (`cpu_power_w`, `total_system_power_w`) for historical aggregation; `GPUMetric` (`power_draw_w`) for per-GPU historical. **Architecture note:** Because `MetricSnapshot` is NOT compacted (per `ChartDataView` comment line 212-215 and `compact_data.py`: `metrics_metricsnapshot` is parent table, compacted LAST with FK-safe exclusion; `SNAPSHOT_METRICS` requires on-the-fly aggregation), reading historical CPU/GPU ratios over 30d (~43K MetricSnapshot rows) requires SQL aggregation, not raw scan. For report-tab aggregate, use `Avg('cpu_power_w') / Avg(sum of gpu power)` via separate queries — cheaper than reading full timeseries.
-- **Current Values:** `LatestSnapshot.power_cpu_w`, `LatestSnapshot.gpu_power_draws_json` (sum array). Per-GPU current: `GPUMetric.power_draw_w`.
-- **Time Range:** Point-in-time (latest snapshot) for Live Metrics; aggregated over 24h/7d/30d for Report tab.
-- **Computation:**
-  - Chart (pre-computed at ingest): Not applicable — ratio requires cross-table aggregation (`LatestSnapshot` CPU vs `GPUMetric` GPU arrays). **Recommendation:** Do NOT pre-compute at ingest; compute on-demand for charts via a custom `ChartDataView` metric that joins `MetricSnapshot` and `GPUMetric`. **Plan correction:** Original plan incorrectly listed this as a pre-computed chart metric; it is actually windowed / cross-table.
-  - Report (on-demand): `snap_agg['cpu_power_w_avg'] / (gpu_agg['power_draw_w_avg'] * gpu_count)` in `_build_report_context()`.
-- **Storage:** No new DB field needed on `GPUMetric` — this metric spans two tables (`MetricSnapshot` + `GPUMetric` / `LatestSnapshot`). **Plan correction:** Original plan listed `cpu_to_gpu_power_ratio` as `GPUMetric` field; that is incorrect. Either add to `MetricSnapshot` (single-row aggregate) or compute purely in Python at report time. Do NOT add to `GPUMetric`.
-- **Compaction:** Not applicable (no dedicated field). If added to `MetricSnapshot`, include `'cpu_power_w'` (already in `COMPACT_TABLES`) and derive ratio from aggregated values.
-- **Interpretation:** High (>1.0) = CPU-bound workload; Low (<0.5) = GPU-bound; Very low (<0.2) = GPU fully utilized with minimal CPU overhead.
+- **Definition:** `cpu_power_w / gpu_power_w` — CPU-bound (>1.0) vs GPU-bound (<0.5). Simplest derived metric; no historical window needed.
+- **Data Source:** Payload (`power` dict) — `cpu_power_w`, `gpu_power_w` delivered every ingest (`serializers.py` 641-642). `LatestSnapshot` denormalizes (`power_cpu_w`, `power_gpu_w` line 661-662) for fast reads.
+- **Current Values:** Direct from payload or `LatestSnapshot`: `cpu_power_w / gpu_power_w`. Per-GPU current from `GPUMetric.power_draw_w` sum.
+- **Time Range:** Point-in-time (current payload). Not a timeseries trend metric by design.
+- **Computation:** `cpu / gpu` from payload (`serializers.py` 641-645). No cross-table join, no SQL aggregation for current value.
+- **Storage:** None — compute from payload. Add derived field only if historical needed; `MetricSnapshot` already has `cpu_power_w`, `GPUMetric` has `power_draw_w`.
+- **Compaction:** Not needed for current-state metric.
+- **Interpretation:** >1.0 = CPU-bound; <0.5 = GPU-bound; ~0.2–0.8 = balanced workload.
 
 ## 5. Implementation Architecture
 

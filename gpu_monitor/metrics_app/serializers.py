@@ -30,7 +30,7 @@ class IngestSerializer(serializers.Serializer):
     has_active_job = serializers.BooleanField(required=False, default=False)
 
     def validate_schema_version(self, value):
-            if value not in ('1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8', '1.9', '1.10', '1.11', '1.12', '1.13', '1.14', '1.15', '1.16', '1.17', '1.18', '1.19', '1.20', '1.21'):
+            if value not in ('1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8', '1.9', '1.10', '1.11', '1.12', '1.13', '1.14', '1.15', '1.16', '1.17', '1.18', '1.19', '1.20', '1.21', '1.22'):
                 raise serializers.ValidationError(f"Unsupported schema_version: {value}")
             return value
 
@@ -132,6 +132,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                 # Power data from agent (PSU efficiency already factored in)
                 'cpu_power_w': power_data.get('cpu_power_w') if power_data else None,
                 'total_system_power_w': power_data.get('total_power_w') if power_data else None,
+                'cpu_to_gpu_power_ratio': power_data.get('cpu_to_gpu_power_ratio') if power_data else None,
                 # Job status: mapped 0/1 for AVG aggregation in chart buckets
                 'has_active_job': validated.get('has_active_job', False),
             }

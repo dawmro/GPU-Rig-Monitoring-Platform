@@ -40,6 +40,17 @@ class MetricSnapshot(models.Model):
     # Total system power (AC watts, PSU efficiency already factored in)
     total_system_power_w = models.FloatField(null=True, blank=True)
 
+    # NEW: CPU-to-GPU Power Ratio (agent-computed for schema 1.22+)
+    cpu_to_gpu_power_ratio = models.FloatField(
+        null=True,
+        blank=True,
+        help_text=(
+            'Ratio of CPU power to total GPU power (cpu_power_w / sum(gpu_power_draw_w)); '
+            'computed at agent from payload power data; higher values indicate CPU draws '
+            'more power relative to GPUs; single-line chart (not per-GPU)'
+        )
+    )
+
     # Memory metrics (dynamic — used for charts)
     mem_total_bytes = models.BigIntegerField(null=True)
     mem_used_bytes = models.BigIntegerField(null=True)

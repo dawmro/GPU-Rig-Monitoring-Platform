@@ -131,6 +131,17 @@ class GPUMetric(models.Model):
     pcie_max_width = models.PositiveSmallIntegerField(null=True)
     gpu_core_clock_mhz = models.PositiveIntegerField(null=True)
     gpu_mem_clock_mhz = models.PositiveIntegerField(null=True)
+    # NEW: VRAM Bandwidth Saturation Index - mem_controller_util_pct / gpu_util_pct
+    # Computed at ingest (agent-side preferred, server fallback); ratio stored directly
+    vram_bandwidth_saturation = models.FloatField(
+        null=True,
+        blank=True,
+        help_text=(
+            'Ratio of memory-controller utilization to GPU utilization; '
+            'computed at ingest from current gpu_util_pct and mem_controller_util_pct; '
+            'higher values indicate greater memory-bandwidth pressure relative to GPU compute'
+        )
+    )
 
     class Meta:
         db_table = 'metrics_gpumetric'

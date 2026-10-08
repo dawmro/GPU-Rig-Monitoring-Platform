@@ -247,6 +247,7 @@ class ChartDataView(APIView):
         'gpu_fan_pct': 'fan_speed_pct',
         'gpu_core_clock_mhz': 'gpu_core_clock_mhz',
         'gpu_mem_clock_mhz': 'gpu_mem_clock_mhz',
+        'vram_bandwidth_saturation': 'vram_bandwidth_saturation',
     }
 
     STORAGE_METRICS = frozenset({'disk_usage_pct'})

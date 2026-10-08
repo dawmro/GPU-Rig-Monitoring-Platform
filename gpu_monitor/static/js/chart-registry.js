@@ -9,7 +9,7 @@
     'use strict';
 
     var registry = [
-        // GPU charts (8)
+        // GPU charts (9)
         { id: 'chartGpuTemp', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChartMultiGpu('chartGpuTemp', 'gpu_temp_c', uuid, range, '°C'); } },
         { id: 'chartGpuFan', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChartMultiGpu('chartGpuFan', 'gpu_fan_pct', uuid, range, '%'); } },
         { id: 'chartGpuUtil', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChartMultiGpu('chartGpuUtil', 'gpu_util_pct', uuid, range, '%'); } },
@@ -18,6 +18,7 @@
         { id: 'chartGpuMem', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChartMultiGpu('chartGpuMem', 'gpu_mem_used_mb', uuid, range, ' MB'); } },
         { id: 'chartGpuCoreClock', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChartMultiGpu('chartGpuCoreClock', 'gpu_core_clock_mhz', uuid, range, ' MHz'); } },
         { id: 'chartGpuMemClock', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChartMultiGpu('chartGpuMemClock', 'gpu_mem_clock_mhz', uuid, range, ' MHz'); } },
+        { id: 'chartGpuVramSat', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChartMultiGpu('chartGpuVramSat', 'vram_bandwidth_saturation', uuid, range, ''); } },
         // CPU charts (8)
         { id: 'chartCpuUtil', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChart('chartCpuUtil', 'cpu_utilization_pct', uuid, range, '%', 'rgba(16, 185, 129, 0.8)', 'rgba(16, 185, 129, 0.15)'); } },
         { id: 'chartCpuUtilPerCore', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChartMultiCore('chartCpuUtilPerCore', 'cpu_utilization_per_core_pct', uuid, range, '%', 'rgba(16, 185, 129, 0.8)', 'rgba(16, 185, 129, 0.15)'); } },

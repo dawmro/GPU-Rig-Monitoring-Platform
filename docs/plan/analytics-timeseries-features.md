@@ -246,16 +246,19 @@ curr_mem_controller_util = curr_gpu.mem_controller_util_pct
 
 vram_bandwidth_saturation = None
 
-# Fix: Use single MIN threshold for denominator guard (avoid zero division)
+# Simplified — guards both denominator and numerator (no zero division, no undefined vars)
 MIN_GPU_UTIL_PCT = 1.0
+MIN_MEM_CONTROLLER_UTIL_PCT = 1.0
 
-if (
-    curr_gpu_util is not None
-    and curr_mem_controller_util is not None
-):
-    # Only guard when denominator is zero; don't artificially inflate both
-    effective_gpu_util = curr_gpu_util if curr_gpu_util != 0 else MIN_GPU_UTIL_PCT
-    vram_bandwidth_saturation = curr_mem_controller_util / effective_gpu_util
+curr_gpu_util = curr_gpu.gpu_util_pct
+curr_mem_controller_util = curr_gpu.mem_controller_util_pct
+vram_bandwidth_saturation = None
+
+if (curr_gpu_util is not None and curr_mem_controller_util is not None):
+    vram_bandwidth_saturation = (
+        max(curr_mem_controller_util, MIN_MEM_CONTROLLER_UTIL_PCT)
+        / max(curr_gpu_util, MIN_GPU_UTIL_PCT)
+    )
 ```
 
 ---

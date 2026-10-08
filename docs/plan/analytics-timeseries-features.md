@@ -49,8 +49,8 @@ These are **time-series visualizations** — they plot a derived value over time
 
 | # | Metric                                  | Chart Name                    | Data Source | Calculation                                                                                              | Chart Type    | Status    |
 | - | --------------------------------------- | ----------------------------- | ----------- | -------------------------------------------------------------------------------------------------------- | ------------- | --------- |
-| 1 | **Cooling Efficiency Index**            | GPU Cooling Efficiency        | GPUMetric   | `ΔTemp / ΔPower` = temperature change per watt of GPU power change                                       | Line, per-GPU | Planned   |
-| 2 | **Fan-Adjusted Cooling Response Index** | Fan-Adjusted Cooling Response | GPUMetric   | `(ΔTemp / ΔPower) / (1 + ΔFan% / 100)` = temperature response per watt, adjusted for change in fan speed | Line, per-GPU | Planned   |
+| 1 | **Cooling Efficiency Index**            | GPU Cooling Efficiency        | GPUMetric   | `ΔTemp / ΔPower` = temperature change per watt of GPU power change                                       | Line, per-GPU | **Done**  |
+| 2 | **Fan-Adjusted Cooling Response Index** | Fan-Adjusted Cooling Response | GPUMetric   | `(ΔTemp / ΔPower) / (1 + ΔFan% / 100)` = temperature response per watt, adjusted for change in fan speed | Line, per-GPU | **Done**  |
 | 3 | **VRAM Bandwidth Saturation Index** | VRAM Bandwidth Saturation | GPUMetric | `mem_controller_util_pct / gpu_util_pct` | Line, per-GPU | **Done**  |
 | 4 | **CPU-to-GPU Power Ratio** | CPU/GPU Power Ratio | GPUMetric + MetricSnapshot | `power_cpu_w / power_gpu_w` (or `cpu_power_w / sum(power_draw_w)`) | Line, single | Planned   |
 
@@ -82,9 +82,9 @@ These are **aggregate statistics over a time window** (24h/7d/30d). They don't m
 
 ## 4. Detailed Computation Specifications
 
-### 4.1 Cooling Efficiency Index
+### 4.1 Cooling Efficiency Index — **DONE**
 - **Definition:** `ΔGPU_Temp / ΔGPU_Power` (°C/W) — how much temperature rises per watt of power increase
-- **Data Source:** `LatestSnapshot` (fetched as `prev_ls` before transaction). **Note:** `LatestSnapshot.gpu_temps_json` / `gpu_power_draws_json` / `gpu_fans_json` are JSON arrays — index 0 = first GPU. Verify payload array ordering matches `gpu_index`. Check `prev_ls.gpu_temps_json[0]` exists before reading; empty array yields `None` safely.
+- **Data Source:** `LatestSnapshot` (fetched as `prev_ls` before transaction). **Note:** `LatestSnapshot.gpu_temps_json` / `gpu_power_draws_json` / `gpu_fans_json` are JSON arrays — index by `gpu_index`, not hardcoded 0. Empty array yields `None` safely.
 - **Current Values:** `GPUMetric` being created: `gpu_temp_c`, `power_draw_w`
 - **Time Range:** **2 consecutive snapshots** (1-minute interval)
 - **Computation:** At ingest, point-in-time delta
@@ -152,7 +152,7 @@ if (
 
 ---
 
-### 4.2 Fan-Adjusted Cooling Response Index
+### 4.2 Fan-Adjusted Cooling Response Index — **DONE**
 - **Definition:** `(ΔTemp / effective ΔPower) / (1 + ΔFan% / 100)` (°C/W) — temperature response per watt of GPU power change, adjusted for the change in fan speed
 - **Data Source:** `LatestSnapshot` → `prev_ls.gpu_temps_json`, `prev_ls.gpu_power_draws_json`, `prev_ls.gpu_fans_json` (JSON arrays; index by `gpu_index`, not hardcoded 0). Same `prev_ls` fetch used for delta baseline.
 - **Current Values:** `GPUMetric` being created: `fan_speed_pct`, `gpu_temp_c`, `power_draw_w`
@@ -356,23 +356,23 @@ Extend `_build_report_context()` in `dashboard/views.py` (line 734) to compute t
 
 ### 5.4 Verification Against Latest Architecture (Verified)
 
-- `models.py`: `GPUMetric` fields (`cooling_efficiency_index`, `fan_adjusted_cooling_response`, `vram_bandwidth_saturation`) — **`vram_bandwidth_saturation` DONE**, others NOT yet added (plan only — no code changes made in this branch per user instruction). `cpu_to_gpu_power_ratio` removed from model proposal (§4.4 correction).
-- `serializers.py`: `process_ingest()` (line 38) computes `GPUMetric` rows from payload. `prev_ls` fetched at line 89-103. Code fragment corrected above to index by `gpu_index` (not hardcoded 0). **`vram_bandwidth_saturation` reads from payload (agent-computed) — DONE**.
-- `compact_data.py`: `COMPACT_TABLES` line 51-77 (`metrics_gpumetric`) includes `gpu_util_pct`, `mem_controller_util_pct`, `gpu_core_clock_mhz`, `fan_speed_pct`, `power_draw_w`, `power_limit_w`. New derived fields (`cooling_efficiency_index`, `fan_adjusted_cooling_response`, `vram_bandwidth_saturation`) must be added to `agg_fields` with `'avg'` when implemented. **`vram_bandwidth_saturation` added — DONE**.
+- `models.py`: `GPUMetric` fields (`cooling_efficiency_index`, `fan_adjusted_cooling_response`, `vram_bandwidth_saturation`) — **ALL DONE**. `cpu_to_gpu_power_ratio` removed from model proposal (§4.4 correction).
+- `serializers.py`: `process_ingest()` (line 38) computes `GPUMetric` rows from payload. `prev_ls` fetched ONCE per rig using .get() (rig_uuid is PK). Code fragment corrected above to index by `gpu_index` (not hardcoded 0). **cooling_efficiency_index, fan_adjusted_cooling_response computed from prev_ls deltas — DONE**.
+- `compact_data.py`: `COMPACT_TABLES` line 51-77 (`metrics_gpumetric`) includes `gpu_util_pct`, `mem_controller_util_pct`, `gpu_core_clock_mhz`, `fan_speed_pct`, `power_draw_w`, `power_limit_w`. New derived fields (`cooling_efficiency_index`, `fan_adjusted_cooling_response`, `vram_bandwidth_saturation`) added to `agg_fields` with `'avg'` — **ALL DONE**.
 - `checks.py`: System checks (line 15-30) read `COMPACT_TABLES` in-memory (not file). Any new `GPUMetric` field added to model must also be added to `COMPACT_TABLES` static_fields (`COMPACT_TABLES[0]['static_fields']`) or defense checks will fail (line 154-155). See memory note `§Defense (W001/W004/0052)`: bug class → code + Django check + skill.
-- `ChartDataView` (line 194): `SNAPSHOT_METRICS` (line 226) and `GPU_METRICS` (line 239) define chart endpoint metrics. New chart metrics must be added to `GPU_METRICS` mapping (e.g., `'cooling_efficiency_index': 'cooling_efficiency_index'`). **`vram_bandwidth_saturation` added — DONE**.
+- `ChartDataView` (line 194): `SNAPSHOT_METRICS` (line 226) and `GPU_METRICS` (line 239) define chart endpoint metrics. New chart metrics must be added to `GPU_METRICS` mapping (e.g., `'cooling_efficiency_index': 'cooling_efficiency_index'`). **cooling_efficiency_index, fan_adjusted_cooling_response, vram_bandwidth_saturation added — ALL DONE**.
 
 
 ## 6. Priority & Phasing
 
 ### Phase 1: Pre-computed Charts (1-2 days)
-1. Add fields to GPUMetric model + migration — **VRAM Bandwidth Saturation Index: DONE**
-2. Update serializer `process_ingest()` to compute them — **VRAM Bandwidth Saturation Index: DONE** (agent-computed)
-3. Update `compact_data.py` to aggregate them — **VRAM Bandwidth Saturation Index: DONE**
-4. Add  chart registry entries +  chart cards in rig_detail.html — **VRAM Bandwidth Saturation Index: DONE**
-5. Test: charts appear, data flows, compaction works — **VRAM Bandwidth Saturation Index: DONE**
+1. Add fields to GPUMetric model + migration — **Cooling Efficiency Index: DONE**, **Fan-Adjusted Cooling Response: DONE**, **VRAM Bandwidth Saturation Index: DONE**
+2. Update serializer `process_ingest()` to compute them — **Cooling Efficiency Index: DONE** (server delta), **Fan-Adjusted Cooling Response: DONE** (server delta), **VRAM Bandwidth Saturation Index: DONE** (agent-computed)
+3. Update `compact_data.py` to aggregate them — **ALL DONE** (avg for all three metrics)
+4. Add  chart registry entries +  chart cards in rig_detail.html — **ALL DONE** (cooling_efficiency_index, fan_adjusted_cooling_response, vram_bandwidth_saturation)
+5. Test: charts appear, data flows, compaction works — **ALL DONE** (cooling_efficiency_index, fan_adjusted_cooling_response, vram_bandwidth_saturation)
 
-*Remaining for Phase 1: Cooling Efficiency Index, Fan-Adjusted Cooling Response Index, CPU-to-GPU Power Ratio*
+*Remaining for Phase 1: CPU-to-GPU Power Ratio*
 
 ### Phase 2: Report Tab Statistical Analysis (2-3 days)
 1. Extend `_build_report_context()` with additional aggregations

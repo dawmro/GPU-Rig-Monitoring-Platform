@@ -6,6 +6,7 @@ from django.core.cache import cache
 from django.utils import timezone
 from datetime import timedelta
 from functools import wraps
+from statistics import pstdev
 import re
 import time
 from collections import Counter
@@ -765,7 +766,7 @@ def _build_report_context(uuid, uuid_str, range_hours):
     # Fetches all needed fields in chronological order per GPU index
     gpu_raw = list(
         GPUMetric.objects.filter(**base_filter)
-        .values('gpu_index', 'gpu_uuid', 'model', 'timestamp')
+        .values('gpu_index', 'gpu_uuid', 'model', 'timestamp', 'gpu_temp_c', 'power_draw_w')
         .order_by('gpu_index', 'timestamp')
     )
 
@@ -798,6 +799,35 @@ def _build_report_context(uuid, uuid_str, range_hours):
             
         ).order_by('gpu_index')
     )
+    
+    # Temperature-to-PowerDraw Ratio Stability
+    #
+    # Ratio = GPU temperature / GPU power draw.
+    # Population standard deviation measures variability across
+    # all valid samples in the selected reporting period.
+
+    temp_power_ratios_by_gpu = {}
+
+    for row in gpu_raw:
+        idx = row['gpu_index']
+        temp = row['gpu_temp_c']
+        power = row['power_draw_w']
+
+        # Skip missing measurements and zero/negative power.
+        if temp is None or power is None or power <= 0:
+            continue
+
+        ratio = temp / power
+
+        temp_power_ratios_by_gpu.setdefault(idx, []).append(ratio)
+
+    gpu_temp_power_stability = {}
+
+    for idx, ratios in temp_power_ratios_by_gpu.items():
+        if len(ratios) >= 2:
+            gpu_temp_power_stability[idx] = pstdev(ratios)
+        else:
+            gpu_temp_power_stability[idx] = None
 
     # Post-process: detect identity changes per GPU index from raw data
     changes_by_index = {}
@@ -845,6 +875,13 @@ def _build_report_context(uuid, uuid_str, range_hours):
                 (str(latest_metric.get('gpu_uuid', '')) if latest_metric else '') or ''
             gpu_devices.append(row)
     gpu_devices.reverse()  # restore index order
+    
+    # Add Temperature-to-PowerDraw Ratio Stability to each GPU device.
+    for device in gpu_devices:
+        idx = device['gpu_index']
+        device['temp_power_stability_stddev'] = (
+            gpu_temp_power_stability.get(idx)
+        )
 
     # Query 2: CPU / Memory / Power / Errors aggregation
     # MetricSnapshot is NOT compacted, so this always scans raw rows.
@@ -919,3 +956,4 @@ def _build_report_context(uuid, uuid_str, range_hours):
         'job_saturation_pct': job_saturation_pct,
         **snap_agg,
     }
+

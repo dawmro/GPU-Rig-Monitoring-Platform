@@ -258,6 +258,388 @@ if vram_bandwidth_saturation is None:
 - **Storage / Compaction:** None — derived metric; compute from payload or `LatestSnapshot`. Not a timeseries feature by default.
 - **Note:** Interpret as ratio only; do NOT label "CPU-bound" or "GPU-bound" from this number alone.
 
+
+### 4.5 Report: Cooling Efficiency Index (Average)
+
+- **Definition:** Average of the point-in-time Cooling Efficiency Index (°C/W) over the report period (24h, 7d, 30d) per GPU.
+
+- **Data Source:** GPUMetric.cooling_efficiency_index (pre-computed at ingest)
+
+- **Time Range:** 24h, 7d, 30d (aggregated per GPU)
+
+- **Calculation:** SQL: AVG(cooling_efficiency_index) grouped by gpu_index and time range (using compacted GPUMetric tables)
+
+- **Storage:** None (computed on demand for the report tab)
+
+- **Performance:** Uses pre-computed and compacted GPUMetric, so aggregation is fast (~720 rows for 30d)
+
+- **Interpretation:** Lower average indicates better cooling efficiency (less temperature rise per watt) over the period.
+
+- **Code (in `_build_report_context()`):
+```python
+# In _build_report_context() after gpu_agg
+# gpu_agg already includes AVG for existing fields via CompactResults
+# Add cooling_efficiency_index to the aggregation query in compact_data.py's COMPACT_TABLES for GPUMetric
+# Then in views.py, gpu_agg will contain the average per gpu_index
+```
+
+---
+
+### 4.6 Report: Fan-Adjusted Cooling Response Index (Average)
+
+- **Definition:** Average of the point-in-time Fan-Adjusted Cooling Response Index (°C/W) over the report period (24h, 7d, 30d) per GPU.
+
+- **Data Source:** GPUMetric.fan_adjusted_cooling_response (pre-computed at ingest)
+
+- **Time Range:** 24h, 7d, 30d (aggregated per GPU)
+
+- **Calculation:** SQL: AVG(fan_adjusted_cooling_response) grouped by gpu_index and time range (using compacted GPUMetric tables)
+
+- **Storage:** None (computed on demand for the report tab)
+
+- **Performance:** Uses pre-computed and compacted GPUMetric, so aggregation is fast (~720 rows for 30d)
+
+- **Interpretation:** Lower average indicates better cooling response after accounting for fan-speed changes.
+
+- **Code (in `_build_report_context()`):
+```python
+# Similar to Cooling Efficiency Index: add fan_adjusted_cooling_response to COMPACT_TABLES and use AVG in aggregation
+```
+
+---
+
+### 4.7 Report: Temperature-to-PowerLimit Ratio Stability
+
+- **Definition:** Standard deviation of power_limit_w within GPU temperature buckets, indicating how stable the power limit is across different temperature levels.
+
+- **Data Source:** MetricSnapshot.power_limit_w and MetricSnapshot.gpu_temp_c
+
+- **Time Range:** 24h, 7d, 30d (aggregated per GPU)
+
+- **Calculation:** SQL: Group by gpu_temp_c range (e.g., 5-degree buckets), compute STDDEV(power_limit_w) per bucket, then average those standard deviations (or report max). Python post-processing over aggregated bucket arrays.
+
+- **Storage:** None (computed on demand for the report tab)
+
+- **Performance:** Uses compacted MetricSnapshot (1h buckets for 7-30d), so number of rows is limited (~720 for 30d). Grouping and STDDEV done in SQL.
+
+- **Interpretation:** Lower value indicates power limit is more stable across temperature changes; higher volatility may indicate unstable power delivery or thermal throttling.
+
+- **Code (in `_build_report_context()`):
+```python
+# In _build_report_context()
+# 1. Query MetricSnapshot with rig_uuid and time range
+# 2. Annotate temp_bucket = (gpu_temp_c / 5) * 5  # integer division
+# 3. Values = queryset.values('gpu_index', 'temp_bucket').annotate(stddev_power=StdDev('power_limit_w'))
+# 4. Python: group by gpu_index, compute average of stddev_power across buckets (or max)
+```
+---
+
+### 4.8 Report: Memory vs. Core Utilization Correlation
+
+- **Definition:** Pearson correlation coefficient between memory controller utilization and GPU utilization over time, indicating how closely memory and compute utilization move together.
+
+- **Data Source:** MetricSnapshot.mem_controller_util_pct and MetricSnapshot.gpu_util_pct
+
+- **Time Range:** 24h, 7d, 30d (aggregated per GPU)
+
+- **Calculation:** Python: Retrieve arrays of mem_controller_util_pct and gpu_util_pct per GPU (from compacted MetricSnapshot), compute Pearson r using manual formula (to avoid scipy dependency).
+
+- **Storage:** None (computed on demand for the report tab)
+
+- **Performance:** Uses compacted MetricSnapshot (~720 rows for 30d). Two arrays of floats per GPU; correlation is O(n).
+
+- **Interpretation:** Value between -1 and 1. Near 1 indicates memory and compute utilization rise and fall together (balanced workload). Near 0 indicates no linear relationship. Negative indicates inverse relationship (rare).
+
+- **Code (in `_build_report_context()`):
+```python
+# In _build_report_context()
+# 1. Query MetricSnapshot for rig_uuid and time range, values_list('gpu_index', 'mem_controller_util_pct', 'gpu_util_pct')
+# 2. Python: group by gpu_index into two lists: mem_util, gpu_util
+# 3. For each GPU, if len > 1 and both arrays have variance, compute pearsonr_manual(mem_util, gpu_util)
+# 4. Store result per gpu_index
+```
+---
+
+### 4.9 Report: Compute-to-Memory Ratio Trend
+
+- **Definition:** Slope of the linear regression of the ratio gpu_util_pct / mem_controller_util_pct over time, indicating whether compute utilization is increasing relative to memory utilization.
+
+- **Data Source:** MetricSnapshot.gpu_util_pct and MetricSnapshot.mem_controller_util_pct
+
+- **Time Range:** 24h, 7d, 30d (aggregated per GPU)
+
+- **Calculation:** Python: For each GPU, compute ratio per time bucket (using compacted MetricSnapshot), then perform linear regression (slope) of ratio vs. time (in days). Use np.polyfit or manual formula.
+
+- **Storage:** None (computed on demand for the report tab)
+
+- **Performance:** Uses compacted MetricSnapshot (~720 rows for 30d). Linear regression is O(n).
+
+- **Interpretation:** Positive slope: compute utilization growing faster than memory utilization over period. Negative slope: memory utilization growing faster. Near zero: stable ratio.
+
+- **Code (in `_build_report_context()`):
+```python
+# In _build_report_context()
+# 1. Query MetricSnapshot for rig_uuid and time range, values_list('gpu_index', 'timestamp', 'gpu_util_pct', 'mem_controller_util_pct')
+# 2. Python: group by gpu_index, compute ratio = gpu_util / mem_util (handle zero mem_util)
+# 3. For each GPU, convert timestamps to days since start, compute slope via np.polyfit(time_days, ratio, 1) or manual
+# 4. Store slope per gpu_index
+```
+---
+
+### 4.10 Report: Clock Stability Index
+
+- **Definition:** Standard deviation of GPU core clock speed over time, indicating volatility in clock speed (lower is more stable).
+
+- **Data Source:** GPUMetric.gpu_core_clock_mhz (pre-computed at ingest)
+
+- **Time Range:** 24h, 7d, 30d (aggregated per GPU)
+
+- **Calculation:** SQL: STDDEV(gpu_core_clock_mhz) grouped by gpu_index and time range (using compacted GPUMetric tables).
+
+- **Storage:** None (computed on demand for the report tab)
+
+- **Performance:** Uses pre-computed and compacted GPUMetric, so aggregation is fast (~720 rows for 30d).
+
+- **Interpretation:** Lower value indicates more stable clock speed (less volatility), which is desirable for consistent performance. Higher may indicate power/thermal throttling causing clock fluctuations.
+
+- **Code (in `_build_report_context()`):
+```python
+# In compact_data.py: add gpu_core_clock_mhz to COMPACT_TABLES for GPUMetric with aggregation 'stddev' (or use Variance/StdDev in Django)
+# In _build_report_context(): gpu_agg already includes stddev for existing fields; add gpu_core_clock_mhz_stddev
+```
+---
+
+### 4.11 Report: Frequency-to-PowerLimit Ratio Stability
+
+- **Definition:** Standard deviation of power_limit_w within GPU core clock speed buckets, indicating how stable the power limit is across different clock levels.
+
+- **Data Source:** MetricSnapshot.power_limit_w and MetricSnapshot.gpu_core_clock_mhz
+
+- **Time Range:** 24h, 7d, 30d (aggregated per GPU)
+
+- **Calculation:** SQL: Group by gpu_core_clock_mhz range (e.g., 50MHz buckets), compute STDDEV(power_limit_w) per bucket, then average those standard deviations (or report max). Python post-processing over aggregated bucket arrays.
+
+- **Storage:** None (computed on demand for the report tab)
+
+- **Performance:** Uses compacted MetricSnapshot (1h buckets for 7-30d), so number of rows is limited (~720 for 30d). Grouping and STDDEV done in SQL.
+
+- **Interpretation:** Lower value indicates power limit is more stable across clock speed changes; higher volatility may indicate unstable power delivery.
+
+- **Code (in `_build_report_context()`):
+```python
+# Similar to Temperature-to-PowerLimit Ratio Stability but grouping by gpu_core_clock_mhz
+```
+---
+
+### 4.12 Report: Idle-to-Peak Power Delta
+
+- **Definition:** Difference between maximum and minimum power draw over the period, indicating the range of power consumption.
+
+- **Data Source:** MetricSnapshot.total_system_power_w (or GPUMetric.power_draw_w per GPU summed)
+
+- **Time Range:** 24h, 7d, 30d (system-level)
+
+- **Calculation:** SQL: MAX(total_system_power_w) - MIN(total_system_power_w) over the time range.
+
+- **Storage:** None (computed on demand for the report tab)
+
+- **Performance:** Uses compacted MetricSnapshot, so aggregation is fast (~720 rows for 30d).
+
+- **Interpretation:** Larger delta indicates greater variability in power consumption, which may reflect workload fluctuations or inefficient power management.
+
+- **Code (in `_build_report_context()`):
+```python
+# In _build_report_context()
+# 1. Query MetricSnapshot for rig_uuid and time range, aggregate max_power=Max('total_system_power_w'), min_power=Min('total_system_power_w')
+# 2. idle_to_peak_power_delta = max_power - min_power
+# 3. Store in context
+```
+---
+
+### 4.13 Report: Idle Power Waste Ratio
+
+- **Definition:** Ratio of average power consumption when no active job to average power consumption when active job is present, indicating proportion of power wasted during idle periods.
+
+- **Data Source:** MetricSnapshot.total_system_power_w and MetricSnapshot.has_active_job
+
+- **Time Range:** 24h, 7d, 30d (system-level)
+
+- **Calculation:** SQL: Conditional aggregation: AVG(CASE WHEN has_active_job=False THEN total_system_power_w END) / AVG(CASE WHEN has_active_job=True THEN total_system_power_w END). Handle division by zero.
+
+- **Storage:** None (computed on demand for the report tab)
+
+- **Performance:** Uses compacted MetricSnapshot, so aggregation is fast (~720 rows for 30d).
+
+- **Interpretation:** Value between 0 and 1 (or higher if idle power > active power, which is unusual). Lower ratio indicates less power wasted during idle. Value near 1 indicates similar power draw idle vs active (inefficient).
+
+- **Code (in `_build_report_context()`):
+```python
+# In _build_report_context()
+# 1. Query MetricSnapshot for rig_uuid and time range
+# 2. avg_idle = Avg(Case(When(has_active_job=False, then='total_system_power_w')))
+# 3. avg_active = Avg(Case(When(has_active_job=True, then='total_system_power_w')))
+# 4. if avg_active and avg_active > 0: idle_power_waste_ratio = avg_idle / avg_active else: None
+# 5. Store in context
+```
+---
+
+### 4.14 Report: Job State Transition Frequency
+
+- **Definition:** Number of times the job state changes from active to idle or idle to active over the period, indicating workload volatility.
+
+- **Data Source:** MetricSnapshot.has_active_job
+
+- **Time Range:** 24h, 7d, 30d (system-level)
+
+- **Calculation:** Python: Ordered scan of has_active_job values (0/1) to count transitions (0→1 or 1→0). For 30d, approximate using has_active_job_avg and variance due to performance.
+
+- **Storage:** None (computed on demand for the report tab)
+
+- **Performance:** For 24h/7d: direct scan of compacted MetricSnapshot (~168 rows for 7d at 1h) is fast. For 30d: avoid full scan (~720 rows) still acceptable, but we can approximate if needed. Note: MetricSnapshot is compacted to 1h buckets for 7-30d, so 30d is ~720 rows - scanning is acceptable.
+
+- **Interpretation:** Higher frequency indicates more volatile workload (jobs starting/stopping often). Lower indicates steady workload.
+
+- **Code (in `_build_report_context()`):
+```python
+# In _build_report_context()
+# 1. Query MetricSnapshot for rig_uuid and time range, order_by('timestamp'), values_list('has_active_job', flat=True)
+# 2. Python: scan list, count transitions where current != previous
+# 3. Store count in context
+# Note: For 30d, ~720 rows is acceptable; no approximation needed.
+```
+---
+
+### 4.15 Report: Underutilization Duration
+
+- **Definition:** Total time (in minutes) where GPU utilization is low (<5%) but an active job is present, indicating wasted compute resources.
+
+- **Data Source:** MetricSnapshot.gpu_util_pct and MetricSnapshot.has_active_job
+
+- **Time Range:** 24h, 7d, 30d (per GPU)
+
+- **Calculation:** Python: Ordered scan of MetricSnapshot rows per GPU, accumulate minutes where gpu_util_pct < 5 AND has_active_job=True.
+
+- **Storage:** None (computed on demand for the report tab)
+
+- **Performance:** Uses compacted MetricSnapshot (1h buckets for 7-30d), so rows per GPU limited (~720 for 30d). Scan is O(n).
+
+- **Interpretation:** Higher value indicates more time where GPU is underutilized despite having work, suggesting scheduling inefficiencies or data starvation.
+
+- **Code (in `_build_report_context()`):
+```python
+# In _build_report_context()
+# 1. Query MetricSnapshot for rig_uuid and time range, order_by('gpu_index', 'timestamp'), values_list('gpu_index', 'timestamp', 'gpu_util_pct', 'has_active_job')
+# 2. Python: iterate rows, track current underutilization start time per GPU, accumulate duration when conditions met
+# 3. Store total minutes per gpu_index in context
+```
+---
+
+### 4.16 Report: Power-on Hours Before Restart
+
+- **Definition:** Average duration (in hours) the system runs continuously before a reboot (detected by a drop in uptime_s).
+
+- **Data Source:** MetricSnapshot.uptime_s
+
+- **Time Range:** 24h, 7d, 30d (system-level)
+
+- **Calculation:** Python: Ordered scan of uptime_s values, detect decreases (indicating reboot), compute differences between consecutive peaks, average over the period.
+
+- **Storage:** None (computed on demand for the report tab)
+
+- **Performance:** Uses compacted MetricSnapshot (1h buckets for 7-30d), so rows limited (~720 for 30d). Scan is O(n).
+
+- **Interpretation:** Higher value indicates longer stable uptime between reboots. Lower may indicate frequent reboots due to instability or updates.
+
+- **Code (in `_build_report_context()`):
+```python
+# In _build_report_context()
+# 1. Query MetricSnapshot for rig_uuid and time range, order_by('timestamp'), values_list('uptime_s')
+# 2. Python: scan list, detect when current uptime < previous uptime (reboot), compute diff = previous uptime - last_reset_uptime
+# 3. Collect all diffs, compute average
+# 4. Store average hours in context
+```
+---
+
+### 4.17 Report: Thermal Degradation Slope
+
+- **Definition:** Slope of linear regression of GPU temperature over time at constant utilization, indicating whether temperature is increasing over time for the same workload (possible cooling degradation).
+
+- **Data Source:** MetricSnapshot.gpu_temp_c and MetricSnapshot.gpu_util_pct
+
+- **Time Range:** 24h, 7d, 30d (per GPU)
+
+- **Calculation:** Python: Filter rows where gpu_util_pct is within ±10% of median utilization for the period, then perform linear regression of gpu_temp_c vs time (in days). Slope in °C/day.
+
+- **Storage:** None (computed on demand for the report tab)
+
+- **Performance:** Uses compacted MetricSnapshot (~720 rows for 30d). Filtering and linear regression are O(n).
+
+- **Interpretation:** Positive slope indicates temperature rising over time for same workload (possible thermal degradation). Near zero indicates stable thermal performance.
+
+- **Code (in `_build_report_context()`):
+```python
+# In _build_report_context()
+# 1. Query MetricSnapshot for rig_uuid and time range, values_list('gpu_index', 'timestamp', 'gpu_temp_c', 'gpu_util_pct')
+# 2. Python: group by gpu_index, compute median gpu_util_pct for the group
+# 3. Filter rows where abs(gpu_util_pct - median) <= 0.1 * median (or 10 percentage points? plan says ±10% of median)
+# 4. For each GPU, convert timestamps to days since start, compute slope via np.polyfit(time_days, temp_vals, 1)
+# 5. Store slope per gpu_index
+```
+---
+
+### 4.18 Report: Cost per Active GPU-Hour
+
+- **Definition:** Cost of electricity consumed per hour of active GPU compute, indicating efficiency of power usage for productive work.
+
+- **Data Source:** MetricSnapshot.total_system_power_w, MetricSnapshot.has_active_job, and rig GPU count (from LatestSnapshot.gpu_count or configuration)
+
+- **Time Range:** 24h, 7d, 30d (system-level)
+
+- **Calculation:** SQL + Python: 1. total_energy_wh = Sum(total_system_power_w) * interval / 3600 (interval is seconds between snapshots, assume 60). 2. active_gpu_hours = Sum(has_active_job) * interval / 3600 * gpu_count (if has_active_job indicates at least one job active, we assume all GPUs active? Not accurate). Alternatively, we need per-GPU active flag. We'll note this needs clarification.
+# For now, we'll use the plan's formula and note that active_gpu_hours must be computed from per-GPU job status if available.
+
+- **Storage:** None (computed on demand for the report tab)
+
+- **Performance:** Uses compacted MetricSnapshot, so aggregation is fast (~720 rows for 30d).
+
+- **Interpretation:** Lower cost indicates more efficient power usage for productive work (more compute per watt). Higher cost indicates wasted power.
+
+- **Code (in `_build_report_context()`):
+```python
+# In _build_report_context()
+# 1. total_energy_wh = Sum('total_system_power_w') * 60 / 3600  # assuming 60-second intervals
+# 2. # Need active GPU hours: this requires per-GPU active job status or approximation
+# 3. # Placeholder: active_gpu_hours = Sum('has_active_job') * 60 / 3600 * GPU_COUNT  # GPU_COUNT from rig config
+# 4. cost_per_active_gpu_hour = total_energy_wh * electricity_rate / active_gpu_hours if active_gpu_hours > 0 else None
+# 5. Store in context
+```
+---
+
+### 4.19 Report: Idle Power Waste Cost
+
+- **Definition:** Cost of electricity consumed during idle periods (no active job), indicating waste of electricity when not doing useful work.
+
+- **Data Source:** MetricSnapshot.total_system_power_w and MetricSnapshot.has_active_job (idle periods)
+
+- **Time Range:** 24h, 7d, 30d (system-level)
+
+- **Calculation:** SQL + Python: 1. idle_energy_wh = Sum(Case(When(has_active_job=False, then='total_system_power_w'))) * interval / 3600. 2. cost = idle_energy_wh * electricity_rate.
+
+- **Storage:** None (computed on demand for the report tab)
+
+- **Performance:** Uses compacted MetricSnapshot, so aggregation is fast (~720 rows for 30d).
+
+- **Interpretation:** Lower value indicates less money wasted on idle power. Higher indicates more waste.
+
+- **Code (in `_build_report_context()`):
+```python
+# In _build_report_context()
+# 1. idle_energy_wh = Sum(Case(When(has_active_job=False, then='total_system_power_w'))) * 60 / 3600
+# 2. idle_power_waste_cost = idle_energy_wh * electricity_rate
+# 3. Store in context
+```
+---
+
 ## 5. Implementation Architecture
 
 ### 5.1 New Database Models (for pre-computed chart metrics)

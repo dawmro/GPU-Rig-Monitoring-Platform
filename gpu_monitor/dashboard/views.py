@@ -845,6 +845,12 @@ def _build_report_context(uuid, uuid_str, range_hours):
                 (str(latest_metric.get('gpu_uuid', '')) if latest_metric else '') or ''
             gpu_devices.append(row)
     gpu_devices.reverse()  # restore index order
+    # Add Temperature-to-PowerLimit Ratio Stability to each gpu device
+    for device in gpu_devices:
+        idx = device['gpu_index']
+        device['temp_power_stability_avg'] = gpu_temp_power_stability_avg.get(idx)
+        device['temp_power_stability_max'] = gpu_temp_power_stability_max.get(idx)
+
 
     # Query 2: CPU / Memory / Power / Errors aggregation
     # MetricSnapshot is NOT compacted, so this always scans raw rows.
@@ -867,6 +873,33 @@ def _build_report_context(uuid, uuid_str, range_hours):
         total_system_power_w_max=Max('total_system_power_w'),
         error_count_sum=Sum('error_count'),
         has_active_job_avg=Avg(Cast('has_active_job', IntegerField())),
+    )
+    # Query 5: Temperature-to-PowerLimit Ratio Stability per GPU
+    temp_bucket_size = 5
+    gpu_temp_power_stability = list(
+        GPUMetric.objects.filter(**base_filter)
+        .extra(
+            select={'temp_bucket': '(gpu_temp_c / %s) * %s' % (temp_bucket_size, temp_bucket_size)}
+        )
+        .values('gpu_index', 'temp_bucket')
+        .annotate(stddev_power=StdDev('power_limit_w'))
+        .order_by('gpu_index')
+    )
+    # Process to compute average and max stddev per GPU
+    stability_by_gpu = {}
+    for entry in gpu_temp_power_stability:
+        idx = entry['gpu_index']
+        stddev = entry['stddev_power']
+        if stddev is not None:
+            if idx not in stability_by_gpu:
+                stability_by_gpu[idx] = []
+            stability_by_gpu[idx].append(stddev)
+    gpu_temp_power_stability_avg = {}
+    gpu_temp_power_stability_max = {}
+    for idx, stddev_list in stability_by_gpu.items():
+        gpu_temp_power_stability_avg[idx] = sum(stddev_list) / len(stddev_list)
+        gpu_temp_power_stability_max[idx] = max(stddev_list)
+
     )
 
     # Query 3: Storage metrics per device

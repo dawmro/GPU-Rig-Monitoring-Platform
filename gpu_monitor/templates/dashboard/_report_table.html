@@ -387,6 +387,15 @@
                     {% endif %}
                 </td>
             </tr>
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3"
+                    title="Number of transitions between active and idle job states during the selected period. Higher values indicate a more frequently starting and stopping workload. Unknown job-state samples break the sequence.">
+                    Job State Transition Frequency
+                </td>
+                <td class="text-right py-1.5 px-2 font-semibold text-yellow-300">
+                    {{ job_state_transition_count }}
+                </td>
+            </tr>
         </tbody>
     </table>
 </div>

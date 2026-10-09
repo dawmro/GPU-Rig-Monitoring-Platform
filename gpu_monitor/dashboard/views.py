@@ -739,20 +739,20 @@ def _build_report_context(uuid, uuid_str, range_hours):
     - For tables that ARE compacted (GPUMetric, StorageMetric, NetworkMetric),
       use SQL aggregation at the chart's bucket size. For 7d/30d ranges,
       this means scanning ~700 rows instead of ~10000 raw rows.
-    - For MetricSnapshot (NOT compacted), use a single query with all aggregations.
+    - MetricSnapshot summary statistics use one aggregate query.
+    - Job state transition frequency uses a chronological values-only scan of
+      has_active_job; this is small for hourly-compacted 7d/30d report ranges.
     - The power cost (kWh) calculation is derived from the existing
       snap_agg total_system_power_w_avg — no separate query needed.
     - Caching at the view level (55s TTL) handles the common case of repeated loads.
 
-    Query count for range_hours=24 (1-min buckets): 5 queries
+    Query count for the report context: 6 queries
         1. GPUMetric raw scan (for identity changes)
         2. GPUMetric aggregation (metrics)
         3. MetricSnapshot aggregation (CPU/Memory/Power/Errors)
-        4. StorageMetric aggregation
-        5. NetworkMetric aggregation
-
-    Query count for range_hours=168/720 (15-min/1-hour buckets): same 5 queries
-        but each scans ~30x fewer rows due to pre-bucketed data.
+        4. MetricSnapshot ordered job-state scan (transition count)
+        5. StorageMetric aggregation
+        6. NetworkMetric aggregation
     """
     now = timezone.now()
     start = now - timedelta(hours=range_hours)
@@ -884,9 +884,8 @@ def _build_report_context(uuid, uuid_str, range_hours):
         )
 
     # Query 2: CPU / Memory / Power / Errors aggregation
-    # MetricSnapshot is NOT compacted, so this always scans raw rows.
-    # For 24h range: 1440 rows, for 7d: 10080 rows, for 30d: 43200 rows.
-    # AVG/MAX aggregates are O(N) at DB level, so query time scales linearly.
+    # MetricSnapshot may contain raw or hourly-compacted samples depending on
+    # the reporting range. Keep these summary statistics in one aggregate query.
     snap_agg = MetricSnapshot.objects.filter(**base_filter).aggregate(
         cpu_utilization_pct_avg=Avg('cpu_utilization_pct'),
         cpu_utilization_pct_max=Max('cpu_utilization_pct'),
@@ -914,7 +913,27 @@ def _build_report_context(uuid, uuid_str, range_hours):
         has_active_job_avg=Avg(Cast('has_active_job', IntegerField())),
     )
 
-    # Query 3: Storage metrics per device
+    # Query 3: Job state transition frequency.
+    # Scan chronologically and count only transitions between adjacent known
+    # states. A NULL/unknown state breaks the sequence, avoiding inferred
+    # transitions across missing state information.
+    job_states = MetricSnapshot.objects.filter(**base_filter).order_by(
+        'timestamp'
+    ).values_list('has_active_job', flat=True)
+
+    job_state_transition_count = 0
+    previous_job_state = None
+    for job_state in job_states.iterator():
+        if job_state is None:
+            previous_job_state = None
+            continue
+
+        if previous_job_state is not None and job_state != previous_job_state:
+            job_state_transition_count += 1
+
+        previous_job_state = job_state
+
+    # Query 4: Storage metrics per device
     disk_devices = list(
         StorageMetric.objects.filter(**base_filter)
         .values('device', 'mountpoint')
@@ -928,7 +947,7 @@ def _build_report_context(uuid, uuid_str, range_hours):
         ).order_by('device')
     )
 
-    # Query 4: Network metrics per interface
+    # Query 5: Network metrics per interface
     net_interfaces = list(
         NetworkMetric.objects.filter(**base_filter)
         .values('interface')
@@ -980,5 +999,6 @@ def _build_report_context(uuid, uuid_str, range_hours):
         'power_cost_estimate': None,
         'job_saturation_pct': job_saturation_pct,
         'idle_power_waste_ratio': idle_power_waste_ratio,
+        'job_state_transition_count': job_state_transition_count,
         **snap_agg,
     }

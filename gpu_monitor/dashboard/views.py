@@ -845,8 +845,8 @@ def _build_report_context(uuid, uuid_str, range_hours):
                 (str(latest_metric.get('gpu_uuid', '')) if latest_metric else '') or ''
             gpu_devices.append(row)
     gpu_devices.reverse()  # restore index order
-    # Add Temperature-to-PowerLimit Ratio Stability to each gpu device
-    # Initialize Temperature-to-PowerLimit Ratio Stability variables
+    # Add Temperature-to-PowerDraw Ratio Stability to each gpu device
+    # Initialize Temperature-to-PowerDraw Ratio Stability variables
     gpu_temp_power_stability_avg = {}
     gpu_temp_power_stability_max = {}
     for device in gpu_devices:
@@ -877,7 +877,7 @@ def _build_report_context(uuid, uuid_str, range_hours):
         error_count_sum=Sum('error_count'),
         has_active_job_avg=Avg(Cast('has_active_job', IntegerField())),
     )
-    # Query 5: Temperature-to-PowerLimit Ratio Stability per GPU
+    # Query 5: Temperature-to-PowerDraw Ratio Stability per GPU
     temp_bucket_size = 5
     gpu_temp_power_stability = list(
         GPUMetric.objects.filter(**base_filter)
@@ -885,7 +885,7 @@ def _build_report_context(uuid, uuid_str, range_hours):
             select={'temp_bucket': '(gpu_temp_c / %s) * %s' % (temp_bucket_size, temp_bucket_size)}
         )
         .values('gpu_index', 'temp_bucket')
-        .annotate(stddev_power=StdDev('power_limit_w'))
+        .annotate(stddev_power=StdDev('power_draw_w'))
         .order_by('gpu_index')
     )
     # Process to compute average and max stddev per GPU

@@ -30,7 +30,7 @@ class IngestSerializer(serializers.Serializer):
     has_active_job = serializers.BooleanField(required=False, default=False)
 
     def validate_schema_version(self, value):
-            if value not in ('1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8', '1.9', '1.10', '1.11', '1.12', '1.13', '1.14', '1.15', '1.16', '1.17', '1.18', '1.19', '1.20'):
+            if value not in ('1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8', '1.9', '1.10', '1.11', '1.12', '1.13', '1.14', '1.15', '1.16', '1.17', '1.18', '1.19', '1.20', '1.21', '1.22'):
                 raise serializers.ValidationError(f"Unsupported schema_version: {value}")
             return value
 
@@ -74,8 +74,15 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
     cpu_temp_per_core = cpu.get('temp_per_core_c', [])
     cpu_freq_per_core = cpu.get('freq_per_core', [])
 
-    # Fetch previous LatestSnapshot for delta calculation baseline.
-    # This avoids per-device queries on the timeseries tables during ingest.
+    # Fetch previous LatestSnapshot ONCE for ALL delta calculations (storage, network, GPU).
+    # Rig is guaranteed to exist by this point (created/updated in view before serializer).
+    # Rig_uuid is PK on LatestSnapshot, so .get() is correct.
+    try:
+        prev_ls = LatestSnapshot.objects.get(rig_uuid=rig_uuid)
+    except LatestSnapshot.DoesNotExist:
+        prev_ls = None
+
+    # Storage delta calculation baseline
     prev_storage_read_bytes_total = []
     prev_storage_write_bytes_total = []
     prev_storage_read_iops_total = []
@@ -86,21 +93,17 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
     prev_network_tx_bytes = []
     storage_devices_prev = []
     network_interfaces_prev = []
-    try:
-        prev_ls = LatestSnapshot.objects.filter(rig_uuid=rig_uuid).first()
-        if prev_ls:
-            storage_devices_prev = list(prev_ls.storage_devices_json or [])
-            network_interfaces_prev = list(prev_ls.network_interfaces_json or [])
-            prev_storage_read_bytes_total = list(prev_ls.storage_read_bytes_total_json or [])
-            prev_storage_write_bytes_total = list(prev_ls.storage_write_bytes_total_json or [])
-            prev_storage_read_iops_total = list(prev_ls.storage_read_iops_total_json or [])
-            prev_storage_write_iops_total = list(prev_ls.storage_write_iops_total_json or [])
-            prev_storage_busy_time_ms_total = list(prev_ls.storage_busy_time_ms_total_json or [])
-            prev_storage_timestamp = prev_ls.timestamp
-            prev_network_rx_bytes = list(prev_ls.network_rx_bytes_json or [])
-            prev_network_tx_bytes = list(prev_ls.network_tx_bytes_json or [])
-    except Exception:
-        pass
+    if prev_ls:
+        storage_devices_prev = list(prev_ls.storage_devices_json or [])
+        network_interfaces_prev = list(prev_ls.network_interfaces_json or [])
+        prev_storage_read_bytes_total = list(prev_ls.storage_read_bytes_total_json or [])
+        prev_storage_write_bytes_total = list(prev_ls.storage_write_bytes_total_json or [])
+        prev_storage_read_iops_total = list(prev_ls.storage_read_iops_total_json or [])
+        prev_storage_write_iops_total = list(prev_ls.storage_write_iops_total_json or [])
+        prev_storage_busy_time_ms_total = list(prev_ls.storage_busy_time_ms_total_json or [])
+        prev_storage_timestamp = prev_ls.timestamp
+        prev_network_rx_bytes = list(prev_ls.network_rx_bytes_json or [])
+        prev_network_tx_bytes = list(prev_ls.network_tx_bytes_json or [])
 
     try:
         with transaction.atomic():
@@ -129,6 +132,7 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                 # Power data from agent (PSU efficiency already factored in)
                 'cpu_power_w': power_data.get('cpu_power_w') if power_data else None,
                 'total_system_power_w': power_data.get('total_power_w') if power_data else None,
+                'cpu_to_gpu_power_ratio': power_data.get('cpu_to_gpu_power_ratio') if power_data else None,
                 # Job status: mapped 0/1 for AVG aggregation in chart buckets
                 'has_active_job': validated.get('has_active_job', False),
             }
@@ -175,7 +179,86 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
             gpu_max_clocks = []
             gpu_mig_modes = []
             gpu_bar1_mb = []
+
+            # prev_ls already fetched above for storage/network deltas (rig_uuid is PK)
+            # Reuse it for GPU cooling efficiency calculations
+            # If no LatestSnapshot exists yet (first heartbeat), prev_ls will be None
+            # and cooling metrics will be skipped (None stored)
+
             for idx, gpu in enumerate(gpu_list):
+                # Compute Cooling Efficiency Index and Fan-Adjusted Cooling Response Index
+                # from previous snapshot (if available)
+                MIN_POWER_DELTA_W = 1.0
+
+                prev_idx = gpu.get('gpu_index', idx) if 'gpu_index' in gpu else idx
+
+                prev_gpu_temp = (
+                    prev_ls.gpu_temps_json[prev_idx]
+                    if prev_ls and prev_ls.gpu_temps_json and prev_idx < len(prev_ls.gpu_temps_json)
+                    else None
+                )
+
+                prev_gpu_power = (
+                    prev_ls.gpu_power_draws_json[prev_idx]
+                    if prev_ls and prev_ls.gpu_power_draws_json and prev_idx < len(prev_ls.gpu_power_draws_json)
+                    else None
+                )
+
+                prev_gpu_fan = (
+                    prev_ls.gpu_fans_json[prev_idx]
+                    if prev_ls and prev_ls.gpu_fans_json and prev_idx < len(prev_ls.gpu_fans_json)
+                    else None
+                )
+
+                curr_gpu_temp = gpu.get('temp_c')
+                curr_gpu_power = gpu.get('power_draw_w')
+                curr_gpu_fan = gpu.get('fan_speed_pct')
+
+                cooling_efficiency_index = None
+                fan_adjusted_cooling_response = None
+
+                if (
+                    prev_gpu_temp is not None
+                    and prev_gpu_power is not None
+                    and curr_gpu_temp is not None
+                    and curr_gpu_power is not None
+                ):
+                    delta_temp = curr_gpu_temp - prev_gpu_temp
+                    delta_power = curr_gpu_power - prev_gpu_power
+
+                    if abs(delta_power) < MIN_POWER_DELTA_W:
+                        effective_delta_power = MIN_POWER_DELTA_W
+                    else:
+                        effective_delta_power = delta_power
+
+                    cooling_efficiency_index = (
+                        delta_temp / effective_delta_power
+                    )
+
+                if (
+                    prev_gpu_temp is not None
+                    and prev_gpu_power is not None
+                    and prev_gpu_fan is not None
+                    and curr_gpu_temp is not None
+                    and curr_gpu_power is not None
+                    and curr_gpu_fan is not None
+                ):
+                    delta_temp = curr_gpu_temp - prev_gpu_temp
+                    delta_power = curr_gpu_power - prev_gpu_power
+                    delta_fan = curr_gpu_fan - prev_gpu_fan
+
+                    if abs(delta_power) < MIN_POWER_DELTA_W:
+                        effective_delta_power = MIN_POWER_DELTA_W
+                    else:
+                        effective_delta_power = delta_power
+
+                    fan_adjustment = 1 + (delta_fan / 100.0)
+
+                    fan_adjusted_cooling_response = (
+                        (delta_temp / effective_delta_power)
+                        / fan_adjustment
+                    )
+
                 GPUMetric.objects.update_or_create(
                     rig_uuid=rig_uuid,
                     timestamp=ts,
@@ -217,6 +300,11 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
                         'gpu_core_clock_mhz': gpu.get('gpu_core_clock_mhz'),
                         'gpu_uuid': (lambda v: v.replace('GPU-', '') if v.startswith('GPU-') else v)(gpu.get('uuid', '')) or '',
                         'gpu_mem_clock_mhz': gpu.get('gpu_mem_clock_mhz'),
+                        # NEW: VRAM Bandwidth Saturation Index (agent-computed, schema 1.21+)
+                        'vram_bandwidth_saturation': gpu.get('vram_bandwidth_saturation'),
+                        # NEW: Cooling Efficiency Index and Fan-Adjusted Cooling Response
+                        'cooling_efficiency_index': cooling_efficiency_index,
+                        'fan_adjusted_cooling_response': fan_adjusted_cooling_response,
                     },
                 )
                 # Build summary arrays for LatestSnapshot

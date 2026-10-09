@@ -9,7 +9,7 @@
     'use strict';
 
     var registry = [
-        // GPU charts (8)
+        // GPU charts (9)
         { id: 'chartGpuTemp', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChartMultiGpu('chartGpuTemp', 'gpu_temp_c', uuid, range, '°C'); } },
         { id: 'chartGpuFan', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChartMultiGpu('chartGpuFan', 'gpu_fan_pct', uuid, range, '%'); } },
         { id: 'chartGpuUtil', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChartMultiGpu('chartGpuUtil', 'gpu_util_pct', uuid, range, '%'); } },
@@ -18,6 +18,9 @@
         { id: 'chartGpuMem', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChartMultiGpu('chartGpuMem', 'gpu_mem_used_mb', uuid, range, ' MB'); } },
         { id: 'chartGpuCoreClock', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChartMultiGpu('chartGpuCoreClock', 'gpu_core_clock_mhz', uuid, range, ' MHz'); } },
         { id: 'chartGpuMemClock', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChartMultiGpu('chartGpuMemClock', 'gpu_mem_clock_mhz', uuid, range, ' MHz'); } },
+        { id: 'chartGpuVramSat', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChartMultiGpu('chartGpuVramSat', 'vram_bandwidth_saturation', uuid, range, ''); } },
+        { id: 'chartGpuCoolingEfficiency', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChartMultiGpu('chartGpuCoolingEfficiency', 'cooling_efficiency_index', uuid, range, '°C/W'); } },
+        { id: 'chartGpuFanAdjustedCooling', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChartMultiGpu('chartGpuFanAdjustedCooling', 'fan_adjusted_cooling_response', uuid, range, '°C/W'); } },
         // CPU charts (8)
         { id: 'chartCpuUtil', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChart('chartCpuUtil', 'cpu_utilization_pct', uuid, range, '%', 'rgba(16, 185, 129, 0.8)', 'rgba(16, 185, 129, 0.15)'); } },
         { id: 'chartCpuUtilPerCore', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChartMultiCore('chartCpuUtilPerCore', 'cpu_utilization_per_core_pct', uuid, range, '%', 'rgba(16, 185, 129, 0.8)', 'rgba(16, 185, 129, 0.15)'); } },
@@ -32,8 +35,9 @@
         { id: 'chartDiskReadWriteThroughput', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChartMultiKeyDual('chartDiskReadWriteThroughput', 'disk_read_bytes_delta', 'disk_write_bytes_delta', uuid, range, ' MB', 'multi_disk', 'rgba(59, 130, 246, 0.8)', 'rgba(16, 185, 129, 0.8)'); } },
         { id: 'chartDiskReadWriteIops', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChartMultiKeyDual('chartDiskReadWriteIops', 'disk_read_iops_delta', 'disk_write_iops_delta', uuid, range, ' IOPS', 'multi_disk', 'rgba(59, 130, 246, 0.8)', 'rgba(16, 185, 129, 0.8)'); } },
         { id: 'chartDiskUtilization', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChartMultiKey('chartDiskUtilization', 'disk_utilization_pct', uuid, range, '%', 'multi_disk'); } },
-        // System / other (5)
+        // System / other (6)
         { id: 'chartTotalPower', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChart('chartTotalPower', 'total_system_power_w', uuid, range, 'W', 'rgba(59, 130, 246, 0.8)', 'rgba(59, 130, 246, 0.15)'); } },
+        { id: 'chartCpuGpuPowerRatio', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChart('chartCpuGpuPowerRatio', 'cpu_to_gpu_power_ratio', uuid, range, '', 'rgba(236, 72, 153, 0.8)', 'rgba(236, 72, 153, 0.15)'); } },
         { id: 'chartMemSwap', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChartMemSwap('chartMemSwap', uuid, range); } },
         { id: 'chartNetCombined', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChartNetworkCombined('chartNetCombined', uuid, range); } },
         { id: 'chartUptime', loader: function (uuid, range) { return window.GRM.ChartLoaders.loadChart('chartUptime', 'uptime_s', uuid, range, ' days', 'rgba(168, 85, 247, 0.8)', 'rgba(168, 85, 247, 0.15)'); } },

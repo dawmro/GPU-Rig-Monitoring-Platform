@@ -228,6 +228,7 @@ class ChartDataView(APIView):
         'mem_total_bytes', 'mem_used_bytes', 'mem_free_bytes', 'mem_cached_bytes',
         'swap_used_bytes', 'swap_total_bytes',
         'cpu_power_w', 'total_system_power_w',
+        'cpu_to_gpu_power_ratio',
         'has_active_job',
         # NEW: Per-core metrics (JSON arrays, not compacted)
         'cpu_utilization_per_core_pct',   # Per-core utilization chart
@@ -247,6 +248,9 @@ class ChartDataView(APIView):
         'gpu_fan_pct': 'fan_speed_pct',
         'gpu_core_clock_mhz': 'gpu_core_clock_mhz',
         'gpu_mem_clock_mhz': 'gpu_mem_clock_mhz',
+        'vram_bandwidth_saturation': 'vram_bandwidth_saturation',
+        'cooling_efficiency_index': 'cooling_efficiency_index',
+        'fan_adjusted_cooling_response': 'fan_adjusted_cooling_response',
     }
 
     STORAGE_METRICS = frozenset({'disk_usage_pct'})

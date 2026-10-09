@@ -40,6 +40,17 @@ class MetricSnapshot(models.Model):
     # Total system power (AC watts, PSU efficiency already factored in)
     total_system_power_w = models.FloatField(null=True, blank=True)
 
+    # NEW: CPU-to-GPU Power Ratio (agent-computed for schema 1.22+)
+    cpu_to_gpu_power_ratio = models.FloatField(
+        null=True,
+        blank=True,
+        help_text=(
+            'Ratio of CPU power to total GPU power (cpu_power_w / sum(gpu_power_draw_w)); '
+            'computed at agent from payload power data; higher values indicate CPU draws '
+            'more power relative to GPUs; single-line chart (not per-GPU)'
+        )
+    )
+
     # Memory metrics (dynamic — used for charts)
     mem_total_bytes = models.BigIntegerField(null=True)
     mem_used_bytes = models.BigIntegerField(null=True)
@@ -131,6 +142,40 @@ class GPUMetric(models.Model):
     pcie_max_width = models.PositiveSmallIntegerField(null=True)
     gpu_core_clock_mhz = models.PositiveIntegerField(null=True)
     gpu_mem_clock_mhz = models.PositiveIntegerField(null=True)
+    # NEW: VRAM Bandwidth Saturation Index - mem_controller_util_pct / gpu_util_pct
+    # Computed at ingest (agent-side preferred, server fallback); ratio stored directly
+    vram_bandwidth_saturation = models.FloatField(
+        null=True,
+        blank=True,
+        help_text=(
+            'Ratio of memory-controller utilization to GPU utilization; '
+            'computed at ingest from current gpu_util_pct and mem_controller_util_pct; '
+            'higher values indicate greater memory-bandwidth pressure relative to GPU compute'
+        )
+    )
+
+    # NEW: Cooling Efficiency Index - ΔGPU_Temp / ΔGPU_Power (°C/W)
+    # Computed at ingest from previous snapshot vs current; measures temperature change per watt
+    cooling_efficiency_index = models.FloatField(
+        null=True,
+        blank=True,
+        help_text=(
+            '°C/W — temperature change per watt of GPU power change; '
+            'higher values indicate a larger temperature response to power changes'
+        )
+    )
+
+    # NEW: Fan-Adjusted Cooling Response Index - (ΔTemp / effective ΔPower) / (1 + ΔFan% / 100)
+    # Temperature response per watt of GPU power change, adjusted for the change in fan speed
+    fan_adjusted_cooling_response = models.FloatField(
+        null=True,
+        blank=True,
+        help_text=(
+            '°C/W — temperature change per watt of GPU power change, '
+            'adjusted for the change in fan speed; higher values indicate a larger '
+            'temperature response after accounting for fan-speed changes'
+        )
+    )
 
     class Meta:
         db_table = 'metrics_gpumetric'

@@ -741,20 +741,22 @@ def _build_report_context(uuid, uuid_str, range_hours):
       this means scanning ~700 rows instead of ~10000 raw rows.
     - MetricSnapshot summary statistics use one aggregate query.
     - Job state transitions use a chronological values-only scan of has_active_job.
+    - Power-on hours before restart uses a chronological values-only uptime scan.
     - Underutilization duration correlates per-GPU utilization samples with
       same-timestamp job-state samples, then accumulates qualifying intervals.
     - The power cost (kWh) calculation is derived from the existing
       snap_agg total_system_power_w_avg — no separate query needed.
     - Caching at the view level (55s TTL) handles the common case of repeated loads.
 
-    Query count for the report context: 7 queries
+    Query count for the report context: 8 queries
         1. GPUMetric raw scan (for identity changes)
         2. GPUMetric aggregation (metrics)
         3. MetricSnapshot aggregation (CPU/Memory/Power/Errors)
         4. MetricSnapshot ordered job-state scan (transition count)
-        5. MetricSnapshot job-state lookup for underutilization duration
-        6. StorageMetric aggregation
-        7. NetworkMetric aggregation
+        5. MetricSnapshot ordered uptime scan (average uptime before reboot)
+        6. MetricSnapshot job-state lookup for underutilization duration
+        7. StorageMetric aggregation
+        8. NetworkMetric aggregation
     """
     now = timezone.now()
     start = now - timedelta(hours=range_hours)
@@ -938,7 +940,45 @@ def _build_report_context(uuid, uuid_str, range_hours):
 
         previous_job_state = job_state
 
-    # Query 4: Underutilization duration per GPU.
+    # Query 4: Power-on hours before restart.
+    # A decrease in uptime_s marks a reboot. Record the last observed uptime
+    # before each decrease; only completed uptime periods are averaged, so a
+    # currently running period is not mistaken for a completed pre-reboot run.
+    uptime_values = MetricSnapshot.objects.filter(**base_filter).order_by(
+        'timestamp'
+    ).values_list('uptime_s', flat=True)
+
+    completed_uptime_periods_s = []
+    previous_uptime_s = None
+    peak_uptime_since_restart_s = None
+    for uptime_s in uptime_values.iterator():
+        if uptime_s is None:
+            # Missing uptime breaks adjacency; do not infer a reboot across it.
+            previous_uptime_s = None
+            peak_uptime_since_restart_s = None
+            continue
+
+        if previous_uptime_s is not None and uptime_s < previous_uptime_s:
+            if peak_uptime_since_restart_s is not None:
+                completed_uptime_periods_s.append(peak_uptime_since_restart_s)
+            peak_uptime_since_restart_s = uptime_s
+        elif peak_uptime_since_restart_s is None:
+            peak_uptime_since_restart_s = uptime_s
+        else:
+            peak_uptime_since_restart_s = max(peak_uptime_since_restart_s, uptime_s)
+
+        previous_uptime_s = uptime_s
+
+    power_on_hours_before_restart_avg = (
+        round(
+            (sum(completed_uptime_periods_s) / len(completed_uptime_periods_s)) / 3600,
+            2,
+        )
+        if completed_uptime_periods_s
+        else None
+    )
+
+    # Query 5: Underutilization duration per GPU.
     # GPUMetric owns the per-GPU utilization series; has_active_job is stored
     # on MetricSnapshot at the same ingest timestamp. Exact timestamp matching
     # avoids attributing a stale system job state to a GPU sample.
@@ -988,7 +1028,7 @@ def _build_report_context(uuid, uuid_str, range_hours):
             underutilization_by_gpu.get(idx, 0.0), 1
         )
 
-    # Query 5: Storage metrics per device
+    # Query 6: Storage metrics per device
     disk_devices = list(
         StorageMetric.objects.filter(**base_filter)
         .values('device', 'mountpoint')
@@ -1002,7 +1042,7 @@ def _build_report_context(uuid, uuid_str, range_hours):
         ).order_by('device')
     )
 
-    # Query 6: Network metrics per interface
+    # Query 7: Network metrics per interface
     net_interfaces = list(
         NetworkMetric.objects.filter(**base_filter)
         .values('interface')
@@ -1055,5 +1095,6 @@ def _build_report_context(uuid, uuid_str, range_hours):
         'job_saturation_pct': job_saturation_pct,
         'idle_power_waste_ratio': idle_power_waste_ratio,
         'job_state_transition_count': job_state_transition_count,
+        'power_on_hours_before_restart_avg': power_on_hours_before_restart_avg,
         **snap_agg,
     }

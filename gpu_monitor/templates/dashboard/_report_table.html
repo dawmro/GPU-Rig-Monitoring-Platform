@@ -405,6 +405,19 @@
                     {{ job_state_transition_count }}
                 </td>
             </tr>
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3"
+                    title="Average observed uptime immediately before detected reboots during the selected period. Only completed uptime periods are included; if no reboot is detected, the value is unavailable.">
+                    Power-on Hours Before Restart
+                </td>
+                <td class="text-right py-1.5 px-2 font-semibold text-yellow-300">
+                    {% if power_on_hours_before_restart_avg != None %}
+                        {{ power_on_hours_before_restart_avg|floatformat:2 }} h
+                    {% else %}
+                        —
+                    {% endif %}
+                </td>
+            </tr>
         </tbody>
     </table>
 </div>

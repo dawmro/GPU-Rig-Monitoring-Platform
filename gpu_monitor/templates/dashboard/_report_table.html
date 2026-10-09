@@ -22,18 +22,18 @@
         <thead class="text-gray-300 border-b border-gray-700">
             <tr>
                 <th class="text-left py-1.5 pr-3 font-medium">Metric</th>
-                <th class="text-right py-1.5 px-2 font-medium">Average</th>
-                <th class="text-right py-1.5 px-2 font-medium">Max</th>
+                <th class="text-right py-1.5 px-2 font-medium" title="Arithmetic mean of the available measurements in the selected period, except where the metric tooltip states otherwise.">Average</th>
+                <th class="text-right py-1.5 px-2 font-medium" title="Highest available measurement in the selected period, except where the metric tooltip states otherwise.">Max</th>
             </tr>
         </thead>
         <tbody class="text-gray-200">
             <tr class="border-b border-gray-700/50">
-                <td class="py-1.5 pr-3">Temperature</td>
+                <td class="py-1.5 pr-3" title="Average and maximum GPU temperature recorded during the selected reporting period.">Temperature</td>
                 <td class="text-right py-1.5 px-2">{{ gpu.gpu_temp_c_avg|floatformat:1 }}°C</td>
                 <td class="text-right py-1.5 px-2">{{ gpu.gpu_temp_c_max|floatformat:1 }}°C</td>
             </tr>
             <tr class="border-b border-gray-700/50">
-                <td class="py-1.5 pr-3">Core Utilization</td>
+                <td class="py-1.5 pr-3" title="Average and maximum GPU core utilization during the selected period, expressed as a percentage.">Core Utilization</td>
                 <td class="text-right py-1.5 px-2">{{ gpu.gpu_util_pct_avg|floatformat:1 }}%</td>
                 <td class="text-right py-1.5 px-2">{{ gpu.gpu_util_pct_max|floatformat:1 }}%</td>
             </tr>
@@ -47,47 +47,47 @@
                 </td>
             </tr>
             <tr class="border-b border-gray-700/50">
-                <td class="py-1.5 pr-3">Mem Controller Util</td>
+                <td class="py-1.5 pr-3" title="Average and maximum GPU memory-controller utilization during the selected period, expressed as a percentage.">Mem Controller Util</td>
                 <td class="text-right py-1.5 px-2">{{ gpu.mem_controller_util_pct_avg|floatformat:1 }}%</td>
                 <td class="text-right py-1.5 px-2">{{ gpu.mem_controller_util_pct_max|floatformat:1 }}%</td>
             </tr>
             <tr class="border-b border-gray-700/50">
-                <td class="py-1.5 pr-3">Power Draw</td>
+                <td class="py-1.5 pr-3" title="Average and maximum electrical power drawn by this GPU during the selected period.">Power Draw</td>
                 <td class="text-right py-1.5 px-2">{{ gpu.power_draw_w_avg|floatformat:1 }}W</td>
                 <td class="text-right py-1.5 px-2">{{ gpu.power_draw_w_max|floatformat:1 }}W</td>
             </tr>
             <tr class="border-b border-gray-700/50">
-                <td class="py-1.5 pr-3">Cooling Efficiency</td>
+                <td class="py-1.5 pr-3" title="Average and maximum of the cooling-efficiency index, calculated as GPU temperature change divided by GPU power-draw change (°C/W). It describes temperature response per watt of power change, not cooling efficiency in the thermodynamic sense.">Cooling Efficiency</td>
                 <td class="text-right py-1.5 px-2">{{ gpu.cooling_efficiency_index_avg|floatformat:3 }} °C/W</td>
                 <td class="text-right py-1.5 px-2">{{ gpu.cooling_efficiency_index_max|floatformat:3 }} °C/W</td>
             </tr>
             <tr class="border-b border-gray-700/50">
-                <td class="py-1.5 pr-3">Fan-Adjusted Cooling Response</td>
+                <td class="py-1.5 pr-3" title="Average and maximum of (temperature change / power-draw change) adjusted by the change in fan speed: (ΔTemp / ΔPower) / (1 + ΔFan% / 100), in °C/W.">Fan-Adjusted Cooling Response</td>
                 <td class="text-right py-1.5 px-2">{{ gpu.fan_adjusted_cooling_response_avg|floatformat:3 }} °C/W</td>
                 <td class="text-right py-1.5 px-2">{{ gpu.fan_adjusted_cooling_response_max|floatformat:3 }} °C/W</td>
             </tr>
             <tr class="border-b border-gray-700/50">
-                <td class="py-1.5 pr-3">Temperature-to-Power Stability</td>
+                <td class="py-1.5 pr-3" title="Standard deviation across samples of GPU temperature divided by GPU power draw (°C/W). Lower values mean this ratio varied less during the selected period; this is not an average or maximum despite the table column headings.">Temperature-to-Power Stability</td>
                 <td class="text-right py-1.5 px-2">{{ gpu.temp_power_stability_stddev|floatformat:3 }} °C/W</td>
                 <td class="text-right py-1.5 px-2">{{ gpu.temp_power_stability_stddev|floatformat:3 }} °C/W</td>
             </tr>
             <tr class="border-b border-gray-700/50">
-                <td class="py-1.5 pr-3">VRAM Used</td>
+                <td class="py-1.5 pr-3" title="Average and maximum amount of GPU video memory (VRAM) in use during the selected period.">VRAM Used</td>
                 <td class="text-right py-1.5 px-2">{{ gpu.mem_used_mb_avg|floatformat:1 }} MB</td>
                 <td class="text-right py-1.5 px-2">{{ gpu.mem_used_mb_max|floatformat:1 }} MB</td>
             </tr>
             <tr class="border-b border-gray-700/50">
-                <td class="py-1.5 pr-3">Fan Speed</td>
+                <td class="py-1.5 pr-3" title="Average and maximum reported GPU fan speed as a percentage.">Fan Speed</td>
                 <td class="text-right py-1.5 px-2">{{ gpu.fan_speed_pct_avg|floatformat:0 }}%</td>
                 <td class="text-right py-1.5 px-2">{{ gpu.fan_speed_pct_max|floatformat:0 }}%</td>
             </tr>
             <tr class="border-b border-gray-700/50">
-                <td class="py-1.5 pr-3">Core Clock</td>
+                <td class="py-1.5 pr-3" title="Average and maximum GPU core clock frequency reported during the selected period.">Core Clock</td>
                 <td class="text-right py-1.5 px-2">{{ gpu.gpu_core_clock_mhz_avg|floatformat:0 }} MHz</td>
                 <td class="text-right py-1.5 px-2">{{ gpu.gpu_core_clock_mhz_max|floatformat:0 }} MHz</td>
             </tr>
             <tr class="border-b border-gray-700/50">
-                <td class="py-1.5 pr-3">Memory Clock</td>
+                <td class="py-1.5 pr-3" title="Average and maximum GPU memory clock frequency reported during the selected period.">Memory Clock</td>
                 <td class="text-right py-1.5 px-2">{{ gpu.gpu_mem_clock_mhz_avg|floatformat:0 }} MHz</td>
                 <td class="text-right py-1.5 px-2">{{ gpu.gpu_mem_clock_mhz_max|floatformat:0 }} MHz</td>
             </tr>
@@ -217,28 +217,28 @@
         <thead class="text-gray-300 border-b border-gray-700">
             <tr>
                 <th class="text-left py-1.5 pr-3 font-medium">Metric</th>
-                <th class="text-right py-1.5 px-2 font-medium">Average</th>
-                <th class="text-right py-1.5 px-2 font-medium">Max</th>
+                <th class="text-right py-1.5 px-2 font-medium" title="Arithmetic mean of the available measurements in the selected period, except where the metric tooltip states otherwise.">Average</th>
+                <th class="text-right py-1.5 px-2 font-medium" title="Highest available measurement in the selected period, except where the metric tooltip states otherwise.">Max</th>
             </tr>
         </thead>
         <tbody class="text-gray-200">
             <tr class="border-b border-gray-700/50">
-                <td class="py-1.5 pr-3">Utilization</td>
+                <td class="py-1.5 pr-3" title="Average and maximum CPU utilization during the selected period, expressed as a percentage.">Utilization</td>
                 <td class="text-right py-1.5 px-2">{{ cpu_utilization_pct_avg|floatformat:1 }}%</td>
                 <td class="text-right py-1.5 px-2">{{ cpu_utilization_pct_max|floatformat:1 }}%</td>
             </tr>
             <tr class="border-b border-gray-700/50">
-                <td class="py-1.5 pr-3">Temperature</td>
+                <td class="py-1.5 pr-3" title="Average and maximum CPU temperature recorded during the selected reporting period.">Temperature</td>
                 <td class="text-right py-1.5 px-2">{{ cpu_temp_c_avg|floatformat:1 }}°C</td>
                 <td class="text-right py-1.5 px-2">{{ cpu_temp_c_max|floatformat:1 }}°C</td>
             </tr>
             <tr class="border-b border-gray-700/50">
-                <td class="py-1.5 pr-3">Power</td>
+                <td class="py-1.5 pr-3" title="Average and maximum CPU power consumption reported during the selected period.">Power</td>
                 <td class="text-right py-1.5 px-2">{{ cpu_power_w_avg|floatformat:1 }}W</td>
                 <td class="text-right py-1.5 px-2">{{ cpu_power_w_max|floatformat:1 }}W</td>
             </tr>
             <tr class="border-b border-gray-700/50">
-                <td class="py-1.5 pr-3">Frequency</td>
+                <td class="py-1.5 pr-3" title="Average and maximum reported current CPU frequency during the selected period.">Frequency</td>
                 <td class="text-right py-1.5 px-2">{{ cpu_freq_current_mhz_avg|floatformat:0 }} MHz</td>
                 <td class="text-right py-1.5 px-2">{{ cpu_freq_current_mhz_max|floatformat:0 }} MHz</td>
             </tr>
@@ -253,18 +253,18 @@
         <thead class="text-gray-300 border-b border-gray-700">
             <tr>
                 <th class="text-left py-1.5 pr-3 font-medium">Metric</th>
-                <th class="text-right py-1.5 px-2 font-medium">Average</th>
-                <th class="text-right py-1.5 px-2 font-medium">Max</th>
+                <th class="text-right py-1.5 px-2 font-medium" title="Arithmetic mean of the available measurements in the selected period, except where the metric tooltip states otherwise.">Average</th>
+                <th class="text-right py-1.5 px-2 font-medium" title="Highest available measurement in the selected period, except where the metric tooltip states otherwise.">Max</th>
             </tr>
         </thead>
         <tbody class="text-gray-200">
             <tr class="border-b border-gray-700/50">
-                <td class="py-1.5 pr-3">Used</td>
+                <td class="py-1.5 pr-3" title="Average and maximum amount of physical system memory in use during the selected period.">Used</td>
                 <td class="text-right py-1.5 px-2">{{ mem_used_bytes_avg|filesizeformat }}</td>
                 <td class="text-right py-1.5 px-2">{{ mem_used_bytes_max|filesizeformat }}</td>
             </tr>
             <tr class="border-b border-gray-700/50">
-                <td class="py-1.5 pr-3">Swap Used</td>
+                <td class="py-1.5 pr-3" title="Average and maximum amount of swap space in use during the selected period.">Swap Used</td>
                 <td class="text-right py-1.5 px-2">{{ swap_used_bytes_avg|filesizeformat }}</td>
                 <td class="text-right py-1.5 px-2">{{ swap_used_bytes_max|filesizeformat }}</td>
             </tr>
@@ -281,32 +281,32 @@
         <thead class="text-gray-300 border-b border-gray-700">
             <tr>
                 <th class="text-left py-1.5 pr-3 font-medium">Metric</th>
-                <th class="text-right py-1.5 px-2 font-medium">Total / Peak</th>
+                <th class="text-right py-1.5 px-2 font-medium" title="Totals are accumulated over the selected period; peak values are the highest observed values.">Total / Peak</th>
             </tr>
         </thead>
         <tbody class="text-gray-200">
             <tr class="border-b border-gray-700/50">
-                <td class="py-1.5 pr-3">Max Usage</td>
+                <td class="py-1.5 pr-3" title="Highest reported percentage of space used on this disk/device during the selected period.">Max Usage</td>
                 <td class="text-right py-1.5 px-2">{{ disk.disk_usage_pct_max|floatformat:1 }}%</td>
             </tr>
             <tr class="border-b border-gray-700/50">
-                <td class="py-1.5 pr-3">Read</td>
+                <td class="py-1.5 pr-3" title="Total bytes read from this disk/device during the selected period, summed from recorded read-byte deltas.">Read</td>
                 <td class="text-right py-1.5 px-2">{{ disk.disk_read_bytes_sum|filesizeformat }}</td>
             </tr>
             <tr class="border-b border-gray-700/50">
-                <td class="py-1.5 pr-3">Write</td>
+                <td class="py-1.5 pr-3" title="Total bytes written to this disk/device during the selected period, summed from recorded write-byte deltas.">Write</td>
                 <td class="text-right py-1.5 px-2">{{ disk.disk_write_bytes_sum|filesizeformat }}</td>
             </tr>
             <tr class="border-b border-gray-700/50">
-                <td class="py-1.5 pr-3">Peak Read IOPS</td>
+                <td class="py-1.5 pr-3" title="Highest recorded read I/O operations per second value for this disk/device during the selected period.">Peak Read IOPS</td>
                 <td class="text-right py-1.5 px-2">{{ disk.disk_read_iops_max|default:"—" }}</td>
             </tr>
             <tr class="border-b border-gray-700/50">
-                <td class="py-1.5 pr-3">Peak Write IOPS</td>
+                <td class="py-1.5 pr-3" title="Highest recorded write I/O operations per second value for this disk/device during the selected period.">Peak Write IOPS</td>
                 <td class="text-right py-1.5 px-2">{{ disk.disk_write_iops_max|default:"—" }}</td>
             </tr>
             <tr class="border-b border-gray-700/50">
-                <td class="py-1.5 pr-3">Peak Utilization</td>
+                <td class="py-1.5 pr-3" title="Highest recorded disk/device utilization percentage during the selected period.">Peak Utilization</td>
                 <td class="text-right py-1.5 px-2">{{ disk.disk_utilization_pct_max|floatformat:1 }}%</td>
             </tr>
         </tbody>
@@ -323,20 +323,20 @@
         <thead class="text-gray-300 border-b border-gray-700">
             <tr>
                 <th class="text-left py-1.5 pr-3 font-medium">Metric</th>
-                <th class="text-right py-1.5 px-2 font-medium">Total</th>
+                <th class="text-right py-1.5 px-2 font-medium" title="Accumulated total over the selected period.">Total</th>
             </tr>
         </thead>
         <tbody class="text-gray-200">
             <tr class="border-b border-gray-700/50">
-                <td class="py-1.5 pr-3">Received</td>
+                <td class="py-1.5 pr-3" title="Total bytes received by this network interface during the selected period.">Received</td>
                 <td class="text-right py-1.5 px-2">{{ iface.net_rx_bytes_sum|filesizeformat }}</td>
             </tr>
             <tr class="border-b border-gray-700/50">
-                <td class="py-1.5 pr-3">Transmitted</td>
+                <td class="py-1.5 pr-3" title="Total bytes transmitted by this network interface during the selected period.">Transmitted</td>
                 <td class="text-right py-1.5 px-2">{{ iface.net_tx_bytes_sum|filesizeformat }}</td>
             </tr>
             <tr class="border-b border-gray-700/50">
-                <td class="py-1.5 pr-3">Errors</td>
+                <td class="py-1.5 pr-3" title="Total receive and transmit errors reported for this network interface during the selected period.">Errors</td>
                 <td class="text-right py-1.5 px-2">{{ iface.net_rx_errors_sum|add:iface.net_tx_errors_sum }}</td>
             </tr>
         </tbody>
@@ -356,29 +356,29 @@
         </thead>
         <tbody class="text-gray-200">
             <tr class="border-b border-gray-700/50">
-                <td class="py-1.5 pr-3">Avg Power</td>
+                <td class="py-1.5 pr-3" title="Average total system power reported by snapshots in the selected period.">Avg Power</td>
                 <td class="text-right py-1.5 px-2">{{ total_system_power_w_avg|floatformat:1 }}W</td>
             </tr>
             <tr class="border-b border-gray-700/50">
-                <td class="py-1.5 pr-3">Max Power</td>
+                <td class="py-1.5 pr-3" title="Highest total system power reported by a snapshot in the selected period.">Max Power</td>
                 <td class="text-right py-1.5 px-2">{{ total_system_power_w_max|floatformat:1 }}W</td>
             </tr>
             <tr class="border-b border-gray-700/50">
-                <td class="py-1.5 pr-3">Total Energy</td>
+                <td class="py-1.5 pr-3" title="Estimated energy consumed during the selected period, calculated from average system power multiplied by the selected period duration.">Total Energy</td>
                 <td class="text-right py-1.5 px-2">{{ power_total_kwh }} kWh</td>
             </tr>
             {% if power_cost_estimate != None %}
             <tr class="border-b border-gray-700/50">
-                <td class="py-1.5 pr-3">Cost Estimate</td>
+                <td class="py-1.5 pr-3" title="Estimated electricity cost for the calculated total energy, using the electricity rate configured for your account.">Cost Estimate</td>
                 <td class="text-right py-1.5 px-2 text-green-400">${{ power_cost_estimate }}</td>
             </tr>
             {% endif %}
             <tr class="border-b border-gray-700/50">
-                <td class="py-1.5 pr-3">Total Errors</td>
+                <td class="py-1.5 pr-3" title="Sum of the system error counts reported by snapshots during the selected period.">Total Errors</td>
                 <td class="text-right py-1.5 px-2">{{ error_count_sum|default:"0" }}</td>
             </tr>
             <tr class="border-b border-gray-700/50">
-                <td class="py-1.5 pr-3">Job Saturation</td>
+                <td class="py-1.5 pr-3" title="Percentage of snapshots in the selected period that reported an active job. Snapshots with an unknown job state are excluded.">Job Saturation</td>
                 <td class="text-right py-1.5 px-2 font-semibold text-yellow-300">
                     {{ job_saturation_pct|floatformat:1 }}%
                 </td>

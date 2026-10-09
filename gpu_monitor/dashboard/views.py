@@ -846,6 +846,9 @@ def _build_report_context(uuid, uuid_str, range_hours):
             gpu_devices.append(row)
     gpu_devices.reverse()  # restore index order
     # Add Temperature-to-PowerLimit Ratio Stability to each gpu device
+    # Initialize Temperature-to-PowerLimit Ratio Stability variables
+    gpu_temp_power_stability_avg = {}
+    gpu_temp_power_stability_max = {}
     for device in gpu_devices:
         idx = device['gpu_index']
         device['temp_power_stability_avg'] = gpu_temp_power_stability_avg.get(idx)
@@ -886,6 +889,8 @@ def _build_report_context(uuid, uuid_str, range_hours):
         .order_by('gpu_index')
     )
     # Process to compute average and max stddev per GPU
+    gpu_temp_power_stability_avg = {}
+    gpu_temp_power_stability_max = {}
     stability_by_gpu = {}
     for entry in gpu_temp_power_stability:
         idx = entry['gpu_index']
@@ -894,8 +899,6 @@ def _build_report_context(uuid, uuid_str, range_hours):
             if idx not in stability_by_gpu:
                 stability_by_gpu[idx] = []
             stability_by_gpu[idx].append(stddev)
-    gpu_temp_power_stability_avg = {}
-    gpu_temp_power_stability_max = {}
     for idx, stddev_list in stability_by_gpu.items():
         gpu_temp_power_stability_avg[idx] = sum(stddev_list) / len(stddev_list)
         gpu_temp_power_stability_max[idx] = max(stddev_list)

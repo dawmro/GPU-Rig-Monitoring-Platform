@@ -793,6 +793,9 @@ def _build_report_context(uuid, uuid_str, range_hours):
             gpu_mem_clock_mhz_max=Max('gpu_mem_clock_mhz'),
             cooling_efficiency_index_avg=Avg('cooling_efficiency_index'),
             cooling_efficiency_index_max=Max('cooling_efficiency_index'),
+            fan_adjusted_cooling_response_avg=Avg('fan_adjusted_cooling_response'),
+            fan_adjusted_cooling_response_max=Max('fan_adjusted_cooling_response'),
+            
         ).order_by('gpu_index')
     )
 

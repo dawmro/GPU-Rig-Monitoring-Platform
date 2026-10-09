@@ -6,7 +6,7 @@ from django.core.cache import cache
 from django.utils import timezone
 from datetime import timedelta
 from functools import wraps
-from statistics import pstdev
+from statistics import pstdev, median
 import re
 import time
 from collections import Counter
@@ -883,11 +883,65 @@ def _build_report_context(uuid, uuid_str, range_hours):
             gpu_devices.append(row)
     gpu_devices.reverse()  # restore index order
     
-    # Add Temperature-to-PowerDraw Ratio Stability to each GPU device.
+    # Thermal Degradation Slope (per GPU).
+    # Match workload intensity by retaining samples within +/-10% of the
+    # median GPU utilization for that GPU in the selected reporting period.
+    # The tolerance is relative to the median (not percentage points).
+    # Reuse gpu_raw so this feature does not add another database query.
+    thermal_samples_by_gpu = {}
+    for row in gpu_raw:
+        idx = row['gpu_index']
+        utilization = row['gpu_util_pct']
+        temperature = row['gpu_temp_c']
+        timestamp = row['timestamp']
+        if utilization is None or temperature is None or timestamp is None:
+            continue
+        thermal_samples_by_gpu.setdefault(idx, []).append(
+            (timestamp, float(temperature), float(utilization))
+        )
+
+    thermal_degradation_slope_by_gpu = {}
+    for idx, samples in thermal_samples_by_gpu.items():
+        median_utilization = median(sample[2] for sample in samples)
+        utilization_tolerance = abs(median_utilization) * 0.10
+        matched_samples = [
+            sample for sample in samples
+            if abs(sample[2] - median_utilization) <= utilization_tolerance
+        ]
+
+        # At least two distinct timestamps are needed to estimate a slope.
+        if len(matched_samples) < 2:
+            thermal_degradation_slope_by_gpu[idx] = None
+            continue
+
+        first_timestamp = min(sample[0] for sample in matched_samples)
+        time_days = [
+            (sample[0] - first_timestamp).total_seconds() / 86400.0
+            for sample in matched_samples
+        ]
+        temperatures = [sample[1] for sample in matched_samples]
+        mean_time = sum(time_days) / len(time_days)
+        mean_temperature = sum(temperatures) / len(temperatures)
+        denominator = sum((t - mean_time) ** 2 for t in time_days)
+
+        if denominator <= 0:
+            thermal_degradation_slope_by_gpu[idx] = None
+            continue
+
+        slope_c_per_day = sum(
+            (t - mean_time) * (temp - mean_temperature)
+            for t, temp in zip(time_days, temperatures)
+        ) / denominator
+        thermal_degradation_slope_by_gpu[idx] = round(slope_c_per_day, 3)
+
+    # Add derived metrics to each GPU device.
     for device in gpu_devices:
         idx = device['gpu_index']
         device['temp_power_stability_stddev'] = (
             gpu_temp_power_stability.get(idx)
+        )
+        device['thermal_degradation_slope_c_per_day'] = (
+            thermal_degradation_slope_by_gpu.get(idx)
         )
 
     # Query 2: CPU / Memory / Power / Errors aggregation

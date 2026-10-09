@@ -38,6 +38,15 @@
                 <td class="text-right py-1.5 px-2">{{ gpu.gpu_util_pct_max|floatformat:1 }}%</td>
             </tr>
             <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3"
+                    title="Total observed duration when GPU utilization was below 5% while a job was active. Only intervals bounded by observed samples are counted; unmatched job-state timestamps are treated as unknown.">
+                    Underutilization Duration
+                </td>
+                <td class="text-right py-1.5 px-2 font-semibold text-yellow-300" colspan="2">
+                    {{ gpu.underutilization_duration_minutes|floatformat:1 }} min
+                </td>
+            </tr>
+            <tr class="border-b border-gray-700/50">
                 <td class="py-1.5 pr-3">Mem Controller Util</td>
                 <td class="text-right py-1.5 px-2">{{ gpu.mem_controller_util_pct_avg|floatformat:1 }}%</td>
                 <td class="text-right py-1.5 px-2">{{ gpu.mem_controller_util_pct_max|floatformat:1 }}%</td>

@@ -740,19 +740,21 @@ def _build_report_context(uuid, uuid_str, range_hours):
       use SQL aggregation at the chart's bucket size. For 7d/30d ranges,
       this means scanning ~700 rows instead of ~10000 raw rows.
     - MetricSnapshot summary statistics use one aggregate query.
-    - Job state transition frequency uses a chronological values-only scan of
-      has_active_job; this is small for hourly-compacted 7d/30d report ranges.
+    - Job state transitions use a chronological values-only scan of has_active_job.
+    - Underutilization duration correlates per-GPU utilization samples with
+      same-timestamp job-state samples, then accumulates qualifying intervals.
     - The power cost (kWh) calculation is derived from the existing
       snap_agg total_system_power_w_avg — no separate query needed.
     - Caching at the view level (55s TTL) handles the common case of repeated loads.
 
-    Query count for the report context: 6 queries
+    Query count for the report context: 7 queries
         1. GPUMetric raw scan (for identity changes)
         2. GPUMetric aggregation (metrics)
         3. MetricSnapshot aggregation (CPU/Memory/Power/Errors)
         4. MetricSnapshot ordered job-state scan (transition count)
-        5. StorageMetric aggregation
-        6. NetworkMetric aggregation
+        5. MetricSnapshot job-state lookup for underutilization duration
+        6. StorageMetric aggregation
+        7. NetworkMetric aggregation
     """
     now = timezone.now()
     start = now - timedelta(hours=range_hours)
@@ -766,7 +768,10 @@ def _build_report_context(uuid, uuid_str, range_hours):
     # Fetches all needed fields in chronological order per GPU index
     gpu_raw = list(
         GPUMetric.objects.filter(**base_filter)
-        .values('gpu_index', 'gpu_uuid', 'model', 'timestamp', 'gpu_temp_c', 'power_draw_w')
+        .values(
+            'gpu_index', 'gpu_uuid', 'model', 'timestamp',
+            'gpu_temp_c', 'gpu_util_pct', 'power_draw_w',
+        )
         .order_by('gpu_index', 'timestamp')
     )
 
@@ -933,7 +938,57 @@ def _build_report_context(uuid, uuid_str, range_hours):
 
         previous_job_state = job_state
 
-    # Query 4: Storage metrics per device
+    # Query 4: Underutilization duration per GPU.
+    # GPUMetric owns the per-GPU utilization series; has_active_job is stored
+    # on MetricSnapshot at the same ingest timestamp. Exact timestamp matching
+    # avoids attributing a stale system job state to a GPU sample.
+    job_state_by_timestamp = dict(
+        MetricSnapshot.objects.filter(**base_filter)
+        .values_list('timestamp', 'has_active_job')
+    )
+    underutilization_by_gpu = {}
+    underutilization_start_by_gpu = {}
+    underutilization_previous_timestamp_by_gpu = {}
+
+    for row in gpu_raw:
+        idx = row['gpu_index']
+        timestamp = row['timestamp']
+        gpu_util = row['gpu_util_pct']
+        has_active_job = job_state_by_timestamp.get(timestamp)
+        is_underutilized = (
+            gpu_util is not None
+            and gpu_util < 5
+            and has_active_job is True
+        )
+
+        underutilization_by_gpu.setdefault(idx, 0.0)
+        if is_underutilized:
+            if idx not in underutilization_start_by_gpu:
+                underutilization_start_by_gpu[idx] = timestamp
+        else:
+            start = underutilization_start_by_gpu.pop(idx, None)
+            if start is not None:
+                underutilization_by_gpu[idx] += max(
+                    0.0, (timestamp - start).total_seconds() / 60.0
+                )
+
+        underutilization_previous_timestamp_by_gpu[idx] = timestamp
+
+    # A qualifying run that has no later sample cannot be assigned a duration
+    # reliably, so it is intentionally not extrapolated past the last sample.
+    for device in gpu_devices:
+        idx = device['gpu_index']
+        start = underutilization_start_by_gpu.get(idx)
+        last_timestamp = underutilization_previous_timestamp_by_gpu.get(idx)
+        if start is not None and last_timestamp is not None and last_timestamp > start:
+            underutilization_by_gpu[idx] += (
+                last_timestamp - start
+            ).total_seconds() / 60.0
+        device['underutilization_duration_minutes'] = round(
+            underutilization_by_gpu.get(idx, 0.0), 1
+        )
+
+    # Query 5: Storage metrics per device
     disk_devices = list(
         StorageMetric.objects.filter(**base_filter)
         .values('device', 'mountpoint')
@@ -947,7 +1002,7 @@ def _build_report_context(uuid, uuid_str, range_hours):
         ).order_by('device')
     )
 
-    # Query 5: Network metrics per interface
+    # Query 6: Network metrics per interface
     net_interfaces = list(
         NetworkMetric.objects.filter(**base_filter)
         .values('interface')

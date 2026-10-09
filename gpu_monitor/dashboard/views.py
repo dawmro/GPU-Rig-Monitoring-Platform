@@ -900,7 +900,6 @@ def _build_report_context(uuid, uuid_str, range_hours):
         gpu_temp_power_stability_avg[idx] = sum(stddev_list) / len(stddev_list)
         gpu_temp_power_stability_max[idx] = max(stddev_list)
 
-    )
 
     # Query 3: Storage metrics per device
     disk_devices = list(

@@ -757,7 +757,7 @@ def _build_report_context(uuid, uuid_str, range_hours):
     start = now - timedelta(hours=range_hours)
     base_filter = dict(rig_uuid=uuid_str, timestamp__gte=start, timestamp__lte=now)
 
-    from django.db.models import Avg, Max, Min, Sum
+    from django.db.models import Avg, Max, Min, Sum, StdDev
     from django.db.models.functions import Cast
     from django.db.models.fields import IntegerField
 

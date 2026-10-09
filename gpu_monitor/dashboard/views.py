@@ -758,7 +758,7 @@ def _build_report_context(uuid, uuid_str, range_hours):
     start = now - timedelta(hours=range_hours)
     base_filter = dict(rig_uuid=uuid_str, timestamp__gte=start, timestamp__lte=now)
 
-    from django.db.models import Avg, Max, Min, Sum
+    from django.db.models import Avg, Max, Min, Sum, Q
     from django.db.models.functions import Cast
     from django.db.models.fields import IntegerField
 
@@ -902,6 +902,14 @@ def _build_report_context(uuid, uuid_str, range_hours):
         swap_used_bytes_max=Max('swap_used_bytes'),
         total_system_power_w_avg=Avg('total_system_power_w'),
         total_system_power_w_max=Max('total_system_power_w'),
+        idle_system_power_w_avg=Avg(
+            'total_system_power_w',
+            filter=Q(has_active_job=False),
+        ),
+        active_system_power_w_avg=Avg(
+            'total_system_power_w',
+            filter=Q(has_active_job=True),
+        ),
         error_count_sum=Sum('error_count'),
         has_active_job_avg=Avg(Cast('has_active_job', IntegerField())),
     )
@@ -940,10 +948,27 @@ def _build_report_context(uuid, uuid_str, range_hours):
     avg_power_w = snap_agg.get('total_system_power_w_avg') or 0
     power_total_kwh = round((avg_power_w * range_hours) / 1000, 3)
 
-    # Job saturation: percentage of time buckets with active job.
-    # Uses the same MetricSnapshot query — AVG(CAST(has_active_job AS INTEGER))
-    # works for all tiers: raw 1-min (24h), 15-min buckets (7d), 1-hour buckets (30d).
-    job_saturation_pct = round((snap_agg.get('has_active_job_avg') or 0) * 100, 1)
+    # Job saturation: percentage of samples with an active job.
+    # AVG(CAST(has_active_job AS INTEGER)) ignores NULL job-state samples.
+    job_saturation_pct = (
+        round(snap_agg['has_active_job_avg'] * 100, 1)
+        if snap_agg.get('has_active_job_avg') is not None
+        else None
+    )
+
+    # Idle Power Waste Ratio: average system power while no job is active
+    # divided by average system power while a job is active. Samples with an
+    # unknown job state are excluded by the conditional AVG aggregates.
+    # This is a relative power ratio, not a share of total energy consumed.
+    avg_idle_power_w = snap_agg.get('idle_system_power_w_avg')
+    avg_active_power_w = snap_agg.get('active_system_power_w_avg')
+    idle_power_waste_ratio = (
+        round(avg_idle_power_w / avg_active_power_w, 3)
+        if avg_idle_power_w is not None
+        and avg_active_power_w is not None
+        and avg_active_power_w > 0
+        else None
+    )
 
     return {
         'range_hours': range_hours,
@@ -954,6 +979,6 @@ def _build_report_context(uuid, uuid_str, range_hours):
         'power_total_kwh': power_total_kwh,
         'power_cost_estimate': None,
         'job_saturation_pct': job_saturation_pct,
+        'idle_power_waste_ratio': idle_power_waste_ratio,
         **snap_agg,
     }
-

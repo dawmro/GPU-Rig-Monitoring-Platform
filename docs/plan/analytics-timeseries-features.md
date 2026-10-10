@@ -1,851 +1,1292 @@
-# Analytics Timeseries Features — Analysis & Architecture Plan
+
+# GPU-Rig-Monitoring-Platform — Analytics Timeseries Features
+## Updated Analysis & Architecture Plan
 
 ## 1. Executive Summary
 
-This document analyzes proposed analytics metrics derived from GPU rig timeseries data, categorizes them by **where they belong** (Historical Charts subtab vs. report tab), and defines the **calculation architecture** — whether values are pre-computed at ingest time (stored in new DB models) or computed on-demand when the user opens the report tab.
+This plan covers the next stage of statistical analytics for
+GPU-Rig-Monitoring-Platform.
 
-## 2. Architecture Decision: Two Calculation Modes
+The original planned derived charts and report metrics are considered
+implemented and are excluded from the new implementation backlog.
+The focus is now on statistical analysis that provides additional
+information about reliability, performance stability, workload
+behavior, anomalies, multi-GPU balance, and data quality.
 
-### Mode A: Pre-computed at Ingest (for Chart subtab metrics)
+### 1.1 Existing implementation baseline
 
-**What it is:** The serializer computes derived metrics during payload ingestion and stores them in new database models alongside the raw timeseries data. Charts fetch pre-computed values directly — no aggregation needed at chart-render time.
+The following features belong to the completed baseline, not the new
+backlog:
 
-**Pros:**
-- Charts always show complete data (no gaps from on-demand calculation failures)
-- Consistent with existing chart architecture (raw + compacted timeseries, fetched via ChartDataView)
-- Zero additional latency for chart rendering
-- Values are available immediately after ingest — no waiting for aggregation windows
+- Cooling Efficiency Index
+- Fan-Adjusted Cooling Response Index
+- VRAM Bandwidth Saturation Index
+- CPU-to-GPU Power Ratio
+- Cooling Efficiency Index report aggregation
+- Fan-Adjusted Cooling Response report aggregation
+- Temperature-to-PowerLimit Ratio Stability
+- Memory vs. Core Utilization Correlation
+- Compute-to-Memory Ratio Trend
+- Clock Stability Index
+- Frequency-to-PowerLimit Ratio Stability
+- Idle-to-Peak Power Delta
+- Idle Power Waste Ratio
+- Job State Transition Frequency
+- Underutilization Duration
+- Power-on Hours Before Restart
+- Thermal Degradation Slope
+- Cost per Active GPU-Hour
+- Idle Power Waste Cost
 
-**Cons:**
-- Additional DB writes per ingest (more load on the ingest path)
-- New models need their own compaction strategy
-- Some metrics (e.g., Pearson correlation) need windowed data that isn't available at single-point ingest time
+These existing metrics must not be reimplemented under different names.
+New statistics may reuse their underlying data and results where
+appropriate, but should provide distinct analytical value.
 
-**Verdict: Suitable for single-point derived metrics** (ratios, differences, flags computable from one payload row). **Not suitable for windowed/cumulative metrics** (correlations, slopes, transition counts).
+### 1.2 Goals
 
-### Mode B: On-Demand Calculation (for Report tab)
+1. Describe normal operating behavior using robust statistics.
+2. Detect unusual readings and persistent behavioral changes.
+3. Compare GPUs under comparable workloads.
+4. Identify imbalances between GPUs and rigs.
+5. Quantify telemetry completeness and statistical confidence.
+6. Improve the reliability of existing reports and future alerts.
+7. Avoid unnecessary database fields, ingest overhead, and duplicated
+   calculations.
 
-**What it is:** When the user opens the Report tab, the server runs SQL aggregation queries against the existing timeseries tables and computes derived metrics in Python. Results are cached at the view level (55s TTL, matching existing report caching pattern).
+### 1.3 Report windows
 
-**Pros:**
-- No additional ingest load
-- Works with already-compacted data (15-min / 1-hour buckets for 7d/30d ranges)
-- Leverages existing `_build_report_context` pattern — minimal new code
-- Can compute complex metrics (correlations, linear regression slopes, transition counts) that need multi-row windows
+Use the existing report windows consistently:
 
-**Cons:**
-- Additional query load when user opens the tab (acceptable — tab is opened on demand, not polling)
-- Slightly slower than pre-computed (but still fast with compacted data)
-- 30d range on MetricSnapshot (not compacted) = ~43K rows — needs careful query design
+- 24 hours
+- 7 days
+- 30 days
 
-**Verdict: Suitable for all report-tab metrics.** The existing report already does on-the-fly aggregation for 5 queries; adding 2-3 more for derived metrics is proportionate.
-
-
-## 3. Metric Classification: Charts vs. Report Tab
-
-### 3.1 Metrics That Belong in Historical Charts Subtab
-
-These are **time-series visualizations** — they plot a derived value over time, just like existing charts (GPU Temp, Fan Speed, etc.). They follow the same pattern: fetch from ChartDataView, render with Chart.js.
-
-| # | Metric                                  | Chart Name                    | Data Source | Calculation                                                                                              | Chart Type    | Status    |
-| - | --------------------------------------- | ----------------------------- | ----------- | -------------------------------------------------------------------------------------------------------- | ------------- | --------- |
-| 1 | **Cooling Efficiency Index**            | GPU Cooling Efficiency        | GPUMetric   | `ΔTemp / ΔPower` = temperature change per watt of GPU power change                                       | Line, per-GPU | **Done**  |
-| 2 | **Fan-Adjusted Cooling Response Index** | Fan-Adjusted Cooling Response | GPUMetric   | `(ΔTemp / ΔPower) / (1 + ΔFan% / 100)` = temperature response per watt, adjusted for change in fan speed | Line, per-GPU | **Done**  |
-| 3 | **VRAM Bandwidth Saturation Index** | VRAM Bandwidth Saturation | GPUMetric | `mem_controller_util_pct / gpu_util_pct` | Line, per-GPU | **Done**  |
-| 4 | **CPU-to-GPU Power Ratio** | CPU/GPU Power Ratio | GPUMetric + MetricSnapshot | `power_cpu_w / power_gpu_w` (or `cpu_power_w / sum(power_draw_w)`) | Line, single | Planned   |
-
-**Rationale for Chart placement:** These are **point-in-time derived metrics** — each data point is computed from a single snapshot row. Delatas can be pre-computed at ingest time from last snapshot json vs current payload and stored as new fields on GPUMetric (or a new AnalyticsMetric model), then exposed through the existing ChartDataView → chart-registry pipeline with zero changes to the fetch/render flow.
-
-### 3.2 Metrics That Belong in Report Tab
-
-These are **aggregate statistics over a time window** (24h/7d/30d). They don't make sense as continuous time-series charts — they're summary numbers for a period. They belong in the Report tab in per gpu section or System section.
-
-| # | Metric | Calculation Method | SQL/Python |
-|---|--------|-------------------|-------------|
-| 1 | **Cooling Efficiency Index** | Avg of `GPUMetric.cooling_efficiency_index` for a given period 24h, 7d, 30d per gpu | Avg |
-| 2 | **Fan-Adjusted Cooling Response Index** | Avg of `GPUMetric.fan_adjusted_cooling_response` for a given period 24h, 7d, 30d per gpu | Avg |
-| 3 | **Temperature-to-PowerLimit Ratio Stability** | Std dev of `power_limit_w` grouped by `gpu_temp_c` ranges | SQL: GROUP BY temp bucket, compute STDDEV(power_limit_w) |
-| 4 | **Memory vs. Core Utilization Correlation** | Pearson r between `mem_controller_util_pct` and `gpu_util_pct` | Python: `scipy.stats.pearsonr` or manual formula |
-| 5 | **Compute-to-Memory Ratio Trend** | Rolling average of `gpu_util_pct / mem_controller_util_pct` over time | Python: compute ratio per bucket, then linear regression slope |
-| 6 | **Clock Stability Index** | Std dev of `gpu_core_clock_mhz` over rolling windows | SQL: STDDEV(gpu_core_clock_mhz) grouped by time window |
-| 7 | **Frequency-to-PowerLimit Ratio Stability** | Std dev of `power_limit_w` grouped by `gpu_core_clock_mhz` ranges | SQL: GROUP BY clock bucket, STDDEV(power_limit_w) |
-| 8 | **Idle-to-Peak Power Delta** | `Max(power_draw_w) - Min(power_draw_w)` over the period | SQL: `Max - Min` in the existing GPU aggregation query |
-| 9 | **Idle Power Waste Ratio** | `Avg(power_draw_w when has_active_job=False) / Avg(power_draw_w when has_active_job=True)` | SQL: conditional aggregation |
-| 10 | **Job State Transition Frequency** | Count of `has_active_job` state changes (0→1 and 1→0) | Python: ordered scan of `has_active_job` values |
-| 11 | **Underutilization Duration** | Sum of continuous minutes where `gpu_util_pct < 5` AND `has_active_job=True` | Python: scan ordered rows, accumulate gaps |
-| 12 | **Power-on Hours Before Restart** | Max `uptime_s` before a drop (indicating reboot). Calculate average for multiple restart in range 24h, 7d, 30d | Python: scan ordered `uptime_s`, detect decreases |
-| 13 | **Thermal Degradation Slope** | Linear regression slope of `gpu_temp_c` at constant utilization over given report range 24h, 7d, 30d | Python: filter rows where `gpu_util_pct` is within ±10% of median, then `np.polyfit` |
-| 14 | **Cost per Active GPU-Hour** | `Sum(total_system_power_w) * interval / 3600 * rate / active_gpu_hours` | SQL + Python: reuse existing power aggregation, divide by active GPU count |
-| 15 | **Idle Power Waste Cost** | Same as #18 but filtered to `has_active_job=False` periods | SQL + Python |
-
-
-
-## 4. Detailed Computation Specifications
-
-### 4.1 Cooling Efficiency Index — **DONE**
-- **Definition:** `ΔGPU_Temp / ΔGPU_Power` (°C/W) — how much temperature rises per watt of power increase
-- **Data Source:** `LatestSnapshot` (fetched as `prev_ls` before transaction). **Note:** `LatestSnapshot.gpu_temps_json` / `gpu_power_draws_json` / `gpu_fans_json` are JSON arrays — index by `gpu_index`, not hardcoded 0. Empty array yields `None` safely.
-- **Current Values:** `GPUMetric` being created: `gpu_temp_c`, `power_draw_w`
-- **Time Range:** **2 consecutive snapshots** (1-minute interval)
-- **Computation:** At ingest, point-in-time delta
-- **Minimum Power Delta:** 1 W, using the same denominator handling as the Cooling Efficiency Index
-- **Real Data Example:**
-  - Previous: temp=72.0°C, power=350.0W
-  - Current: temp=74.0°C, power=360.0W
-  - Delta: 2.0°C / 10.0W = **0.2 °C/W**
-- **Storage:** `GPUMetric.cooling_efficiency_index` (per-rig, per-minute)
-- **Compaction:** `avg` at 15m/1h tiers
-
-- **Interpretation:**
-Lower values generally indicate a smaller temperature response for a given power change.
-Higher values indicate a larger temperature response and may indicate weaker thermal response.
-The metric is primarily useful for trend and anomaly detection, because GPU temperature is also affected by ambient temperature, fan speed, workload, and thermal inertia.
-Negative values are possible when temperature decreases while power increases, or vice versa.
-
-**Code (serializers.py):**
-```python
-MIN_POWER_DELTA_W = 1.0
-
-prev_ls = LatestSnapshot.objects.filter(
-    rig_uuid=rig_uuid
-).first()
-
-# Index by gpu_index (not hardcoded 0) — matches payload array order
-prev_idx = gpu.get('gpu_index', 0) if 'gpu_index' in gpu else 0
-
-prev_gpu_temp = (
-    prev_ls.gpu_temps_json[prev_idx]
-    if prev_ls and prev_ls.gpu_temps_json and prev_idx < len(prev_ls.gpu_temps_json)
-    else None
-)
-
-prev_gpu_power = (
-    prev_ls.gpu_power_draws_json[prev_idx]
-    if prev_ls and prev_ls.gpu_power_draws_json and prev_idx < len(prev_ls.gpu_power_draws_json)
-    else None
-)
-
-curr_gpu_temp = curr_gpu.gpu_temp_c
-curr_gpu_power = curr_gpu.power_draw_w
-
-cooling_efficiency_index = None
-
-if (
-    prev_gpu_temp is not None
-    and prev_gpu_power is not None
-    and curr_gpu_temp is not None
-    and curr_gpu_power is not None
-):
-    delta_temp = curr_gpu_temp - prev_gpu_temp
-    delta_power = curr_gpu_power - prev_gpu_power
-
-    if abs(delta_power) < MIN_POWER_DELTA_W:
-        effective_delta_power = MIN_POWER_DELTA_W
-    else:
-        effective_delta_power = delta_power
-
-    cooling_efficiency_index = (
-        delta_temp / effective_delta_power
-    )
-
-```
+Every statistic must specify its actual observation window, number of
+valid observations, and any material data-quality limitations.
 
 ---
 
-### 4.2 Fan-Adjusted Cooling Response Index — **DONE**
-- **Definition:** `(ΔTemp / effective ΔPower) / (1 + ΔFan% / 100)` (°C/W) — temperature response per watt of GPU power change, adjusted for the change in fan speed
-- **Data Source:** `LatestSnapshot` → `prev_ls.gpu_temps_json`, `prev_ls.gpu_power_draws_json`, `prev_ls.gpu_fans_json` (JSON arrays; index by `gpu_index`, not hardcoded 0). Same `prev_ls` fetch used for delta baseline.
-- **Current Values:** `GPUMetric` being created: `fan_speed_pct`, `gpu_temp_c`, `power_draw_w`
-- **Time Range:** **2 consecutive snapshots** (1-minute interval)
-- **Computation:** At ingest, point-in-time delta
-- **Storage:** `GPUMetric.fan_adjusted_cooling_response` (per-rig, per-minute)
-- **Compaction:** `avg` at 15m/1h tiers
-- **Interpretation:** Lower values generally indicate a smaller temperature response relative to power change after accounting for fan-speed change. The metric is intended primarily for thermal trend and anomaly detection rather than as a physically exact cooling-efficiency measurement.
+## 2. Architecture Decisions
 
-**Code (serializers.py):**
-```python
-MIN_POWER_DELTA_W = 1.0
+### 2.1 Mode A — Pre-computed time-series metrics
 
-prev_ls = LatestSnapshot.objects.filter(
-    rig_uuid=rig_uuid
-).first()
+Use ingest-time computation only when a value can be calculated
+reliably from one payload or a small, explicitly defined stateful
+calculation.
 
-prev_gpu_temp = (
-    prev_ls.gpu_temps_json[0]
-    if prev_ls and prev_ls.gpu_temps_json
-    else None
-)
+Suitable examples include simple derived values and detector state
+that must be updated continuously.
 
-prev_gpu_power = (
-    prev_ls.gpu_power_draws_json[0]
-    if prev_ls and prev_ls.gpu_power_draws_json
-    else None
-)
+For the new statistical backlog, most distribution statistics and
+windowed analyses do not belong in this category.
 
-prev_gpu_fan = (
-    prev_ls.gpu_fans_json[prev_idx]
-    if prev_ls and prev_ls.gpu_fans_json and prev_idx < len(prev_ls.gpu_fans_json)
-    else None
-)
+Advantages:
+- Immediate access to derived values.
+- Useful for continuously updated detector state.
+- Can reduce repeated computation.
 
-curr_gpu_temp = curr_gpu.gpu_temp_c
-curr_gpu_power = curr_gpu.power_draw_w
-curr_gpu_fan = curr_gpu.fan_speed_pct
+Disadvantages:
+- Additional writes and ingest complexity.
+- Stateful calculations need reset and recovery behavior.
+- Historical corrections and missing observations complicate results.
 
-fan_adjusted_cooling_response = None
+Decision:
+Do not add a database field for every new statistic. Introduce
+pre-computed state only when continuous detection, alerting, or
+measured performance requirements justify it.
 
-if (
-    prev_gpu_temp is not None
-    and prev_gpu_power is not None
-    and prev_gpu_fan is not None
-    and curr_gpu_temp is not None
-    and curr_gpu_power is not None
-    and curr_gpu_fan is not None
-):
-    delta_temp = curr_gpu_temp - prev_gpu_temp
-    delta_power = curr_gpu_power - prev_gpu_power
-    delta_fan = curr_gpu_fan - prev_gpu_fan
+### 2.2 Mode B — On-demand report calculations
 
-    if abs(delta_power) < MIN_POWER_DELTA_W:
-        effective_delta_power = MIN_POWER_DELTA_W
-    else:
-        effective_delta_power = delta_power
+Calculate report statistics from historical GPUMetric and MetricSnapshot
+records when the report is requested.
 
-    fan_adjustment = 1 + (delta_fan / 100.0)
+Use the existing report-context and caching architecture.
 
-    fan_adjusted_cooling_response = (
-        (delta_temp / effective_delta_power)
-        / fan_adjustment
-    )
-```
+Suitable for:
+- Percentiles and distribution summaries.
+- Variability statistics.
+- Outlier rates.
+- Conditional distributions.
+- Regression diagnostics.
+- Fleet comparisons.
+- Confidence intervals and sample adequacy.
 
----
+Advantages:
+- No additional ingest-time processing for ordinary reports.
+- Existing data can be analyzed without new sensor fields.
+- Statistics can evolve without adding database migrations.
 
-### 4.3 VRAM Bandwidth Saturation Index — **DONE**
-- **Definition:** `mem_controller_util_pct / gpu_util_pct` The VRAM Bandwidth Saturation Index estimates how heavily the GPU's memory subsystem is being utilized relative to overall GPU utilization.
-- **Data Source:** Payload (`gpu.get('mem_controller_util_pct')`, `gpu.get('gpu_util_pct')`) — current snapshot values from agent payload (`serializers.py` 203-204 in `GPUMetric` update_or_create). `LatestSnapshot.gpu_mem_controller_utils_json` / `gpu_utils_json` arrays (line 334-337 `models.py`) for fast read. NOT `prev_ls`. NOT historical `GPUMetric` timeseries (this metric is current-state ratio at ingest time).
-- **Current Values:** `GPUMetric` being created: `mem_controller_util_pct`, `gpu_util_pct`, 
-- **Time Range:** **Single snapshot** (no delta needed — this is a point-in-time ratio, not a change-over-change metric). **Correction:** Original plan incorrectly said "2 consecutive snapshots (1-minute interval)"; the ratio uses current values only.
-- **Computation:** Moved to agent code (`agent/run.py` 1054-1055: both values available in payload). Agent computes `vram_bandwidth_saturation = mem_controller_util_pct / max(gpu_util_pct, 1.0)` per GPU; serializer receives it in `gpu.get('vram_bandwidth_saturation')` and stores directly in `GPUMetric`. No server-side division needed — saves ingest CPU.
-- **Storage:** `GPUMetric.vram_bandwidth_saturation` (new FloatField; NOT `fan_adjusted_cooling_response` — original plan had wrong storage field name for metric 3). Per-rig, per-minute.
-- **Compaction:** `avg` at 15m/1h tiers (same as other GPUMetric ratios).
-- **Interpretation:** 
-Index	Interpretation
-< 0.5	Memory subsystem is relatively lightly utilized compared with GPU compute
-0.5–1.0	Increasing memory pressure
-≈ 1.0	Memory controller utilization is comparable to GPU utilization
-> 1.0	Memory controller is more heavily utilized than overall GPU compute
+Disadvantages:
+- Query cost depends on the range, number of GPUs, and statistic.
+- Some analyses require more than ordinary SQL aggregation.
+- Compacted observations may not preserve the information required
+  for exact statistical calculations.
 
-**Implementation (serializers.py):**
-```python
-# Agent-computed (schema 1.21+); serializer reads directly from payload
-vram_bandwidth_saturation = gpu.get('vram_bandwidth_saturation')
-```
+Decision:
+Prefer on-demand calculation for the new report metrics. Cache
+expensive calculations using the established report-cache pattern.
+
+### 2.3 Mode C — Background time-series analysis
+
+Use background jobs for computationally expensive or stateful analysis
+when on-demand calculations become too expensive.
+
+Potential workloads:
+- Change-point detection.
+- CUSUM monitoring.
+- Seasonal analysis.
+- Repeated fleet-wide regression.
+- Multivariate anomaly detection.
+- Historical recovery-time analysis.
+
+Use the existing background-task infrastructure where appropriate.
+Persist detector state or results only when needed for alerting,
+historical event records, or avoiding repeated expensive calculations.
+
+Do not introduce a background pipeline solely because a statistic
+sounds advanced; profile its real execution cost first.
 
 ---
 
-### 4.4 CPU-to-GPU Power Ratio (Single-line, multi-GPU)
-`cpu_power_w / sum(all gpu_power_draw_w)` — a ratio (not workload-bound indicator).
-- **Source:** Latest payload (`power` dict) or `LatestSnapshot` (fast). **NOT `GPUMetric`** (that is historical timeseries; 4.4 is current-state). `LatestSnapshot.gpu_power_draws_json` (line 342 `models.py`) is the array; `power_cpu_w` is scalar (line 410 `models.py`).
-- **Single line (payload / snapshot, not GPUMetric):** `cpu_power / sum(gpu_power_draws_json)` — denominator from `LatestSnapshot` array or payload `power.gpu_power_w`. No reference to `GPUMetric.power_draw_w` for this metric.
-- **Implementation:** Agent computes `cpu_to_gpu_power_ratio = cpu_power_w / max(sum(gpu_power_draws), 1.0)` per payload; serializer receives it in `power.get('cpu_to_gpu_power_ratio')` and stores directly in `MetricSnapshot.cpu_to_gpu_power_ratio`. Server-side fallback if agent doesn't send it.
-- **Storage / Compaction:** `MetricSnapshot.cpu_to_gpu_power_ratio` (new FloatField). Compaction: `avg` at 15m/1h tiers. Single-line chart.
-- **Note:** Interpret as ratio only; do NOT label "CPU-bound" or "GPU-bound" from this number alone.
+## 3. Data Sources and Time-Series Correctness
 
+### 3.1 GPUMetric
 
-### 4.5 Report: Cooling Efficiency Index (Average)
+Use GPUMetric as the primary source for per-GPU analysis, including:
 
-- **Definition:** Average of the point-in-time Cooling Efficiency Index (°C/W) over the report period (24h, 7d, 30d) per GPU.
+- gpu_util_pct
+- mem_controller_util_pct
+- gpu_temp_c
+- power_draw_w
+- gpu_core_clock_mhz
+- gpu_memory_clock_mhz
+- fan_speed_pct
+- Other available GPU-level telemetry
 
-- **Data Source:** GPUMetric.cooling_efficiency_index (pre-computed at ingest)
+Use only fields that exist in the current model and have sufficient
+valid observations.
 
-- **Time Range:** 24h, 7d, 30d (aggregated per GPU)
+### 3.2 MetricSnapshot
 
-- **Calculation:** SQL: AVG(cooling_efficiency_index) grouped by gpu_index and time range (using compacted GPUMetric tables)
+Use MetricSnapshot for system-level or job-state-dependent analysis,
+including available fields such as:
 
-- **Storage:** None (computed on demand for the report tab)
+- has_active_job
+- uptime_s
+- total_system_power_w
+- cpu_power_w
+- System-level error and resource telemetry
 
-- **Performance:** Uses pre-computed and compacted GPUMetric, so aggregation is fast (~720 rows for 30d)
+Use GPU-specific data from MetricSnapshot only when the actual model
+schema and collection semantics support that usage.
 
-- **Interpretation:** Lower average indicates better cooling efficiency (less temperature rise per watt) over the period.
+Do not substitute MetricSnapshot for GPUMetric when the analysis
+specifically requires per-GPU historical observations.
 
-- **Code (in `_build_report_context()`):
-```python
-# In _build_report_context() after gpu_agg
-# gpu_agg already includes AVG for existing fields via CompactResults
-# Add cooling_efficiency_index to the aggregation query in compact_data.py's COMPACT_TABLES for GPUMetric
-# Then in views.py, gpu_agg will contain the average per gpu_index
-```
+### 3.3 Compaction requirements
+
+The existing timeseries compaction strategy must be considered when
+designing every statistic.
+
+Important distinction:
+
+- Averages and some other aggregate statistics can be calculated
+  from compacted data when the relevant aggregation values are
+  retained.
+- Exact percentiles, MAD, IQR, outlier counts, and distribution
+  shapes cannot generally be reconstructed from averages alone.
+- Autocorrelation, change points, event durations, and lagged
+  relationships can be distorted by compaction.
+- Sample counts, time-weighted statistics, and event boundaries
+  require explicit consideration.
+
+For every proposed statistic, specify whether it uses:
+
+1. Raw observations.
+2. Compacted observations.
+3. Sufficient statistics retained during compaction.
+4. Background-computed results.
+
+Do not label a statistic exact when it is only an approximation
+derived from compacted data.
+
+For 7-day and 30-day reports, profile query cost before deciding
+whether raw data, compacted buckets, or a separate analytical
+aggregation is appropriate.
+
+### 3.4 Missing data and sampling intervals
+
+All calculations must distinguish:
+
+- Zero: a valid measured zero.
+- Null: unavailable or invalid measurement.
+- Missing observation: no usable sample was recorded.
+- Unobserved duration: an interval for which behavior is unknown.
+
+Use actual timestamps rather than assuming every pair of records is
+exactly one minute apart.
+
+Do not infer hardware downtime solely from missing telemetry.
 
 ---
 
-### 4.6 Report: Fan-Adjusted Cooling Response Index (Average)
+## 4. New Statistical Analysis Metrics
 
-- **Definition:** Average of the point-in-time Fan-Adjusted Cooling Response Index (°C/W) over the report period (24h, 7d, 30d) per GPU.
+# Phase 1 — Core Distribution Statistics and Data Quality
 
-- **Data Source:** GPUMetric.fan_adjusted_cooling_response (pre-computed at ingest)
+These metrics establish the statistical foundations for subsequent
+anomaly detection and fleet analytics.
 
-- **Time Range:** 24h, 7d, 30d (aggregated per GPU)
+### 4.1 GPU Utilization Percentiles
 
-- **Calculation:** SQL: AVG(fan_adjusted_cooling_response) grouped by gpu_index and time range (using compacted GPUMetric tables)
+Priority: P1
 
-- **Storage:** None (computed on demand for the report tab)
+Definition:
+Calculate P50, P75, P90, P95, and P99 of gpu_util_pct per GPU
+over each report window.
 
-- **Performance:** Uses pre-computed and compacted GPUMetric, so aggregation is fast (~720 rows for 30d)
+Data source:
+GPUMetric.gpu_util_pct
 
-- **Interpretation:** Lower average indicates better cooling response after accounting for fan-speed changes.
+Output:
+Percentiles, valid sample count, and coverage.
 
-- **Code (in `_build_report_context()`):
-```python
-# Similar to Cooling Efficiency Index: add fan_adjusted_cooling_response to COMPACT_TABLES and use AVG in aggregation
-```
+Example:
+A GPU has average utilization of 65% and P95 utilization of 99%.
+The average alone hides frequent periods near full utilization.
+
+Interpretation:
+- P50 describes typical utilization.
+- P95 and P99 characterize high-load behavior.
+- A large difference between P50 and P95 suggests a bursty or
+  highly variable workload.
+
+Caveat:
+Sample percentiles are not automatically time-weighted. Irregular
+sampling can bias the distribution.
+
+Implementation:
+Use a percentile calculation over valid observations. Define
+whether raw samples or a documented approximation are used.
+
+### 4.2 GPU Utilization Coefficient of Variation
+
+Priority: P1
+
+Definition:
+
+CV = standard deviation(utilization) / mean(utilization)
+
+Data source:
+GPUMetric.gpu_util_pct
+
+Output:
+CV per GPU and report window.
+
+Interpretation:
+A higher CV indicates greater variability relative to the mean.
+
+Caveat:
+CV is misleading when mean utilization is near zero. Return null
+below a defined minimum mean and show an absolute variability
+measure alongside it.
+
+Do not interpret a high CV as a fault without considering workload.
+
+### 4.3 Median Absolute Deviation (MAD)
+
+Priority: P1
+
+Definition:
+
+MAD = median(abs(x - median(x)))
+
+Calculate independently for supported fields such as:
+
+- gpu_util_pct
+- gpu_temp_c
+- power_draw_w
+- gpu_core_clock_mhz
+- fan_speed_pct
+
+Output:
+MAD per GPU, metric, and time window.
+
+Interpretation:
+MAD describes typical absolute deviation from the median and is
+less sensitive to extreme observations than standard deviation.
+
+Caveat:
+A high MAD indicates variability, not necessarily malfunction.
+
+Implementation:
+Calculate from valid observations. Do not reconstruct MAD from
+average-only compacted data.
+
+### 4.4 Interquartile Range (IQR)
+
+Priority: P1
+
+Definition:
+
+IQR = P75 - P25
+
+Data source:
+GPUMetric
+
+Output:
+IQR for utilization, temperature, power, clocks, and other
+supported metrics.
+
+Interpretation:
+A large IQR indicates a wide middle distribution; a small IQR
+indicates more consistent observations.
+
+Caveat:
+IQR and MAD overlap. Expose both initially only if they provide
+useful distinctions in actual reports.
+
+### 4.5 Robust Outlier Rate
+
+Priority: P1
+
+Definition:
+Use the modified Z-score:
+
+M = 0.6745 * (x - median(x)) / MAD
+
+An observation is a candidate outlier when abs(M) > 3.5.
+
+Data source:
+GPUMetric
+
+Output:
+Outlier count, outlier percentage, and optionally timestamps.
+
+Interpretation:
+Quantifies how often observations differ substantially from the
+metric's historical distribution.
+
+Caveats:
+- A statistical outlier is not automatically a hardware fault.
+- Startup, shutdown, workload transitions, and sensor errors can
+  produce legitimate outliers.
+- If MAD is zero, use an explicitly defined fallback policy rather
+  than dividing by zero.
+- Avoid using one baseline for incompatible operating states.
+
+### 4.6 General Threshold Exceedance Statistics
+
+Priority: P1
+
+Definition:
+Measure how frequently and for how long configurable operational
+conditions are satisfied.
+
+Examples:
+- Temperature above a configured warning threshold.
+- Memory utilization above a configured limit.
+- Power above a configured operational threshold.
+- Unexpectedly low utilization while a job is active.
+
+Data source:
+GPUMetric and MetricSnapshot when job state is required.
+
+Output:
+- Event count.
+- Total qualifying duration.
+- Longest event.
+- Percentage of observed eligible time.
+- Event start and end timestamps when appropriate.
+
+Implementation:
+Use timestamp-aware interval processing. Define event merging,
+missing-sample behavior, minimum event duration, and hysteresis.
+
+Overlap rule:
+Do not duplicate the existing Underutilization Duration report.
+Generalize its interval-processing utilities where useful, but
+keep distinct threshold definitions and output semantics.
+
+### 4.7 Telemetry Coverage and Continuity
+
+Priority: P1
+
+Definition:
+Quantify the completeness and temporal continuity of observations.
+
+Data source:
+Ingest timestamps and metric timestamps for GPUMetric and
+MetricSnapshot.
+
+Output:
+- Expected and received sample counts, when the expected cadence
+  is known.
+- Sample coverage percentage.
+- Duration-based coverage where reconstructable.
+- Longest telemetry gap.
+- Median and P95 sample interval.
+- Number of significant gaps.
+
+Count-based coverage:
+
+coverage = received_samples / expected_samples * 100
+
+Interpretation:
+A report with incomplete observations should not appear equivalent
+to a fully observed period.
+
+Caveat:
+Count-based coverage can misrepresent actual time coverage when
+sampling intervals vary. Prefer duration-based coverage when
+interval semantics can be reconstructed reliably.
+
+### 4.8 Minimum Sample Adequacy
+
+Priority: P1
+
+Definition:
+Determine whether a statistic has sufficient data for meaningful
+interpretation.
+
+Data source:
+Shared reporting utilities.
+
+Output:
+- Valid sample count.
+- Distinct timestamp count.
+- Coverage.
+- Number of excluded observations.
+- Adequacy status.
+- Optional reason when the statistic is unavailable.
+
+Examples:
+A P99 estimate based on 25 observations is much less reliable than
+one based on thousands of representative observations.
+
+Implementation:
+Define statistic-specific minimums. Percentiles, regression,
+correlation, event duration, and confidence intervals have different
+requirements.
+
+Do not silently replace an inadequate result with zero.
 
 ---
 
-### 4.7 Report: Temperature-to-PowerLimit Ratio Stability
+# Phase 2 — Context-Aware Diagnostics
 
-- **Definition:** Standard deviation of power_limit_w within GPU temperature buckets, indicating how stable the power limit is across different temperature levels.
+These metrics compare behavior against relevant operating conditions
+instead of relying exclusively on unconditional averages.
 
-- **Data Source:** MetricSnapshot.power_limit_w and MetricSnapshot.gpu_temp_c
+### 4.9 Conditional Temperature Distribution
 
-- **Time Range:** 24h, 7d, 30d (aggregated per GPU)
+Priority: P1
 
-- **Calculation:** SQL: Group by gpu_temp_c range (e.g., 5-degree buckets), compute STDDEV(power_limit_w) per bucket, then average those standard deviations (or report max). Python post-processing over aggregated bucket arrays.
+Definition:
+Calculate temperature distributions for comparable operating
+conditions.
 
-- **Storage:** None (computed on demand for the report tab)
+Data source:
+GPUMetric.gpu_temp_c, gpu_util_pct, power_draw_w, fan_speed_pct
 
-- **Performance:** Uses compacted MetricSnapshot (1h buckets for 7-30d), so number of rows is limited (~720 for 30d). Grouping and STDDEV done in SQL.
+Possible grouping variables:
+- GPU utilization ranges.
+- Power ranges.
+- Fan-speed ranges.
+- Combined power and utilization ranges.
 
-- **Interpretation:** Lower value indicates power limit is more stable across temperature changes; higher volatility may indicate unstable power delivery or thermal throttling.
+Output:
+Median temperature, P95 temperature, sample count, and coverage
+for each condition group.
 
-- **Code (in `_build_report_context()`):
-```python
-# In _build_report_context()
-# 1. Query MetricSnapshot with rig_uuid and time range
-# 2. Annotate temp_bucket = (gpu_temp_c / 5) * 5  # integer division
-# 3. Values = queryset.values('gpu_index', 'temp_bucket').annotate(stddev_power=StdDev('power_limit_w'))
-# 4. Python: group by gpu_index, compute average of stddev_power across buckets (or max)
-```
+Example:
+Two GPUs both average 75°C, but one reaches 85°C at 250 W while
+the other remains at 75°C under comparable conditions.
+
+Interpretation:
+Enables fairer cooling comparisons by reducing workload differences.
+
+Caveats:
+- Require adequate observations per group.
+- Compare GPUs only over overlapping operating ranges.
+- Consider GPU model, power limit, fan policy, and cooler design.
+- Do not infer causation from conditional associations.
+
+### 4.10 Regression Residual Analysis
+
+Priority: P1
+
+Definition:
+Estimate expected behavior from multiple operating variables and
+measure deviations from that expectation.
+
+Example temperature model:
+
+T = b0 + b1*P + b2*U + b3*F + error
+
+Where:
+T = temperature
+P = GPU power
+U = GPU utilization
+F = fan speed
+
+Data source:
+GPUMetric
+
+Output:
+- Observed and predicted temperature.
+- Residual temperature.
+- Residual standard deviation.
+- Standardized residual.
+- Sample count and model adequacy.
+
+Example:
+A GPU is consistently 8°C hotter than expected for comparable
+power, utilization, and fan speed.
+
+Caveats:
+- Use compatible GPU models and operating conditions.
+- Account for nonlinear effects where necessary.
+- Validate model fit before using residuals for alerts.
+- Do not treat a residual as proof of a cooling defect.
+
+Implementation:
+Start with a simple, validated regression model. Calculate on
+demand or cache the result when repeated queries become expensive.
+
+### 4.11 GPU-to-GPU Performance Deviation
+
+Priority: P1
+
+Definition:
+Compare a GPU against compatible peers in the same rig or fleet.
+
+For metric x:
+
+deviation = GPU value - peer-group median
+
+A normalized version can use a robust scale estimate such as MAD.
+
+Data source:
+GPUMetric, grouped by rig and compatible GPU hardware.
+
+Candidate comparisons:
+- Temperature under comparable power and utilization.
+- Idle power under verified idle conditions.
+- Core clock under comparable load.
+- Utilization distribution.
+- Robust outlier score.
+
+Output:
+Absolute deviation, normalized deviation, peer count, and
+comparison conditions.
+
+Caveats:
+Account for GPU model, cooling design, PCIe position, workload,
+power limits, and airflow.
+
+### 4.12 Fleet Distribution and Fleet Outliers
+
+Priority: P1
+
+Definition:
+Summarize the distribution of a metric across comparable GPUs
+or rigs.
+
+Data source:
+GPUMetric and MetricSnapshot where relevant.
+
+Output:
+- Fleet median.
+- P10/P90 and P95.
+- Outlier rigs or GPUs.
+- Number of compatible peers.
+- Percentage outside the expected range.
+
+Interpretation:
+Identifies unusual devices that may not be obvious when examining
+one rig at a time.
+
+Caveats:
+Segment by GPU model and relevant operating conditions. Distinguish
+between per-sample distributions and distributions of per-GPU
+summary values.
+
+### 4.13 Intra-Rig Utilization Imbalance
+
+Priority: P1
+
+Definition:
+Quantify differences in GPU utilization across a multi-GPU rig.
+
+One possible measure at timestamp t:
+
+CV_rig = stddev(U1, U2, ..., Un) / mean(U1, U2, ..., Un)
+
+Data source:
+GPUMetric.gpu_util_pct
+
+Output:
+- Mean and P95 imbalance.
+- Maximum observed imbalance.
+- Duration above a configurable threshold.
+- Number of GPUs contributing valid observations.
+
+Interpretation:
+May identify workloads that are unevenly distributed across GPUs.
+
+Caveats:
+- Exclude missing GPU observations.
+- Handle a near-zero mean explicitly.
+- Different GPU roles or workloads can legitimately create imbalance.
+- Compare simultaneous observations, not unrelated time averages.
+
 ---
 
-### 4.8 Report: Memory vs. Core Utilization Correlation
+# Phase 3 — Time-Series Trends and Change Detection
 
-- **Definition:** Pearson correlation coefficient between memory controller utilization and GPU utilization over time, indicating how closely memory and compute utilization move together.
+### 4.14 Exponentially Weighted Moving Average (EWMA)
 
-- **Data Source:** MetricSnapshot.mem_controller_util_pct and MetricSnapshot.gpu_util_pct
+Priority: P2
 
-- **Time Range:** 24h, 7d, 30d (aggregated per GPU)
+Definition:
 
-- **Calculation:** Python: Retrieve arrays of mem_controller_util_pct and gpu_util_pct per GPU (from compacted MetricSnapshot), compute Pearson r using manual formula (to avoid scipy dependency).
+EWMA_t = lambda*x_t + (1-lambda)*EWMA_(t-1)
 
-- **Storage:** None (computed on demand for the report tab)
+Data source:
+GPUMetric
 
-- **Performance:** Uses compacted MetricSnapshot (~720 rows for 30d). Two arrays of floats per GPU; correlation is O(n).
+Candidate fields:
+Temperature, power, utilization, and clocks.
 
-- **Interpretation:** Value between -1 and 1. Near 1 indicates memory and compute utilization rise and fall together (balanced workload). Near 0 indicates no linear relationship. Negative indicates inverse relationship (rare).
+Output:
+Smoothed series, baseline deviation, and optionally a standardized
+deviation score.
 
-- **Code (in `_build_report_context()`):
-```python
-# In _build_report_context()
-# 1. Query MetricSnapshot for rig_uuid and time range, values_list('gpu_index', 'mem_controller_util_pct', 'gpu_util_pct')
-# 2. Python: group by gpu_index into two lists: mem_util, gpu_util
-# 3. For each GPU, if len > 1 and both arrays have variance, compute pearsonr_manual(mem_util, gpu_util)
-# 4. Store result per gpu_index
-```
+Purpose:
+Reduce short-term noise while retaining sensitivity to recent
+changes.
+
+Caveats:
+The smoothing parameter controls responsiveness. Sampling cadence
+must be consistent or explicitly accounted for.
+
+Architecture:
+Use as a shared analytical utility and a building block for
+anomaly detection, not necessarily as a separate report for every
+sensor.
+
+### 4.15 Change-Point Detection
+
+Priority: P2
+
+Definition:
+Identify timestamps where the statistical behavior of a metric
+changes substantially.
+
+Candidate methods:
+- CUSUM.
+- PELT.
+- Bayesian online change-point detection.
+
+Data source:
+Timestamp-aligned GPUMetric observations.
+
+Output:
+Change timestamp, affected metric, estimated shift, and detection
+score or confidence where supported.
+
+Examples:
+- Sustained drop in operating clocks.
+- Increased idle power.
+- Changed temperature behavior.
+- Transition from stable to bursty utilization.
+
+Caveats:
+Workload and software changes can also cause legitimate change
+points. Correlate detections with operating conditions and known
+maintenance events.
+
+Implementation:
+Start with a simple detector and validate its false-positive rate
+before introducing more sophisticated methods.
+
+### 4.16 CUSUM Shift Detection
+
+Priority: P3
+
+Definition:
+Accumulate small deviations from a representative baseline to
+detect persistent shifts.
+
+One-sided form:
+
+S_t = max(0, S_(t-1) + x_t - mu0 - k)
+
+Where:
+mu0 = expected baseline
+k = tolerance parameter
+
+Data source:
+GPUMetric
+
+Output:
+Cumulative score, threshold crossing timestamp, and event duration.
+
+Example:
+A persistent temperature shift of 2°C may be operationally
+meaningful even if no single observation crosses a fixed threshold.
+
+Caveat:
+The baseline must account for workload and operating conditions.
+
+Implementation:
+Initially use CUSUM for a small number of validated metrics instead
+of enabling it for every sensor.
+
+### 4.17 Autocorrelation and Lag Analysis
+
+Priority: P3
+
+Definition:
+Measure the relationship between a metric and its previous values.
+
+rho(k) = correlation(x_t, x_(t-k))
+
+Data source:
+GPUMetric
+
+Output:
+Autocorrelation at selected lags and an optional periodicity score.
+
+Use cases:
+- Characterize workload persistence.
+- Detect repeated utilization cycles.
+- Understand the temporal dependence of temperature.
+- Improve confidence estimates for other statistics.
+
+Caveats:
+High autocorrelation is not itself a fault. Trends and periodic
+patterns can distort interpretation. Irregular timestamps require
+careful alignment or resampling.
+
+### 4.18 Seasonal and Periodic Behavior
+
+Priority: P3
+
+Definition:
+Characterize recurring patterns by hour of day and day of week.
+
+Data source:
+Timestamped GPUMetric and optional job-state data.
+
+Output:
+- Hour-of-day profiles.
+- Weekday versus weekend profiles.
+- Typical peak-load periods.
+- Deviations from the expected seasonal profile.
+
+Example:
+Utilization is usually low overnight, but remains unusually high
+for several consecutive nights.
+
+Caveats:
+Require sufficient complete daily or weekly cycles. Distinguish
+recurring patterns from one-off workload changes.
+
+### 4.19 Forecast Error and Prediction Intervals
+
+Priority: P3
+
+Definition:
+Compare observed behavior with a prediction generated from
+historical observations.
+
+Residual:
+
+e_t = x_t - predicted_x_t
+
+Candidate statistics:
+- Mean absolute error.
+- Root mean squared error.
+- Percentage of observations outside prediction intervals.
+
+Data source:
+GPUMetric
+
+Output:
+Prediction error, interval violations, and model evaluation
+statistics.
+
+Example:
+Temperature repeatedly exceeds the expected range under comparable
+power and utilization.
+
+Caveats:
+Evaluate predictions on held-out observations or with a rolling
+historical baseline. A poorly calibrated model can create false
+anomalies.
+
 ---
 
-### 4.9 Report: Compute-to-Memory Ratio Trend
+# Phase 4 — Reliability and Advanced Anomaly Detection
 
-- **Definition:** Slope of the linear regression of the ratio gpu_util_pct / mem_controller_util_pct over time, indicating whether compute utilization is increasing relative to memory utilization.
+### 4.20 Robust Contextual Anomaly Score
 
-- **Data Source:** MetricSnapshot.gpu_util_pct and MetricSnapshot.mem_controller_util_pct
+Priority: P2
 
-- **Time Range:** 24h, 7d, 30d (aggregated per GPU)
+Definition:
+Produce a normalized score indicating how unusual an observation
+is relative to an appropriate baseline.
 
-- **Calculation:** Python: For each GPU, compute ratio per time bucket (using compacted MetricSnapshot), then perform linear regression (slope) of ratio vs. time (in days). Use np.polyfit or manual formula.
+Data source:
+GPUMetric
 
-- **Storage:** None (computed on demand for the report tab)
+Candidate methods:
+- Modified Z-score using median and MAD.
+- Standardized regression residuals.
+- Separate baselines for different workload states.
 
-- **Performance:** Uses compacted MetricSnapshot (~720 rows for 30d). Linear regression is O(n).
+Output:
+Score, severity category, affected metric, timestamp, and baseline
+window.
 
-- **Interpretation:** Positive slope: compute utilization growing faster than memory utilization over period. Negative slope: memory utilization growing faster. Near zero: stable ratio.
+Caveat:
+A score is an investigation signal, not an automatic hardware-fault
+diagnosis.
 
-- **Code (in `_build_report_context()`):
-```python
-# In _build_report_context()
-# 1. Query MetricSnapshot for rig_uuid and time range, values_list('gpu_index', 'timestamp', 'gpu_util_pct', 'mem_controller_util_pct')
-# 2. Python: group by gpu_index, compute ratio = gpu_util / mem_util (handle zero mem_util)
-# 3. For each GPU, convert timestamps to days since start, compute slope via np.polyfit(time_days, ratio, 1) or manual
-# 4. Store slope per gpu_index
-```
+Implementation:
+Build on metrics 4.5 and 4.10 instead of duplicating their
+calculations.
+
+### 4.21 Multivariate Anomaly Score
+
+Priority: P3
+
+Definition:
+Detect unusual combinations of individually plausible observations.
+
+Potential features:
+Temperature, power, utilization, fan speed, and clocks.
+
+One candidate is Mahalanobis distance:
+
+D² = (x - mu)^T * inverse(Sigma) * (x - mu)
+
+Output:
+Anomaly score, contributing features where supported, and baseline
+quality.
+
+Caveats:
+Requires adequate representative data. Strongly correlated
+features and unstable covariance estimates can produce unreliable
+scores.
+
+Implementation:
+Only introduce after validating simpler univariate and regression-
+based detectors.
+
+### 4.22 Clock Throttling Suspicion Score
+
+Priority: P2
+
+Definition:
+Identify potentially abnormal clock behavior under comparable
+operating conditions.
+
+Candidate signals:
+- Lower-than-expected core clock under high utilization.
+- Sustained clock deviation from a comparable baseline.
+- Relevant temperature or power-limit conditions.
+- Explicit throttle-reason telemetry, if available.
+
+Data source:
+GPUMetric and available hardware status fields.
+
+Output:
+Suspicion score, duration, and supporting observations.
+
+Caveats:
+Low clocks can be normal under idle, power-saving, driver, or
+workload-limited conditions.
+
+Do not label a GPU as throttled solely because its clock is low.
+Use explicit hardware throttle-reason telemetry when available.
+
+### 4.23 Recovery Time After an Anomaly
+
+Priority: P2
+
+Definition:
+Measure how long a detected abnormal event takes to return to
+a defined normal operating state.
+
+Data source:
+GPUMetric, with optional job-state and rig-state data.
+
+Output:
+Median, P95, and maximum recovery time; event count; and the
+percentage of events with measurable recovery.
+
+Implementation:
+Define event-specific recovery conditions and a minimum stable
+recovery period. Handle missing observations as unknown intervals.
+
+Do not equate thermal recovery time with recovery from a telemetry
+outage or system restart.
+
+### 4.24 Empirical Availability and Observed Downtime
+
+Priority: P2
+
+Definition:
+Estimate availability during periods when the platform can
+reliably determine whether a GPU or rig was available.
+
+Observed availability:
+
+available duration / eligible observed duration * 100
+
+Data source:
+Reliable heartbeat timestamps and explicit availability or
+rig-status observations.
+
+Output:
+Observed availability, observed downtime, longest outage, and
+number of availability events.
+
+Caveats:
+- No telemetry does not prove hardware downtime.
+- Report unknown time separately unless its cause is established.
+- Account for maintenance windows if recorded.
+- Do not present this as an SLA guarantee without validated
+  availability semantics.
+
+### 4.25 Between-Rig Versus Within-Rig Variability
+
+Priority: P3
+
+Definition:
+Separate variation between rigs from variation between GPUs
+within a rig and variation over time.
+
+Data source:
+GPUMetric grouped by GPU and rig.
+
+Output:
+Variance components or a documented decomposition of variation.
+
+Use case:
+Determine whether variability is mainly associated with rig-level
+differences or individual GPU behavior.
+
+Caveat:
+Requires comparable workloads, adequate samples, and a clearly
+defined statistical model.
+
+### 4.26 Configuration-Change Impact Analysis
+
+Priority: P3
+
+Definition:
+Compare operating behavior before and after a recorded event,
+such as a driver update, maintenance action, or cooling change.
+
+Data source:
+GPUMetric and timestamps of known configuration changes.
+
+Output:
+Changes in median, P95, variability, and conditional regression
+residuals.
+
+Example:
+After a cooling change, median temperature under comparable power
+falls by 4°C while fan speed increases by 3 percentage points.
+
+Caveats:
+Workload changes may explain the difference. Match or adjust for
+relevant operating conditions. A before-and-after difference does
+not establish causation.
+
+Dependency:
+This becomes more useful if maintenance and configuration-change
+events are recorded consistently.
+
 ---
 
-### 4.10 Report: Clock Stability Index
+# Phase 5 — Statistical Confidence and Comparison Quality
 
-- **Definition:** Standard deviation of GPU core clock speed over time, indicating volatility in clock speed (lower is more stable).
+### 4.27 Confidence Intervals
 
-- **Data Source:** GPUMetric.gpu_core_clock_mhz (pre-computed at ingest)
+Priority: P2
 
-- **Time Range:** 24h, 7d, 30d (aggregated per GPU)
+Definition:
+Quantify uncertainty around a statistic or a comparison between
+GPUs.
 
-- **Calculation:** SQL: STDDEV(gpu_core_clock_mhz) grouped by gpu_index and time range (using compacted GPUMetric tables).
+Candidate outputs:
+- Confidence interval for median temperature.
+- Confidence interval for mean power.
+- Confidence interval for the difference between comparable GPUs.
+- Confidence interval for changes before and after maintenance.
 
-- **Storage:** None (computed on demand for the report tab)
+Data source:
+The relevant GPUMetric or MetricSnapshot observations.
 
-- **Performance:** Uses pre-computed and compacted GPUMetric, so aggregation is fast (~720 rows for 30d).
+Implementation:
+Use bootstrap methods appropriate to the statistic. For
+autocorrelated time series, prefer time-block bootstrap or another
+method that accounts for temporal dependence.
 
-- **Interpretation:** Lower value indicates more stable clock speed (less volatility), which is desirable for consistent performance. Higher may indicate power/thermal throttling causing clock fluctuations.
+Caveat:
+Do not assume ordinary independent-sample confidence intervals
+are reliable for consecutive telemetry samples.
 
-- **Code (in `_build_report_context()`):
-```python
-# In compact_data.py: add gpu_core_clock_mhz to COMPACT_TABLES for GPUMetric with aggregation 'stddev' (or use Variance/StdDev in Django)
-# In _build_report_context(): gpu_agg already includes stddev for existing fields; add gpu_core_clock_mhz_stddev
-```
+### 4.28 Statistical Significance of Change
+
+Priority: P3
+
+Definition:
+Assess whether a difference between two comparable periods is
+larger than expected under an appropriate statistical model.
+
+Candidate methods:
+- Bootstrap confidence intervals.
+- Permutation tests.
+- Regression-based comparisons.
+
+Output:
+Effect size, confidence interval, and optional significance
+statistic.
+
+Caveats:
+Statistical significance is not the same as operational
+importance. Always report the effect size and uncertainty.
+
+Avoid repeatedly testing many metrics without considering
+multiple-comparison effects.
+
+### 4.29 Effective Sample Size
+
+Priority: P3
+
+Definition:
+Estimate how much independent information a time series provides
+after accounting for temporal dependence.
+
+Data source:
+Timestamp-aligned GPUMetric observations and autocorrelation
+analysis.
+
+Output:
+Estimated effective sample size for a given statistic and window.
+
+Use case:
+Improve confidence intervals and determine whether a trend or
+correlation has adequate independent information.
+
+Caveat:
+The estimate depends on the assumed temporal dependence and
+statistical method. It is not interchangeable with the raw
+observation count.
+
 ---
 
-### 4.11 Report: Frequency-to-PowerLimit Ratio Stability
+## 5. Recommended Implementation Order
 
-- **Definition:** Standard deviation of power_limit_w within GPU core clock speed buckets, indicating how stable the power limit is across different clock levels.
+### Phase 1 — Core statistics
 
-- **Data Source:** MetricSnapshot.power_limit_w and MetricSnapshot.gpu_core_clock_mhz
+1. GPU utilization percentiles.
+2. MAD and IQR utilities.
+3. Robust outlier rate.
+4. General threshold exceedance statistics.
+5. Telemetry coverage and continuity.
+6. Minimum sample adequacy.
 
-- **Time Range:** 24h, 7d, 30d (aggregated per GPU)
+Goal:
+Establish reliable distribution and data-quality primitives.
 
-- **Calculation:** SQL: Group by gpu_core_clock_mhz range (e.g., 50MHz buckets), compute STDDEV(power_limit_w) per bucket, then average those standard deviations (or report max). Python post-processing over aggregated bucket arrays.
+### Phase 2 — Context-aware and fleet diagnostics
 
-- **Storage:** None (computed on demand for the report tab)
+7. Conditional temperature distribution.
+8. Regression residual analysis.
+9. GPU-to-GPU performance deviation.
+10. Fleet distribution and fleet outliers.
+11. Intra-rig utilization imbalance.
 
-- **Performance:** Uses compacted MetricSnapshot (1h buckets for 7-30d), so number of rows is limited (~720 for 30d). Grouping and STDDEV done in SQL.
+Goal:
+Make reports more actionable and comparisons fairer.
 
-- **Interpretation:** Lower value indicates power limit is more stable across clock speed changes; higher volatility may indicate unstable power delivery.
+### Phase 3 — Trends and operational reliability
 
-- **Code (in `_build_report_context()`):
-```python
-# Similar to Temperature-to-PowerLimit Ratio Stability but grouping by gpu_core_clock_mhz
-```
+12. EWMA.
+13. Change-point detection.
+14. Clock throttling suspicion score.
+15. Recovery time after anomalies.
+16. Empirical availability and observed downtime.
+17. Confidence intervals.
+
+Goal:
+Identify persistent behavioral changes and quantify their
+operational impact.
+
+### Phase 4 — Advanced analytics
+
+18. CUSUM.
+19. Autocorrelation and lag analysis.
+20. Seasonal behavior.
+21. Forecast error and prediction intervals.
+22. Multivariate anomaly score.
+23. Between-rig versus within-rig variability.
+24. Configuration-change impact analysis.
+25. Statistical significance of change.
+26. Effective sample size.
+
+Goal:
+Introduce advanced methods only after the underlying statistics,
+data coverage, and baselines have been validated.
+
 ---
 
-### 4.12 Report: Idle-to-Peak Power Delta
+## 6. Django Implementation Architecture
 
-- **Definition:** Difference between maximum and minimum power draw over the period, indicating the range of power consumption.
+### 6.1 Shared statistical utilities
 
-- **Data Source:** MetricSnapshot.total_system_power_w (or GPUMetric.power_draw_w per GPU summed)
+Create reusable, tested functions for:
 
-- **Time Range:** 24h, 7d, 30d (system-level)
+- Percentiles and quantiles.
+- Median and MAD.
+- IQR and variability.
+- Robust outlier scoring.
+- Sample adequacy and coverage.
+- Timestamp-aware duration calculations.
+- Regression and residual statistics.
+- Confidence intervals.
 
-- **Calculation:** SQL: MAX(total_system_power_w) - MIN(total_system_power_w) over the time range.
+Keep the statistical functions independent of HTTP views and
+templates where practical.
 
-- **Storage:** None (computed on demand for the report tab)
+### 6.2 Report-context integration
 
-- **Performance:** Uses compacted MetricSnapshot, so aggregation is fast (~720 rows for 30d).
+Extend the existing report-context builder with calculated values
+and metadata.
 
-- **Interpretation:** Larger delta indicates greater variability in power consumption, which may reflect workload fluctuations or inefficient power management.
+For each result, return the value together with relevant supporting
+information, such as sample count, coverage, and adequacy status.
 
-- **Code (in `_build_report_context()`):
-```python
-# In _build_report_context()
-# 1. Query MetricSnapshot for rig_uuid and time range, aggregate max_power=Max('total_system_power_w'), min_power=Min('total_system_power_w')
-# 2. idle_to_peak_power_delta = max_power - min_power
-# 3. Store in context
-```
+Reuse existing querysets and aggregations where safe. Avoid
+repeating expensive queries for every metric.
+
+Use the existing report-cache pattern, including its current TTL,
+unless profiling justifies a different policy.
+
+### 6.3 Database changes
+
+Do not add a model field for every calculated statistic.
+
+Prefer on-demand calculation for ordinary reports.
+
+Consider persistent models or fields only when required for:
+
+- Stateful anomaly detection.
+- Alert history.
+- Historical event records.
+- Expensive calculations that benefit from caching.
+- Configuration-change records.
+
+### 6.4 Compaction and system checks
+
+When adding a persistent metric or state field:
+
+1. Update the appropriate Django model.
+2. Create and apply the migration.
+3. Update the correct COMPACT_TABLES configuration if applicable.
+4. Configure valid aggregation semantics.
+5. Update the relevant ChartDataView mapping if the metric is charted.
+6. Update and run system checks.
+7. Test compaction and raw-to-compacted transitions.
+
+Do not assume that adding a field to a model automatically makes it
+available through compaction or chart endpoints.
+
+### 6.5 Performance strategy
+
+Start with on-demand calculations over the smallest suitable dataset.
+
+- Use SQL aggregation for statistics that SQL can calculate correctly.
+- Use Python for calculations that require ordered observations or
+  more specialized statistical methods.
+- Use raw samples when the requested statistic cannot be recovered
+  from compacted aggregates.
+- Introduce background calculations only when measured query cost
+  justifies them.
+- Test 24-hour, 7-day, and 30-day ranges independently.
+
+Do not approximate event counts, transitions, percentiles, or
+correlations without explicitly identifying and validating the
+approximation.
+
 ---
 
-### 4.13 Report: Idle Power Waste Ratio
+## 7. Validation and Testing Requirements
 
-- **Definition:** Ratio of average power consumption when no active job to average power consumption when active job is present, indicating proportion of power wasted during idle periods.
+Every new statistic must be tested for:
 
-- **Data Source:** MetricSnapshot.total_system_power_w and MetricSnapshot.has_active_job
+1. Empty data windows.
+2. Null and invalid observations.
+3. Constant-valued series.
+4. Near-zero denominators where applicable.
+5. Missing timestamps and irregular intervals.
+6. Insufficient samples.
+7. Correct per-GPU and per-rig grouping.
+8. Correct 24h, 7d, and 30d boundaries.
+9. Raw versus compacted data behavior.
+10. Numerical stability and expected units.
+11. Correct interpretation of zero versus unknown.
+12. Acceptable query and response time.
 
-- **Time Range:** 24h, 7d, 30d (system-level)
+For anomaly detection, additionally test:
+- Known injected anomalies.
+- Gradual shifts.
+- Abrupt shifts.
+- Legitimate workload transitions.
+- Telemetry gaps.
+- False-positive rates under normal operation.
 
-- **Calculation:** SQL: Conditional aggregation: AVG(CASE WHEN has_active_job=False THEN total_system_power_w END) / AVG(CASE WHEN has_active_job=True THEN total_system_power_w END). Handle division by zero.
+For fleet comparisons, test:
+- Identical GPUs.
+- Different GPU models.
+- Missing peer observations.
+- Unequal workloads.
+- Different sample counts.
 
-- **Storage:** None (computed on demand for the report tab)
-
-- **Performance:** Uses compacted MetricSnapshot, so aggregation is fast (~720 rows for 30d).
-
-- **Interpretation:** Value between 0 and 1 (or higher if idle power > active power, which is unusual). Lower ratio indicates less power wasted during idle. Value near 1 indicates similar power draw idle vs active (inefficient).
-
-- **Code (in `_build_report_context()`):
-```python
-# In _build_report_context()
-# 1. Query MetricSnapshot for rig_uuid and time range
-# 2. avg_idle = Avg(Case(When(has_active_job=False, then='total_system_power_w')))
-# 3. avg_active = Avg(Case(When(has_active_job=True, then='total_system_power_w')))
-# 4. if avg_active and avg_active > 0: idle_power_waste_ratio = avg_idle / avg_active else: None
-# 5. Store in context
-```
 ---
 
-### 4.14 Report: Job State Transition Frequency
-
-- **Definition:** Number of times the job state changes from active to idle or idle to active over the period, indicating workload volatility.
-
-- **Data Source:** MetricSnapshot.has_active_job
-
-- **Time Range:** 24h, 7d, 30d (system-level)
-
-- **Calculation:** Python: Ordered scan of has_active_job values (0/1) to count transitions (0→1 or 1→0). For 30d, approximate using has_active_job_avg and variance due to performance.
-
-- **Storage:** None (computed on demand for the report tab)
-
-- **Performance:** For 24h/7d: direct scan of compacted MetricSnapshot (~168 rows for 7d at 1h) is fast. For 30d: avoid full scan (~720 rows) still acceptable, but we can approximate if needed. Note: MetricSnapshot is compacted to 1h buckets for 7-30d, so 30d is ~720 rows - scanning is acceptable.
-
-- **Interpretation:** Higher frequency indicates more volatile workload (jobs starting/stopping often). Lower indicates steady workload.
-
-- **Code (in `_build_report_context()`):
-```python
-# In _build_report_context()
-# 1. Query MetricSnapshot for rig_uuid and time range, order_by('timestamp'), values_list('has_active_job', flat=True)
-# 2. Python: scan list, count transitions where current != previous
-# 3. Store count in context
-# Note: For 30d, ~720 rows is acceptable; no approximation needed.
-```
----
-
-### 4.15 Report: Underutilization Duration
-
-- **Definition:** Total time (in minutes) where GPU utilization is low (<5%) but an active job is present, indicating wasted compute resources.
-
-- **Data Source:** MetricSnapshot.gpu_util_pct and MetricSnapshot.has_active_job
-
-- **Time Range:** 24h, 7d, 30d (per GPU)
-
-- **Calculation:** Python: Ordered scan of MetricSnapshot rows per GPU, accumulate minutes where gpu_util_pct < 5 AND has_active_job=True.
-
-- **Storage:** None (computed on demand for the report tab)
-
-- **Performance:** Uses compacted MetricSnapshot (1h buckets for 7-30d), so rows per GPU limited (~720 for 30d). Scan is O(n).
-
-- **Interpretation:** Higher value indicates more time where GPU is underutilized despite having work, suggesting scheduling inefficiencies or data starvation.
-
-- **Code (in `_build_report_context()`):
-```python
-# In _build_report_context()
-# 1. Query MetricSnapshot for rig_uuid and time range, order_by('gpu_index', 'timestamp'), values_list('gpu_index', 'timestamp', 'gpu_util_pct', 'has_active_job')
-# 2. Python: iterate rows, track current underutilization start time per GPU, accumulate duration when conditions met
-# 3. Store total minutes per gpu_index in context
-```
----
-
-### 4.16 Report: Power-on Hours Before Restart
-
-- **Definition:** Average duration (in hours) the system runs continuously before a reboot (detected by a drop in uptime_s).
-
-- **Data Source:** MetricSnapshot.uptime_s
-
-- **Time Range:** 24h, 7d, 30d (system-level)
-
-- **Calculation:** Python: Ordered scan of uptime_s values, detect decreases (indicating reboot), compute differences between consecutive peaks, average over the period.
-
-- **Storage:** None (computed on demand for the report tab)
-
-- **Performance:** Uses compacted MetricSnapshot (1h buckets for 7-30d), so rows limited (~720 for 30d). Scan is O(n).
-
-- **Interpretation:** Higher value indicates longer stable uptime between reboots. Lower may indicate frequent reboots due to instability or updates.
-
-- **Code (in `_build_report_context()`):
-```python
-# In _build_report_context()
-# 1. Query MetricSnapshot for rig_uuid and time range, order_by('timestamp'), values_list('uptime_s')
-# 2. Python: scan list, detect when current uptime < previous uptime (reboot), compute diff = previous uptime - last_reset_uptime
-# 3. Collect all diffs, compute average
-# 4. Store average hours in context
-```
----
-
-### 4.17 Report: Thermal Degradation Slope
-
-- **Definition:** Slope of linear regression of GPU temperature over time at constant utilization, indicating whether temperature is increasing over time for the same workload (possible cooling degradation).
-
-- **Data Source:** MetricSnapshot.gpu_temp_c and MetricSnapshot.gpu_util_pct
-
-- **Time Range:** 24h, 7d, 30d (per GPU)
-
-- **Calculation:** Python: Filter rows where gpu_util_pct is within ±10% of median utilization for the period, then perform linear regression of gpu_temp_c vs time (in days). Slope in °C/day.
-
-- **Storage:** None (computed on demand for the report tab)
-
-- **Performance:** Uses compacted MetricSnapshot (~720 rows for 30d). Filtering and linear regression are O(n).
-
-- **Interpretation:** Positive slope indicates temperature rising over time for same workload (possible thermal degradation). Near zero indicates stable thermal performance.
-
-- **Code (in `_build_report_context()`):
-```python
-# In _build_report_context()
-# 1. Query MetricSnapshot for rig_uuid and time range, values_list('gpu_index', 'timestamp', 'gpu_temp_c', 'gpu_util_pct')
-# 2. Python: group by gpu_index, compute median gpu_util_pct for the group
-# 3. Filter rows where abs(gpu_util_pct - median) <= 0.1 * median (or 10 percentage points? plan says ±10% of median)
-# 4. For each GPU, convert timestamps to days since start, compute slope via np.polyfit(time_days, temp_vals, 1)
-# 5. Store slope per gpu_index
-```
----
-
-### 4.18 Report: Cost per Active GPU-Hour
-
-- **Definition:** Cost of electricity consumed per hour of active GPU compute, indicating efficiency of power usage for productive work.
-
-- **Data Source:** MetricSnapshot.total_system_power_w, MetricSnapshot.has_active_job, and rig GPU count (from LatestSnapshot.gpu_count or configuration)
-
-- **Time Range:** 24h, 7d, 30d (system-level)
-
-- **Calculation:** SQL + Python: 1. total_energy_wh = Sum(total_system_power_w) * interval / 3600 (interval is seconds between snapshots, assume 60). 2. active_gpu_hours = Sum(has_active_job) * interval / 3600 * gpu_count (if has_active_job indicates at least one job active, we assume all GPUs active? Not accurate). Alternatively, we need per-GPU active flag. We'll note this needs clarification.
-# For now, we'll use the plan's formula and note that active_gpu_hours must be computed from per-GPU job status if available.
-
-- **Storage:** None (computed on demand for the report tab)
-
-- **Performance:** Uses compacted MetricSnapshot, so aggregation is fast (~720 rows for 30d).
-
-- **Interpretation:** Lower cost indicates more efficient power usage for productive work (more compute per watt). Higher cost indicates wasted power.
-
-- **Code (in `_build_report_context()`):
-```python
-# In _build_report_context()
-# 1. total_energy_wh = Sum('total_system_power_w') * 60 / 3600  # assuming 60-second intervals
-# 2. # Need active GPU hours: this requires per-GPU active job status or approximation
-# 3. # Placeholder: active_gpu_hours = Sum('has_active_job') * 60 / 3600 * GPU_COUNT  # GPU_COUNT from rig config
-# 4. cost_per_active_gpu_hour = total_energy_wh * electricity_rate / active_gpu_hours if active_gpu_hours > 0 else None
-# 5. Store in context
-```
----
-
-### 4.19 Report: Idle Power Waste Cost
-
-- **Definition:** Cost of electricity consumed during idle periods (no active job), indicating waste of electricity when not doing useful work.
-
-- **Data Source:** MetricSnapshot.total_system_power_w and MetricSnapshot.has_active_job (idle periods)
-
-- **Time Range:** 24h, 7d, 30d (system-level)
-
-- **Calculation:** SQL + Python: 1. idle_energy_wh = Sum(Case(When(has_active_job=False, then='total_system_power_w'))) * interval / 3600. 2. cost = idle_energy_wh * electricity_rate.
-
-- **Storage:** None (computed on demand for the report tab)
-
-- **Performance:** Uses compacted MetricSnapshot, so aggregation is fast (~720 rows for 30d).
-
-- **Interpretation:** Lower value indicates less money wasted on idle power. Higher indicates more waste.
-
-- **Code (in `_build_report_context()`):
-```python
-# In _build_report_context()
-# 1. idle_energy_wh = Sum(Case(When(has_active_job=False, then='total_system_power_w'))) * 60 / 3600
-# 2. idle_power_waste_cost = idle_energy_wh * electricity_rate
-# 3. Store in context
-```
----
-
-## 5. Implementation Architecture
-
-### 5.1 New Database Models (for pre-computed chart metrics)
-
-```python
-# gpu_monitor/metrics_app/models.py — ADD to existing file
-
-class GPUMetric(models.Model):
-    # ... existing fields ...
-    
-    # NEW: Pre-computed derived metrics (point-in-time)
-    cooling_efficiency_index = models.FloatField(
-        null=True,
-        blank=True,
-        help_text=(
-            '°C/W — temperature change per watt of GPU power change; '
-            'higher values indicate a larger temperature response to power changes'
-        ),
-    )
-    fan_adjusted_cooling_response = models.FloatField(
-        null=True,
-        blank=True,
-        help_text=(
-            '°C/W — temperature change per watt of GPU power change, '
-            'adjusted for the change in fan speed; higher values indicate a larger '
-            'temperature response after accounting for fan-speed changes'
-        ),
-    )
-    vram_bandwidth_saturation = models.FloatField(null=True, blank=True,
-        help_text=(
-            'Ratio of memory-controller utilization to GPU utilization; '
-            'computed at ingest from current `gpu_util_pct` and `mem_controller_util_pct`; '
-            'higher values indicate greater memory-bandwidth pressure relative to GPU compute'
-        )
-    )
-    # NOTE: `cpu_to_gpu_power_ratio` is NOT added here. It is a cross-table metric
-    # (MetricSnapshot.cpu_power_w vs GPUMetric.power_draw_w array / sum) and must be
-    # computed on-demand in `_build_report_context()` or as a custom ChartDataView join.
-    # See §4.4 correction and architecture note above.
-```
-
-**Ingest serializer update** (`serializers.py`): Compute these values in `process_ingest()` when GPU data is present, store in GPUMetric row.
-
-**Compaction** (`compact_data.py`): Add these fields to `COMPACT_TABLES[0]['agg_fields']` with `'avg'` aggregation (they're ratios, average of ratios is acceptable).
-
-**Chart registry** (`chart-registry.js`): Add new entries pointing to the new metric names.
-
-### 5.1b CPU-to-GPU Power Ratio — Single-line Chart (MetricSnapshot)
-
-```python
-# gpu_monitor/metrics_app/models.py — ADD to MetricSnapshot class
-
-class MetricSnapshot(models.Model):
-    # ... existing fields ...
-    cpu_power_w = models.FloatField(null=True, blank=True)
-    total_system_power_w = models.FloatField(null=True, blank=True)
-    # NEW: CPU-to-GPU Power Ratio (agent-computed for schema 1.22+)
-    cpu_to_gpu_power_ratio = models.FloatField(
-        null=True,
-        blank=True,
-        help_text=(
-            'Ratio of CPU power to total GPU power (cpu_power_w / sum(gpu_power_draw_w)); '
-            'computed at agent from payload power data; higher values indicate CPU draws '
-            'more power relative to GPUs; single-line chart (not per-GPU)'
-        )
-    )
-```
-
-**Agent update** (`agent/run.py`): In `collect_power()`, compute `cpu_to_gpu_power_ratio = cpu_power_w / max(gpu_power_w, 1.0)` and include in returned dict.
-
-**Ingest serializer update** (`serializers.py`): Read `power_data.get('cpu_to_gpu_power_ratio')` and store in `MetricSnapshot.cpu_to_gpu_power_ratio`. Server-side fallback if agent doesn't send it.
-
-**Compaction** (`compact_data.py`): Add `cpu_to_gpu_power_ratio` to `COMPACT_TABLES[-1]['agg_fields']` (metrics_metricsnapshot) with `'avg'`.
-
-**Chart registry** (`chart-registry.js`): Add entry for `cpu_to_gpu_power_ratio` using single-line loader.
-
-### 5.2 Report Tab Extension (for windowed statistics)
-
-Extend `_build_report_context()` in `dashboard/views.py` (line 734) to compute the report-tab metrics. **Verified code structure (views.py 734-916):**
-
-- `base_filter` uses `metric_app.models.MetricSnapshot` (line 19 import confirmed) and `base_filter` filters by `rig_uuid` + time range.
-- `_build_report_context()` already does 4 aggregation queries (`GPUMetric`, `MetricSnapshot`, `StorageMetric`, `NetworkMetric`) — adding derived metrics uses the same result sets, no extra queries needed.
-- Existing `snap_agg` (line 848) returns aggregated values for CPU/Memory/Power/Errors. Report-tab derived metrics reuse these same aggregates.
-- `gpu_agg` (line 774) aggregates per `gpu_index`. Windowed GPU metrics reuse this.
-
-**Implementation rules verified against architecture:**
-1. **MetricSnapshot IS compacted by `compact_data` (line 112-132)** — 0-1d raw, 1-7d 15m, 7-31d 1h (group `rig_uuid`). The `ChartDataView` comment (line 212) means charts aggregate SQL on-the-fly rather than reading pre-bucketed rows directly. Report metrics using `MetricSnapshot` (CPU power, job state, uptime) should aggregate via SQL `.aggregate()` over the range; this scans compacted rows (~720 for 30d) — much faster than raw scan. The existing `_build_report_context()` (line 848) already uses `.aggregate()` — extend that.
-2. **GPUMetric IS compacted** (`COMPACT_TABLES` line 51-77, `metrics_gpumetric`). Report-tab GPU metrics over 7d/30d read pre-bucketed 15m/1h rows (~700 / ~720 rows) — much faster than raw scan. Use the existing `GPUMetric` aggregation (`Avg`, `Max`, `Sum`) — do NOT read raw time-series.
-3. **LatestSnapshot for point-in-time ratios:** `cpu_to_gpu_power_ratio` for current state reads `LatestSnapshot` directly (no aggregation needed). This is faster than any time-series query.
-
-**Specific metric implementations (code fragments):**
-
-```python
-# In dashboard/views.py — _build_report_context(), after snap_agg / gpu_agg
-# --- Cooling Efficiency Index (report aggregate) ---
-# Uses existing GPUMetric aggregation (pre-bucketed for 7d/30d)
-# No new query — reuse gpu_agg results per gpu_index
-
-# --- Memory vs Core Utilization Correlation (Pearson r) ---
-# Filter: rows where gpu_util_pct and mem_controller_util_pct both non-null
-# Use Python post-processing over the aggregated bucket values (not raw rows)
-# Avoid scipy dependency; manual formula (see §7.4)
-
-# --- Clock Stability Index ---
-# SQL: STDDEV(gpu_core_clock_mhz) over range using pre-bucketed GPUMetric
-# Since GPUMetric is compacted, use .aggregate(stddev=StdDev('gpu_core_clock_mhz'))
-
-# --- Job State Transitions ---
-# Python: ordered scan of MetricSnapshot.has_active_job values
-# Because MetricSnapshot is NOT compacted, scan only if range_hours <= 168 (7d = 10K rows max)
-# For 30d: approximate from `snap_agg['has_active_job_avg']` (fraction active) instead of full scan
-
-# --- Underutilization Duration ---
-# Python: scan MetricSnapshot ordered by timestamp; accumulate minutes where
-# `gpu_util_pct < 5` AND `has_active_job = True`. Same 7d limit applies.
-
-# --- Thermal Degradation Slope ---
-# Python: filter `MetricSnapshot` rows where `gpu_util_pct` within ±10% of median
-# in window, then `np.polyfit` on `gpu_temp_c` vs time (in days). Only for 24h/7d.
-# 30d: approximate trend from `snap_agg` temperature delta.
-```
-
-**Performance guard:** For 30d range, never run full Python scan on `MetricSnapshot` raw rows (~43K). Always aggregate at SQL level first (`.aggregate()` / `.annotate()`), then apply Python only to aggregated bucket arrays (max ~720 buckets for 30d at 1h). This matches the existing `ChartDataView` optimization strategy (line 204-210).
-
-### 5.3 UI Integration
-
-**Historical Charts tab:** Add chart cards to `rig_detail.html` at end, referencing new registry entries (see `chart-registry.js`). **Verified template structure (`rig_detail.html` line 322):** `<script src="{% static 'js/chart-registry.js' %}?v=2"></script>` — registry entry id must match the card's `id` attribute (e.g., `chartGpuCoolingEfficiency` → loader function referencing metric name `cooling_efficiency_index`). No template code change beyond adding cards; loader pulls metric from `ChartDataView.GPU_METRICS` mapping.
-
-**Report tab (`_report_table.html`):** Place new metric rows in correct sections. **Verified template structure (`dashboard/views.py` line 731):** Template renders from context dict returned by `_build_report_context()`. New keys (e.g., `cooling_efficiency_24h`, `correlation_7d`) must be added to the context dict (line 906 return) before the template can access them. Columns reuse existing `24h`/`7d`/`30d` structure from range selector (line 703 `htmx_report_data`).
-
-**LatestSnapshot preference for faster reads:** Where possible, report metrics should prefer `LatestSnapshot` over `MetricSnapshot` aggregation. `LatestSnapshot` is a single-row fetch (`.first()` at line 833); `MetricSnapshot` aggregation scans thousands of rows. Example: current-state `cpu_to_gpu_power_ratio` uses `LatestSnapshot.power_cpu_w` directly (line 833 `latest_snap`). Historical aggregate still needs `MetricSnapshot` aggregation.
-
-### 5.4 Verification Against Latest Architecture (Verified)
-
-- `models.py`: `GPUMetric` fields (`cooling_efficiency_index`, `fan_adjusted_cooling_response`, `vram_bandwidth_saturation`) — **ALL DONE**. `MetricSnapshot` field `cpu_to_gpu_power_ratio` — **DONE** (migration 0063).
-- `serializers.py`: `process_ingest()` (line 38) computes `GPUMetric` rows from payload. `prev_ls` fetched ONCE per rig using .get() (rig_uuid is PK). Code fragment corrected above to index by `gpu_index` (not hardcoded 0). **cooling_efficiency_index, fan_adjusted_cooling_response computed from prev_ls deltas — DONE**. `MetricSnapshot.cpu_to_gpu_power_ratio` read from `power_data.get('cpu_to_gpu_power_ratio')` — **DONE**.
-- `compact_data.py`: `COMPACT_TABLES` line 51-77 (`metrics_gpumetric`) includes `gpu_util_pct`, `mem_controller_util_pct`, `gpu_core_clock_mhz`, `fan_speed_pct`, `power_draw_w`, `power_limit_w`. New derived fields (`cooling_efficiency_index`, `fan_adjusted_cooling_response`, `vram_bandwidth_saturation`) added to `agg_fields` with `'avg'` — **ALL DONE**. `COMPACT_TABLES[-1]` (`metrics_metricsnapshot`) `cpu_to_gpu_power_ratio` with `'avg'` in `agg_fields` and `static_fields` — **DONE**.
-- `checks.py`: System checks (line 15-30) read `COMPACT_TABLES` in-memory (not file). Any new `GPUMetric` field added to model must also be added to `COMPACT_TABLES` static_fields (`COMPACT_TABLES[0]['static_fields']`) or defense checks will fail (line 154-155). Same applies to `MetricSnapshot` fields in `COMPACT_TABLES[-1]`. See memory note `§Defense (W001/W004/0052)`: bug class → code + Django check + skill.
-- `ChartDataView` (line 194): `SNAPSHOT_METRICS` (line 226) and `GPU_METRICS` (line 239) define chart endpoint metrics. New chart metrics must be added to appropriate mapping (e.g., `'cpu_to_gpu_power_ratio': 'cpu_to_gpu_power_ratio'` in `SNAPSHOT_METRICS`). **cooling_efficiency_index, fan_adjusted_cooling_response, vram_bandwidth_saturation added to GPU_METRICS — ALL DONE**. `cpu_to_gpu_power_ratio` added to `SNAPSHOT_METRICS` — **DONE**.
-
-
-## 6. Priority & Phasing
-
-### Phase 1: Pre-computed Charts (1-2 days)
-1. Add fields to GPUMetric model + migration — **Cooling Efficiency Index: DONE**, **Fan-Adjusted Cooling Response: DONE**, **VRAM Bandwidth Saturation Index: DONE**
-2. Update serializer `process_ingest()` to compute them — **Cooling Efficiency Index: DONE** (server delta), **Fan-Adjusted Cooling Response: DONE** (server delta), **VRAM Bandwidth Saturation Index: DONE** (agent-computed)
-3. Update `compact_data.py` to aggregate them — **ALL DONE** (avg for all three metrics)
-4. Add  chart registry entries +  chart cards in rig_detail.html — **ALL DONE** (cooling_efficiency_index, fan_adjusted_cooling_response, vram_bandwidth_saturation)
-5. Test: charts appear, data flows, compaction works — **ALL DONE** (cooling_efficiency_index, fan_adjusted_cooling_response, vram_bandwidth_saturation)
-
-*Remaining for Phase 1: CPU-to-GPU Power Ratio*
-- ✅ Add `cpu_to_gpu_power_ratio` field to `MetricSnapshot` model + migration (0063_add_cpu_to_gpu_power_ratio)
-- ✅ Update agent (`agent/run.py` and `agent_windows/run.py`) to compute `cpu_to_gpu_power_ratio` in `collect_power()` and include in payload
-- ✅ Update serializer to read `power_data.get('cpu_to_gpu_power_ratio')` and store in `MetricSnapshot`
-- ✅ Update `compact_data.py` to aggregate with `'avg'` in both `agg_fields` and `static_fields`
-- ✅ Add chart registry entry + chart card in rig_detail.html
-- ✅ Bump agent version to 1.17.0 and schema version to 1.22
-- Test: chart appears, data flows, compaction works
-
-### Phase 2: Report Tab Statistical Analysis (2-3 days)
-1. Extend `_build_report_context()` with additional aggregations
-2. Add Python post-processing functions for correlations, slopes, transitions
-3. Extend `_report_table.html` with new data in either per GPU or System section
-4. Add 24h/7d/30d columns (reuse existing range selector)
-5. Test: numbers make sense, performance acceptable
-
-### Phase 3: Polish (optional)
-- Add "Analysis" subtab if Report is too crowded
-- Add trend indicators (↑/↓) for degradation metrics
-- Add tooltips explaining each metric
-
-### 5.4 MetricSnapshot Compaction Status — CORRECTED (Verified against compact_data.py + ChartDataView)
-
-**Contradiction resolved:** `compact_data.py` line 112 (`COMPACT_TABLES`) includes `metrics_metricsnapshot`. `ChartDataView` line 212 comment says "MetricSnapshot is NOT compacted". **Both statements are partially true — clarification:**
-
-- `MetricSnapshot` IS in `COMPACT_TABLES` (line 112-132) and IS compacted: 0-1d raw → 1-7d 15m buckets → 7-31d 1h buckets. Group by `rig_uuid`. Aggregations: `avg`/`sum`/`max`/`min`/`last`/`avg_elementwise`. This is confirmed by reading `COMPACT_TABLES` directly (line 44-133 of `compact_data.py`).
-- `ChartDataView` (line 212) treats it as "not compacted" for chart-fetching purposes: charts aggregate with SQL (`.annotate(bucket=TruncMinute)`) rather than reading pre-bucketed `MetricSnapshot` rows via `_read_prebucketed()`. This is a design choice — snapshot-level charts aggregate at query time (like `SNAPSHOT_METRICS` line 226).
-- **Impact for analytics plan:** Report-tab metrics CAN (and should) aggregate from `MetricSnapshot` using SQL `.aggregate()` over the full time window. For 30d, the compacted table has ~720 rows (1h buckets) — much faster than scanning ~43K raw rows. The original plan's performance note needs correction: do NOT say "~43K rows — needs careful design" as a blocker; say "use SQL aggregation which handles both raw (<1d) and compacted (≥1d) transparently; for 30d this scans ~720 compacted rows."
-- **Verification against defense rules:** Any new `MetricSnapshot` derived metric added at compaction level must also be reflected in `COMPACT_TABLES` `agg_fields` (line 114-128) and `checks.py` verifies this (line 15-30, in-memory import from `compact_data` line 30). See memory (§Defense): new field needs `COMPACT_TABLES` entry.
-
-## 7. Key Technical Decisions (Corrected & Verified)
-
-1. **LatestSnapshot vs Time-series for fast reads:** `LatestSnapshot` (single row per rig) is faster and cheaper than any time-series aggregation. Metrics that only need current state (`cpu_to_gpu_power_ratio` latest value, job status, GPU identity) must read `LatestSnapshot` first (`.first()` at line 833 of `dashboard/views.py`). Only historical aggregates (24h/7d/30d) should read `MetricSnapshot` (not compacted) or `GPUMetric` (compacted at 15m/1h). This is the core architecture principle applied to all metrics in this plan.
-
-2. **Compaction defense (`checks.py`):** `COMPACT_TABLES` is read in-memory (line 30: `from metrics_app.management.commands.compact_data import COMPACT_TABLES`). Any new `GPUMetric` field requires both model addition AND `COMPACT_TABLES` entry update (`agg_fields` + `static_fields`) plus a system check verification (line 15-30 `checks.py`). See defense note in memory.
-
-3. **Pearson correlation (manual formula — no scipy):**
-   ```python
-   import math
-   def pearsonr_manual(x, y):
-       n = len(x)
-       mean_x = sum(x) / n
-       mean_y = sum(y) / n
-       num = sum((xi - mean_x) * (yi - mean_y) for xi, yi in zip(x, y))
-       den_x = sum((xi - mean_x)**2 for xi in x)
-       den_y = sum((yi - mean_y)**2 for yi in y)
-       if den_x == 0 or den_y == 0:
-           return 0.0  # No variance = no correlation
-       return num / math.sqrt(den_x * den_y)
-   ```
-
-4. **Thermal Degradation Slope (`np.polyfit` guard):** Filter rows where `abs(gpu_util_pct - median_util) <= 10`. If fewer than 3 points after filter, return `None` (not 0) to avoid false slope. Slope in °C/day requires time in days: `(timestamp - start).days`.
-
-5. **Cooling Efficiency Index denominator guard:** Original plan had `MIN_POWER_DELTA_W = 1.0`. The serializer fragment uses `abs(delta_power) < MIN_POWER_DELTA_W` → `effective_delta_power = MIN_POWER_DELTA_W`. This avoids division by near-zero. Verify the same guard applies to all delta-based metrics (metrics 1, 2, 4 in §4.1-4.4).
-
-6. **Job State Transitions:** Scan ordered `MetricSnapshot` rows (`has_active_job` boolean, mapped 0/1). For 30d (~43K rows), full Python scan is too slow. **Architecture fix:** Only compute full transition count for 24h/7d (`range_hours <= 168`). For 30d, approximate using `snap_agg['has_active_job_avg']` and assume transition frequency proportional to active-time variance.
-
-7. **Underutilization Duration:** Python scan of `MetricSnapshot` ordered by timestamp. Reset conditions verified: `gpu_util_pct >= 5` OR `has_active_job == False` ends accumulation. Duration in minutes = `(end_time - start_time).total_seconds() / 60`. Only for `has_active_job == True` periods.
-
-8. **Chart registry mapping (`chart-registry.js` line 11-42):** New chart cards must add entries to `registry` array with matching `id`. Example for metric 1:
-   `{ id: 'chartGpuCoolingEfficiency', loader: function(uuid, range) { return window.GRM.ChartLoaders.loadChartMultiGpu('chartGpuCoolingEfficiency', 'cooling_efficiency_index', uuid, range, '°C/W'); } }`
-   The loader uses `ChartDataView.GPU_METRICS` mapping at line 239 (`metrics_app/views.py`) — add `'cooling_efficiency_index': 'cooling_efficiency_index'` there.
-
-9. **Performance contract for 30d report:** `MetricSnapshot` IS compacted (`COMPACT_TABLES` 112-132), so SQL aggregation over 30d scans ~720 compacted 1h-bucket rows — not ~43K raw. Only ranges <1d (≤1.4K raw rows) read un-bucketed data. Aggregate at SQL level first (`.aggregate()` / `.annotate()`), then process bucket arrays. This aligns with `ChartDataView` design (line 204-210) and `compact_data` 3-tier strategy.
-
+## 8. Success Criteria
+
+The new analytics phase is successful when:
+
+- Reports describe variability, not only averages.
+- Outlier statistics are robust and explainable.
+- Missing telemetry cannot silently appear as healthy operation.
+- Comparisons account for relevant workload differences.
+- Fleet-level deviations identify actionable candidates for review.
+- Statistical results expose inadequate samples and coverage.
+- Expensive analytics do not significantly degrade report response
+  times.
+- Advanced detectors are validated before being used for alerts.
+- No completed metric is duplicated under a different name.
+
+## 9. Final Recommendation
+
+Implement Phase 1 first, followed by conditional temperature
+analysis and fleet-level deviation.
+
+The most important architectural prerequisite is reliable data
+quality and correct handling of compacted timeseries. Percentiles,
+outlier rates, event durations, and anomaly scores are only useful
+when the observations and the analysis window are trustworthy.
+
+Keep ordinary statistics on demand, reserve persistent state for
+genuinely stateful detectors, and introduce advanced anomaly
+detection only after the simpler methods have been validated.

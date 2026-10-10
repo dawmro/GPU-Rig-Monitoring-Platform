@@ -944,7 +944,7 @@ def _build_report_context(uuid, uuid_str, range_hours):
       snap_agg total_system_power_w_avg — no separate query needed.
     - Caching at the view level (55s TTL) handles the common case of repeated loads.
 
-    Main query groups for the report context: 9 queries
+    Main query groups for the report context: 10 queries
         1. GPUMetric raw scan (identity changes, slopes, percentiles, MAD/IQR, outliers)
         2. GPUMetric aggregation (summary metrics)
         3. MetricSnapshot aggregation (CPU/Memory/Power/Errors)
@@ -971,7 +971,7 @@ def _build_report_context(uuid, uuid_str, range_hours):
         GPUMetric.objects.filter(**base_filter)
         .values(
             'gpu_index', 'gpu_uuid', 'model', 'timestamp',
-            'gpu_temp_c', 'gpu_util_pct', 'power_draw_w',
+            'gpu_temp_c', 'gpu_util_pct', 'power_draw_w', 'power_limit_w',
             'mem_controller_util_pct', 'mem_used_mb', 'fan_speed_pct',
             'gpu_core_clock_mhz', 'gpu_mem_clock_mhz',
         )
@@ -1172,6 +1172,171 @@ def _build_report_context(uuid, uuid_str, range_hours):
         gpu_percentiles_by_index[idx] = per_gpu_percentiles
         gpu_robust_stats_by_index[idx] = robust_rows
 
+    # Conditional temperature distribution: compare temperatures under similar
+    # operating conditions. Normalize GPUMetric.power_draw_w against the
+    # power limit recorded alongside that same per-GPU time-series sample in
+    # GPUMetric.power_limit_w. Ten-percent bands are comparable across GPUs
+    # with different power limits. These distributions are shown only for the
+    # raw 24h window because longer windows contain compacted bucket averages.
+    CONDITIONAL_MIN_SAMPLES = 5
+    UTILIZATION_BANDS = (
+        ('Low', 0.0, 30.0),
+        ('Medium', 30.0, 70.0),
+        ('High', 70.0, 100.000001),
+    )
+    POWER_PERCENT_BAND_WIDTH = 10
+
+    conditional_samples_by_gpu = {}
+    for row in gpu_raw:
+        idx = row.get('gpu_index')
+        temperature = row.get('gpu_temp_c')
+        power = row.get('power_draw_w')
+        utilization = row.get('gpu_util_pct')
+        if temperature is None:
+            continue
+        try:
+            temperature = float(temperature)
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if not math.isfinite(temperature):
+            continue
+        sample = {
+            'temperature_c': temperature,
+            'power_w': None,
+            'power_limit_w': None,
+            'normalized_power_pct': None,
+            'utilization_pct': None,
+        }
+        try:
+            power = float(power) if power is not None else None
+            if power is not None and math.isfinite(power) and power >= 0:
+                sample['power_w'] = power
+        except (TypeError, ValueError, OverflowError):
+            pass
+
+        # The power limit is stored directly on each GPUMetric row, so no
+        # cross-table timestamp matching or fallback to the latest snapshot is
+        # necessary for this historical time-series analysis.
+        try:
+            power_limit = row.get('power_limit_w')
+            power_limit = float(power_limit) if power_limit is not None else None
+            if (
+                sample['power_w'] is not None
+                and power_limit is not None
+                and math.isfinite(power_limit)
+                and power_limit > 0
+            ):
+                sample['power_limit_w'] = power_limit
+                sample['normalized_power_pct'] = sample['power_w'] / power_limit * 100.0
+        except (TypeError, ValueError, OverflowError):
+            pass
+
+        try:
+            utilization = float(utilization) if utilization is not None else None
+            if utilization is not None and math.isfinite(utilization) and 0 <= utilization <= 100:
+                sample['utilization_pct'] = utilization
+        except (TypeError, ValueError, OverflowError):
+            pass
+        conditional_samples_by_gpu.setdefault(idx, []).append(sample)
+
+    gpu_conditional_temperature_by_index = {}
+    for idx, samples in conditional_samples_by_gpu.items():
+        if range_hours != 24:
+            unavailable = {
+                'available': False,
+                'reason': 'Conditional distributions require raw GPUMetric samples; 7d/30d data contains compacted bucket averages.',
+                'utilization_bands': [],
+                'power_bands': [],
+                'power_band_width_pct': POWER_PERCENT_BAND_WIDTH,
+                'low_high_utilization_delta_c': None,
+                'low_high_power_delta_c': None,
+            }
+            gpu_conditional_temperature_by_index[idx] = unavailable
+            continue
+
+        def summarize_conditional_band(label, observations, lower=None, upper=None):
+            temps = [sample['temperature_c'] for sample in observations]
+            enough = len(temps) >= CONDITIONAL_MIN_SAMPLES
+            limits = [sample['power_limit_w'] for sample in observations if sample.get('power_limit_w') is not None]
+            avg_limit_w = (sum(limits) / len(limits)) if limits else None
+            return {
+                'label': label,
+                'lower': lower,
+                'upper': upper,
+                'sample_count': len(temps),
+                'avg_temp_c': round(sum(temps) / len(temps), 2) if enough else None,
+                'p95_temp_c': _percentile(temps, 95) if enough else None,
+                'avg_power_limit_w': round(avg_limit_w, 1) if avg_limit_w is not None else None,
+                'lower_power_w': round(avg_limit_w * lower / 100.0, 1) if avg_limit_w is not None and lower is not None else None,
+                'upper_power_w': round(avg_limit_w * upper / 100.0, 1) if avg_limit_w is not None and upper is not None else None,
+                'available': enough,
+            }
+
+        utilization_bands = []
+        for label, lower, upper in UTILIZATION_BANDS:
+            observations = [
+                sample for sample in samples
+                if sample['utilization_pct'] is not None
+                and lower <= sample['utilization_pct'] < upper
+            ]
+            utilization_bands.append(summarize_conditional_band(label, observations, lower, upper))
+
+        power_bands = []
+        normalized_samples = [
+            sample for sample in samples
+            if sample['normalized_power_pct'] is not None
+        ]
+        for band_index in range(10):
+            lower = band_index * POWER_PERCENT_BAND_WIDTH
+            upper = lower + POWER_PERCENT_BAND_WIDTH
+            observations = [
+                sample for sample in normalized_samples
+                if lower <= sample['normalized_power_pct'] < upper
+                or (band_index == 9 and sample['normalized_power_pct'] == 100.0)
+            ]
+            power_bands.append(summarize_conditional_band(
+                f'{lower}–{upper}%', observations, lower, upper
+            ))
+        over_limit_observations = [
+            sample for sample in normalized_samples
+            if sample['normalized_power_pct'] > 100.0
+        ]
+        if over_limit_observations:
+            power_bands.append(summarize_conditional_band(
+                '>100%', over_limit_observations, 100.0, None
+            ))
+
+        usable_util = [band for band in utilization_bands if band['available']]
+        low_util = next((band for band in usable_util if band['label'] == 'Low'), None)
+        high_util = next((band for band in usable_util if band['label'] == 'High'), None)
+        usable_power = [band for band in power_bands if band['available'] and band['label'] != '>100%']
+        low_power = usable_power[0] if len(usable_power) >= 2 else None
+        high_power = usable_power[-1] if len(usable_power) >= 2 else None
+
+        gpu_conditional_temperature_by_index[idx] = {
+            'available': True,
+            'reason': None,
+            'minimum_samples_per_band': CONDITIONAL_MIN_SAMPLES,
+            'utilization_bands': utilization_bands,
+            'power_bands': power_bands,
+            'power_band_width_pct': POWER_PERCENT_BAND_WIDTH,
+            'power_limit_valid_sample_count': len(normalized_samples),
+            'power_limit_missing_sample_count': sum(
+                1 for sample in samples
+                if sample['power_w'] is not None and sample['power_limit_w'] is None
+            ),
+            'low_high_utilization_delta_c': (
+                round(high_util['avg_temp_c'] - low_util['avg_temp_c'], 2)
+                if low_util and high_util else None
+            ),
+            'low_high_power_delta_c': (
+                round(high_power['avg_temp_c'] - low_power['avg_temp_c'], 2)
+                if low_power and high_power else None
+            ),
+            'low_power_band_label': low_power['label'] if low_power else None,
+            'high_power_band_label': high_power['label'] if high_power else None,
+        }
+
     # GPU temperature threshold exceedance statistics (strictly above 85°C).
     # Duration is estimated only across adjacent valid temperature samples no
     # more than one hour apart. Long gaps and missing temperatures break events
@@ -1336,6 +1501,15 @@ def _build_report_context(uuid, uuid_str, range_hours):
         }))
         device.update(gpu_percentiles_by_index.get(idx, {}))
         device['gpu_robust_stats'] = gpu_robust_stats_by_index.get(idx, [])
+        device['gpu_conditional_temperature'] = gpu_conditional_temperature_by_index.get(idx, {
+            'available': False,
+            'reason': 'No valid GPU temperature samples in this reporting period.',
+            'utilization_bands': [],
+            'power_bands': [],
+            'power_band_width_pct': POWER_PERCENT_BAND_WIDTH,
+            'low_high_utilization_delta_c': None,
+            'low_high_power_delta_c': None,
+        })
         device.update({f'telemetry_{key}': value for key, value in gpu_coverage_by_index.get(idx, {}).items()})
 
     # Query 2: CPU / Memory / Power / Errors aggregation

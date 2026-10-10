@@ -225,6 +225,7 @@
     </table>
 </div>
 
+{% if range_hours == 24 %}
 <!-- GPU Robust Distribution and Outlier Statistics -->
 <div class="overflow-x-auto mb-4">
     <h4 class="text-xs font-semibold text-gray-300 mb-2"
@@ -255,10 +256,71 @@
             {% endfor %}
         </tbody>
     </table>
-    {% if range_hours == 24 %}
     <p class="text-[11px] text-gray-500 mt-1">Outliers are statistical candidates, not confirmed hardware faults. Startup/shutdown and workload transitions can be legitimate causes.</p>
+</div>
+{% else %}
+<div class="overflow-x-auto mb-4">
+    <h4 class="text-xs font-semibold text-gray-300 mb-2"
+        title="MAD is the median absolute deviation from the median. IQR is P75 minus P25. Candidate outliers use modified Z-score |M| > 3.5; when MAD is zero, IQR fences are used, and when both MAD and IQR are zero, values differing from the median are candidates. At least five valid samples are required for an outlier count/rate. Statistical outliers are not automatically hardware faults.">
+        Robust Distribution &amp; Outlier Detection
+    </h4>
+    <p class="text-[11px] text-gray-500">
+    Robust Distribution &amp; Outlier Detection require raw GPUMetric samples; 7d/30d data contains compacted bucket averages.
+    </p>
+</div>
+{% endif %}
+<!-- Conditional Temperature Distribution -->
+<div class="overflow-x-auto mb-4">
+    <h4 class="text-xs font-semibold text-gray-300 mb-2"
+        title="Temperature is grouped into 10% bands of the GPUMetric-reported power limit, with utilization bands shown as a secondary comparison. Each band requires at least five valid temperature samples before average and P95 are displayed. These are associations, not causal estimates.">
+        Conditional Temperature Statistics
+    </h4>
+    {% if gpu.gpu_conditional_temperature.available %}
+        <p class="text-[11px] text-gray-500 mb-2">Power-limit coverage: {{ gpu.gpu_conditional_temperature.power_limit_valid_sample_count }} samples used; {{ gpu.gpu_conditional_temperature.power_limit_missing_sample_count }} samples excluded because power-limit telemetry was missing or invalid.</p>
+        <h5 class="text-[11px] font-semibold text-gray-300 mb-1" title="Power draw is normalized to the power limit recorded on the same GPUMetric time-series row, using 10% bands so bands represent comparable fractions of different GPUs’ power limits. The wattage range shown is based on the average power limit of samples in that band. Samples without a valid power limit are excluded from the power-band table. Bands with fewer than {{ gpu.gpu_conditional_temperature.minimum_samples_per_band }} samples show counts only.">Temperature by normalized GPU power draw</h5>
+        <table class="w-full text-xs mb-3">
+            <thead class="text-gray-300 border-b border-gray-700"><tr>
+                <th class="text-left py-1.5 pr-3 font-medium">Power-limit usage</th>
+                <th class="text-right py-1.5 px-2 font-medium">Avg temp</th>
+                <th class="text-right py-1.5 px-2 font-medium">P95 temp</th>
+                <th class="text-right py-1.5 pl-2 font-medium">Samples</th>
+            </tr></thead>
+            <tbody class="text-gray-200">
+                {% for band in gpu.gpu_conditional_temperature.power_bands %}
+                <tr class="border-b border-gray-700/50">
+                    <td class="py-1.5 pr-3">{{ band.label }}{% if band.lower_power_w != None and band.upper_power_w != None %} ({{ band.lower_power_w|floatformat:0 }}–{{ band.upper_power_w|floatformat:0 }}W){% endif %}{% if band.label == ">100%" %} (above reported limit){% endif %}</td>
+                    <td class="text-right py-1.5 px-2">{% if band.avg_temp_c != None %}{{ band.avg_temp_c|floatformat:1 }}°C{% else %}—{% endif %}</td>
+                    <td class="text-right py-1.5 px-2">{% if band.p95_temp_c != None %}{{ band.p95_temp_c|floatformat:1 }}°C{% else %}—{% endif %}</td>
+                    <td class="text-right py-1.5 pl-2">{{ band.sample_count }}</td>
+                </tr>
+                {% empty %}<tr><td colspan="4" class="py-2 text-gray-500">No samples with a valid power limit and power draw.</td></tr>{% endfor %}
+            </tbody>
+        </table>
+        <h5 class="text-[11px] font-semibold text-gray-300 mb-1">Temperature by GPU utilization</h5>
+        <table class="w-full text-xs mb-3">
+            <thead class="text-gray-300 border-b border-gray-700"><tr>
+                <th class="text-left py-1.5 pr-3 font-medium">Utilization</th>
+                <th class="text-right py-1.5 px-2 font-medium">Avg temp</th>
+                <th class="text-right py-1.5 px-2 font-medium">P95 temp</th>
+                <th class="text-right py-1.5 pl-2 font-medium">Samples</th>
+            </tr></thead>
+            <tbody class="text-gray-200">
+                {% for band in gpu.gpu_conditional_temperature.utilization_bands %}
+                <tr class="border-b border-gray-700/50">
+                    <td class="py-1.5 pr-3">{{ band.label }}{% if band.label == "Low" %} (&lt;30%){% elif band.label == "Medium" %} (30–70%){% else %} (≥70%){% endif %}</td>
+                    <td class="text-right py-1.5 px-2">{% if band.avg_temp_c != None %}{{ band.avg_temp_c|floatformat:1 }}°C{% else %}—{% endif %}</td>
+                    <td class="text-right py-1.5 px-2">{% if band.p95_temp_c != None %}{{ band.p95_temp_c|floatformat:1 }}°C{% else %}—{% endif %}</td>
+                    <td class="text-right py-1.5 pl-2">{{ band.sample_count }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <p class="text-[11px] text-gray-400">
+            {% if gpu.gpu_conditional_temperature.low_high_power_delta_c != None %}Average temperature difference between the lowest and highest populated normalized power bands with at least five samples ({{ gpu.gpu_conditional_temperature.low_power_band_label }} vs {{ gpu.gpu_conditional_temperature.high_power_band_label }}): <span class="font-semibold">{{ gpu.gpu_conditional_temperature.low_high_power_delta_c|floatformat:1 }}°C</span>. {% endif %}
+            {% if gpu.gpu_conditional_temperature.low_high_utilization_delta_c != None %}High-minus-low utilization average-temperature difference: <span class="font-semibold">{{ gpu.gpu_conditional_temperature.low_high_utilization_delta_c|floatformat:1 }}°C</span>.{% endif %}
+        </p>
     {% else %}
-    <p class="text-[11px] text-gray-500 mt-1">MAD, IQR, and outlier rates are available for the 24h window only. The 7d/30d GPUMetric history is compacted into bucket aggregates, so these statistics are intentionally not estimated from averages.</p>
+        <p class="text-[11px] text-gray-500">{{ gpu.gpu_conditional_temperature.reason }}</p>
     {% endif %}
 </div>
 {% endfor %}

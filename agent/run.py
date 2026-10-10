@@ -43,7 +43,7 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.17.0'
+__version__ = '1.17.1'
 __schema_version__ = '1.22'
 
 # ── Config ──────────────────────────────────────────────────────────────────
@@ -1590,11 +1590,19 @@ def collect_software():
     except Exception:
         pass
     return result
-
-
+    
 def collect_errors():
     """Collect recent system errors from journalctl."""
     errors = []
+    
+    # Explicit list of journalctl UI artifacts to ignore. It must be tuple(), not list[]. 
+    # Using a tuple allows startswith() to check multiple prefixes efficiently.
+    # This lets us observe any other unexpected messages that might slip through.
+    IGNORE_PREFIXES = (
+        "-- Logs begin at",
+        "-- No entries",
+    )
+    
     try:
         out = subprocess.run(
             ['sudo', 'journalctl', '-p', 'err..crit', '--since', '5 min ago', '--no-pager', '-o', 'short-iso'],
@@ -1602,12 +1610,16 @@ def collect_errors():
         )
         seen = set()
         for line in out.stdout.strip().splitlines()[:20]:
+            # Skip known journalctl UI artifacts
+            if line.startswith(IGNORE_PREFIXES):
+                continue
+                
             if line not in seen:
                 seen.add(line)
                 errors.append({
                     'source': 'kernel',
                     'message': line[:200],
-                    'timestamp': line[:23] if len(line) > 23 else '',
+                    'timestamp': line[:24] if len(line) > 24 else '',
                 })
     except Exception as e:
         logging.getLogger('errors').warning('Error collection failed: %s', e)

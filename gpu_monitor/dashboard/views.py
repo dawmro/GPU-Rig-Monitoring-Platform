@@ -723,11 +723,29 @@ def htmx_report_data(request, uuid):
         cache.set(cache_key, context, 55)
 
     # Add user-specific cost estimate (not cached — depends on user settings)
+    # Copy before adding user-specific values so one user's electricity rate
+    # cannot leak into another user's cached report context.
+    context = dict(context)
     try:
         rate = float(request.user.electricity_rate_kwh)
         context['power_cost_estimate'] = round(context['power_total_kwh'] * rate, 2)
-    except Exception:
+        energy_kwh = context.get('cost_per_active_gpu_hour_energy_kwh')
+        active_gpu_hours = context.get('active_gpu_hours')
+        context['cost_per_active_gpu_hour'] = (
+            round((energy_kwh * rate) / active_gpu_hours, 4)
+            if energy_kwh is not None and active_gpu_hours is not None and active_gpu_hours > 0
+            else None
+        )
+        idle_energy_kwh = context.get('idle_energy_kwh')
+        context['idle_power_waste_cost'] = (
+            round(idle_energy_kwh * rate, 2)
+            if idle_energy_kwh is not None
+            else None
+        )
+    except (TypeError, ValueError, ArithmeticError):
         context['power_cost_estimate'] = None
+        context['cost_per_active_gpu_hour'] = None
+        context['idle_power_waste_cost'] = None
 
     return render(request, 'dashboard/_report_table.html', context)
 
@@ -1138,6 +1156,55 @@ def _build_report_context(uuid, uuid_str, range_hours):
         else None
     )
 
+    # Cost per Active GPU-Hour.
+    # A system-level has_active_job flag does not identify which GPU is active,
+    # so estimate active GPU-hours from per-GPU utilization >= 5% while a job is
+    # active. Weight each qualifying sample by the interval until the next
+    # sample for that GPU, capped at one hour to avoid filling long data gaps.
+    # This remains an estimate: utilization is a proxy for active compute.
+    active_gpu_seconds = 0.0
+    rows_by_gpu = {}
+    for row in gpu_raw:
+        rows_by_gpu.setdefault(row['gpu_index'], []).append(row)
+
+    for idx, rows in rows_by_gpu.items():
+        rows.sort(key=lambda row: row['timestamp'])
+        for position, current in enumerate(rows):
+            timestamp = current['timestamp']
+            gpu_util = current['gpu_util_pct']
+            has_active_job = job_state_by_timestamp.get(timestamp)
+            if gpu_util is None or gpu_util < 5 or has_active_job is not True:
+                continue
+
+            interval_end = (
+                rows[position + 1]['timestamp']
+                if position + 1 < len(rows)
+                else now
+            )
+            interval_seconds = (interval_end - timestamp).total_seconds()
+            if interval_seconds > 0:
+                active_gpu_seconds += min(interval_seconds, 3600.0)
+
+    active_gpu_hours = active_gpu_seconds / 3600.0
+    electricity_rate = None
+    # User-specific rate is applied in htmx_report_data after cached context
+    # is retrieved, so these two values are finalized there.
+    # Idle Power Waste Cost: estimate idle energy from average system power
+    # during no-job samples and the estimated idle share of the selected range.
+    # The active-job fraction is sample-weighted, so this assumes roughly
+    # regular snapshot intervals. Unknown job-state samples are excluded.
+    active_fraction = snap_agg.get('has_active_job_avg')
+    idle_hours = (
+        range_hours * (1.0 - active_fraction)
+        if active_fraction is not None
+        else None
+    )
+    idle_energy_kwh = (
+        (avg_idle_power_w * idle_hours / 1000.0)
+        if avg_idle_power_w is not None and idle_hours is not None
+        else None
+    )
+
     return {
         'range_hours': range_hours,
         'gpu_devices': gpu_devices,
@@ -1148,6 +1215,9 @@ def _build_report_context(uuid, uuid_str, range_hours):
         'power_cost_estimate': None,
         'job_saturation_pct': job_saturation_pct,
         'idle_power_waste_ratio': idle_power_waste_ratio,
+        'active_gpu_hours': round(active_gpu_hours, 3) if active_gpu_hours > 0 else None,
+        'cost_per_active_gpu_hour_energy_kwh': power_total_kwh if active_gpu_hours > 0 else None,
+        'idle_energy_kwh': round(idle_energy_kwh, 3) if idle_energy_kwh is not None else None,
         'job_state_transition_count': job_state_transition_count,
         'power_on_hours_before_restart_avg': power_on_hours_before_restart_avg,
         **snap_agg,

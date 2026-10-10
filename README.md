@@ -291,57 +291,176 @@ flowchart LR
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
-### Local Development (5 minutes)
+GPU Rig Monitoring Platform collects hardware telemetry from GPU rigs and displays live metrics, historical charts, rig status, and system errors in a web dashboard.
 
-```bash
-# 1. Clone & setup
-git clone https://github.com/dawmro/GPU-Rig-Monitoring-Platform.git
-cd GPU-Rig-Monitoring-Platform
+Choose the deployment option that matches your goal:
 
-# 2. Server setup (single machine)
-sudo mkdir -p /opt/gpu_monitor
-sudo chown "$USER:$USER" /opt/gpu_monitor
-cp -r gpu_monitor/* /opt/gpu_monitor/
+| Deployment           | Best for                                             | Requirements                                            |
+| -------------------- | ---------------------------------------------------- | ------------------------------------------------------- |
+| **Production VPS**   | Monitoring remote GPU rigs over the internet         | Ubuntu VPS, domain name, SSH access, HTTPS              |
+| **Local deployment** | Testing the platform on a local Ubuntu machine or VM | Ubuntu 24.04 LTS recommended; no public domain required |
 
-# 3. Database & environment
-sudo apt update && sudo apt install -y python3-venv postgresql nginx
-sudo -u postgres psql -c "CREATE USER gpu_monitor WITH PASSWORD 'local_dev_password';"
-sudo -u postgres psql -c "CREATE DATABASE gpu_monitor OWNER gpu_monitor;"
+For production deployments, follow the full [Production Deployment Guide](docs/DEPLOYMENT_GUIDE.md). For local testing, follow the [Local Deployment Guide](docs/LOCAL_DEPLOYMENT_GUIDE.md).
 
-cd /opt/gpu_monitor
-python3 -m venv venv
-source venv/bin/activate
-pip install django djangorestframework django-htmx psycopg2-binary argon2-cffi gunicorn requests pyyaml psutil
+### 1. How It Works
 
-# 4. Configure & run
-cat > .env << 'EOF'
-DJANGO_SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_urlsafe(50))")
-DJANGO_DEBUG=True
-DJANGO_ALLOWED_HOSTS=*
-DB_NAME=gpu_monitor
-DB_USER=gpu_monitor
-DB_PASSWORD=local_dev_password
-DB_HOST=127.0.0.1
-DB_PORT=5432
-EOF
+1. The server receives telemetry from each rig through an authenticated HTTP API.
+2. PostgreSQL stores the collected metrics.
+3. The Django application serves the dashboard and API.
+4. Nginx handles incoming web requests and, in production, HTTPS.
+5. Each rig runs an agent that collects hardware metrics and submits them approximately every 60 seconds.
 
-source venv/bin/activate
-set -a && source .env && set +a
-python manage.py migrate
-python manage.py collectstatic --noinput
-python manage.py createsuperuser
-
-# 5. Nginx + Gunicorn
-sudo cp deploy/nginx.conf /etc/nginx/sites-available/gpu_monitor
-sudo ln -sf /etc/nginx/sites-available/gpu_monitor /etc/nginx/sites-enabled/
-sudo nginx -t && sudo systemctl restart nginx
-sudo cp deploy/gunicorn.service /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now gunicorn
+```text
+GPU Rig(s)
+    │
+    │ Monitoring agent — HTTPS in production
+    ▼
+Nginx → Django REST API → PostgreSQL
+             │
+             ▼
+       Web Dashboard
+             │
+             ▼
+       Your Browser
 ```
 
-**Access:** `http://localhost` → auto-redirects to dashboard or login
+### 2. Production Deployment (Recommended)
+
+Use this option if you want to monitor remote rigs through a public domain.
+
+#### Prerequisites
+
+* An Ubuntu 22.04 or 24.04 LTS VPS with root SSH access for initial installation.
+* A domain name or subdomain, such as `monitor.example.com`.
+* An A record pointing the hostname to your VPS public IPv4 address.
+* Cloud firewall rules allowing inbound SSH, HTTP (port 80), and HTTPS (port 443).
+* The project source code on the VPS.
+
+The deployment guide recommends a baseline of 4–8 vCPUs, 16–32 GB RAM, and NVMe storage. Actual requirements depend on the number of rigs, the volume of collected metrics, and your retention policy.
+
+#### Install the server
+
+Clone the public repository on the VPS:
+
+```bash
+git clone --depth 1 \
+    https://github.com/dawmro/GPU-Rig-Monitoring-Platform.git \
+    /tmp/GPU-Rig-Monitoring-Platform
+```
+
+Before installing, configure DNS and verify that the hostname resolves to the VPS. Make sure ports 80 and 443 are reachable through both the provider's cloud firewall and the server firewall.
+
+Follow the **Server Deployment** section of the [Production Deployment Guide](docs/DEPLOYMENT_GUIDE.md) for the exact file placement and installation commands. The included server installation script configures the core services, PostgreSQL, Gunicorn, Nginx, firewall rules, and Let's Encrypt TLS certificates.
+
+After installation:
+
+1. Save the generated database credentials securely.
+2. Create an administrator account.
+3. Open `https://monitor.example.com/` in your browser, replacing the example hostname with your own.
+4. Log in and create an API key for each rig or group of rigs according to your key-management policy.
+
+**Using Cloudflare:** Cloudflare DNS and proxying can be used with a custom domain. Configure the origin TLS certificate and Cloudflare SSL/TLS mode consistently; **Full (strict)** is recommended when the origin has a valid certificate. Keep the origin firewall and proxy configuration aligned with your intended access model. See the production guide for certificate, firewall, and security details.
+
+#### Verify the server
+
+Replace the example hostname with your domain:
+
+```bash
+systemctl is-active gunicorn postgresql nginx
+
+curl -s https://monitor.example.com/api/v1/health/
+```
+
+A successful health check should report a healthy application and a working database connection. If the check fails, consult the production guide's troubleshooting section before installing agents.
+
+### 3. Install a GPU Rig Agent
+
+Once the server is working, install an agent on each rig you want to monitor.
+
+#### Requirements
+
+* Linux rig with Python 3.10 or newer.
+* NVIDIA driver and `nvidia-smi` available for NVIDIA GPU telemetry.
+* Network access to the monitoring server.
+* Administrator privileges for installation and required hardware-monitoring permissions.
+
+#### Configure the agent
+
+1. Log in to the dashboard.
+2. Open **API Keys** and create a key.
+3. Copy the key immediately; it may only be displayed once.
+4. Install the agent by following the [Agent README](agent/README.md) and the agent deployment section of the [Production Deployment Guide](docs/DEPLOYMENT_GUIDE.md).
+5. Edit `/etc/monitoring-agent/config.yaml` on the rig.
+
+Example configuration:
+
+```yaml
+rig_uuid: "auto"
+rig_name: ""
+api_key: "PASTE_YOUR_API_KEY_HERE"
+server_endpoint: "https://monitor.example.com"
+expected_gpu_count: 0
+collection_timeout_s: 45
+retry_attempts: 3
+debug_mode: false
+```
+
+Replace the API key and server URL with your own values. Keep the API key secret and restrict access to the configuration file. Set `expected_gpu_count` to `0` for automatic detection or specify the expected number of GPUs.
+
+Test the agent using the command from the agent deployment guide. A successful run should show that the payload was accepted by the server.
+
+#### Verify telemetry
+
+Open the fleet dashboard:
+
+`https://monitor.example.com/dashboard/rigs/`
+
+The rig should appear after its first successful report. Depending on the agent schedule, allow approximately two minutes for it to show up. The dashboard provides live metrics, historical charts, rig status, and system-error information.
+
+**Important:** Configure the rig-status scheduled task on the server. Without it, rigs that stop reporting may continue to appear online. The production guide also covers data retention, log rotation, database backups, and certificate renewal.
+
+### 4. Local Deployment (Testing)
+
+To test the platform without a public domain or production TLS setup, use an Ubuntu machine or VM.
+
+Start with the [Local Deployment Guide](docs/LOCAL_DEPLOYMENT_GUIDE.md), which covers:
+
+* Installing PostgreSQL and the required system packages.
+* Creating the database and configuring the Django environment.
+* Running migrations and collecting static files.
+* Configuring Gunicorn and Nginx for local access.
+* Creating an administrator account.
+* Installing an agent and sending test telemetry.
+
+After completing the guide, open:
+
+`http://localhost/`
+
+**Local testing is not a production security configuration.** Do not expose a debug-enabled development deployment to the public internet. For a public service, use the production guide and its HTTPS, secret-management, permissions, and firewall configuration.
+
+### 5. Troubleshooting
+
+| Symptom                           | What to check                                                                         |
+| --------------------------------- | ------------------------------------------------------------------------------------- |
+| Dashboard is unavailable          | Check `gunicorn`, `nginx`, and `postgresql` service status.                           |
+| `502 Bad Gateway`                 | Inspect the Gunicorn error log and confirm the application can connect to PostgreSQL. |
+| Health endpoint fails             | Check the application environment, database credentials, and server logs.             |
+| Agent reports `401 Unauthorized`  | Confirm that the API key is correct and active.                                       |
+| Agent cannot connect              | Check the server URL, DNS, network connectivity, firewall rules, and TLS certificate. |
+| Rig does not appear               | Check agent logs and confirm that the ingest request succeeded.                       |
+| Rig remains online after stopping | Check that the rig-status scheduled task is installed and running.                    |
+
+See the [Production Deployment Guide](docs/DEPLOYMENT_GUIDE.md) and [Local Deployment Guide](docs/LOCAL_DEPLOYMENT_GUIDE.md) for diagnostic commands and detailed fixes.
+
+### 6. Documentation
+
+* [Production Deployment Guide](docs/DEPLOYMENT_GUIDE.md) — VPS installation, HTTPS, security, agent deployment, maintenance, backups, and upgrades.
+* [Local Deployment Guide](docs/LOCAL_DEPLOYMENT_GUIDE.md) — local Ubuntu setup and testing.
+* [Linux Agent README](agent/README.md) — agent installation and configuration.
+* [Architecture Documentation](docs/ARCHITECTURE.md) — system design and implementation details.
+
 
 ---
 

@@ -200,6 +200,45 @@ def _percentile_stats(values, digits=2):
     return result
 
 
+def _telemetry_coverage_stats(rows, fields, expected_duration_seconds, max_gap_seconds=3600.0):
+    """Summarize timestamp coverage and per-field data completeness.
+
+    Time coverage is the sum of positive adjacent timestamp intervals no
+    longer than max_gap_seconds, divided by the selected reporting-window
+    duration. This intentionally does not extrapolate before the first sample,
+    after the last sample, or across long gaps. Field completeness is the
+    percentage of rows with a non-NULL value for each field; it is a sample
+    completeness measure, not a time-weighted measure.
+    """
+    rows = list(rows)
+    timestamps = sorted(
+        row.get('timestamp') for row in rows if row.get('timestamp') is not None
+    )
+    covered_seconds = 0.0
+    for previous, current in zip(timestamps, timestamps[1:]):
+        gap = (current - previous).total_seconds()
+        if 0 < gap <= max_gap_seconds:
+            covered_seconds += gap
+
+    duration = max(float(expected_duration_seconds or 0), 0.0)
+    return {
+        'sample_count': len(rows),
+        'time_coverage_pct': (
+            round(min(100.0, 100.0 * covered_seconds / duration), 2)
+            if duration > 0 else None
+        ),
+        'first_sample_timestamp': timestamps[0] if timestamps else None,
+        'last_sample_timestamp': timestamps[-1] if timestamps else None,
+        **{
+            f'{field}_completeness_pct': (
+                round(100.0 * sum(row.get(field) is not None for row in rows) / len(rows), 2)
+                if rows else None
+            )
+            for field in fields
+        },
+    }
+
+
 def _build_gpu_title(values, default_value='N/A', suffix='', fmt=None):
     """Build a 'GPU1: X | GPU2: Y | ...' title string for tooltips.
 
@@ -862,6 +901,24 @@ def _build_report_context(uuid, uuid_str, range_hours):
         .order_by('gpu_index', 'timestamp')
     )
 
+    # Telemetry coverage and field completeness reuse the existing GPU raw scan.
+    # The one-hour continuity cap supports both raw and hourly-compacted data
+    # while preventing long outages from being counted as covered time.
+    gpu_coverage_fields = (
+        'gpu_temp_c', 'gpu_util_pct', 'mem_controller_util_pct', 'power_draw_w',
+        'mem_used_mb', 'fan_speed_pct', 'gpu_core_clock_mhz', 'gpu_mem_clock_mhz',
+    )
+    gpu_rows_by_index = {}
+    for row in gpu_raw:
+        gpu_rows_by_index.setdefault(row['gpu_index'], []).append(row)
+    gpu_coverage_by_index = {
+        idx: _telemetry_coverage_stats(
+            rows, gpu_coverage_fields, range_hours * 3600.0,
+            GPU_TEMPERATURE_MAX_SAMPLE_GAP_S,
+        )
+        for idx, rows in gpu_rows_by_index.items()
+    }
+
     # Query 1b: GPU metrics aggregation (groups by index + model only, NOT uuid)
     # UUID is fetched from raw data for the header to avoid fragmentation
     gpu_agg = list(
@@ -1163,6 +1220,7 @@ def _build_report_context(uuid, uuid_str, range_hours):
             'temperature_observed_duration_minutes': 0.0,
         }))
         device.update(gpu_percentiles_by_index.get(idx, {}))
+        device.update({f'telemetry_{key}': value for key, value in gpu_coverage_by_index.get(idx, {}).items()})
 
     # Query 2: CPU / Memory / Power / Errors aggregation
     # MetricSnapshot may contain raw or hourly-compacted samples depending on
@@ -1206,10 +1264,20 @@ def _build_report_context(uuid, uuid_str, range_hours):
         'swap_used_bytes',
         'total_system_power_w',
     )
+    system_coverage_fields = (
+        'cpu_utilization_pct', 'cpu_temp_c', 'cpu_power_w',
+        'cpu_freq_current_mhz', 'mem_used_bytes', 'swap_used_bytes',
+        'total_system_power_w', 'has_active_job', 'error_count',
+    )
     system_raw = list(
         MetricSnapshot.objects.filter(**base_filter).values(
-            *system_percentile_fields
-        )
+            'timestamp', *system_percentile_fields,
+            'has_active_job', 'error_count',
+        ).order_by('timestamp')
+    )
+    system_telemetry_coverage = _telemetry_coverage_stats(
+        system_raw, system_coverage_fields, range_hours * 3600.0,
+        GPU_TEMPERATURE_MAX_SAMPLE_GAP_S,
     )
     system_percentiles = {}
     for field in system_percentile_fields:
@@ -1447,4 +1515,5 @@ def _build_report_context(uuid, uuid_str, range_hours):
         'power_on_hours_before_restart_avg': power_on_hours_before_restart_avg,
         **snap_agg,
         **system_percentiles,
+        **{f'system_telemetry_{key}': value for key, value in system_telemetry_coverage.items()},
     }

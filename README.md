@@ -525,28 +525,42 @@ bash scripts/sync_to_opt.sh --no-migrate  # Fast: skip migrations
 
 ---
 
-## 📋 Recent Migrations (0047–0052)
+## 📋 Database Design Notes
 
-| Migration | Change | Rationale |
-|-----------|--------|-----------|
-| 0047 | Drop `GPUProcessMetric` table | Denormalized GPU processes to `LatestSnapshot.gpu_processes_json` (current snapshot only). Eliminated 50+ INSERTs + 1 DELETE per heartbeat. |
-| 0048 | Drop `PowerReading` table | Never read by any view. Power data lives in `MetricSnapshot.cpu_power_w/total_system_power_w` + `GPUMetric.power_draw_w`. |
-| 0049 | Drop cumulative I/O counters from `StorageMetric` | Moved `read_bytes`, `write_bytes`, `read_iops`, `write_iops`, `busy_time_ms` to `LatestSnapshot.storage_*_total_json`. Saves 40 bytes/row. |
-| 0050 | Drop static fields from `NetworkMetric` | Moved `ipv4`, `link_speed_mbps` to `LatestSnapshot.network_ipv4s_json/speeds_json`. |
-| 0051 | Add `has_active_job` to `MetricSnapshot` | Tracks active GPU process or running Docker container. Used for Job Status chart (bool max via `CAST(... AS INTEGER)`). |
-| 0052 | Re-add `gpu_uuid` to `GPUMetric` | Preserves GPU identity through compaction tiers (`static_fields` in `compact_data.py`). |
+The data model separates historical measurements from the latest known rig state and core application records.
+
+| Data group              | Purpose                                             |
+| ----------------------- | --------------------------------------------------- |
+| `MetricSnapshot`        | Historical system-level measurements                |
+| `GPUMetric`             | Historical per-GPU measurements                     |
+| `StorageMetric`         | Historical storage measurements                     |
+| `NetworkMetric`         | Historical network measurements                     |
+| `RigStatusEvent`        | Rig status history                                  |
+| `LatestSnapshot`        | Latest known rig state, including denormalized data |
+| `LatestDockerContainer` | Latest known Docker container state                 |
+| `Rig`, `RigTag`         | Rig inventory and organization                      |
+| `User`, `ApiKey`        | Authentication and access control                   |
+| `AuditLog`              | Auditable application activity                      |
+
+Some high-frequency or cumulative values are stored in the latest-state representation rather than duplicated in historical tables. Consult the Django models and migrations for the authoritative schema.
 
 ---
 
-|| Type | Loaders / Endpoint | Key Feature / Defense |
-||---|---|---|
-|| **GPU Charts** (8 multi-series) | `loadChartMultiGpu()` (`chart-loaders.js`) | Group by `gpu_index` only; identity label via `_safe_gpu_label` (fallback); legend truncation (`generateLabels` to 12 chars). |
-|| **CPU Load** | `loadChartLoadAvg()` | 3-series (1m/5m/15m); raw data; no compaction. |
-|| **Memory / Swap** | `loadChartMemSwap()` | Filled area (used); free/swap lines; multi-dataset tooltip. |
-|| **Network Combined** | `loadChartNetworkCombined()` (composable: `fetchNetworkData()` + `buildNetworkDatasets()`) | Dual axis (`y`: bytes; `y1`: errors); errors as bars (`y1` right). |
-|| **Disk / IOPS / Util** | `loadChartMultiKey()` / `loadChartMultiKeyDual()` | Multi-device grouping; Windows `utilization_pct` null fallback to `usage_pct`. |
-|| **Job Status** | `loadChart()` (`SNAPSHOT_METRICS`) | Bool max uses `CAST(... AS INTEGER)` (`compact_data` defense `W001`); label `Active %`. |
-|| **Report Card** | `htmx_report` (`_report_table.html`) | Per-GPU identity from `LatestSnapshot.gpu_uuids_json` (current, not historical); identity change cards (before/after UUID/model); HTMX `.htmx-indicator` present. |
+## 📈 Charts and Dashboard Implementation
+
+The dashboard uses server-rendered templates, HTMX requests, and JavaScript chart loaders.
+
+| Area            | Implementation focus                                             |
+| --------------- | ---------------------------------------------------------------- |
+| GPU charts      | Multi-GPU time series, GPU-index grouping, identity-aware labels |
+| CPU load        | Load-average history                                             |
+| Memory and swap | Memory and swap utilization over time                            |
+| Network         | Traffic counters and error series                                |
+| Storage         | Per-device capacity, I/O, and utilization                        |
+| Job status      | Historical active-job state                                      |
+| Report card     | Historical summaries and GPU identity-change information         |
+
+Implementation details, including loader names and data-compaction safeguards, may change as the dashboard evolves. Refer to the current chart-loader code and architecture documentation when extending these components.
 
 ---
 

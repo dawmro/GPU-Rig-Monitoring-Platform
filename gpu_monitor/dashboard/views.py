@@ -7,6 +7,7 @@ from django.utils import timezone
 from datetime import timedelta
 from functools import wraps
 from statistics import pstdev, median
+import math
 import re
 import time
 from collections import Counter
@@ -138,6 +139,60 @@ def _json_get(lst, idx, default=None):
     if lst and idx < len(lst):
         return lst[idx]
     return default
+
+
+def _percentile(values, percentile):
+    """Calculate a percentile using linear interpolation.
+
+    This follows the default linear percentile convention used by NumPy:
+    the fractional position is (n - 1) * percentile / 100.
+
+    None, non-numeric values, NaN, and infinite values are ignored. Returns
+    None when no valid observations are available.
+    """
+    if not 0 <= percentile <= 100:
+        raise ValueError('percentile must be between 0 and 100')
+
+    valid_values = []
+    for value in values:
+        if value is None:
+            continue
+        try:
+            number = float(value)
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if not math.isfinite(number):
+            continue
+        valid_values.append(number)
+
+    if not valid_values:
+        return None
+
+    valid_values.sort()
+    if len(valid_values) == 1:
+        return valid_values[0]
+
+    position = (len(valid_values) - 1) * (percentile / 100.0)
+    lower_index = int(position)
+    upper_index = min(lower_index + 1, len(valid_values) - 1)
+    fraction = position - lower_index
+
+    return (
+        valid_values[lower_index] * (1.0 - fraction)
+        + valid_values[upper_index] * fraction
+    )
+
+
+def _percentile_stats(values, digits=2):
+    """Return P50, P95, and P99 for a numeric sample series."""
+    values = list(values)
+    result = {}
+    for percentile in (50, 95, 99):
+        value = _percentile(values, percentile)
+        result[f'p{percentile}'] = (
+            round(value, digits) if value is not None else None
+        )
+    return result
 
 
 def _build_gpu_title(values, default_value='N/A', suffix='', fmt=None):
@@ -758,6 +813,8 @@ def _build_report_context(uuid, uuid_str, range_hours):
       use SQL aggregation at the chart's bucket size. For 7d/30d ranges,
       this means scanning ~700 rows instead of ~10000 raw rows.
     - MetricSnapshot summary statistics use one aggregate query.
+    - P50/P95/P99 percentiles use a values-only query for the required
+      system metrics and the existing GPUMetric raw scan for per-GPU metrics.
     - Job state transitions use a chronological values-only scan of has_active_job.
     - Power-on hours before restart uses a chronological values-only uptime scan.
     - Underutilization duration correlates per-GPU utilization samples with
@@ -766,15 +823,18 @@ def _build_report_context(uuid, uuid_str, range_hours):
       snap_agg total_system_power_w_avg — no separate query needed.
     - Caching at the view level (55s TTL) handles the common case of repeated loads.
 
-    Query count for the report context: 8 queries
-        1. GPUMetric raw scan (for identity changes)
-        2. GPUMetric aggregation (metrics)
+    Main query groups for the report context: 9 queries
+        1. GPUMetric raw scan (identity changes, slopes, GPU percentiles)
+        2. GPUMetric aggregation (summary metrics)
         3. MetricSnapshot aggregation (CPU/Memory/Power/Errors)
-        4. MetricSnapshot ordered job-state scan (transition count)
-        5. MetricSnapshot ordered uptime scan (average uptime before reboot)
-        6. MetricSnapshot job-state lookup for underutilization duration
-        7. StorageMetric aggregation
-        8. NetworkMetric aggregation
+        4. MetricSnapshot values query (system percentiles)
+        5. MetricSnapshot ordered job-state scan (transition count)
+        6. MetricSnapshot ordered uptime scan (average uptime before reboot)
+        7. MetricSnapshot job-state lookup for underutilization duration
+        8. StorageMetric aggregation
+        9. NetworkMetric aggregation
+    Additional LatestSnapshot / latest GPUMetric lookups are performed when
+    resolving each GPU's current identity, as in the existing implementation.
     """
     now = timezone.now()
     start = now - timedelta(hours=range_hours)
@@ -791,6 +851,8 @@ def _build_report_context(uuid, uuid_str, range_hours):
         .values(
             'gpu_index', 'gpu_uuid', 'model', 'timestamp',
             'gpu_temp_c', 'gpu_util_pct', 'power_draw_w',
+            'mem_controller_util_pct', 'mem_used_mb', 'fan_speed_pct',
+            'gpu_core_clock_mhz', 'gpu_mem_clock_mhz',
         )
         .order_by('gpu_index', 'timestamp')
     )
@@ -901,6 +963,38 @@ def _build_report_context(uuid, uuid_str, range_hours):
             gpu_devices.append(row)
     gpu_devices.reverse()  # restore index order
     
+    # P50/P95/P99 distribution statistics for per-GPU measurements.
+    # These percentiles describe the stored GPUMetric samples in the selected
+    # window (including compacted samples where compaction applies).
+    gpu_percentile_fields = (
+        'gpu_temp_c',
+        'gpu_util_pct',
+        'power_draw_w',
+        'mem_controller_util_pct',
+        'mem_used_mb',
+        'fan_speed_pct',
+        'gpu_core_clock_mhz',
+        'gpu_mem_clock_mhz',
+    )
+    gpu_values_by_index = {}
+    for row in gpu_raw:
+        idx = row['gpu_index']
+        per_gpu = gpu_values_by_index.setdefault(
+            idx, {field: [] for field in gpu_percentile_fields}
+        )
+        for field in gpu_percentile_fields:
+            value = row.get(field)
+            if value is not None:
+                per_gpu[field].append(value)
+
+    gpu_percentiles_by_index = {}
+    for idx, field_values in gpu_values_by_index.items():
+        per_gpu_percentiles = {}
+        for field, values in field_values.items():
+            for percentile_name, percentile_value in _percentile_stats(values).items():
+                per_gpu_percentiles[f'{field}_{percentile_name}'] = percentile_value
+        gpu_percentiles_by_index[idx] = per_gpu_percentiles
+
     # Thermal Degradation Slope (per GPU).
     # Match workload intensity by retaining samples within +/-10% of the
     # median GPU utilization for that GPU in the selected reporting period.
@@ -961,6 +1055,7 @@ def _build_report_context(uuid, uuid_str, range_hours):
         device['thermal_degradation_slope_c_per_day'] = (
             thermal_degradation_slope_by_gpu.get(idx)
         )
+        device.update(gpu_percentiles_by_index.get(idx, {}))
 
     # Query 2: CPU / Memory / Power / Errors aggregation
     # MetricSnapshot may contain raw or hourly-compacted samples depending on
@@ -991,6 +1086,29 @@ def _build_report_context(uuid, uuid_str, range_hours):
         error_count_sum=Sum('error_count'),
         has_active_job_avg=Avg(Cast('has_active_job', IntegerField())),
     )
+
+    # System-level P50/P95/P99 statistics. Percentiles are calculated in
+    # Python for database portability; the ORM query fetches only the numeric
+    # fields needed for these distribution summaries.
+    system_percentile_fields = (
+        'cpu_utilization_pct',
+        'cpu_temp_c',
+        'cpu_power_w',
+        'cpu_freq_current_mhz',
+        'mem_used_bytes',
+        'swap_used_bytes',
+        'total_system_power_w',
+    )
+    system_raw = list(
+        MetricSnapshot.objects.filter(**base_filter).values(
+            *system_percentile_fields
+        )
+    )
+    system_percentiles = {}
+    for field in system_percentile_fields:
+        stats = _percentile_stats(row[field] for row in system_raw)
+        for percentile_name, percentile_value in stats.items():
+            system_percentiles[f'{field}_{percentile_name}'] = percentile_value
 
     # Query 3: Job state transition frequency.
     # Scan chronologically and count only transitions between adjacent known
@@ -1221,4 +1339,5 @@ def _build_report_context(uuid, uuid_str, range_hours):
         'job_state_transition_count': job_state_transition_count,
         'power_on_hours_before_restart_avg': power_on_hours_before_restart_avg,
         **snap_agg,
+        **system_percentiles,
     }

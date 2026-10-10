@@ -107,6 +107,82 @@
         </tbody>
     </table>
 </div>
+
+<!-- GPU Percentile Statistics -->
+<div class="overflow-x-auto mb-4">
+    <h4
+        class="text-xs font-semibold text-gray-300 mb-2"
+        title="Distribution of recorded samples for this GPU during the selected reporting period. P50 is the median, P95 is the value at or below which 95% of valid observations fall, and P99 is the value at or below which 99% fall. Higher percentiles help reveal high-load or high-temperature behavior that averages can hide. Percentiles describe recorded observations, not necessarily the exact percentage of elapsed time spent below a value."
+    >
+        GPU Percentiles
+    </h4>
+
+    <table class="w-full text-xs">
+        <thead class="text-gray-300 border-b border-gray-700">
+            <tr>
+                <th class="text-left py-1.5 pr-3 font-medium">Metric</th>
+                <th
+                    class="text-right py-1.5 px-2 font-medium"
+                    title="P50 — the 50th percentile, or median. Half of the valid recorded observations are at or below this value."
+                >P50</th>
+                <th
+                    class="text-right py-1.5 px-2 font-medium"
+                    title="P95 — the 95th percentile. 95% of valid recorded observations are at or below this value. Useful for understanding typical high-end operating conditions."
+                >P95</th>
+                <th
+                    class="text-right py-1.5 px-2 font-medium"
+                    title="P99 — the 99th percentile. 99% of valid recorded observations are at or below this value. Useful for identifying unusually high operating values without relying solely on the absolute maximum."
+                >P99</th>
+            </tr>
+        </thead>
+
+        <!-- Keep the existing GPU percentile tbody unchanged. -->
+        <tbody class="text-gray-200">
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">Temperature</td>
+                <td class="text-right py-1.5 px-2">{{ gpu.gpu_temp_c_p50|floatformat:1|default:"—" }}°C</td>
+                <td class="text-right py-1.5 px-2">{{ gpu.gpu_temp_c_p95|floatformat:1|default:"—" }}°C</td>
+                <td class="text-right py-1.5 px-2">{{ gpu.gpu_temp_c_p99|floatformat:1|default:"—" }}°C</td>
+            </tr>
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">Core Utilization</td>
+                <td class="text-right py-1.5 px-2">{{ gpu.gpu_util_pct_p50|floatformat:1|default:"—" }}%</td>
+                <td class="text-right py-1.5 px-2">{{ gpu.gpu_util_pct_p95|floatformat:1|default:"—" }}%</td>
+                <td class="text-right py-1.5 px-2">{{ gpu.gpu_util_pct_p99|floatformat:1|default:"—" }}%</td>
+            </tr>
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">Power Draw</td>
+                <td class="text-right py-1.5 px-2">{{ gpu.power_draw_w_p50|floatformat:1|default:"—" }}W</td>
+                <td class="text-right py-1.5 px-2">{{ gpu.power_draw_w_p95|floatformat:1|default:"—" }}W</td>
+                <td class="text-right py-1.5 px-2">{{ gpu.power_draw_w_p99|floatformat:1|default:"—" }}W</td>
+            </tr>
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">VRAM Used</td>
+                <td class="text-right py-1.5 px-2">{{ gpu.mem_used_mb_p50|floatformat:1|default:"—" }} MB</td>
+                <td class="text-right py-1.5 px-2">{{ gpu.mem_used_mb_p95|floatformat:1|default:"—" }} MB</td>
+                <td class="text-right py-1.5 px-2">{{ gpu.mem_used_mb_p99|floatformat:1|default:"—" }} MB</td>
+            </tr>
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">Fan Speed</td>
+                <td class="text-right py-1.5 px-2">{{ gpu.fan_speed_pct_p50|floatformat:0|default:"—" }}%</td>
+                <td class="text-right py-1.5 px-2">{{ gpu.fan_speed_pct_p95|floatformat:0|default:"—" }}%</td>
+                <td class="text-right py-1.5 px-2">{{ gpu.fan_speed_pct_p99|floatformat:0|default:"—" }}%</td>
+            </tr>
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">Core Clock</td>
+                <td class="text-right py-1.5 px-2">{{ gpu.gpu_core_clock_mhz_p50|floatformat:0|default:"—" }} MHz</td>
+                <td class="text-right py-1.5 px-2">{{ gpu.gpu_core_clock_mhz_p95|floatformat:0|default:"—" }} MHz</td>
+                <td class="text-right py-1.5 px-2">{{ gpu.gpu_core_clock_mhz_p99|floatformat:0|default:"—" }} MHz</td>
+            </tr>
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">Memory Clock</td>
+                <td class="text-right py-1.5 px-2">{{ gpu.gpu_mem_clock_mhz_p50|floatformat:0|default:"—" }} MHz</td>
+                <td class="text-right py-1.5 px-2">{{ gpu.gpu_mem_clock_mhz_p95|floatformat:0|default:"—" }} MHz</td>
+                <td class="text-right py-1.5 px-2">{{ gpu.gpu_mem_clock_mhz_p99|floatformat:0|default:"—" }} MHz</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
 {% endfor %}
 
 <!-- GPU Identity Changes Section -->
@@ -454,3 +530,63 @@
         </tbody>
     </table>
 </div>
+
+<!-- CPU and System Percentile Statistics -->
+
+<h3
+    class="text-sm font-medium text-gray-200 mt-4 mb-2"
+    title="Distribution of recorded CPU and system measurements during the selected reporting period. Percentiles show how measurements are distributed rather than summarizing them with an average or maximum. P50 is the median, P95 covers the upper 5% of observations, and P99 covers the upper 1%. These values are calculated from available MetricSnapshot samples and may be affected by missing data or irregular sampling intervals."
+>
+    CPU and System Percentiles
+</h3>
+
+<div class="overflow-x-auto mb-4">
+    <table class="w-full text-xs">
+        <thead class="text-gray-300 border-b border-gray-700">
+            <tr>
+                <th class="text-left py-1.5 pr-3 font-medium">Metric</th>
+                <th
+                    class="text-right py-1.5 px-2 font-medium"
+                    title="P50 — the median. 50% of valid recorded observations are at or below this value."
+                >P50</th>
+                <th
+                    class="text-right py-1.5 px-2 font-medium"
+                    title="P95 — 95% of valid recorded observations are at or below this value. Helps identify high CPU utilization, temperatures, or power consumption."
+                >P95</th>
+                <th
+                    class="text-right py-1.5 px-2 font-medium"
+                    title="P99 — 99% of valid recorded observations are at or below this value. Helps identify extreme operating conditions that may not be apparent from averages."
+                >P99</th>
+            </tr>
+        </thead>
+
+        <!-- Keep the existing CPU and system percentile tbody unchanged. -->
+        <tbody class="text-gray-200">
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">CPU Utilization</td>
+                <td class="text-right py-1.5 px-2">{{ cpu_utilization_pct_p50|floatformat:1|default:"—" }}%</td>
+                <td class="text-right py-1.5 px-2">{{ cpu_utilization_pct_p95|floatformat:1|default:"—" }}%</td>
+                <td class="text-right py-1.5 px-2">{{ cpu_utilization_pct_p99|floatformat:1|default:"—" }}%</td>
+            </tr>
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">CPU Temperature</td>
+                <td class="text-right py-1.5 px-2">{{ cpu_temp_c_p50|floatformat:1|default:"—" }}°C</td>
+                <td class="text-right py-1.5 px-2">{{ cpu_temp_c_p95|floatformat:1|default:"—" }}°C</td>
+                <td class="text-right py-1.5 px-2">{{ cpu_temp_c_p99|floatformat:1|default:"—" }}°C</td>
+            </tr>
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">CPU Power</td>
+                <td class="text-right py-1.5 px-2">{{ cpu_power_w_p50|floatformat:1|default:"—" }}W</td>
+                <td class="text-right py-1.5 px-2">{{ cpu_power_w_p95|floatformat:1|default:"—" }}W</td>
+                <td class="text-right py-1.5 px-2">{{ cpu_power_w_p99|floatformat:1|default:"—" }}W</td>
+            </tr>
+            <tr class="border-b border-gray-700/50">
+                <td class="py-1.5 pr-3">Total System Power</td>
+                <td class="text-right py-1.5 px-2">{{ total_system_power_w_p50|floatformat:1|default:"—" }}W</td>
+                <td class="text-right py-1.5 px-2">{{ total_system_power_w_p95|floatformat:1|default:"—" }}W</td>
+                <td class="text-right py-1.5 px-2">{{ total_system_power_w_p99|floatformat:1|default:"—" }}W</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+

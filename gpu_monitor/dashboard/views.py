@@ -200,6 +200,83 @@ def _percentile_stats(values, digits=2):
     return result
 
 
+def _robust_distribution_stats(values, digits=2, min_outlier_samples=5):
+    """Return robust spread and outlier statistics for a numeric series.
+
+    MAD is the median absolute deviation from the median. IQR is P75 - P25.
+    When MAD is non-zero, candidate outliers use the modified Z-score
+    threshold |0.6745 * (x - median) / MAD| > 3.5. If MAD is zero, Tukey's
+    1.5*IQR fences are used; if both MAD and IQR are zero, values different
+    from the median are candidates. Outlier rates are withheld until at least
+    ``min_outlier_samples`` valid observations are available.
+
+    Non-numeric, NULL, NaN, and infinite observations are ignored. These are
+    statistical candidates only and do not imply a hardware fault.
+    """
+    valid_values = []
+    for value in values:
+        if value is None:
+            continue
+        try:
+            number = float(value)
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if math.isfinite(number):
+            valid_values.append(number)
+
+    sample_count = len(valid_values)
+    if not sample_count:
+        return {
+            'sample_count': 0,
+            'median': None,
+            'mad': None,
+            'p25': None,
+            'p75': None,
+            'iqr': None,
+            'outlier_count': None,
+            'outlier_pct': None,
+        }
+
+    center = _percentile(valid_values, 50)
+    abs_deviations = [abs(value - center) for value in valid_values]
+    mad = _percentile(abs_deviations, 50)
+    p25 = _percentile(valid_values, 25)
+    p75 = _percentile(valid_values, 75)
+    iqr = p75 - p25 if p25 is not None and p75 is not None else None
+
+    outlier_count = None
+    outlier_pct = None
+    if sample_count >= min_outlier_samples:
+        if mad is not None and mad > 0:
+            outlier_count = sum(
+                abs(0.6745 * (value - center) / mad) > 3.5
+                for value in valid_values
+            )
+        elif iqr is not None and iqr > 0:
+            lower_fence = p25 - 1.5 * iqr
+            upper_fence = p75 + 1.5 * iqr
+            outlier_count = sum(
+                value < lower_fence or value > upper_fence
+                for value in valid_values
+            )
+        else:
+            # A zero MAD and zero IQR mean the central distribution is
+            # constant; any different observation is a candidate outlier.
+            outlier_count = sum(value != center for value in valid_values)
+        outlier_pct = (outlier_count / sample_count) * 100.0
+
+    return {
+        'sample_count': sample_count,
+        'median': round(center, digits) if center is not None else None,
+        'mad': round(mad, digits) if mad is not None else None,
+        'p25': round(p25, digits) if p25 is not None else None,
+        'p75': round(p75, digits) if p75 is not None else None,
+        'iqr': round(iqr, digits) if iqr is not None else None,
+        'outlier_count': outlier_count,
+        'outlier_pct': round(outlier_pct, 2) if outlier_pct is not None else None,
+    }
+
+
 def _telemetry_coverage_stats(rows, fields, expected_duration_seconds, max_gap_seconds=3600.0):
     """Summarize timestamp coverage and per-field data completeness.
 
@@ -857,8 +934,8 @@ def _build_report_context(uuid, uuid_str, range_hours):
       use SQL aggregation at the chart's bucket size. For 7d/30d ranges,
       this means scanning ~700 rows instead of ~10000 raw rows.
     - MetricSnapshot summary statistics use one aggregate query.
-    - P50/P95/P99 percentiles use a values-only query for the required
-      system metrics and the existing GPUMetric raw scan for per-GPU metrics.
+    - P50/P95/P99 and robust MAD/IQR/outlier statistics reuse the existing
+      GPUMetric raw scan for per-GPU metrics; system percentiles use a values-only query.
     - Job state transitions use a chronological values-only scan of has_active_job.
     - Power-on hours before restart uses a chronological values-only uptime scan.
     - Underutilization duration correlates per-GPU utilization samples with
@@ -868,7 +945,7 @@ def _build_report_context(uuid, uuid_str, range_hours):
     - Caching at the view level (55s TTL) handles the common case of repeated loads.
 
     Main query groups for the report context: 9 queries
-        1. GPUMetric raw scan (identity changes, slopes, GPU percentiles)
+        1. GPUMetric raw scan (identity changes, slopes, percentiles, MAD/IQR, outliers)
         2. GPUMetric aggregation (summary metrics)
         3. MetricSnapshot aggregation (CPU/Memory/Power/Errors)
         4. MetricSnapshot values query (system percentiles)
@@ -1026,8 +1103,9 @@ def _build_report_context(uuid, uuid_str, range_hours):
     gpu_devices.reverse()  # restore index order
     
     # P50/P95/P99 distribution statistics for per-GPU measurements.
-    # These percentiles describe the stored GPUMetric samples in the selected
-    # window (including compacted samples where compaction applies).
+    # Robust MAD/IQR/outlier statistics are exact only for the 24h window:
+    # GPUMetric rows older than one day are compacted into bucket aggregates,
+    # and robust statistics must not be reconstructed from average-only rows.
     gpu_percentile_fields = (
         'gpu_temp_c',
         'gpu_util_pct',
@@ -1050,12 +1128,49 @@ def _build_report_context(uuid, uuid_str, range_hours):
                 per_gpu[field].append(value)
 
     gpu_percentiles_by_index = {}
+    gpu_robust_stats_by_index = {}
+    gpu_robust_metric_labels = {
+        'gpu_util_pct': ('Core Utilization', '%'),
+        'gpu_temp_c': ('Temperature', '°C'),
+        'power_draw_w': ('Power Draw', 'W'),
+        'gpu_core_clock_mhz': ('Core Clock', 'MHz'),
+        'fan_speed_pct': ('Fan Speed', '%'),
+        'gpu_mem_clock_mhz': ('Memory Clock', 'MHz'),
+        'mem_controller_util_pct': ('Memory Controller Utilization', '%'),
+        'mem_used_mb': ('VRAM Used', 'MB'),
+    }
     for idx, field_values in gpu_values_by_index.items():
         per_gpu_percentiles = {}
+        robust_rows = []
         for field, values in field_values.items():
             for percentile_name, percentile_value in _percentile_stats(values).items():
                 per_gpu_percentiles[f'{field}_{percentile_name}'] = percentile_value
+            # GPUMetric is raw for the 24h window, but 7d/30d windows include
+            # compacted bucket averages. Do not treat those averages as raw
+            # observations for MAD, IQR, or robust outlier detection.
+            robust = (
+                _robust_distribution_stats(values)
+                if range_hours == 24
+                else {
+                    'sample_count': None,
+                    'median': None,
+                    'mad': None,
+                    'p25': None,
+                    'p75': None,
+                    'iqr': None,
+                    'outlier_count': None,
+                    'outlier_pct': None,
+                }
+            )
+            label, unit = gpu_robust_metric_labels[field]
+            robust_rows.append({
+                'field': field,
+                'label': label,
+                'unit': unit,
+                **robust,
+            })
         gpu_percentiles_by_index[idx] = per_gpu_percentiles
+        gpu_robust_stats_by_index[idx] = robust_rows
 
     # GPU temperature threshold exceedance statistics (strictly above 85°C).
     # Duration is estimated only across adjacent valid temperature samples no
@@ -1220,6 +1335,7 @@ def _build_report_context(uuid, uuid_str, range_hours):
             'temperature_observed_duration_minutes': 0.0,
         }))
         device.update(gpu_percentiles_by_index.get(idx, {}))
+        device['gpu_robust_stats'] = gpu_robust_stats_by_index.get(idx, [])
         device.update({f'telemetry_{key}': value for key, value in gpu_coverage_by_index.get(idx, {}).items()})
 
     # Query 2: CPU / Memory / Power / Errors aggregation

@@ -26,6 +26,11 @@ _NATURAL_SORT_RE = re.compile(r'(\d+)')
 # For permission-sensitive operations, we re-validate from DB.
 _RIG_CACHE_TTL_S = 30
 
+# Report operating threshold for GPU thermal exceedance statistics.
+GPU_TEMPERATURE_THRESHOLD_C = 85.0
+# Exclude long gaps from duration estimates and treat them as breaks between events.
+GPU_TEMPERATURE_MAX_SAMPLE_GAP_S = 3600.0
+
 
 def _get_rig_light_cached(uuid, user):
     """Get a minimal Rig representation for permission check + status display.
@@ -995,6 +1000,100 @@ def _build_report_context(uuid, uuid_str, range_hours):
                 per_gpu_percentiles[f'{field}_{percentile_name}'] = percentile_value
         gpu_percentiles_by_index[idx] = per_gpu_percentiles
 
+    # GPU temperature threshold exceedance statistics (strictly above 85°C).
+    # Duration is estimated only across adjacent valid temperature samples no
+    # more than one hour apart. Long gaps and missing temperatures break events
+    # and are excluded from observed-time denominators. No extra DB query is
+    # needed because gpu_raw already contains the timestamp and temperature.
+    temperature_rows_by_gpu = {}
+    for row in gpu_raw:
+        temperature_rows_by_gpu.setdefault(row['gpu_index'], []).append(row)
+
+    gpu_temperature_exceedance_by_index = {}
+    for idx, rows in temperature_rows_by_gpu.items():
+        rows.sort(key=lambda row: row['timestamp'])
+        event_count = 0
+        observed_seconds = 0.0
+        exceedance_seconds = 0.0
+        current_event_seconds = 0.0
+        longest_event_seconds = 0.0
+        previous_is_contiguous_above = False
+        previous_row = None
+
+        for position, row in enumerate(rows):
+            temperature = row.get('gpu_temp_c')
+            timestamp = row.get('timestamp')
+            if temperature is None or timestamp is None:
+                previous_is_contiguous_above = False
+                current_event_seconds = 0.0
+                previous_row = row
+                continue
+
+            # A gap over the limit breaks continuity, even when both readings
+            # are above the threshold.
+            if previous_row is not None:
+                previous_temp = previous_row.get('gpu_temp_c')
+                previous_timestamp = previous_row.get('timestamp')
+                gap_seconds = (
+                    (timestamp - previous_timestamp).total_seconds()
+                    if previous_timestamp is not None else None
+                )
+                if (previous_temp is None or gap_seconds is None or
+                        gap_seconds <= 0 or
+                        gap_seconds > GPU_TEMPERATURE_MAX_SAMPLE_GAP_S):
+                    previous_is_contiguous_above = False
+                    current_event_seconds = 0.0
+
+            is_above_threshold = float(temperature) > GPU_TEMPERATURE_THRESHOLD_C
+            if is_above_threshold and not previous_is_contiguous_above:
+                event_count += 1
+                current_event_seconds = 0.0
+
+            # Estimate the interval represented by this reading using the next
+            # reading, but only when both temperatures are valid and the gap is
+            # positive and no longer than the configured maximum.
+            if position + 1 < len(rows):
+                next_row = rows[position + 1]
+                next_temp = next_row.get('gpu_temp_c')
+                next_timestamp = next_row.get('timestamp')
+                interval_seconds = (
+                    (next_timestamp - timestamp).total_seconds()
+                    if next_timestamp is not None else None
+                )
+                valid_interval = (
+                    next_temp is not None and interval_seconds is not None and
+                    0 < interval_seconds <= GPU_TEMPERATURE_MAX_SAMPLE_GAP_S
+                )
+                if valid_interval:
+                    observed_seconds += interval_seconds
+                    if is_above_threshold:
+                        exceedance_seconds += interval_seconds
+                        current_event_seconds += interval_seconds
+                        longest_event_seconds = max(
+                            longest_event_seconds, current_event_seconds
+                        )
+
+            previous_is_contiguous_above = is_above_threshold
+            previous_row = row
+
+        gpu_temperature_exceedance_by_index[idx] = {
+            'temperature_threshold_c': GPU_TEMPERATURE_THRESHOLD_C,
+            'temperature_exceedance_count': event_count,
+            'temperature_exceedance_duration_minutes': round(
+                exceedance_seconds / 60.0, 2
+            ),
+            'temperature_longest_exceedance_minutes': round(
+                longest_event_seconds / 60.0, 2
+            ),
+            'temperature_exceedance_observed_pct': (
+                round(100.0 * exceedance_seconds / observed_seconds, 2)
+                if observed_seconds > 0 else None
+            ),
+            'temperature_observed_duration_minutes': round(
+                observed_seconds / 60.0, 2
+            ),
+        }
+
     # Thermal Degradation Slope (per GPU).
     # Match workload intensity by retaining samples within +/-10% of the
     # median GPU utilization for that GPU in the selected reporting period.
@@ -1055,6 +1154,14 @@ def _build_report_context(uuid, uuid_str, range_hours):
         device['thermal_degradation_slope_c_per_day'] = (
             thermal_degradation_slope_by_gpu.get(idx)
         )
+        device.update(gpu_temperature_exceedance_by_index.get(idx, {
+            'temperature_threshold_c': GPU_TEMPERATURE_THRESHOLD_C,
+            'temperature_exceedance_count': 0,
+            'temperature_exceedance_duration_minutes': 0.0,
+            'temperature_longest_exceedance_minutes': 0.0,
+            'temperature_exceedance_observed_pct': None,
+            'temperature_observed_duration_minutes': 0.0,
+        }))
         device.update(gpu_percentiles_by_index.get(idx, {}))
 
     # Query 2: CPU / Memory / Power / Errors aggregation

@@ -254,8 +254,7 @@ class Command(BaseCommand):
                 'cpu_power_w, total_system_power_w, cpu_to_gpu_power_ratio, '
                 'mem_used_bytes, mem_free_bytes, mem_cached_bytes, '
                 'swap_used_bytes, swap_total_bytes, mem_total_bytes, '
-                'uptime_s, status, error_count, has_active_job, '
-                'cpu_power_w, total_system_power_w, cpu_to_gpu_power_ratio')
+                'uptime_s, status, error_count, has_active_job')
 
         all_vals = []
         for s in snapshots:

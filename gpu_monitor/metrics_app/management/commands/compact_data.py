@@ -421,7 +421,7 @@ class Command(BaseCommand):
                                 f"                 'max_mhz', avg_max_mhz"
                                 f"               ) "
                                 f"             ELSE "
-                                f"               avg_val::jsonb "
+                                f"               to_jsonb(avg_val) "
                                 f"           END "
                                 f"           ORDER BY core_idx) AS val "
                                 f"  FROM ("

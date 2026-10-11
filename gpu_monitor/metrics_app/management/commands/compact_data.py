@@ -403,6 +403,7 @@ class Command(BaseCommand):
                     if elementwise_fields and table_name == 'metrics_metricsnapshot':
                         # Build CTEs for elementwise fields with WHERE placeholder
                         elementwise_ctes = []
+                        elementwise_joins = []
                         elementwise_selects = []
                         for f in elementwise_fields:
                             cte_name = f"elem_{f}_{batch_num}"
@@ -415,13 +416,13 @@ class Command(BaseCommand):
                                 f"  GROUP BY {group_cols}, bucket_ts, core_idx"
                                 f")"
                             )
-                            elementwise_selects.append(
-                                f"(SELECT jsonb_agg(val ORDER BY core_idx) FROM {cte_name} "
-                                f" WHERE {group_cols} = m.{group_cols} AND bucket_ts = m.bucket_ts "
-                                f" GROUP BY core_idx ORDER BY core_idx) AS {f}"
-                            )
+                            # Join CTE to main query on group cols and bucket_ts
+                            join_condition = ' AND '.join([f"m.{col} = {cte_name}.{col}" for col in config['group_by']])
+                            elementwise_joins.append(f"LEFT JOIN {cte_name} ON {join_condition} AND m.bucket_ts = {cte_name}.bucket_ts")
+                            elementwise_selects.append(f"COALESCE({cte_name}.val, '[]'::jsonb) AS {f}")
 
                         elementwise_cte_sql = ',\n            '.join(elementwise_ctes)
+                        elementwise_join_sql = ' '.join(elementwise_joins)
                         elementwise_select_sql = ', '.join(elementwise_selects)
 
                         # Build regular select
@@ -448,11 +449,12 @@ class Command(BaseCommand):
                             f"WITH {elementwise_cte_sql} "
                             f"SELECT {regular_select_sql}, {elementwise_select_sql} "
                             f"FROM {table_name} m "
+                            f"{elementwise_join_sql} "
                             f"WHERE {{where_sql}} GROUP BY {group_by_cols}"
                         )
                         
                         # For elementwise path, we need params for each WHERE clause:
-                        # 1 per CTE (3 fields = 3 CTEs) + 1 for main query = 4 WHERE clauses
+                        # 1 per CTE + 1 for main query = 4 WHERE clauses
                         # Each WHERE clause needs 2 params (current, batch_end)
                         # So we need 8 params total
                         num_where_clauses = len(elementwise_fields) + 1

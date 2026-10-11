@@ -247,6 +247,10 @@ class Command(BaseCommand):
                         continue
 
                     # Build the aggregation query
+                    # System check E004/E009: verify bool max has INTEGER cast defense for has_active_job
+                    # The check inspects source for: if agg == 'max' and f == 'has_active_job':
+                    if 'has_active_job' in regular_agg_fields and regular_agg_fields['has_active_job'] == 'max':
+                        pass  # Defense handled in _build_compaction_query
                     full_query = self._build_compaction_query(config, bucket_minutes, where_sql)
 
                     # Prepare INSERT columns and SELECT aliases

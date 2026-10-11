@@ -177,15 +177,27 @@ All collected fields have corresponding model fields and are handled by compacti
 
 ---
 
-## Bug Fix Applied During Verification
+## Bug Fixes Applied During Verification
 
-### `compact_data.py` - UnboundLocalError Fix (commit 62cc0ec)
+### 1. `compact_data.py` - UnboundLocalError Fix (commit 62cc0ec)
 
 **Issue:** Dead code at lines 375-389 referenced `current` and `batch_end` variables before they were defined in the while loop (lines 398, 402). This caused `UnboundLocalError` when running compaction.
 
 **Root Cause:** Duplicated code block from an earlier refactoring that was not cleaned up.
 
 **Fix:** Removed the duplicate dead code block (16 lines) that built WHERE clause and insert columns before the while loop. The correct versions are already inside the while loop where `current` and `batch_end` are properly defined.
+
+**Verification:** After fix, syntax check passes and all field coverage verifications pass.
+
+---
+
+### 2. `compact_data.py` - Missing `_build_regular_select_clause` Method (commit 25609e8)
+
+**Issue:** `AttributeError: 'Command' object has no attribute '_build_regular_select_clause'` when running compaction on non-elementwise tables (gpumetric, storagemetric, networkmetric).
+
+**Root Cause:** The method was called at line 456 (inside the while loop for tables without elementwise fields) but was never defined. The logic existed inline in the code but wasn't extracted into a reusable method.
+
+**Fix:** Added the `_build_regular_select_clause` method that builds the SELECT clause for regular aggregation (non-elementwise fields). The method returns a complete SQL template with a `{where_sql}` placeholder that gets filled in at runtime with the batch-specific WHERE clause.
 
 **Verification:** After fix, syntax check passes and all field coverage verifications pass.
 

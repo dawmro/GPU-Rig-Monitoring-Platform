@@ -665,7 +665,7 @@ def check_cpu_per_core_fields(app_configs, **kwargs):
             required_compact_fields = {
                 'cpu_utilization_per_core_json': 'avg_elementwise',
                 'cpu_temp_per_core_json': 'avg_elementwise',
-                'cpu_freq_per_core_json': 'avg',
+                'cpu_freq_per_core_json': 'avg_elementwise',
             }
             for field, agg in required_compact_fields.items():
                 if field not in snapshot_config.get('agg_fields', {}):

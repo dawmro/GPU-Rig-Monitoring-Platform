@@ -132,7 +132,6 @@ COMPACT_TABLES = [
         },
         'static_fields': [
             'schema_version',
-            'cpu_to_gpu_power_ratio',
         ],
     },
 ]

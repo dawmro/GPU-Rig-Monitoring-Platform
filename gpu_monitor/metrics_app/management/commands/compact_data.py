@@ -128,7 +128,8 @@ COMPACT_TABLES = [
             # NEW: Per-core metrics — element-wise average for smooth trends (consistent with GPU scalar metrics)
             'cpu_utilization_per_core_json': 'avg_elementwise',
             'cpu_temp_per_core_json': 'avg_elementwise',
-            'cpu_freq_per_core_json': 'avg_elementwise',
+            # cpu_freq_per_core_json contains objects {"current_mhz", "min_mhz", "max_mhz"} - not simple numbers
+            'cpu_freq_per_core_json': 'last',
         },
         'static_fields': [
             'schema_version',

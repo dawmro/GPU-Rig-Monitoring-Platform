@@ -430,7 +430,7 @@ class Command(BaseCommand):
                         elementwise_select_sql = ', '.join(elementwise_selects)
 
                         # Build regular select - wrap in subquery to compute bucket_ts first
-                        regular_select_parts = [f"{bucket_expr} AS bucket_ts"] + list(config['group_by'])
+                        regular_select_parts = [f"timestamp", f"{bucket_expr} AS bucket_ts"] + list(config['group_by'])
                         for f, agg in regular_agg_fields.items():
                             if agg == 'max' and f == 'has_active_job':
                                 regular_select_parts.append(f"MAX(CAST({f} AS INTEGER)) AS {f}")

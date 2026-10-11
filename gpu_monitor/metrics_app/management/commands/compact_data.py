@@ -459,8 +459,7 @@ class Command(BaseCommand):
                     c.execute(f"DROP TABLE IF EXISTS {tmp_table}")
                     c.execute(
                         f"CREATE TEMP TABLE {tmp_table} AS "
-                        f"{select_clause} FROM {table_name} m "
-                        f"WHERE {where_sql} GROUP BY {group_by_cols}",
+                        f"{select_clause}",
                         params
                     )
 
@@ -493,6 +492,40 @@ class Command(BaseCommand):
         tier_name = "Tier 2 (15m)" if bucket_minutes == 15 else "Tier 3 (1h)"
         self.stdout.write(self.style.SUCCESS(
             f'  {table_name}: compacted {total_compacted:,} rows in {batch_num} batches ({elapsed:.1f}s) [{tier_name}]'))
+
+    def _build_regular_select_clause(self, config, bucket_minutes, bucket_expr):
+        """Build SELECT clause for regular (non-elementwise) aggregation."""
+        agg_fields = config['agg_fields']
+        static_fields = config['static_fields']
+        group_by_cols = ', '.join(config['group_by'] + ['bucket_ts'])
+        where_placeholder = "WHERE {where_sql}"
+
+        # Regular fields select
+        regular_select_parts = [f"{bucket_expr} AS bucket_ts"] + list(config['group_by'])
+        for f, agg in agg_fields.items():
+            if agg == 'avg_elementwise':
+                continue  # handled separately
+            if agg == 'max' and f == 'has_active_job':
+                regular_select_parts.append(f"MAX(CAST({f} AS INTEGER)) AS {f}")
+            else:
+                regular_select_parts.append(
+                    f"AVG({f}) AS {f}" if agg == 'avg' else
+                    f"SUM({f}) AS {f}" if agg == 'sum' else
+                    f"MAX({f}) AS {f}" if agg == 'max' else
+                    f"MIN({f}) AS {f}" if agg == 'min' else
+                    f"(ARRAY_AGG({f} ORDER BY timestamp DESC))[1] AS {f}"
+                )
+        for f in static_fields:
+            regular_select_parts.append(f"(ARRAY_AGG({f} ORDER BY timestamp DESC))[1] AS {f}")
+
+        regular_select_sql = ', '.join(regular_select_parts)
+
+        select_clause = (
+            f"SELECT {regular_select_sql} "
+            f"FROM {config['table']} m "
+            f"{where_placeholder} GROUP BY {group_by_cols}"
+        )
+        return select_clause
 
     def _bucket_expression(self, bucket_minutes):
         """Generate SQL bucket expression for given minute interval."""

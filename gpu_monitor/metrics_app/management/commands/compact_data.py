@@ -416,7 +416,7 @@ class Command(BaseCommand):
                                 f"  GROUP BY {group_cols}, bucket_ts, core_idx"
                                 f")"
                             )
-                            # Join CTE to main query on group cols and bucket_ts
+                            # Join CTE to main subquery on group cols and bucket_ts
                             join_condition = ' AND '.join([f"m.{col} = {cte_name}.{col}" for col in config['group_by']])
                             elementwise_joins.append(f"LEFT JOIN {cte_name} ON {join_condition} AND m.bucket_ts = {cte_name}.bucket_ts")
                             elementwise_selects.append(f"COALESCE({cte_name}.val, '[]'::jsonb) AS {f}")
@@ -425,7 +425,7 @@ class Command(BaseCommand):
                         elementwise_join_sql = ' '.join(elementwise_joins)
                         elementwise_select_sql = ', '.join(elementwise_selects)
 
-                        # Build regular select
+                        # Build regular select - wrap in subquery to compute bucket_ts first
                         regular_select_parts = [f"{bucket_expr} AS bucket_ts"] + list(config['group_by'])
                         for f, agg in regular_agg_fields.items():
                             if agg == 'max' and f == 'has_active_job':
@@ -444,17 +444,17 @@ class Command(BaseCommand):
                         regular_select_sql = ', '.join(regular_select_parts)
                         group_by_cols = ', '.join(config['group_by'] + ['bucket_ts'])
 
-                        # Build select_clause with WHERE placeholder for CTEs and main query
+                        # Build select_clause: first compute main data with bucket_ts in subquery, then LEFT JOIN elementwise CTEs
                         select_clause = (
-                            f"WITH {elementwise_cte_sql} "
-                            f"SELECT {regular_select_sql}, {elementwise_select_sql} "
-                            f"FROM {table_name} m "
-                            f"{elementwise_join_sql} "
-                            f"WHERE {{where_sql}} GROUP BY {group_by_cols}"
+                            f"WITH {elementwise_cte_sql}, "
+                            f"main AS (SELECT {regular_select_sql} FROM {table_name} WHERE {{where_sql}} GROUP BY {group_by_cols}) "
+                            f"SELECT m.{group_by_cols}, m.bucket_ts, {elementwise_select_sql} "
+                            f"FROM main m "
+                            f"{elementwise_join_sql}"
                         )
                         
                         # For elementwise path, we need params for each WHERE clause:
-                        # 1 per CTE + 1 for main query = 4 WHERE clauses
+                        # 1 per CTE + 1 for main subquery = 4 WHERE clauses
                         # Each WHERE clause needs 2 params (current, batch_end)
                         # So we need 8 params total
                         num_where_clauses = len(elementwise_fields) + 1

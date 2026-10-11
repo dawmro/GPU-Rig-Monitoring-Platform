@@ -246,16 +246,17 @@ class Command(BaseCommand):
                         current = batch_end
                         continue
 
-                    # Build the aggregation query
+                    # Prepare INSERT columns and SELECT aliases
+                    regular_agg_fields = {f: agg for f, agg in agg_fields.items() if agg != 'avg_elementwise'}
+                    elementwise_fields = [f for f, agg in agg_fields.items() if agg == 'avg_elementwise']
+
                     # System check E004/E009: verify bool max has INTEGER cast defense for has_active_job
                     # The check inspects source for: if agg == 'max' and f == 'has_active_job':
                     if 'has_active_job' in regular_agg_fields and regular_agg_fields['has_active_job'] == 'max':
                         pass  # Defense handled in _build_compaction_query
-                    full_query = self._build_compaction_query(config, bucket_minutes, where_sql)
 
-                    # Prepare INSERT columns and SELECT aliases
-                    regular_agg_fields = {f: agg for f, agg in agg_fields.items() if agg != 'avg_elementwise'}
-                    elementwise_fields = [f for f, agg in agg_fields.items() if agg == 'avg_elementwise']
+                    # Build the aggregation query
+                    full_query = self._build_compaction_query(config, bucket_minutes, where_sql)
 
                     insert_cols = list(group_by_cols_list) + ['timestamp'] + list(regular_agg_fields.keys()) + static_fields + elementwise_fields
                     insert_cols_sql = ", ".join(insert_cols)

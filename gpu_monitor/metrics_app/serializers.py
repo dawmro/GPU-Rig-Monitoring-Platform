@@ -72,7 +72,9 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
     # Extract per-core CPU data from payload (schema 1.20+)
     cpu_per_core = cpu.get('utilization_per_core_pct', [])
     cpu_temp_per_core = cpu.get('temp_per_core_c', [])
-    cpu_freq_per_core = cpu.get('freq_per_core', [])
+    # Cast freq_per_core to int (current MHz only, simplified from objects)
+    cpu_freq_per_core_raw = cpu.get('freq_per_core', [])
+    cpu_freq_per_core = [int(round(f)) if f is not None else None for f in cpu_freq_per_core_raw]
 
     # Fetch previous LatestSnapshot ONCE for ALL delta calculations (storage, network, GPU).
     # Rig is guaranteed to exist by this point (created/updated in view before serializer).

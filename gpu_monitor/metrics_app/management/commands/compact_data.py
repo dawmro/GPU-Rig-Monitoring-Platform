@@ -401,37 +401,22 @@ class Command(BaseCommand):
                     # Build SELECT clause for this batch
                     if elementwise_fields and table_name == 'metrics_metricsnapshot':
                         # Build CTEs for elementwise fields with WHERE placeholder
+                        # Only cpu_utilization_per_core_json and cpu_temp_per_core_json use elementwise aggregation
+                        # (both are simple scalar arrays). cpu_freq_per_core_json uses simple 'avg' aggregation.
                         elementwise_ctes = []
                         elementwise_joins = []
                         elementwise_selects = []
                         for f in elementwise_fields:
                             cte_name = f"elem_{f}_{batch_num}"
-                            # Check if field contains JSON objects (like cpu_freq_per_core_json)
-                            # by examining if the array elements are JSON objects vs simple values
-                            # Use jsonb_typeof to determine if elements are objects
                             elementwise_ctes.append(
                                 f"{cte_name} AS ("
                                 f"  SELECT {group_cols}, timestamp, {bucket_expr} AS bucket_ts, "
-                                f"         jsonb_agg("
-                                f"           CASE "
-                                f"             WHEN avg_current_mhz IS NOT NULL THEN "
-                                f"               jsonb_build_object("
-                                f"                 'current_mhz', avg_current_mhz, "
-                                f"                 'min_mhz', avg_min_mhz, "
-                                f"                 'max_mhz', avg_max_mhz"
-                                f"               ) "
-                                f"             ELSE "
-                                f"               to_jsonb(avg_val) "
-                                f"           END "
-                                f"           ORDER BY core_idx) AS val "
+                                f"         jsonb_agg(avg_val ORDER BY core_idx) AS val "
                                 f"  FROM ("
                                 f"    SELECT {group_cols}, timestamp, {bucket_expr} AS bucket_ts, core_idx, "
-                                f"           AVG(CASE WHEN jsonb_typeof(val) = 'object' THEN (val->>'current_mhz')::float END) AS avg_current_mhz, "
-                                f"           AVG(CASE WHEN jsonb_typeof(val) = 'object' THEN (val->>'min_mhz')::float END) AS avg_min_mhz, "
-                                f"           AVG(CASE WHEN jsonb_typeof(val) = 'object' THEN (val->>'max_mhz')::float END) AS avg_max_mhz, "
-                                f"           AVG(CASE WHEN jsonb_typeof(val) <> 'object' THEN (val)::float END) AS avg_val "
+                                f"           AVG((val)::float) AS avg_val "
                                 f"    FROM {table_name}, "
-                                f"         jsonb_array_elements({f}) WITH ORDINALITY AS arr(val, core_idx) "
+                                f"         jsonb_array_elements_text({f}) WITH ORDINALITY AS arr(val, core_idx) "
                                 f"    WHERE {{where_sql}} AND val IS NOT NULL "
                                 f"    GROUP BY {group_cols}, timestamp, bucket_ts, core_idx"
                                 f"  ) sub "

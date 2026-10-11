@@ -217,7 +217,7 @@ class Command(BaseCommand):
                     0 as read_iops_delta, 0 as write_iops_delta,
                     0 as read_bytes_total, 0 as write_bytes_total,
                     0 as read_iops_total, 0 as write_iops_total,
-                    0 as busy_time_ms, 0 as utilization_pct as busy_time_ms_total,
+                    0 as busy_time_ms, 0 as busy_time_ms_total,
                     0 as utilization_pct
                 FROM metrics_storagemetric
                 WHERE timestamp >= %s AND timestamp < %s

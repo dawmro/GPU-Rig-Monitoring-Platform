@@ -607,7 +607,7 @@ def subtract(value, arg):
 @register.filter
 def cpu_temp_bar_width(value):
     """Calculate temperature bar width percentage with 20-100°C clamping.
-    
+
     Maps 20°C -> 0%, 100°C -> 100%, linear interpolation in between.
     Below 20°C -> 0%, Above 100°C -> 100%.
     """
@@ -623,6 +623,43 @@ def cpu_temp_bar_width(value):
             # Linear interpolation: (temp - 20) / (100 - 20) * 100
             return round((temp - 20) * 100 / 80)
     except (TypeError, ValueError):
+        return 0
+
+
+@register.filter
+def cpu_freq_bar_width(current_mhz, snapshot):
+    """Calculate CPU frequency bar width percentage using min/max from snapshot.
+
+    Uses snapshot.cpu_freq_min_mhz and snapshot.cpu_freq_max_mhz as the range.
+    If min/max not available or invalid (<=0), returns 50% as neutral fallback.
+    """
+    if current_mhz is None:
+        return 0
+    try:
+        current = float(current_mhz)
+        min_mhz = getattr(snapshot, 'cpu_freq_min_mhz', None)
+        max_mhz = getattr(snapshot, 'cpu_freq_max_mhz', None)
+
+        # Check for None or invalid (<=0) values
+        if min_mhz is None or max_mhz is None:
+            return 50  # Neutral fallback when range unknown
+
+        min_val = float(min_mhz)
+        max_val = float(max_mhz)
+
+        # Handle case where min/max are 0 or invalid (psutil sometimes returns 0.0)
+        if min_val <= 0 or max_val <= 0 or max_val <= min_val:
+            return 50  # Avoid division by zero or invalid range
+
+        # Clamp current to min/max range
+        if current <= min_val:
+            return 0
+        elif current >= max_val:
+            return 100
+        else:
+            # Linear interpolation within the min/max range
+            return round((current - min_val) * 100 / (max_val - min_val))
+    except (TypeError, ValueError, AttributeError):
         return 0
 
 

@@ -221,7 +221,7 @@ on the page. This keeps the bar from being noise.
                         {% if freq_obj|floatformat:0 != "0" %}
                             <div class="flex-1 bg-gray-700 rounded-full h-1.5 overflow-hidden">
                                 <div class="h-full rounded-full transition-all duration-200 ease-out bg-cyan-400"
-                                     style="width: 100%"></div>
+                                     style="width: {{ freq_obj|cpu_freq_bar_width:snapshot }}%"></div>
                             </div>
                             <span class="text-cyan-400 font-mono w-20">{{ freq_obj|floatformat:0 }} MHz</span>
                         {% else %}

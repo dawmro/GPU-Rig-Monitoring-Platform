@@ -741,15 +741,23 @@ class ChartDataView(APIView):
             'bucket', cfg['json_field']
         ).order_by('bucket')
 
-        # Determine max cores from first non-empty row
+        # Determine max cores from ALL rows (not just first)
         max_cores = 0
         for row in rows:
             if row[cfg['json_field']]:
                 max_cores = max(max_cores, len(row[cfg['json_field']]))
-                break
 
         if max_cores == 0:
             return {'labels': labels, 'datasets': []}
+
+        # Re-execute query since we consumed the iterator
+        rows = MetricSnapshot.objects.filter(
+            rig_uuid=uuid,
+            timestamp__gte=start_bucket,
+            timestamp__lte=end_bucket,
+        ).annotate(bucket=trunc('timestamp')).values(
+            'bucket', cfg['json_field']
+        ).order_by('bucket')
 
         # Build datasets: one per core
         datasets = [

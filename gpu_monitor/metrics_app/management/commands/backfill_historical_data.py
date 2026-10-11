@@ -270,7 +270,6 @@ class Command(BaseCommand):
                 s['mem_used_bytes'], s['mem_free_bytes'], s['mem_cached_bytes'],
                 s['swap_used_bytes'], s['swap_total_bytes'], s['mem_total_bytes'],
                 s['uptime_s'], s['status'], s['error_count'], s.get('has_active_job', False),
-                s.get('cpu_power_w'), s.get('total_system_power_w'), s.get('cpu_to_gpu_power_ratio'),
                 s['id'],
             ))
 

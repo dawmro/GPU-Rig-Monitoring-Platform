@@ -73,8 +73,21 @@ def process_ingest(rig_uuid, data, owner_id, rig=None, enrolled_by_key_changed=F
     cpu_per_core = cpu.get('utilization_per_core_pct', [])
     cpu_temp_per_core = cpu.get('temp_per_core_c', [])
     # Cast freq_per_core to int (current MHz only, simplified from objects)
+    # Backward compatible: handle both new format (int) and old format (dict with current_mhz)
     cpu_freq_per_core_raw = cpu.get('freq_per_core', [])
-    cpu_freq_per_core = [int(round(f)) if f is not None else None for f in cpu_freq_per_core_raw]
+    cpu_freq_per_core = []
+    for f in cpu_freq_per_core_raw:
+        if f is None:
+            cpu_freq_per_core.append(None)
+        elif isinstance(f, dict):
+            # Old format: {"current_mhz": 3400.5, "min_mhz": 800.0, "max_mhz": 3800.0}
+            val = f.get('current_mhz')
+            cpu_freq_per_core.append(int(round(val)) if val is not None else None)
+        elif isinstance(f, (int, float)):
+            # New format: simple integer/float
+            cpu_freq_per_core.append(int(round(f)))
+        else:
+            cpu_freq_per_core.append(None)
 
     # Fetch previous LatestSnapshot ONCE for ALL delta calculations (storage, network, GPU).
     # Rig is guaranteed to exist by this point (created/updated in view before serializer).

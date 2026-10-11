@@ -429,7 +429,7 @@ class Command(BaseCommand):
                                 f"           AVG((val->>'current_mhz')::float) AS avg_current_mhz, "
                                 f"           AVG((val->>'min_mhz')::float) AS avg_min_mhz, "
                                 f"           AVG((val->>'max_mhz')::float) AS avg_max_mhz, "
-                                f"           AVG((val)::float) AS avg_val "
+                                f"           AVG(CASE WHEN jsonb_typeof(val) <> 'object' THEN (val)::float END) AS avg_val "
                                 f"    FROM {table_name}, "
                                 f"         jsonb_array_elements({f}) WITH ORDINALITY AS arr(val, core_idx) "
                                 f"    WHERE {{where_sql}} AND val IS NOT NULL "

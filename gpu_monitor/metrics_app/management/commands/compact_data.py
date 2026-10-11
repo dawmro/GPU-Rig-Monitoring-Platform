@@ -372,22 +372,6 @@ class Command(BaseCommand):
         regular_select_sql = ', '.join(regular_select_parts)
         group_by_cols = ', '.join(config['group_by'] + ['bucket_ts'])
 
-        # Build WHERE clause
-        where_sql = f"timestamp >= %s AND timestamp < %s {fk_where}"
-        params = [current, batch_end]
-
-        # Build insert columns
-        insert_fields = ['timestamp'] + list(agg_fields.keys()) + static_fields + list(config['group_by'])
-        insert_cols = ', '.join(insert_fields)
-
-        def insert_expr(col):
-            if col == 'timestamp':
-                return 'bucket_ts'
-            if col == 'has_active_job':
-                return f"CAST({col} AS BOOLEAN)"
-            return col
-        insert_vals = ', '.join([insert_expr(f) for f in insert_fields])
-
         # Process in bucket-sized windows
         batch_window = timedelta(minutes=bucket_minutes)
         total_compacted = 0

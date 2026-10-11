@@ -273,25 +273,102 @@ class Command(BaseCommand):
             ))
 
         with connection.cursor() as c:
-            c.execute("ALTER TABLE metrics_metricsnapshot ADD COLUMN IF NOT EXISTS _bf_old_id BIGINT")
-
-            sql = (f"INSERT INTO metrics_metricsnapshot ({cols}, _bf_old_id) VALUES %s "
-                   f"ON CONFLICT (rig_uuid, schema_version, timestamp) DO NOTHING")
-
-            for i in range(0, len(all_vals), BATCH_SIZE):
-                batch = all_vals[i:i + BATCH_SIZE]
-                execute_values(c, sql, batch, page_size=BATCH_SIZE)
-
-            min_ts = min(s['timestamp'] - offset for s in snapshots)
-            max_ts = max(s['timestamp'] - offset for s in snapshots)
+            # Use a temporary table for ID mapping instead of ALTER TABLE
             c.execute("""
-                SELECT id, _bf_old_id FROM metrics_metricsnapshot
-                WHERE timestamp >= %s AND timestamp <= %s AND _bf_old_id IS NOT NULL
-            """, [min_ts, max_ts])
-            for new_id, old_id in c.fetchall():
-                id_map[old_id] = new_id
+                CREATE TEMP TABLE _bf_source (
+                    old_id BIGINT PRIMARY KEY,
+                    rig_uuid UUID,
+                    schema_version VARCHAR,
+                    timestamp TIMESTAMPTZ,
+                    cpu_utilization_pct FLOAT,
+                    cpu_temp_c FLOAT,
+                    cpu_load_avg_json JSONB,
+                    cpu_freq_current_mhz FLOAT,
+                    cpu_freq_min_mhz FLOAT,
+                    cpu_freq_max_mhz FLOAT,
+                    cpu_freq_per_core_json JSONB,
+                    cpu_utilization_per_core_json JSONB,
+                    cpu_temp_per_core_json JSONB,
+                    cpu_power_w FLOAT,
+                    total_system_power_w FLOAT,
+                    cpu_to_gpu_power_ratio FLOAT,
+                    mem_used_bytes BIGINT,
+                    mem_free_bytes BIGINT,
+                    mem_cached_bytes BIGINT,
+                    swap_used_bytes BIGINT,
+                    swap_total_bytes BIGINT,
+                    mem_total_bytes BIGINT,
+                    uptime_s BIGINT,
+                    status VARCHAR,
+                    error_count BIGINT,
+                    has_active_job BOOLEAN
+                ) ON COMMIT DROP
+            """)
 
-            c.execute("ALTER TABLE metrics_metricsnapshot DROP COLUMN IF EXISTS _bf_old_id")
+            # Insert source data into temp table
+            source_vals = []
+            for s in snapshots:
+                source_vals.append((
+                    s['id'], s['rig_uuid'], s['schema_version'],
+                    s['timestamp'] - offset,
+                    s['cpu_utilization_pct'], s['cpu_temp_c'],
+                    s['cpu_load_avg_json'],
+                    s.get('cpu_freq_current_mhz'), s.get('cpu_freq_min_mhz'), s.get('cpu_freq_max_mhz'),
+                    s.get('cpu_freq_per_core_json'), s.get('cpu_utilization_per_core_json'), s.get('cpu_temp_per_core_json'),
+                    s.get('cpu_power_w'), s.get('total_system_power_w'), s.get('cpu_to_gpu_power_ratio'),
+                    s['mem_used_bytes'], s['mem_free_bytes'], s['mem_cached_bytes'],
+                    s['swap_used_bytes'], s['swap_total_bytes'], s['mem_total_bytes'],
+                    s['uptime_s'], s['status'], s['error_count'], s.get('has_active_job', False),
+                ))
+
+            if source_vals:
+                execute_values(c, """
+                    INSERT INTO _bf_source (old_id, rig_uuid, schema_version, timestamp,
+                        cpu_utilization_pct, cpu_temp_c, cpu_load_avg_json,
+                        cpu_freq_current_mhz, cpu_freq_min_mhz, cpu_freq_max_mhz,
+                        cpu_freq_per_core_json, cpu_utilization_per_core_json, cpu_temp_per_core_json,
+                        cpu_power_w, total_system_power_w, cpu_to_gpu_power_ratio,
+                        mem_used_bytes, mem_free_bytes, mem_cached_bytes,
+                        swap_used_bytes, swap_total_bytes, mem_total_bytes,
+                        uptime_s, status, error_count, has_active_job)
+                    VALUES %s
+                """, source_vals, page_size=BATCH_SIZE)
+
+                # Insert into main table from temp table
+                c.execute("""
+                    INSERT INTO metrics_metricsnapshot (
+                        rig_uuid, schema_version, timestamp,
+                        cpu_utilization_pct, cpu_temp_c, cpu_load_avg_json,
+                        cpu_freq_current_mhz, cpu_freq_min_mhz, cpu_freq_max_mhz,
+                        cpu_freq_per_core_json, cpu_utilization_per_core_json, cpu_temp_per_core_json,
+                        cpu_power_w, total_system_power_w, cpu_to_gpu_power_ratio,
+                        mem_used_bytes, mem_free_bytes, mem_cached_bytes,
+                        swap_used_bytes, swap_total_bytes, mem_total_bytes,
+                        uptime_s, status, error_count, has_active_job
+                    )
+                    SELECT rig_uuid, schema_version, timestamp,
+                        cpu_utilization_pct, cpu_temp_c, cpu_load_avg_json,
+                        cpu_freq_current_mhz, cpu_freq_min_mhz, cpu_freq_max_mhz,
+                        cpu_freq_per_core_json, cpu_utilization_per_core_json, cpu_temp_per_core_json,
+                        cpu_power_w, total_system_power_w, cpu_to_gpu_power_ratio,
+                        mem_used_bytes, mem_free_bytes, mem_cached_bytes,
+                        swap_used_bytes, swap_total_bytes, mem_total_bytes,
+                        uptime_s, status, error_count, has_active_job
+                    FROM _bf_source
+                    ON CONFLICT (rig_uuid, schema_version, timestamp) DO NOTHING
+                """)
+
+                # Get the mapping from old_id to new_id
+                c.execute("""
+                    SELECT s.id, t.old_id
+                    FROM metrics_metricsnapshot s
+                    JOIN _bf_source t ON s.rig_uuid = t.rig_uuid 
+                        AND s.schema_version = t.schema_version 
+                        AND s.timestamp = t.timestamp
+                    WHERE t.old_id IS NOT NULL
+                """)
+                for new_id, old_id in c.fetchall():
+                    id_map[old_id] = new_id
 
         return id_map
 

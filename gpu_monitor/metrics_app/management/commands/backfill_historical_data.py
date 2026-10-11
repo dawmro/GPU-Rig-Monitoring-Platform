@@ -226,15 +226,12 @@ class Command(BaseCommand):
             cols = [col[0] for col in c.description]
             d['disk'] = [dict(zip(cols, r)) for r in c.fetchall()]
 
-            # NetworkMetric - include all fields
+            # NetworkMetric - include all fields (ipv4 and link_speed_mbps removed in migration 0050)
             c.execute("""
                 SELECT 
-                    id, snapshot_id, rig_uuid, timestamp, interface, ipv4,
-                    link_speed_mbps, rx_bytes, tx_bytes,
-                    rx_bytes_delta, tx_bytes_delta, rx_errors, tx_errors,
-                    rx_bytes as rx_bytes_total, tx_bytes as tx_bytes_total,
-                    0 as rx_bytes_delta, 0 as tx_bytes_delta,
-                    0 as read_bytes_delta, 0 as write_bytes_delta
+                    id, snapshot_id, rig_uuid, timestamp, interface,
+                    rx_bytes, tx_bytes,
+                    rx_bytes_delta, tx_bytes_delta, rx_errors, tx_errors
                 FROM metrics_networkmetric
                 WHERE timestamp >= %s AND timestamp < %s
                 ORDER BY snapshot_id, interface
@@ -339,7 +336,7 @@ class Command(BaseCommand):
             elif table == 'network':
                 all_vals.append((
                     id_map[old_sid], row['rig_uuid'], new_ts,
-                    row['interface'], row.get('ipv4'), row.get('link_speed_mbps'),
+                    row['interface'],
                     row.get('rx_bytes', 0), row.get('tx_bytes', 0),
                     row['rx_bytes_delta'], row['tx_bytes_delta'],
                     row['rx_errors'], row['tx_errors'],
@@ -372,8 +369,8 @@ class Command(BaseCommand):
                    "VALUES %s ON CONFLICT (rig_uuid, timestamp, device) DO NOTHING")
         elif table == 'network':
             sql = ("INSERT INTO metrics_networkmetric "
-                   "(snapshot_id, rig_uuid, timestamp, interface, ipv4, "
-                   "link_speed_mbps, rx_bytes, tx_bytes, "
+                   "(snapshot_id, rig_uuid, timestamp, interface, "
+                   "rx_bytes, tx_bytes, "
                    "rx_bytes_delta, tx_bytes_delta, rx_errors, tx_errors) "
                    "VALUES %s ON CONFLICT (rig_uuid, timestamp, interface) DO NOTHING")
 

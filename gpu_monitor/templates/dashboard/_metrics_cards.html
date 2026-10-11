@@ -208,12 +208,12 @@ on the page. This keeps the bar from being noise.
             {% for freq_obj in snapshot.cpu_freq_per_core_json %}
             <div class="flex items-center gap-2 text-xs whitespace-nowrap">
                 <span class="font-mono text-gray-400 w-14 text-right">Core {{ forloop.counter0 }}:</span>
-                {% if freq_obj != None %}
-                    {% if freq_obj.current_mhz != None %}
+                {% if freq_obj %}
+                    {% if freq_obj.current_mhz %}
                         <!-- Old format: object with current_mhz, min_mhz, max_mhz -->
                         <div class="flex-1 bg-gray-700 rounded-full h-1.5 overflow-hidden">
                             <div class="h-full rounded-full transition-all duration-200 ease-out bg-cyan-400"
-                                 style="width: {% if freq_obj.current_mhz != None and freq_obj.max_mhz and freq_obj.max_mhz > 0 %}{% widthratio freq_obj.current_mhz freq_obj.max_mhz 100 %}{% else %}0{% endif %}%"></div>
+                                 style="width: {% if freq_obj.current_mhz and freq_obj.max_mhz and freq_obj.max_mhz > 0 %}{% widthratio freq_obj.current_mhz freq_obj.max_mhz 100 %}{% else %}0{% endif %}%"></div>
                         </div>
                         <span class="text-cyan-400 font-mono w-20">{{ freq_obj.current_mhz|floatformat:0 }} MHz</span>
                     {% else %}
@@ -221,15 +221,16 @@ on the page. This keeps the bar from being noise.
                         {% if freq_obj|floatformat:0 != "0" %}
                             <div class="flex-1 bg-gray-700 rounded-full h-1.5 overflow-hidden">
                                 <div class="h-full rounded-full transition-all duration-200 ease-out bg-cyan-400"
-                                     style="width: {% if freq_obj.max_mhz and freq_obj.max_mhz > 0 %}{% widthratio freq_obj freq_obj.max_mhz 100 %}{% else %}0{% endif %}%"></div>
+                                     style="width: 100%"></div>
                             </div>
                             <span class="text-cyan-400 font-mono w-20">{{ freq_obj|floatformat:0 }} MHz</span>
                         {% else %}
                             <span class="text-gray-500">—</span>
                         {% endif %}
-                    {% else %}
-                    <span class="text-gray-500">—</span>
                     {% endif %}
+                {% else %}
+                    <span class="text-gray-500">—</span>
+                {% endif %}
             </div>
             {% endfor %}
         </div>

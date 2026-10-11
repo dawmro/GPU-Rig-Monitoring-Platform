@@ -147,11 +147,7 @@ def collect_cpu():
             freq_list = psutil.cpu_freq(percpu=True)
             if freq_list:
                 cpu_freq_per_core = [
-                    {
-                        'current_mhz': round(f.current, 1) if f.current is not None else None,
-                        'min_mhz': round(f.min, 1) if f.min is not None else None,
-                        'max_mhz': round(f.max, 1) if f.max is not None else None,
-                    }
+                    round(f.current, 1) if f.current is not None else None
                     for f in freq_list
                 ]
         except (AttributeError, OSError, NotImplementedError):
@@ -286,7 +282,7 @@ def collect_cpu():
             'temp_c': temp_c,                                   # ← Existing aggregate temp (backward compatible)
             'temp_per_core_c': cpu_temp_per_core,               # ← NEW: list of temps per logical core
             'freq': cpu_freq,                                   # ← Existing aggregate freq (backward compatible)
-            'freq_per_core': cpu_freq_per_core,                 # ← NEW: list of {current,min,max} per logical core
+            'freq_per_core': cpu_freq_per_core,                 # ← NEW: list of ints (current MHz) per logical core
         }
     except Exception as e:
         logging.getLogger('cpu').warning('CPU collection failed: %s', e)

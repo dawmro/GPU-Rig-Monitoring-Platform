@@ -177,6 +177,20 @@ All collected fields have corresponding model fields and are handled by compacti
 
 ---
 
+## Bug Fix Applied During Verification
+
+### `compact_data.py` - UnboundLocalError Fix (commit 62cc0ec)
+
+**Issue:** Dead code at lines 375-389 referenced `current` and `batch_end` variables before they were defined in the while loop (lines 398, 402). This caused `UnboundLocalError` when running compaction.
+
+**Root Cause:** Duplicated code block from an earlier refactoring that was not cleaned up.
+
+**Fix:** Removed the duplicate dead code block (16 lines) that built WHERE clause and insert columns before the while loop. The correct versions are already inside the while loop where `current` and `batch_end` are properly defined.
+
+**Verification:** After fix, syntax check passes and all field coverage verifications pass.
+
+---
+
 ## Files Verified
 
 - `gpu_monitor/metrics_app/models.py` - Source of truth for all model fields

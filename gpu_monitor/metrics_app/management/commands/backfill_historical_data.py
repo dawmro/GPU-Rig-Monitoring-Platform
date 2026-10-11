@@ -96,7 +96,7 @@ class Command(BaseCommand):
             offset = timedelta(hours=shift_h)
 
             # Parent snapshots (need ID mapping for child FK)
-            id_map = self._insert_snapshots(src['snapshots'], offset, err_per_snap)
+            id_map = self._insert_snapshots(src['snapshots'], offset)
             snap_count = len(id_map)
 
             # Child tables (use remapped snapshot_id)
@@ -138,7 +138,7 @@ class Command(BaseCommand):
             rem_disk = [r for r in src['disk']    if r['timestamp'] >= cutoff]
             rem_net  = [r for r in src['network'] if r['timestamp'] >= cutoff]
 
-            id_map = self._insert_snapshots(rem_snap, offset, err_per_snap)
+            id_map = self._insert_snapshots(rem_snap, offset)
             grand_total += len(id_map)
             grand_total += self._insert_child_rows(rem_gpu,  'gpu',     id_map, offset)
             grand_total += self._insert_child_rows(rem_disk, 'disk',   id_map, offset)
@@ -164,53 +164,87 @@ class Command(BaseCommand):
     def _read_source(self, start, end):
         d = {'snapshots': [], 'gpu': [], 'disk': [], 'network': []}
         with connection.cursor() as c:
-            c.execute("SELECT id, rig_uuid, schema_version, timestamp, "
-                      "cpu_utilization_pct, cpu_temp_c, cpu_load_avg_json, "
-                      "cpu_freq_current_mhz, cpu_freq_min_mhz, cpu_freq_max_mhz, "
-                      "mem_used_bytes, mem_free_bytes, mem_cached_bytes, "
-                      "swap_used_bytes, swap_total_bytes, status, "
-                      "uptime_s, error_count, "
-                      "cpu_power_w, total_system_power_w "
-                      "FROM metrics_metricsnapshot "
-                      "WHERE timestamp >= %s AND timestamp < %s ORDER BY timestamp", [start, end])
+            # MetricSnapshot - include all fields
+            c.execute("""
+                SELECT 
+                    id, rig_uuid, schema_version, timestamp,
+                    cpu_utilization_pct, cpu_temp_c, cpu_load_avg_json,
+                    cpu_freq_current_mhz, cpu_freq_min_mhz, cpu_freq_max_mhz,
+                    cpu_freq_per_core_json, cpu_utilization_per_core_json, cpu_temp_per_core_json,
+                    cpu_power_w, total_system_power_w, cpu_to_gpu_power_ratio,
+                    cpu_load_avg_json, mem_used_bytes, mem_free_bytes, mem_cached_bytes,
+                    swap_used_bytes, swap_total_bytes, mem_total_bytes,
+                    uptime_s, status, error_count, has_active_job
+                FROM metrics_metricsnapshot
+                WHERE timestamp >= %s AND timestamp < %s ORDER BY timestamp
+            """, [start, end])
             cols = [col[0] for col in c.description]
             d['snapshots'] = [dict(zip(cols, r)) for r in c.fetchall()]
 
-            c.execute("SELECT id, snapshot_id, rig_uuid, timestamp, gpu_index, model, "
-                      "gpu_util_pct, gpu_temp_c, fan_speed_pct, "
-                      "mem_total_mb, mem_used_mb, mem_free_mb, mem_util_pct, "
-                      "power_draw_w, power_limit_w, "
-                      "pcie_current_gen, pcie_max_gen, pcie_current_width, pcie_max_width, "
-                      "gpu_core_clock_mhz, gpu_mem_clock_mhz "
-                      "FROM metrics_gpumetric "
-                      "WHERE timestamp >= %s AND timestamp < %s "
-                      "ORDER BY snapshot_id, gpu_index", [start, end])
+            # GPUMetric - include all fields
+            c.execute("""
+                SELECT 
+                    id, snapshot_id, rig_uuid, timestamp, gpu_index, model,
+                    gpu_uuid, gpu_board_part_number, gpu_subvendor, gpu_vbios,
+                    pci_bus_id, gpu_architecture, gpu_bus_type, gpu_board_id,
+                    gpu_serial, gpu_pci_subsystem, gpu_inforom,
+                    gpu_thermal_thresholds, gpu_pstates_util, gpu_max_clocks,
+                    gpu_mig_mode, gpu_bar1_mb,
+                    gpu_util_pct, mem_controller_util_pct, gpu_temp_c, fan_speed_pct,
+                    mem_total_mb, mem_used_mb, mem_free_mb, mem_util_pct,
+                    power_draw_w, power_limit_w,
+                    pcie_current_gen, pcie_max_gen, pcie_current_width, pcie_max_width,
+                    gpu_core_clock_mhz, gpu_mem_clock_mhz,
+                    vram_bandwidth_saturation, cooling_efficiency_index, fan_adjusted_cooling_response
+                FROM metrics_gpumetric
+                WHERE timestamp >= %s AND timestamp < %s
+                ORDER BY snapshot_id, gpu_index
+            """, [start, end])
             cols = [col[0] for col in c.description]
             d['gpu'] = [dict(zip(cols, r)) for r in c.fetchall()]
 
-            c.execute("SELECT id, snapshot_id, rig_uuid, timestamp, device, mountpoint, fstype, "
-                      "capacity_bytes, usage_pct, temp_c, smart_health, "
-                      "read_bytes, write_bytes, read_bytes_delta, write_bytes_delta, "
-                      "read_iops, write_iops, read_iops_delta, write_iops_delta, "
-                      "busy_time_ms, utilization_pct "
-                      "FROM metrics_storagemetric "
-                      "WHERE timestamp >= %s AND timestamp < %s "
-                      "ORDER BY snapshot_id, device", [start, end])
+            # StorageMetric - include all fields
+            c.execute("""
+                SELECT 
+                    id, snapshot_id, rig_uuid, timestamp, device, mountpoint, fstype,
+                    capacity_bytes, usage_pct, temp_c, smart_health,
+                    read_bytes_delta, write_bytes_delta,
+                    read_iops_delta, write_iops_delta, utilization_pct,
+                    capacity_bytes as capacity_bytes_delta,
+                    0 as read_bytes, 0 as write_bytes,
+                    0 as read_iops, 0 as write_iops,
+                    0 as read_bytes_delta, 0 as write_bytes_delta,
+                    0 as read_iops_delta, 0 as write_iops_delta,
+                    0 as read_bytes_total, 0 as write_bytes_total,
+                    0 as read_iops_total, 0 as write_iops_total,
+                    0 as busy_time_ms, 0 as utilization_pct as busy_time_ms_total,
+                    0 as utilization_pct
+                FROM metrics_storagemetric
+                WHERE timestamp >= %s AND timestamp < %s
+                ORDER BY snapshot_id, device
+            """, [start, end])
             cols = [col[0] for col in c.description]
             d['disk'] = [dict(zip(cols, r)) for r in c.fetchall()]
 
-            c.execute("SELECT id, snapshot_id, rig_uuid, timestamp, interface, ipv4, "
-                      "link_speed_mbps, rx_bytes, tx_bytes, "
-                      "rx_bytes_delta, tx_bytes_delta, rx_errors, tx_errors "
-                      "FROM metrics_networkmetric "
-                      "WHERE timestamp >= %s AND timestamp < %s "
-                      "ORDER BY snapshot_id, interface", [start, end])
+            # NetworkMetric - include all fields
+            c.execute("""
+                SELECT 
+                    id, snapshot_id, rig_uuid, timestamp, interface, ipv4,
+                    link_speed_mbps, rx_bytes, tx_bytes,
+                    rx_bytes_delta, tx_bytes_delta, rx_errors, tx_errors,
+                    rx_bytes as rx_bytes_total, tx_bytes as tx_bytes_total,
+                    0 as rx_bytes_delta, 0 as tx_bytes_delta,
+                    0 as read_bytes_delta, 0 as write_bytes_delta
+                FROM metrics_networkmetric
+                WHERE timestamp >= %s AND timestamp < %s
+                ORDER BY snapshot_id, interface
+            """, [start, end])
             cols = [col[0] for col in c.description]
             d['network'] = [dict(zip(cols, r)) for r in c.fetchall()]
 
         return d
 
-    def _insert_snapshots(self, snapshots, offset, err_per_snap):
+    def _insert_snapshots(self, snapshots, offset):
         """Insert snapshots with shifted timestamps. Returns old_id→new_id mapping."""
         id_map = {}
         if not snapshots:
@@ -219,10 +253,12 @@ class Command(BaseCommand):
         cols = ('rig_uuid, schema_version, timestamp, '
                 'cpu_utilization_pct, cpu_temp_c, cpu_load_avg_json, '
                 'cpu_freq_current_mhz, cpu_freq_min_mhz, cpu_freq_max_mhz, '
+                'cpu_freq_per_core_json, cpu_utilization_per_core_json, cpu_temp_per_core_json, '
+                'cpu_power_w, total_system_power_w, cpu_to_gpu_power_ratio, '
                 'mem_used_bytes, mem_free_bytes, mem_cached_bytes, '
-                'swap_used_bytes, swap_total_bytes, status, '
-                'uptime_s, error_count, '
-                'cpu_power_w, total_system_power_w')
+                'swap_used_bytes, swap_total_bytes, mem_total_bytes, '
+                'uptime_s, status, error_count, has_active_job, '
+                'cpu_power_w, total_system_power_w, cpu_to_gpu_power_ratio')
 
         all_vals = []
         for s in snapshots:
@@ -232,10 +268,12 @@ class Command(BaseCommand):
                 s['cpu_utilization_pct'], s['cpu_temp_c'],
                 s['cpu_load_avg_json'],
                 s.get('cpu_freq_current_mhz'), s.get('cpu_freq_min_mhz'), s.get('cpu_freq_max_mhz'),
+                s.get('cpu_freq_per_core_json'), s.get('cpu_utilization_per_core_json'), s.get('cpu_temp_per_core_json'),
+                s.get('cpu_power_w'), s.get('total_system_power_w'), s.get('cpu_to_gpu_power_ratio'),
                 s['mem_used_bytes'], s['mem_free_bytes'], s['mem_cached_bytes'],
-                s['swap_used_bytes'], s['swap_total_bytes'], s['status'],
-                s['uptime_s'], s['error_count'],
-                s.get('cpu_power_w'), s.get('total_system_power_w'),
+                s['swap_used_bytes'], s['swap_total_bytes'], s['mem_total_bytes'],
+                s['uptime_s'], s['status'], s['error_count'], s.get('has_active_job', False),
+                s.get('cpu_power_w'), s.get('total_system_power_w'), s.get('cpu_to_gpu_power_ratio'),
                 s['id'],
             ))
 
@@ -277,29 +315,31 @@ class Command(BaseCommand):
                 all_vals.append((
                     id_map[old_sid], row['rig_uuid'], new_ts,
                     row['gpu_index'], row['model'],
-                    row['gpu_util_pct'], row['gpu_temp_c'], row['fan_speed_pct'],
-                    row['mem_total_mb'], row['mem_used_mb'], row['mem_free_mb'],
-                    row['mem_util_pct'], row['power_draw_w'], row['power_limit_w'],
-                    row.get('pcie_current_gen'), row.get('pcie_max_gen'),
-                    row.get('pcie_current_width'), row.get('pcie_max_width'),
+                    row['gpu_uuid'], row.get('gpu_board_part_number'), row.get('gpu_subvendor'), row.get('gpu_vbios'),
+                    row.get('pci_bus_id'), row.get('gpu_architecture'), row.get('gpu_bus_type'), row.get('gpu_board_id'),
+                    row.get('gpu_serial'), row.get('gpu_pci_subsystem'), row.get('gpu_inforom'),
+                    row.get('gpu_thermal_thresholds'), row.get('gpu_pstates_util'), row.get('gpu_max_clocks'),
+                    row.get('gpu_mig_mode'), row.get('gpu_bar1_mb'),
+                    row['gpu_util_pct'], row['mem_controller_util_pct'], row['gpu_temp_c'], row['fan_speed_pct'],
+                    row['mem_total_mb'], row['mem_used_mb'], row['mem_free_mb'], row['mem_util_pct'],
+                    row['power_draw_w'], row['power_limit_w'],
+                    row.get('pcie_current_gen'), row.get('pcie_max_gen'), row.get('pcie_current_width'), row.get('pcie_max_width'),
                     row.get('gpu_core_clock_mhz'), row.get('gpu_mem_clock_mhz'),
+                    row.get('vram_bandwidth_saturation'), row.get('cooling_efficiency_index'), row.get('fan_adjusted_cooling_response'),
                 ))
             elif table == 'disk':
                 all_vals.append((
                     id_map[old_sid], row['rig_uuid'], new_ts,
                     row['device'], row['mountpoint'], row['fstype'],
-                    row['capacity_bytes'], row['usage_pct'], row['temp_c'],
-                    row['smart_health'],
-                    row.get('read_bytes'), row.get('write_bytes'),
+                    row['capacity_bytes'], row['usage_pct'], row['temp_c'], row['smart_health'],
                     row.get('read_bytes_delta'), row.get('write_bytes_delta'),
-                    row.get('read_iops'), row.get('write_iops'),
                     row.get('read_iops_delta'), row.get('write_iops_delta'),
-                    row.get('busy_time_ms'), row.get('utilization_pct'),
+                    row.get('utilization_pct'),
                 ))
             elif table == 'network':
                 all_vals.append((
                     id_map[old_sid], row['rig_uuid'], new_ts,
-                    row['interface'], row['ipv4'], row['link_speed_mbps'],
+                    row['interface'], row.get('ipv4'), row.get('link_speed_mbps'),
                     row.get('rx_bytes', 0), row.get('tx_bytes', 0),
                     row['rx_bytes_delta'], row['tx_bytes_delta'],
                     row['rx_errors'], row['tx_errors'],
@@ -311,19 +351,24 @@ class Command(BaseCommand):
         if table == 'gpu':
             sql = ("INSERT INTO metrics_gpumetric "
                    "(snapshot_id, rig_uuid, timestamp, gpu_index, model, "
-                   "gpu_util_pct, gpu_temp_c, fan_speed_pct, "
+                   "gpu_uuid, gpu_board_part_number, gpu_subvendor, gpu_vbios, "
+                   "pci_bus_id, gpu_architecture, gpu_bus_type, gpu_board_id, "
+                   "gpu_serial, gpu_pci_subsystem, gpu_inforom, "
+                   "gpu_thermal_thresholds, gpu_pstates_util, gpu_max_clocks, "
+                   "gpu_mig_mode, gpu_bar1_mb, "
+                   "gpu_util_pct, mem_controller_util_pct, gpu_temp_c, fan_speed_pct, "
                    "mem_total_mb, mem_used_mb, mem_free_mb, mem_util_pct, "
                    "power_draw_w, power_limit_w, "
                    "pcie_current_gen, pcie_max_gen, pcie_current_width, pcie_max_width, "
-                   "gpu_core_clock_mhz, gpu_mem_clock_mhz) "
+                   "gpu_core_clock_mhz, gpu_mem_clock_mhz, "
+                   "vram_bandwidth_saturation, cooling_efficiency_index, fan_adjusted_cooling_response) "
                    "VALUES %s ON CONFLICT (rig_uuid, timestamp, gpu_index) DO NOTHING")
         elif table == 'disk':
             sql = ("INSERT INTO metrics_storagemetric "
                    "(snapshot_id, rig_uuid, timestamp, device, mountpoint, fstype, "
                    "capacity_bytes, usage_pct, temp_c, smart_health, "
-                   "read_bytes, write_bytes, read_bytes_delta, write_bytes_delta, "
-                   "read_iops, write_iops, read_iops_delta, write_iops_delta, "
-                   "busy_time_ms, utilization_pct) "
+                   "read_bytes_delta, write_bytes_delta, "
+                   "read_iops_delta, write_iops_delta, utilization_pct) "
                    "VALUES %s ON CONFLICT (rig_uuid, timestamp, device) DO NOTHING")
         elif table == 'network':
             sql = ("INSERT INTO metrics_networkmetric "
@@ -338,5 +383,3 @@ class Command(BaseCommand):
                 execute_values(c, sql, batch, page_size=BATCH_SIZE)
 
         return len(all_vals)
-
-

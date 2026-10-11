@@ -723,7 +723,7 @@ class ChartDataView(APIView):
             },
             'cpu_freq_per_core_current_mhz': {
                 'json_field': 'cpu_freq_per_core_json',
-                'value_extractor': lambda v: v.get('current_mhz') if v else None,
+                'value_extractor': lambda v: v if isinstance(v, (int, float)) else v.get('current_mhz') if isinstance(v, dict) else None,
                 'round_precision': 0,
                 'label_prefix': 'Core',
             },

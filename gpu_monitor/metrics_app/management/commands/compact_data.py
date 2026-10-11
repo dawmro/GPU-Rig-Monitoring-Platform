@@ -132,7 +132,6 @@ COMPACT_TABLES = [
         },
         'static_fields': [
             'schema_version',
-            'cpu_to_gpu_power_ratio',
         ],
     },
 ]
@@ -372,22 +371,6 @@ class Command(BaseCommand):
         regular_select_sql = ', '.join(regular_select_parts)
         group_by_cols = ', '.join(config['group_by'] + ['bucket_ts'])
 
-        # Build WHERE clause
-        where_sql = f"timestamp >= %s AND timestamp < %s {fk_where}"
-        params = [current, batch_end]
-
-        # Build insert columns
-        insert_fields = ['timestamp'] + list(agg_fields.keys()) + static_fields + list(config['group_by'])
-        insert_cols = ', '.join(insert_fields)
-
-        def insert_expr(col):
-            if col == 'timestamp':
-                return 'bucket_ts'
-            if col == 'has_active_job':
-                return f"CAST({col} AS BOOLEAN)"
-            return col
-        insert_vals = ', '.join([insert_expr(f) for f in insert_fields])
-
         # Process in bucket-sized windows
         batch_window = timedelta(minutes=bucket_minutes)
         total_compacted = 0
@@ -417,31 +400,40 @@ class Command(BaseCommand):
 
                     # Build SELECT clause for this batch
                     if elementwise_fields and table_name == 'metrics_metricsnapshot':
-                        # Build CTEs for elementwise fields
+                        # Build CTEs for elementwise fields with WHERE placeholder
+                        # Only cpu_utilization_per_core_json and cpu_temp_per_core_json use elementwise aggregation
+                        # (both are simple scalar arrays). cpu_freq_per_core_json uses simple 'avg' aggregation.
                         elementwise_ctes = []
+                        elementwise_joins = []
                         elementwise_selects = []
                         for f in elementwise_fields:
                             cte_name = f"elem_{f}_{batch_num}"
                             elementwise_ctes.append(
                                 f"{cte_name} AS ("
-                                f"  SELECT {group_cols}, {bucket_expr} AS bucket_ts, core_idx, AVG((elem)::float) AS val "
-                                f"  FROM {table_name}, "
-                                f"       jsonb_array_elements_text({f}) WITH ORDINALITY AS arr(val, core_idx) "
-                                f"  WHERE {where_sql} AND (elem)::float IS NOT NULL "
-                                f"  GROUP BY {group_cols}, bucket_ts, core_idx"
+                                f"  SELECT {group_cols}, timestamp, {bucket_expr} AS bucket_ts, "
+                                f"         jsonb_agg(avg_val ORDER BY core_idx) AS val "
+                                f"  FROM ("
+                                f"    SELECT {group_cols}, timestamp, {bucket_expr} AS bucket_ts, core_idx, "
+                                f"           AVG((val)::float) AS avg_val "
+                                f"    FROM {table_name}, "
+                                f"         jsonb_array_elements_text({f}) WITH ORDINALITY AS arr(val, core_idx) "
+                                f"    WHERE {{where_sql}} AND val IS NOT NULL "
+                                f"    GROUP BY {group_cols}, timestamp, bucket_ts, core_idx"
+                                f"  ) sub "
+                                f"  GROUP BY {group_cols}, timestamp, bucket_ts"
                                 f")"
                             )
-                            elementwise_selects.append(
-                                f"(SELECT jsonb_agg(val ORDER BY core_idx) FROM {cte_name} "
-                                f" WHERE {group_cols} = m.{group_cols} AND bucket_ts = m.bucket_ts "
-                                f" GROUP BY core_idx ORDER BY core_idx) AS {f}"
-                            )
+                            # Join CTE to main subquery on group cols and bucket_ts
+                            join_condition = ' AND '.join([f"m.{col} = {cte_name}.{col}" for col in config['group_by']])
+                            elementwise_joins.append(f"LEFT JOIN {cte_name} ON {join_condition} AND m.bucket_ts = {cte_name}.bucket_ts")
+                            elementwise_selects.append(f"COALESCE({cte_name}.val, '[]'::jsonb) AS {f}")
 
                         elementwise_cte_sql = ',\n            '.join(elementwise_ctes)
+                        elementwise_join_sql = ' '.join(elementwise_joins)
                         elementwise_select_sql = ', '.join(elementwise_selects)
 
-                        # Build regular select
-                        regular_select_parts = [f"{bucket_expr} AS bucket_ts"] + list(config['group_by'])
+                        # Build regular select - wrap in subquery to compute bucket_ts first
+                        regular_select_parts = [f"timestamp", f"{bucket_expr} AS bucket_ts"] + list(config['group_by'])
                         for f, agg in regular_agg_fields.items():
                             if agg == 'max' and f == 'has_active_job':
                                 regular_select_parts.append(f"MAX(CAST({f} AS INTEGER)) AS {f}")
@@ -457,27 +449,41 @@ class Command(BaseCommand):
                             regular_select_parts.append(f"(ARRAY_AGG({f} ORDER BY timestamp DESC))[1] AS {f}")
 
                         regular_select_sql = ', '.join(regular_select_parts)
-                        group_by_cols = ', '.join(config['group_by'] + ['bucket_ts'])
+                        # Main subquery needs timestamp in GROUP BY to match elementwise CTEs
+                        group_by_cols = ', '.join(config['group_by'] + ['timestamp', 'bucket_ts'])
 
-                        elementwise_cte_sql = ',\n            '.join(elementwise_ctes)
-                        elementwise_select_sql = ', '.join(elementwise_selects)
-
+                        # Build select_clause: first compute main data with bucket_ts in subquery, then LEFT JOIN elementwise CTEs
+                        # Explicitly select from m only, qualifying bucket_ts as m.bucket_ts
+                        main_select_cols = ', '.join([f"m.{col}" for col in config['group_by'] + ['timestamp', 'bucket_ts']])
+                        regular_agg_cols = ', '.join([f"m.{f}" for f in regular_agg_fields.keys()])
+                        static_agg_cols = ', '.join([f"m.{f}" for f in static_fields])
+                        
                         select_clause = (
-                            f"WITH {elementwise_cte_sql} "
-                            f"SELECT {regular_select_sql}, {elementwise_select_sql} "
-                            f"FROM {table_name} m "
-                            f"WHERE {where_sql} GROUP BY {group_by_cols}"
+                            f"WITH {elementwise_cte_sql}, "
+                            f"main AS (SELECT {regular_select_sql} FROM {table_name} WHERE {{where_sql}} GROUP BY {group_by_cols}) "
+                            f"SELECT {main_select_cols}, {regular_agg_cols}, {static_agg_cols}, {elementwise_select_sql} "
+                            f"FROM main m "
+                            f"{elementwise_join_sql}"
                         )
+                        
+                        # For elementwise path, we need params for each WHERE clause:
+                        # 1 per CTE + 1 for main subquery = 4 WHERE clauses
+                        # Each WHERE clause needs 2 params (current, batch_end)
+                        # So we need 8 params total
+                        num_where_clauses = len(elementwise_fields) + 1
+                        elementwise_params = params * num_where_clauses
                     else:
                         select_clause = self._build_regular_select_clause(config, bucket_minutes, bucket_expr)
+                        elementwise_params = params
 
                     # Aggregate into temp table
                     c.execute(f"DROP TABLE IF EXISTS {tmp_table}")
+                    # Format the select_clause with the actual WHERE clause
+                    formatted_select = select_clause.format(where_sql=where_sql)
                     c.execute(
                         f"CREATE TEMP TABLE {tmp_table} AS "
-                        f"{select_clause} FROM {table_name} m "
-                        f"WHERE {where_sql} GROUP BY {group_by_cols}",
-                        params
+                        f"{formatted_select}",
+                        elementwise_params
                     )
 
                     # Delete originals and insert aggregated
@@ -509,6 +515,40 @@ class Command(BaseCommand):
         tier_name = "Tier 2 (15m)" if bucket_minutes == 15 else "Tier 3 (1h)"
         self.stdout.write(self.style.SUCCESS(
             f'  {table_name}: compacted {total_compacted:,} rows in {batch_num} batches ({elapsed:.1f}s) [{tier_name}]'))
+
+    def _build_regular_select_clause(self, config, bucket_minutes, bucket_expr):
+        """Build SELECT clause for regular (non-elementwise) aggregation."""
+        agg_fields = config['agg_fields']
+        static_fields = config['static_fields']
+        group_by_cols = ', '.join(config['group_by'] + ['bucket_ts'])
+        where_placeholder = "WHERE {where_sql}"
+
+        # Regular fields select
+        regular_select_parts = [f"{bucket_expr} AS bucket_ts"] + list(config['group_by'])
+        for f, agg in agg_fields.items():
+            if agg == 'avg_elementwise':
+                continue  # handled separately
+            if agg == 'max' and f == 'has_active_job':
+                regular_select_parts.append(f"MAX(CAST({f} AS INTEGER)) AS {f}")
+            else:
+                regular_select_parts.append(
+                    f"AVG({f}) AS {f}" if agg == 'avg' else
+                    f"SUM({f}) AS {f}" if agg == 'sum' else
+                    f"MAX({f}) AS {f}" if agg == 'max' else
+                    f"MIN({f}) AS {f}" if agg == 'min' else
+                    f"(ARRAY_AGG({f} ORDER BY timestamp DESC))[1] AS {f}"
+                )
+        for f in static_fields:
+            regular_select_parts.append(f"(ARRAY_AGG({f} ORDER BY timestamp DESC))[1] AS {f}")
+
+        regular_select_sql = ', '.join(regular_select_parts)
+
+        select_clause = (
+            f"SELECT {regular_select_sql} "
+            f"FROM {config['table']} m "
+            f"{where_placeholder} GROUP BY {group_by_cols}"
+        )
+        return select_clause
 
     def _bucket_expression(self, bucket_minutes):
         """Generate SQL bucket expression for given minute interval."""

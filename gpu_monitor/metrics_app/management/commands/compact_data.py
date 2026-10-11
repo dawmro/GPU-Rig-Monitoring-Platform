@@ -261,8 +261,18 @@ class Command(BaseCommand):
                     insert_cols = list(group_by_cols_list) + ['timestamp'] + list(regular_agg_fields.keys()) + static_fields + elementwise_fields
                     insert_cols_sql = ", ".join(insert_cols)
 
-                    temp_select_cols = list(group_by_cols_list) + ['bucket_ts AS timestamp'] + list(regular_agg_fields.keys()) + static_fields + elementwise_fields
-                    temp_select_sql = ", ".join(temp_select_cols)
+                    # Build temp select with CAST back to boolean for has_active_job
+                    temp_select_parts = list(group_by_cols_list) + ['bucket_ts AS timestamp']
+                    for f in regular_agg_fields.keys():
+                        if f == 'has_active_job':
+                            temp_select_parts.append(f"CAST({f} AS BOOLEAN) AS {f}")
+                        else:
+                            temp_select_parts.append(f)
+                    for f in static_fields:
+                        temp_select_parts.append(f)
+                    for f in elementwise_fields:
+                        temp_select_parts.append(f)
+                    temp_select_sql = ", ".join(temp_select_parts)
 
                     # ATOMIC BLOCK: Prevents data loss if INSERT fails after DELETE
                     with transaction.atomic():

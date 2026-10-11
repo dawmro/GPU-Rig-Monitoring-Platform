@@ -401,7 +401,7 @@ class Command(BaseCommand):
 
                     # Build SELECT clause for this batch
                     if elementwise_fields and table_name == 'metrics_metricsnapshot':
-                        # Build CTEs for elementwise fields
+                        # Build CTEs for elementwise fields with WHERE placeholder
                         elementwise_ctes = []
                         elementwise_selects = []
                         for f in elementwise_fields:
@@ -411,7 +411,7 @@ class Command(BaseCommand):
                                 f"  SELECT {group_cols}, {bucket_expr} AS bucket_ts, core_idx, AVG((elem)::float) AS val "
                                 f"  FROM {table_name}, "
                                 f"       jsonb_array_elements_text({f}) WITH ORDINALITY AS arr(val, core_idx) "
-                                f"  WHERE {where_sql} AND (elem)::float IS NOT NULL "
+                                f"  WHERE {{where_sql}} AND (elem)::float IS NOT NULL "
                                 f"  GROUP BY {group_cols}, bucket_ts, core_idx"
                                 f")"
                             )
@@ -443,17 +443,23 @@ class Command(BaseCommand):
                         regular_select_sql = ', '.join(regular_select_parts)
                         group_by_cols = ', '.join(config['group_by'] + ['bucket_ts'])
 
-                        elementwise_cte_sql = ',\n            '.join(elementwise_ctes)
-                        elementwise_select_sql = ', '.join(elementwise_selects)
-
+                        # Build select_clause with WHERE placeholder for CTEs and main query
                         select_clause = (
                             f"WITH {elementwise_cte_sql} "
                             f"SELECT {regular_select_sql}, {elementwise_select_sql} "
                             f"FROM {table_name} m "
-                            f"WHERE {where_sql} GROUP BY {group_by_cols}"
+                            f"WHERE {{where_sql}} GROUP BY {group_by_cols}"
                         )
+                        
+                        # For elementwise path, we need params for each WHERE clause:
+                        # 1 per CTE (3 fields = 3 CTEs) + 1 for main query = 4 WHERE clauses
+                        # Each WHERE clause needs 2 params (current, batch_end)
+                        # So we need 8 params total
+                        num_where_clauses = len(elementwise_fields) + 1
+                        elementwise_params = params * num_where_clauses
                     else:
                         select_clause = self._build_regular_select_clause(config, bucket_minutes, bucket_expr)
+                        elementwise_params = params
 
                     # Aggregate into temp table
                     c.execute(f"DROP TABLE IF EXISTS {tmp_table}")
@@ -462,7 +468,7 @@ class Command(BaseCommand):
                     c.execute(
                         f"CREATE TEMP TABLE {tmp_table} AS "
                         f"{formatted_select}",
-                        params
+                        elementwise_params
                     )
 
                     # Delete originals and insert aggregated

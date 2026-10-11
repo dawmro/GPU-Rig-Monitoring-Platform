@@ -457,9 +457,11 @@ class Command(BaseCommand):
 
                     # Aggregate into temp table
                     c.execute(f"DROP TABLE IF EXISTS {tmp_table}")
+                    # Format the select_clause with the actual WHERE clause
+                    formatted_select = select_clause.format(where_sql=where_sql)
                     c.execute(
                         f"CREATE TEMP TABLE {tmp_table} AS "
-                        f"{select_clause}",
+                        f"{formatted_select}",
                         params
                     )
 

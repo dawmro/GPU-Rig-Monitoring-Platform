@@ -128,8 +128,7 @@ COMPACT_TABLES = [
             # NEW: Per-core metrics — element-wise average for smooth trends (consistent with GPU scalar metrics)
             'cpu_utilization_per_core_json': 'avg_elementwise',
             'cpu_temp_per_core_json': 'avg_elementwise',
-            # cpu_freq_per_core_json contains objects {"current_mhz", "min_mhz", "max_mhz"} - not simple numbers
-            'cpu_freq_per_core_json': 'last',
+            'cpu_freq_per_core_json': 'avg_elementwise',
         },
         'static_fields': [
             'schema_version',
@@ -407,15 +406,28 @@ class Command(BaseCommand):
                         elementwise_selects = []
                         for f in elementwise_fields:
                             cte_name = f"elem_{f}_{batch_num}"
+                            # Check if field contains JSON objects (like cpu_freq_per_core_json)
+                            # by examining if the array elements are JSON objects vs simple values
+                            # Use jsonb_typeof to determine if elements are objects
                             elementwise_ctes.append(
                                 f"{cte_name} AS ("
                                 f"  SELECT {group_cols}, timestamp, {bucket_expr} AS bucket_ts, "
                                 f"         jsonb_agg(avg_val ORDER BY core_idx) AS val "
                                 f"  FROM ("
-                                f"    SELECT {group_cols}, timestamp, {bucket_expr} AS bucket_ts, core_idx, AVG((val)::float) AS avg_val "
+                                f"    SELECT {group_cols}, timestamp, {bucket_expr} AS bucket_ts, core_idx, "
+                                f"           CASE "
+                                f"             WHEN jsonb_typeof(val) = 'object' THEN "
+                                f"               jsonb_build_object("
+                                f"                 'current_mhz', AVG((val->>'current_mhz')::float), "
+                                f"                 'min_mhz', AVG((val->>'min_mhz')::float), "
+                                f"                 'max_mhz', AVG((val->>'max_mhz')::float)"
+                                f"               ) "
+                                f"             ELSE "
+                                f"               AVG((val)::float)::jsonb "
+                                f"           END AS avg_val "
                                 f"    FROM {table_name}, "
-                                f"         jsonb_array_elements_text({f}) WITH ORDINALITY AS arr(val, core_idx) "
-                                f"    WHERE {{where_sql}} AND (val)::float IS NOT NULL "
+                                f"         jsonb_array_elements({f}) WITH ORDINALITY AS arr(val, core_idx) "
+                                f"    WHERE {{where_sql}} AND val IS NOT NULL "
                                 f"    GROUP BY {group_cols}, timestamp, bucket_ts, core_idx"
                                 f"  ) sub "
                                 f"  GROUP BY {group_cols}, timestamp, bucket_ts"

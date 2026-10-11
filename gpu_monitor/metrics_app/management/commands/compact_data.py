@@ -408,10 +408,10 @@ class Command(BaseCommand):
                             cte_name = f"elem_{f}_{batch_num}"
                             elementwise_ctes.append(
                                 f"{cte_name} AS ("
-                                f"  SELECT {group_cols}, {bucket_expr} AS bucket_ts, core_idx, AVG((elem)::float) AS val "
+                                f"  SELECT {group_cols}, {bucket_expr} AS bucket_ts, core_idx, AVG((val)::float) AS val "
                                 f"  FROM {table_name}, "
                                 f"       jsonb_array_elements_text({f}) WITH ORDINALITY AS arr(val, core_idx) "
-                                f"  WHERE {{where_sql}} AND (elem)::float IS NOT NULL "
+                                f"  WHERE {{where_sql}} AND (val)::float IS NOT NULL "
                                 f"  GROUP BY {group_cols}, bucket_ts, core_idx"
                                 f")"
                             )

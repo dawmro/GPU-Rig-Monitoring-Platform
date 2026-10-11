@@ -445,10 +445,15 @@ class Command(BaseCommand):
                         group_by_cols = ', '.join(config['group_by'] + ['bucket_ts'])
 
                         # Build select_clause: first compute main data with bucket_ts in subquery, then LEFT JOIN elementwise CTEs
+                        # Explicitly select from m only, qualifying bucket_ts as m.bucket_ts
+                        main_select_cols = ', '.join([f"m.{col}" for col in config['group_by'] + ['bucket_ts']])
+                        regular_agg_cols = ', '.join([f"m.{f}" for f in regular_agg_fields.keys()])
+                        static_agg_cols = ', '.join([f"m.{f}" for f in static_fields])
+                        
                         select_clause = (
                             f"WITH {elementwise_cte_sql}, "
                             f"main AS (SELECT {regular_select_sql} FROM {table_name} WHERE {{where_sql}} GROUP BY {group_by_cols}) "
-                            f"SELECT m.{group_by_cols}, m.bucket_ts, {elementwise_select_sql} "
+                            f"SELECT {main_select_cols}, {regular_agg_cols}, {static_agg_cols}, {elementwise_select_sql} "
                             f"FROM main m "
                             f"{elementwise_join_sql}"
                         )

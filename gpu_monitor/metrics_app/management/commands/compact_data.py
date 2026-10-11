@@ -408,16 +408,16 @@ class Command(BaseCommand):
                             cte_name = f"elem_{f}_{batch_num}"
                             elementwise_ctes.append(
                                 f"{cte_name} AS ("
-                                f"  SELECT {group_cols}, {bucket_expr} AS bucket_ts, "
+                                f"  SELECT {group_cols}, timestamp, {bucket_expr} AS bucket_ts, "
                                 f"         jsonb_agg(avg_val ORDER BY core_idx) AS val "
                                 f"  FROM ("
-                                f"    SELECT {group_cols}, {bucket_expr} AS bucket_ts, core_idx, AVG((val)::float) AS avg_val "
+                                f"    SELECT {group_cols}, timestamp, {bucket_expr} AS bucket_ts, core_idx, AVG((val)::float) AS avg_val "
                                 f"    FROM {table_name}, "
                                 f"         jsonb_array_elements_text({f}) WITH ORDINALITY AS arr(val, core_idx) "
                                 f"    WHERE {{where_sql}} AND (val)::float IS NOT NULL "
-                                f"    GROUP BY {group_cols}, bucket_ts, core_idx"
+                                f"    GROUP BY {group_cols}, timestamp, bucket_ts, core_idx"
                                 f"  ) sub "
-                                f"  GROUP BY {group_cols}, bucket_ts"
+                                f"  GROUP BY {group_cols}, timestamp, bucket_ts"
                                 f")"
                             )
                             # Join CTE to main subquery on group cols and bucket_ts
@@ -446,11 +446,12 @@ class Command(BaseCommand):
                             regular_select_parts.append(f"(ARRAY_AGG({f} ORDER BY timestamp DESC))[1] AS {f}")
 
                         regular_select_sql = ', '.join(regular_select_parts)
-                        group_by_cols = ', '.join(config['group_by'] + ['bucket_ts'])
+                        # Main subquery needs timestamp in GROUP BY to match elementwise CTEs
+                        group_by_cols = ', '.join(config['group_by'] + ['timestamp', 'bucket_ts'])
 
                         # Build select_clause: first compute main data with bucket_ts in subquery, then LEFT JOIN elementwise CTEs
                         # Explicitly select from m only, qualifying bucket_ts as m.bucket_ts
-                        main_select_cols = ', '.join([f"m.{col}" for col in config['group_by'] + ['bucket_ts']])
+                        main_select_cols = ', '.join([f"m.{col}" for col in config['group_by'] + ['timestamp', 'bucket_ts']])
                         regular_agg_cols = ', '.join([f"m.{f}" for f in regular_agg_fields.keys()])
                         static_agg_cols = ', '.join([f"m.{f}" for f in static_fields])
                         

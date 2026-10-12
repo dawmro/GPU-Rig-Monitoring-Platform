@@ -43,7 +43,7 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.17.2'
+__version__ = '1.17.3'
 __schema_version__ = '1.22'
 
 # ── Config ──────────────────────────────────────────────────────────────────
@@ -1056,7 +1056,7 @@ def collect_gpus():
                 # NEW: VRAM Bandwidth Saturation Index (agent-computed for schema 1.21+)
                 'vram_bandwidth_saturation': (
                     round(util.memory / max(util.gpu, 1.0), 4)
-                    if util.memory is not None and util.gpu is not None and util.gpu > 0
+                    if util.memory is not None and util.gpu is not None
                     else None
                 ),
                 'temp_c': temp,

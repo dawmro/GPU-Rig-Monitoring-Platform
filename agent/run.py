@@ -43,7 +43,7 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.17.3'
+__version__ = '1.17.4'
 __schema_version__ = '1.22'
 
 # ── Config ──────────────────────────────────────────────────────────────────
@@ -1513,7 +1513,7 @@ def collect_top_processes(limit=20):
                     if isinstance(part, bytes):
                         part = part.decode('utf-8', errors='replace')
                     cmdline_parts.append(part)
-                info['cmdline'] = ' '.join(cmdline_parts)[:200]
+                info['cmdline'] = ' '.join(cmdline_parts)[:400]
             else:
                 info['cmdline'] = ''
             # Ensure name is str too

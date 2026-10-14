@@ -43,7 +43,7 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.17.4'
+__version__ = '1.17.5'
 __schema_version__ = '1.22'
 
 # ── Config ──────────────────────────────────────────────────────────────────
@@ -976,20 +976,26 @@ def collect_gpus():
 
             # 2) Dynamic P-states (residency % + transition thresholds, P0..P7)
             gpu_pstates = None
+            
             try:
-                pinfo = pynvml.nvmlDeviceGetDynamicPstatesInfo(handle)
-                if pinfo is not None:
-                    gpu_pstates = {
-                        'flags': int(pinfo.flags),
-                        'util': [
-                            {'p': i, 'present': bool(pinfo.utilization[i].bIsPresent),
-                             'pct': int(pinfo.utilization[i].percentage),
-                             'inc': int(pinfo.utilization[i].incThreshold),
-                             'dec': int(pinfo.utilization[i].decThreshold)}
-                            for i in range(len(pinfo.utilization))
-                        ],
-                    }
-            except (pynvml.NVMLError, AttributeError):
+                pinfo = pynvml.c_nvmlDynamicPstatesInfo_t()
+                pynvml.nvmlDeviceGetDynamicPstatesInfo(handle, pinfo)
+            
+                gpu_pstates = {
+                    'flags': int(pinfo.flags),
+                    'util': [
+                        {
+                            'p': i,
+                            'present': bool(pinfo.utilization[i].bIsPresent),
+                            'pct': int(pinfo.utilization[i].percentage),
+                            'inc': int(pinfo.utilization[i].incThreshold),
+                            'dec': int(pinfo.utilization[i].decThreshold),
+                        }
+                        for i in range(len(pinfo.utilization))
+                    ],
+                }
+            
+            except (pynvml.NVMLError, AttributeError, TypeError):
                 gpu_pstates = None
 
             # 3) Max clocks per domain (graphics/mem/sm/video)

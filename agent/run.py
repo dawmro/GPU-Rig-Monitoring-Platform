@@ -43,7 +43,7 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.17.5'
+__version__ = '1.17.6'
 __schema_version__ = '1.22'
 
 # ── Config ──────────────────────────────────────────────────────────────────
@@ -729,27 +729,25 @@ def collect_network():
 # PCI Subvendor ID -> Human-readable name mapping
 # Based on PCI ID Repository and common GPU subvendor IDs
 GPU_SUBVENDOR_MAP = {
-    0x10DE: "NVIDIA (Founders Edition)",
+    0x10DE: "NVIDIA",
     0x1043: "ASUS",
     0x1458: "Gigabyte",
     0x1462: "MSI",
     0x19DA: "Zotac",
+    0x1E04: "Inno3D",
     0x3842: "EVGA",
     0x1569: "Palit",
     0x107D: "Leadtek",
-    0x1E04: "Inno3D",
-    0x152D: "Quanta",
     0x11A9: "InnoVISION",
     0x1B4C: "Galax / KFA2",
-    0x1ACC: "PNY",
-    0x19BE: "Gainward",
-    0x107D: "Leadtek",
+    0x196E: "PNY",
+    0x10B0: "Gainward",
     0x103C: "HP",
     0x17AA: "Lenovo",
     0x1028: "Dell",
     0x144D: "Samsung",
     0x1014: "IBM",
-    0x1002: "AMD",
+    0x152D: "Quanta",
 }
 
 

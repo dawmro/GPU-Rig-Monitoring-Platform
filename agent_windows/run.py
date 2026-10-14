@@ -53,7 +53,7 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.17.3-win'
+__version__ = '1.17.4-win'
 __schema_version__ = '1.22'
 
 # == Config ==================================================================

@@ -43,7 +43,7 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.17.3'
+__version__ = '1.17.4'
 __schema_version__ = '1.22'
 
 # ── Config ──────────────────────────────────────────────────────────────────

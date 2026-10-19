@@ -2084,7 +2084,7 @@ A new "Process Details" card displays **top-10 by CPU + top-10 by memory** proce
 
 **Why top-10 not top-5:** User reported that top-5 was too few. Top-10 gives better coverage of background processes while still fitting in the card.
 
-**Data source:** `top_cpu_processes_json` ∪ `top_mem_processes_json` from `LatestSnapshot`. Agent truncates `cmdline` to 400 chars to bound payload size.
+**Data source:** `top_cpu_processes_json` ∪ `top_mem_processes_json` from `LatestSnapshot`. Agent truncates `cmdline` to 1000 chars to bound payload size.
 
 **Template:** `_metrics_cards.html` Process Details card, between Top Processes and Network.
 

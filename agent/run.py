@@ -1517,7 +1517,7 @@ def collect_top_processes(limit=20):
                     if isinstance(part, bytes):
                         part = part.decode('utf-8', errors='replace')
                     cmdline_parts.append(part)
-                info['cmdline'] = ' '.join(cmdline_parts)[:400]
+                info['cmdline'] = ' '.join(cmdline_parts)[:1000]
             else:
                 info['cmdline'] = ''
             # Ensure name is str too

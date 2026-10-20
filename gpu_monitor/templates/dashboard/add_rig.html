@@ -20,7 +20,7 @@
 
                 <div class="bg-gray-900 border border-gray-700 rounded p-3 font-mono text-sm relative mb-3">
                     <button class="copy-btn absolute top-2 right-2 text-xs text-blue-400 hover:text-blue-300 bg-gray-800 px-2 py-1 rounded">Copy</button>
-                    <pre class="text-green-300 overflow-x-auto whitespace-nowrap"><code>cd ~
+                    <pre class="text-green-300 overflow-x-auto"><code>cd ~
 mkdir -p workspace
 cd workspace
 git clone https://github.com/dawmro/GPU-Rig-Monitoring-Platform.git
@@ -42,7 +42,7 @@ cd GPU-Rig-Monitoring-Platform/agent</code></pre>
 
                 <div class="bg-gray-900 border border-gray-700 rounded p-3 font-mono text-sm relative mb-3">
                     <button class="copy-btn absolute top-2 right-2 text-xs text-blue-400 hover:text-blue-300 bg-gray-800 px-2 py-1 rounded">Copy</button>
-                    <pre class="text-green-300 overflow-x-auto whitespace-nowrap"><code># Ubuntu 20.04+ / Debian 11+ (Python 3.10+)
+                    <pre class="text-green-300 overflow-x-auto"><code># Ubuntu 20.04+ / Debian 11+ (Python 3.10+)
 sudo apt update && sudo apt install python3.10-venv -y && sudo rm -rf /opt/monitoring-agent/venv && sudo chmod +x install.sh && sudo ./install.sh</code></pre>
                 </div>
 
@@ -50,7 +50,7 @@ sudo apt update && sudo apt install python3.10-venv -y && sudo rm -rf /opt/monit
                     <summary class="text-sm text-gray-400 cursor-pointer hover:text-gray-300">Older Python versions (3.8/3.9) — click to expand</summary>
                     <div class="bg-gray-900 border border-gray-700 rounded p-3 font-mono text-sm relative mt-2">
                         <button class="copy-btn absolute top-2 right-2 text-xs text-blue-400 hover:text-blue-300 bg-gray-800 px-2 py-1 rounded">Copy</button>
-                        <pre class="text-yellow-300 overflow-x-auto whitespace-nowrap"><code>sudo apt update && sudo apt install python3.8-venv -y && sudo apt install -y python3-venv && sudo rm -rf /opt/monitoring-agent/venv && sudo chmod +x install.sh && sudo ./install.sh</code></pre>
+                        <pre class="text-yellow-300 overflow-x-auto"><code>sudo apt update && sudo apt install python3.8-venv -y && sudo apt install -y python3-venv && sudo rm -rf /opt/monitoring-agent/venv && sudo chmod +x install.sh && sudo ./install.sh</code></pre>
                     </div>
                 </details>
 
@@ -90,7 +90,7 @@ sudo apt update && sudo apt install python3.10-venv -y && sudo rm -rf /opt/monit
 
                 <div class="bg-gray-900 border border-gray-700 rounded p-3 font-mono text-sm relative mb-3">
                     <button class="copy-btn absolute top-2 right-2 text-xs text-blue-400 hover:text-blue-300 bg-gray-800 px-2 py-1 rounded">Copy</button>
-                    <pre class="text-green-300 overflow-x-auto whitespace-nowrap"><code>nano /etc/monitoring-agent/config.yaml</code></pre>
+                    <pre class="text-green-300 overflow-x-auto"><code>nano /etc/monitoring-agent/config.yaml</code></pre>
                 </div>
 
                 <div class="bg-gray-900 border border-gray-700 rounded p-3 font-mono text-sm relative mb-3">
@@ -134,14 +134,14 @@ debug_mode: false</code></pre>
 
                 <div class="bg-gray-900 border border-gray-700 rounded p-3 font-mono text-sm relative mb-3">
                     <button class="copy-btn absolute top-2 right-2 text-xs text-blue-400 hover:text-blue-300 bg-gray-800 px-2 py-1 rounded">Copy</button>
-                    <pre class="text-green-300 overflow-x-auto whitespace-nowrap"><code>sudo -u monitoring-agent /opt/monitoring-agent/venv/bin/python /opt/monitoring-agent/run.py</code></pre>
+                    <pre class="text-green-300 overflow-x-auto"><code>sudo -u monitoring-agent /opt/monitoring-agent/venv/bin/python /opt/monitoring-agent/run.py</code></pre>
                 </div>
 
                 <p class="text-gray-400 text-sm mb-2">Expected output (JSON logs):</p>
 
                 <div class="bg-gray-900 border border-green-500/30 rounded p-3 font-mono text-sm relative">
                     <button class="copy-btn absolute top-2 right-2 text-xs text-blue-400 hover:text-blue-300 bg-gray-800 px-2 py-1 rounded">Copy</button>
-                    <pre class="text-green-400 overflow-x-auto whitespace-nowrap"><code>{"ts":"2026-06-01T17:35:04","level":"INFO","module":"main","msg":"Starting collection for rig a1b2c3d4-..."}
+                    <pre class="text-green-400 overflow-x-auto"><code>{"ts":"2026-06-01T17:35:04","level":"INFO","module":"main","msg":"Starting collection for rig a1b2c3d4-..."}
 {"ts":"2026-06-01T17:35:06","level":"INFO","module":"transport","msg":"Ingest response: 200 {\"status\": \"new\"}"}
 {"ts":"2026-06-01T17:35:06","level":"INFO","module":"main","msg":"Payload accepted: new"}</code></pre>
                 </div>

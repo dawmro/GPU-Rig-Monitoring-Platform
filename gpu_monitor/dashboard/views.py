@@ -101,6 +101,15 @@ def index_view(request):
     return redirect('accounts:login')
 
 
+@login_required
+def add_rig_onboarding(request):
+    """Onboarding guide for adding a new GPU rig.
+
+    Displays step-by-step instructions from the agent README Quick Start.
+    """
+    return render(request, 'dashboard/add_rig.html')
+
+
 def rate_limit(max_requests, window_s):
     """Simple per-user/IP rate limit decorator for Django views.
 

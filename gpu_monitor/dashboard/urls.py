@@ -6,6 +6,7 @@ app_name = 'dashboard'
 urlpatterns = [
     path('', views.index_view, name='index'),
     path('dashboard/rigs/', views.rig_list, name='rig-list'),
+    path('dashboard/rigs/add/', views.add_rig_onboarding, name='add-rig'),
     path('dashboard/rigs/<str:uuid>/', views.rig_detail, name='rig-detail'),
     path('dashboard/rigs/<str:uuid>/rename/', views.rig_rename, name='rig-rename'),
     path('dashboard/rigs/<str:uuid>/delete/', views.rig_delete, name='rig-delete'),

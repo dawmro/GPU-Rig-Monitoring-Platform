@@ -926,6 +926,52 @@ def htmx_report_data(request, uuid):
     return render(request, 'dashboard/_report_table.html', context)
 
 
+def _get_rig_database_storage_mb(uuid_str):
+    """Calculate accurate database storage per rig in MB using pg_column_size.
+
+    Uses SUM(pg_column_size(t.*)) per table for the rig's rows.
+    This is accurate (includes TOAST, compression, NULL bitmap) but slower than estimates.
+    Compaction/cleanup runs at DB level independently of report range.
+    """
+    from django.db import connection
+
+    tables = [
+        'metrics_metricsnapshot',
+        'metrics_gpumetric',
+        'metrics_storagemetric',
+        'metrics_networkmetric',
+        'metrics_latest_snapshot',
+        'metrics_latest_docker_container',
+    ]
+
+    with connection.cursor() as cursor:
+        rig_sizes = {}
+        total_bytes = 0
+
+        for table in tables:
+            # Use pg_column_size for accurate per-row size including TOAST
+            cursor.execute(f"""
+                SELECT COALESCE(SUM(pg_column_size(t.*)), 0) as total_bytes,
+                       COUNT(*) as row_count
+                FROM {table} t
+                WHERE t.rig_uuid = %s
+            """, [uuid_str])
+            row = cursor.fetchone()
+            total_bytes_table = row[0] or 0
+            row_count = row[1] or 0
+
+            rig_sizes[table] = {
+                'rows': row_count,
+                'mb': round(total_bytes_table / (1024 * 1024), 2)
+            }
+            total_bytes += total_bytes_table
+
+        return {
+            'breakdown': rig_sizes,
+            'total_mb': round(total_bytes / (1024 * 1024), 2)
+        }
+
+
 def _build_report_context(uuid, uuid_str, range_hours):
     """Build the report context dict (separated for caching).
 
@@ -1788,6 +1834,9 @@ def _build_report_context(uuid, uuid_str, range_hours):
         else None
     )
 
+    # Database storage estimate (same for all ranges - compaction runs at DB level)
+    db_storage = _get_rig_database_storage_mb(uuid_str)
+
     return {
         'range_hours': range_hours,
         'gpu_devices': gpu_devices,
@@ -1803,6 +1852,7 @@ def _build_report_context(uuid, uuid_str, range_hours):
         'idle_energy_kwh': round(idle_energy_kwh, 3) if idle_energy_kwh is not None else None,
         'job_state_transition_count': job_state_transition_count,
         'power_on_hours_before_restart_avg': power_on_hours_before_restart_avg,
+        'database_storage': db_storage,
         **snap_agg,
         **system_percentiles,
         **{f'system_telemetry_{key}': value for key, value in system_telemetry_coverage.items()},

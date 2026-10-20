@@ -670,7 +670,7 @@ def subtract(value, arg):
     except (TypeError, ValueError):
         return value
 
-@register.filter(name="tier_fill")
+@register.filter
 def tier_fill(value, thresholds):
     """Convenience filter: return the full Tailwind bg-{color}-400 class.
 
@@ -692,3 +692,18 @@ def tier_fill(value, thresholds):
     if not color:
         return ""
     return f"bg-{color}-400"
+
+
+@register.filter
+def dict_values_sum(dict_obj, key):
+    """Sum a specific key across all dict values.
+    
+    Usage: {{ my_dict|dict_values_sum:"rows" }}
+    """
+    if not dict_obj:
+        return 0
+    total = 0
+    for v in dict_obj.values():
+        if isinstance(v, dict) and key in v:
+            total += v[key] or 0
+    return total

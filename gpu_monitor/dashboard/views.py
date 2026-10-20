@@ -926,6 +926,65 @@ def htmx_report_data(request, uuid):
     return render(request, 'dashboard/_report_table.html', context)
 
 
+def _get_rig_database_storage_mb(uuid_str):
+    """Estimate database storage per rig in MB across all metric tables.
+
+    Uses row count × average row size from pg_stat_user_tables.
+    Note: This is an estimate assuming uniform row size per table.
+    Compaction/cleanup runs at DB level independently of report range.
+    """
+    from django.db import connection
+
+    tables = [
+        'metrics_metricsnapshot',
+        'metrics_gpumetric',
+        'metrics_storagemetric',
+        'metrics_networkmetric',
+        'metrics_latest_snapshot',
+        'metrics_latest_docker_container',
+    ]
+
+    with connection.cursor() as cursor:
+        # Get total table sizes and row counts
+        cursor.execute("""
+            SELECT s.relname,
+                   pg_total_relation_size(c.oid) as total_bytes,
+                   s.n_live_tup as total_rows
+            FROM pg_stat_user_tables s
+            JOIN pg_class c ON c.relname = s.relname
+            WHERE s.schemaname = 'public'
+              AND s.relname = ANY(%s)
+        """, [tables])
+        table_stats = {row[0]: {'total_bytes': row[1], 'total_rows': row[2]} for row in cursor.fetchall()}
+
+        # Get row count per rig for each table
+        rig_sizes = {}
+        for table in tables:
+            stats = table_stats.get(table)
+            if not stats or stats['total_rows'] == 0:
+                rig_sizes[table] = {'rows': 0, 'mb': 0.0}
+                continue
+
+            avg_row_bytes = stats['total_bytes'] / stats['total_rows']
+
+            # Count rig's rows using index (fast)
+            cursor.execute(f"""
+                SELECT COUNT(*) FROM {table} WHERE rig_uuid = %s
+            """, [uuid_str])
+            rig_row_count = cursor.fetchone()[0]
+
+            rig_sizes[table] = {
+                'rows': rig_row_count,
+                'mb': round((rig_row_count * avg_row_bytes) / (1024 * 1024), 2)
+            }
+
+        total_mb = sum(v['mb'] for v in rig_sizes.values())
+        return {
+            'breakdown': rig_sizes,
+            'total_mb': round(total_mb, 2)
+        }
+
+
 def _build_report_context(uuid, uuid_str, range_hours):
     """Build the report context dict (separated for caching).
 
@@ -1788,6 +1847,9 @@ def _build_report_context(uuid, uuid_str, range_hours):
         else None
     )
 
+    # Database storage estimate (same for all ranges - compaction runs at DB level)
+    db_storage = _get_rig_database_storage_mb(uuid_str)
+
     return {
         'range_hours': range_hours,
         'gpu_devices': gpu_devices,
@@ -1803,6 +1865,7 @@ def _build_report_context(uuid, uuid_str, range_hours):
         'idle_energy_kwh': round(idle_energy_kwh, 3) if idle_energy_kwh is not None else None,
         'job_state_transition_count': job_state_transition_count,
         'power_on_hours_before_restart_avg': power_on_hours_before_restart_avg,
+        'database_storage': db_storage,
         **snap_agg,
         **system_percentiles,
         **{f'system_telemetry_{key}': value for key, value in system_telemetry_coverage.items()},

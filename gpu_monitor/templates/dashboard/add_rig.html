@@ -18,8 +18,8 @@
                 <h3 class="text-lg font-semibold text-white mb-2">Transfer Agent Files to the Rig</h3>
                 <p class="text-gray-400 text-sm mb-3">Clone the repository on the rig and navigate to the agent directory.</p>
 
-                <div class="bg-gray-900 border border-gray-700 rounded p-3 font-mono text-sm overflow-x-auto relative mb-3">
-                    <button class="copy-btn absolute top-2 right-2 text-xs text-blue-400 hover:text-blue-300 bg-gray-800 px-2 py-1 rounded" data-copy="cd ~ && mkdir -p workspace && cd workspace && git clone https://github.com/dawmro/GPU-Rig-Monitoring-Platform.git && cd GPU-Rig-Monitoring-Platform/agent">Copy</button>
+                <div class="bg-gray-900 border border-gray-700 rounded p-3 font-mono text-sm relative mb-3">
+                    <button class="copy-btn absolute top-2 right-2 text-xs text-blue-400 hover:text-blue-300 bg-gray-800 px-2 py-1 rounded">Copy</button>
                     <pre class="text-green-300 overflow-x-auto whitespace-nowrap"><code>cd ~
 mkdir -p workspace
 cd workspace
@@ -40,16 +40,16 @@ cd GPU-Rig-Monitoring-Platform/agent</code></pre>
                 <h3 class="text-lg font-semibold text-white mb-2">Run the Installer</h3>
                 <p class="text-gray-400 text-sm mb-3">The installer creates the monitoring user, directories, virtualenv, config, sudoers, cron job, and auto-update check.</p>
 
-                <div class="bg-gray-900 border border-gray-700 rounded p-3 font-mono text-sm overflow-x-auto relative mb-3">
-                    <button class="copy-btn absolute top-2 right-2 text-xs text-blue-400 hover:text-blue-300 bg-gray-800 px-2 py-1 rounded" data-copy="sudo apt update && sudo apt install python3.10-venv -y && sudo rm -rf /opt/monitoring-agent/venv && sudo chmod +x install.sh && sudo ./install.sh">Copy</button>
+                <div class="bg-gray-900 border border-gray-700 rounded p-3 font-mono text-sm relative mb-3">
+                    <button class="copy-btn absolute top-2 right-2 text-xs text-blue-400 hover:text-blue-300 bg-gray-800 px-2 py-1 rounded">Copy</button>
                     <pre class="text-green-300 overflow-x-auto whitespace-nowrap"><code># Ubuntu 20.04+ / Debian 11+ (Python 3.10+)
 sudo apt update && sudo apt install python3.10-venv -y && sudo rm -rf /opt/monitoring-agent/venv && sudo chmod +x install.sh && sudo ./install.sh</code></pre>
                 </div>
 
                 <details class="mb-3">
                     <summary class="text-sm text-gray-400 cursor-pointer hover:text-gray-300">Older Python versions (3.8/3.9) — click to expand</summary>
-                    <div class="bg-gray-900 border border-gray-700 rounded p-3 font-mono text-sm overflow-x-auto relative mt-2">
-                        <button class="copy-btn absolute top-2 right-2 text-xs text-blue-400 hover:text-blue-300 bg-gray-800 px-2 py-1 rounded" data-copy="sudo apt update && sudo apt install python3.8-venv -y && sudo apt install -y python3-venv && sudo rm -rf /opt/monitoring-agent/venv && sudo chmod +x install.sh && sudo ./install.sh">Copy</button>
+                    <div class="bg-gray-900 border border-gray-700 rounded p-3 font-mono text-sm relative mt-2">
+                        <button class="copy-btn absolute top-2 right-2 text-xs text-blue-400 hover:text-blue-300 bg-gray-800 px-2 py-1 rounded">Copy</button>
                         <pre class="text-yellow-300 overflow-x-auto whitespace-nowrap"><code>sudo apt update && sudo apt install python3.8-venv -y && sudo apt install -y python3-venv && sudo rm -rf /opt/monitoring-agent/venv && sudo chmod +x install.sh && sudo ./install.sh</code></pre>
                     </div>
                 </details>
@@ -88,14 +88,14 @@ sudo apt update && sudo apt install python3.10-venv -y && sudo rm -rf /opt/monit
                 <h3 class="text-lg font-semibold text-white mb-2">Configure the Agent</h3>
                 <p class="text-gray-400 text-sm mb-3">Edit the config file on the rig and add your API key.</p>
 
-                <div class="bg-gray-900 border border-gray-700 rounded p-3 font-mono text-sm overflow-x-auto relative mb-3">
-                    <button class="copy-btn absolute top-2 right-2 text-xs text-blue-400 hover:text-blue-300 bg-gray-800 px-2 py-1 rounded" data-copy="nano /etc/monitoring-agent/config.yaml">Copy</button>
+                <div class="bg-gray-900 border border-gray-700 rounded p-3 font-mono text-sm relative mb-3">
+                    <button class="copy-btn absolute top-2 right-2 text-xs text-blue-400 hover:text-blue-300 bg-gray-800 px-2 py-1 rounded">Copy</button>
                     <pre class="text-green-300 overflow-x-auto whitespace-nowrap"><code>nano /etc/monitoring-agent/config.yaml</code></pre>
                 </div>
 
-                <div class="bg-gray-900 border border-gray-700 rounded p-3 font-mono text-sm overflow-x-auto relative mb-3">
-                    <button class="copy-btn absolute top-2 right-2 text-xs text-blue-400 hover:text-blue-300 bg-gray-800 px-2 py-1 rounded" data-copy="rig_uuid: \"auto\"\nrig_name: \"gpu-server-01\"\napi_key: \"PASTE_YOUR_API_KEY_HERE\"\nserver_endpoint: \"https://monitor.example.com\"\nexpected_gpu_count: 0\ncollection_timeout_s: 45\nretry_attempts: 3\ndebug_mode: false">Copy</button>
-                    <pre class="text-blue-300 overflow-x-auto whitespace-nowrap"><code>rig_uuid: "auto"
+                <div class="bg-gray-900 border border-gray-700 rounded p-3 font-mono text-sm relative mb-3">
+                    <button class="copy-btn absolute top-2 right-2 text-xs text-blue-400 hover:text-blue-300 bg-gray-800 px-2 py-1 rounded">Copy</button>
+                    <pre class="text-blue-300 overflow-x-auto"><code>rig_uuid: "auto"
 rig_name: "gpu-server-01"
 api_key: "PASTE_YOUR_API_KEY_HERE"
 server_endpoint: "https://monitor.example.com"
@@ -132,14 +132,15 @@ debug_mode: false</code></pre>
                 <h3 class="text-lg font-semibold text-green-400 mb-2">Test the Agent</h3>
                 <p class="text-gray-400 text-sm mb-3">Run the agent manually to verify it can collect metrics and reach the server.</p>
 
-                <div class="bg-gray-900 border border-gray-700 rounded p-3 font-mono text-sm overflow-x-auto relative mb-3">
-                    <button class="copy-btn absolute top-2 right-2 text-xs text-blue-400 hover:text-blue-300 bg-gray-800 px-2 py-1 rounded" data-copy="sudo -u monitoring-agent /opt/monitoring-agent/venv/bin/python /opt/monitoring-agent/run.py">Copy</button>
+                <div class="bg-gray-900 border border-gray-700 rounded p-3 font-mono text-sm relative mb-3">
+                    <button class="copy-btn absolute top-2 right-2 text-xs text-blue-400 hover:text-blue-300 bg-gray-800 px-2 py-1 rounded">Copy</button>
                     <pre class="text-green-300 overflow-x-auto whitespace-nowrap"><code>sudo -u monitoring-agent /opt/monitoring-agent/venv/bin/python /opt/monitoring-agent/run.py</code></pre>
                 </div>
 
                 <p class="text-gray-400 text-sm mb-2">Expected output (JSON logs):</p>
 
-                <div class="bg-gray-900 border border-green-500/30 rounded p-3 font-mono text-sm overflow-x-auto">
+                <div class="bg-gray-900 border border-green-500/30 rounded p-3 font-mono text-sm relative">
+                    <button class="copy-btn absolute top-2 right-2 text-xs text-blue-400 hover:text-blue-300 bg-gray-800 px-2 py-1 rounded">Copy</button>
                     <pre class="text-green-400 overflow-x-auto whitespace-nowrap"><code>{"ts":"2026-06-01T17:35:04","level":"INFO","module":"main","msg":"Starting collection for rig a1b2c3d4-..."}
 {"ts":"2026-06-01T17:35:06","level":"INFO","module":"transport","msg":"Ingest response: 200 {\"status\": \"new\"}"}
 {"ts":"2026-06-01T17:35:06","level":"INFO","module":"main","msg":"Payload accepted: new"}</code></pre>
@@ -166,16 +167,21 @@ debug_mode: false</code></pre>
 document.addEventListener('DOMContentLoaded', function() {
     document.querySelectorAll('.copy-btn').forEach(btn => {
         btn.addEventListener('click', function() {
-            const text = this.getAttribute('data-copy');
-            navigator.clipboard.writeText(text).then(() => {
-                const original = this.textContent;
-                this.textContent = 'Copied!';
-                this.classList.add('text-green-400');
-                setTimeout(() => {
-                    this.textContent = original;
-                    this.classList.remove('text-green-400');
-                }, 1500);
-            });
+            // Find the <code> element in the same container
+            const container = this.closest('div');
+            const codeEl = container.querySelector('pre code');
+            if (codeEl) {
+                const text = codeEl.textContent;
+                navigator.clipboard.writeText(text).then(() => {
+                    const original = this.textContent;
+                    this.textContent = 'Copied!';
+                    this.classList.add('text-green-400');
+                    setTimeout(() => {
+                        this.textContent = original;
+                        this.classList.remove('text-green-400');
+                    }, 1500);
+                });
+            }
         });
     });
 });

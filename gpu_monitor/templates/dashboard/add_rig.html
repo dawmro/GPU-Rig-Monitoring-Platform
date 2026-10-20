@@ -14,7 +14,7 @@
     <div class="bg-gray-800 border border-gray-700 rounded-lg p-6 mb-6">
         <div class="flex items-start gap-4">
             <span class="flex-shrink-0 w-8 h-8 rounded-full bg-green-500 text-black font-bold flex items-center justify-center text-lg">1</span>
-            <div class="flex-1">
+            <div class="flex-1 min-w-0">
                 <h3 class="text-lg font-semibold text-white mb-2">Transfer Agent Files to the Rig</h3>
                 <p class="text-gray-400 text-sm mb-3">Clone the repository on the rig and navigate to the agent directory.</p>
 
@@ -36,7 +36,7 @@ cd GPU-Rig-Monitoring-Platform/agent</code></pre>
     <div class="bg-gray-800 border border-gray-700 rounded-lg p-6 mb-6">
         <div class="flex items-start gap-4">
             <span class="flex-shrink-0 w-8 h-8 rounded-full bg-green-500 text-black font-bold flex items-center justify-center text-lg">2</span>
-            <div class="flex-1">
+            <div class="flex-1 min-w-0">
                 <h3 class="text-lg font-semibold text-white mb-2">Run the Installer</h3>
                 <p class="text-gray-400 text-sm mb-3">The installer creates the monitoring user, directories, virtualenv, config, sudoers, cron job, and auto-update check.</p>
 
@@ -84,7 +84,7 @@ sudo apt update && sudo apt install python3.10-venv -y && sudo rm -rf /opt/monit
     <div class="bg-gray-800 border border-gray-700 rounded-lg p-6 mb-6">
         <div class="flex items-start gap-4">
             <span class="flex-shrink-0 w-8 h-8 rounded-full bg-green-500 text-black font-bold flex items-center justify-center text-lg">3</span>
-            <div class="flex-1">
+            <div class="flex-1 min-w-0">
                 <h3 class="text-lg font-semibold text-white mb-2">Configure the Agent</h3>
                 <p class="text-gray-400 text-sm mb-3">Edit the config file on the rig and add your API key.</p>
 
@@ -128,7 +128,7 @@ debug_mode: false</code></pre>
     <div class="bg-gray-800 border border-green-500/30 rounded-lg p-6 mb-6">
         <div class="flex items-start gap-4">
             <span class="flex-shrink-0 w-8 h-8 rounded-full bg-green-500 text-black font-bold flex items-center justify-center text-lg">4</span>
-            <div class="flex-1">
+            <div class="flex-1 min-w-0">
                 <h3 class="text-lg font-semibold text-green-400 mb-2">Test the Agent</h3>
                 <p class="text-gray-400 text-sm mb-3">Run the agent manually to verify it can collect metrics and reach the server.</p>
 

@@ -124,13 +124,13 @@ debug_mode: false</code></pre>
         </div>
     </div>
 
-    <!-- Step 4: Test -->
+    <!-- Step 4: Test (Optional Validation) -->
     <div class="bg-gray-800 border border-green-500/30 rounded-lg p-6 mb-6">
         <div class="flex items-start gap-4">
             <span class="flex-shrink-0 w-8 h-8 rounded-full bg-green-500 text-black font-bold flex items-center justify-center text-lg">4</span>
             <div class="flex-1 min-w-0">
-                <h3 class="text-lg font-semibold text-green-400 mb-2">Test the Agent</h3>
-                <p class="text-gray-400 text-sm mb-3">Run the agent manually to verify it can collect metrics and reach the server.</p>
+                <h3 class="text-lg font-semibold text-green-400 mb-2 flex items-center gap-2">Test the Agent <span class="text-xs bg-gray-700 text-gray-400 px-2 py-0.5 rounded">Optional</span></h3>
+                <p class="text-gray-400 text-sm mb-3">Run the agent manually to verify it can collect metrics and reach the server. <strong>This step is optional</strong> — the cron job starts automatically within 1 minute and the rig will appear in Fleet Overview within 2 minutes if configured correctly.</p>
 
                 <div class="bg-gray-900 border border-gray-700 rounded p-3 font-mono text-sm relative mb-3">
                     <button class="copy-btn absolute top-2 right-2 text-xs text-blue-400 hover:text-blue-300 bg-gray-800 px-2 py-1 rounded">Copy</button>

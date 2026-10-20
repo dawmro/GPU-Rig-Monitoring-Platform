@@ -98,7 +98,7 @@ sudo apt update && sudo apt install python3.10-venv -y && sudo rm -rf /opt/monit
                     <pre class="text-blue-300 overflow-x-auto"><code>rig_uuid: "auto"
 rig_name: "gpu-server-01"
 api_key: "PASTE_YOUR_API_KEY_HERE"
-server_endpoint: "https://monitor.example.com"
+server_endpoint: "{{ site_url }}"
 expected_gpu_count: 0
 collection_timeout_s: 45
 retry_attempts: 3
@@ -117,7 +117,7 @@ debug_mode: false</code></pre>
                     <li><strong>rig_uuid:</strong> <code>"auto"</code> — auto-generates permanent UUID on first run</li>
                     <li><strong>rig_name:</strong> Initial name (used once at registration). Leave empty to use hostname. Rename later via dashboard.</li>
                     <li><strong>api_key:</strong> <strong>Required.</strong> From Dashboard → API Keys → Create (shown only once)</li>
-                    <li><strong>server_endpoint:</strong> <strong>Required.</strong> Your server HTTPS URL, no trailing slash</li>
+                    <li><strong>server_endpoint:</strong> <strong>Required.</strong> Your server HTTPS URL, no trailing slash (auto-filled: <code>{{ site_url }}</code>)</li>
                     <li><strong>expected_gpu_count:</strong> <code>0</code> = auto-detect, or set exact count to flag mismatches</li>
                 </ul>
             </div>

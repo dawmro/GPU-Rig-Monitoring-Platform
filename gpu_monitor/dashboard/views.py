@@ -107,7 +107,9 @@ def add_rig_onboarding(request):
 
     Displays step-by-step instructions from the agent README Quick Start.
     """
-    return render(request, 'dashboard/add_rig.html')
+    # Get current site URL (without trailing slash) for server_endpoint example
+    site_url = request.build_absolute_uri('/').rstrip('/')
+    return render(request, 'dashboard/add_rig.html', {'site_url': site_url})
 
 
 def rate_limit(max_requests, window_s):

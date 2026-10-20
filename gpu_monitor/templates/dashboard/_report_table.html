@@ -748,8 +748,8 @@
 
 <!-- Database Storage Section -->
 <h3 class="text-sm font-medium text-gray-200 mt-4 mb-2"
-    title="Estimated PostgreSQL database storage occupied by this rig's metric data. Calculated as row count × average row size per table (from pg_stat_user_tables). This reflects total database footprint including all retention tiers (raw 1-min, 15-min buckets, 1-hour buckets). Updated on each report load; not affected by the selected report range.">
-    Database Storage
+    title="PostgreSQL database storage occupied by this rig's metric data. Calculated using SUM(pg_column_size) per table for this rig's rows (includes TOAST, compression, NULL bitmap). This reflects total database footprint including all retention tiers (raw 1-min, 15-min buckets, 1-hour buckets). Not affected by the selected report range.">
+    Database Storage for this Rig
 </h3>
 <div class="overflow-x-auto mb-4">
     <table class="w-full text-xs">
@@ -757,7 +757,7 @@
             <tr>
                 <th class="text-left py-1.5 pr-3 font-medium">Table</th>
                 <th class="text-right py-1.5 px-2 font-medium">Rows</th>
-                <th class="text-right py-1.5 px-2 font-medium">Est. MB</th>
+                <th class="text-right py-1.5 px-2 font-medium">MB</th>
             </tr>
         </thead>
         <tbody class="text-gray-200">

@@ -117,7 +117,7 @@ fi
 # Sync check_update.py (Windows)
 if [ -f "$WORKSPACE/agent_windows/check_update.py" ]; then
     sudo cp "$WORKSPACE/agent_windows/check_update.py" "$OPT/agent_windows/check_update.py"
-    sudo chmod +x "$OPT/agent_windows/check_update.py"
+    sudo chmod 755 "$OPT/agent_windows/check_update.py"
     echo "  Synced: agent_windows/check_update.py"
 fi
 

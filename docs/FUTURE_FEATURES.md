@@ -210,11 +210,15 @@ For a user with 10+ rigs, this is tedious and error-prone. And when a bug fix or
 
 ### What's Already Built
 Both `agent/check_update.py` and `agent_windows/check_update.py` exist. They:
-- Fetch the latest agent source from GitHub raw file
+- Fetch the latest agent source from the **monitoring server** (nginx serves at `/agent/...`)
 - Parse `__version__` from the remote file
 - Compare with local `__version__`
 - If newer: download, validate syntax, backup current, replace
 - Log update events
+- Self-update (`check_update.py` updates itself)
+- Bootstrap migration for old agents (detects GitHub URLs, fetches new from server)
+
+> **Note:** Previously fetched from GitHub raw URLs. Now fetches from server's nginx endpoints.
 
 ### What's Missing
 1. **Server-side `AgentVersion` model** — tracks available versions, release channels (stable/beta), changelogs

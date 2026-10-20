@@ -238,12 +238,14 @@ GPU monitoring does NOT require admin — `pynvml` reads from the NVIDIA driver 
 
 Auto-update is handled by a separate `check_update.py` script (not built into `run.py`). The update mechanism:
 
-1. Checks GitHub for a newer agent version (same major version only)
-2. Downloads the new `run.py`
-3. Backs up the current version to `run.py.bak`
-4. Validates the new version syntax
-5. Atomically replaces the running script
+1. Checks the monitoring server for a newer agent version (same major version only)
+2. Downloads the new `run.py` and `check_update.py` from the server
+3. Backs up the current versions to `run.py.bak` and `check_update.py.bak`
+4. Validates the new versions syntax
+5. Atomically replaces the running scripts
 6. New code is used on the next scheduler cycle (no restart needed)
+
+**Update source:** The monitoring server (nginx serves agent files at `/agent/run.py`, `/agent/check_update.py`, `/agent_windows/run.py`, `/agent_windows/check_update.py`). No longer uses GitHub.
 
 Manual check:
 ```powershell
@@ -251,6 +253,8 @@ python check_update.py
 ```
 
 Logs: `logs/update.log`
+
+**Bootstrap migration:** On first run after server upgrade, `run.py` detects old `check_update.py` (containing GitHub URLs) and automatically fetches the new version from the server.
 
 ## Differences from Linux Agent
 

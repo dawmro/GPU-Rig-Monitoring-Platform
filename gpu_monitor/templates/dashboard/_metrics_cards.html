@@ -904,14 +904,14 @@ on the page. This keeps the bar from being noise.
                         {% if c.manifest.image_tag %}
                         <div class="flex gap-2">
                             <dt class="text-gray-500 w-20 flex-shrink-0">Image:</dt>
-                            <dd class="text-gray-200 truncate">{{ c.manifest.image_tag }}</dd>
+                            <dd class="text-gray-200 break-words">{{ c.manifest.image_tag }}</dd>
                         </div>
                         {% endif %}
                         
                         {% if c.manifest.digest %}
                         <div class="flex gap-2">
                             <dt class="text-gray-500 w-20 flex-shrink-0">Digest:</dt>
-                            <dd class="text-gray-300 font-mono truncate" title="{{ c.manifest.digest }}">{{ c.manifest.digest }}</dd>
+                            <dd class="text-gray-300 font-mono break-words" title="{{ c.manifest.digest }}">{{ c.manifest.digest }}</dd>
                         </div>
                         {% endif %}
                         
@@ -940,7 +940,7 @@ on the page. This keeps the bar from being noise.
                             <dt class="text-gray-500 w-20 flex-shrink-0">Mounts:</dt>
                             <dd class="text-gray-200">
                                 {% for m in c.manifest.mounts %}
-                                <div class="truncate">{{ m.source }} → {{ m.destination }} ({{ m.type }}{% if m.rw %}, rw{% endif %})</div>
+                                <div class="break-words">{{ m.source }} → {{ m.destination }} ({{ m.type }}{% if m.rw %}, rw{% endif %})</div>
                                 {% endfor %}
                             </dd>
                         </div>
@@ -962,7 +962,7 @@ on the page. This keeps the bar from being noise.
                             <dt class="text-gray-500 w-20 flex-shrink-0">Labels:</dt>
                             <dd class="text-gray-200">
                                 {% for k, v in c.manifest.labels.items %}
-                                <div class="truncate">{{ k }}: {{ v }}</div>
+                                <div class="break-words">{{ k }}: {{ v }}</div>
                                 {% endfor %}
                             </dd>
                         </div>
@@ -973,7 +973,7 @@ on the page. This keeps the bar from being noise.
                             <dt class="text-gray-500 w-20 flex-shrink-0">Annotations:</dt>
                             <dd class="text-gray-200">
                                 {% for k, v in c.manifest.annotations.items %}
-                                <div class="truncate">{{ k|cut:"org.opencontainers.image."|cut:"com.docker." }}: {{ v }}</div>
+                                <div class="break-words">{{ k|cut:"org.opencontainers.image."|cut:"com.docker." }}: {{ v }}</div>
                                 {% endfor %}
                             </dd>
                         </div>
@@ -993,7 +993,7 @@ on the page. This keeps the bar from being noise.
                         <dt class="text-gray-500 w-20 flex-shrink-0">Port Bindings:</dt>
                         <dd class="text-gray-200">
                             {% for host_port, bindings in c.manifest.port_bindings.items %}
-                            <div class="truncate">{{ host_port }} → {% for b in bindings %}{{ b.HostIp }}:{{ b.HostPort }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>
+                            <div class="break-words">{{ host_port }} → {% for b in bindings %}{{ b.HostIp }}:{{ b.HostPort }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>
                             {% endfor %}
                         </dd>
                     </div>
@@ -1004,7 +1004,7 @@ on the page. This keeps the bar from being noise.
                         <dt class="text-gray-500 w-20 flex-shrink-0">Resources:</dt>
                         <dd class="text-gray-200">
                             {% for k, v in c.manifest.resource_limits.items %}
-                            <div class="truncate">{{ k }}: {{ v }}</div>
+                            <div class="break-words">{{ k }}: {{ v }}</div>
                             {% endfor %}
                         </dd>
                     </div>
@@ -1024,7 +1024,7 @@ on the page. This keeps the bar from being noise.
                         <dt class="text-gray-500 w-20 flex-shrink-0">Reservations:</dt>
                         <dd class="text-gray-200">
                             {% for k, v in c.manifest.resource_reservations.items %}
-                            <div class="truncate">{{ k }}: {{ v }}</div>
+                            <div class="break-words">{{ k }}: {{ v }}</div>
                             {% endfor %}
                         </dd>
                     </div>
@@ -1058,21 +1058,21 @@ on the page. This keeps the bar from being noise.
                     {% if c.manifest.working_dir %}
                     <div class="flex gap-2">
                         <dt class="text-gray-500 w-20 flex-shrink-0">Workdir:</dt>
-                        <dd class="text-gray-200 truncate">{{ c.manifest.working_dir }}</dd>
+                        <dd class="text-gray-200 break-words">{{ c.manifest.working_dir }}</dd>
                     </div>
                     {% endif %}
                     
                     {% if c.manifest.entrypoint %}
                     <div class="flex gap-2">
                         <dt class="text-gray-500 w-20 flex-shrink-0">Entrypoint:</dt>
-                        <dd class="text-gray-200 truncate">{{ c.manifest.entrypoint|join:" " }}</dd>
+                        <dd class="text-gray-200 break-words">{{ c.manifest.entrypoint|join:" " }}</dd>
                     </div>
                     {% endif %}
                     
                     {% if c.manifest.cmd %}
                     <div class="flex gap-2">
                         <dt class="text-gray-500 w-20 flex-shrink-0">Cmd:</dt>
-                        <dd class="text-gray-200 truncate">{{ c.manifest.cmd|join:" " }}</dd>
+                        <dd class="text-gray-200 break-words">{{ c.manifest.cmd|join:" " }}</dd>
                     </div>
                     {% endif %}
                     
@@ -1095,7 +1095,7 @@ on the page. This keeps the bar from being noise.
                         <dt class="text-gray-500 w-20 flex-shrink-0">Security:</dt>
                         <dd class="text-gray-200">
                             {% for k, v in c.manifest.security.items %}
-                            <div class="truncate">{{ k }}: {{ v }}</div>
+                            <div class="break-words">{{ k }}: {{ v }}</div>
                             {% endfor %}
                         </dd>
                     </div>
@@ -1106,7 +1106,7 @@ on the page. This keeps the bar from being noise.
                         <dt class="text-gray-500 w-20 flex-shrink-0">DNS:</dt>
                         <dd class="text-gray-200">
                             {% for k, v in c.manifest.dns.items %}
-                            <div class="truncate">{{ k }}: {{ v }}</div>
+                            <div class="break-words">{{ k }}: {{ v }}</div>
                             {% endfor %}
                         </dd>
                     </div>
@@ -1115,9 +1115,9 @@ on the page. This keeps the bar from being noise.
                     {% if c.manifest.env %}
                     <div class="flex gap-2">
                         <dt class="text-gray-500 w-20 flex-shrink-0">Env:</dt>
-                        <dd class="text-gray-200 max-w-full overflow-x-auto">
+                        <dd class="text-gray-200 max-w-full">
                             {% for k, v in c.manifest.env.items %}
-                            <div class="whitespace-nowrap"><span class="text-gray-500">{{ k }}</span>=<span class="text-green-300">{{ v }}</span></div>
+                            <div class="break-words"><span class="text-gray-500">{{ k }}</span>=<span class="text-green-300">{{ v }}</span></div>
                             {% endfor %}
                         </dd>
                     </div>

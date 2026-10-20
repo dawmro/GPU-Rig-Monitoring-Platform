@@ -9,6 +9,6 @@ rig_name: ""               # Suggested initial name for this rig (e.g., "gpu-ser
 api_key: ""                # Your API key from the dashboard
 server_endpoint: "https://monitor.example.com"  # Server URL (no trailing slash)
 expected_gpu_count: 0      # 0 = auto-detect; >0 = enforce GPU count validation
-collection_timeout_s: 45   # Hard timeout per collection cycle
+collection_timeout_s: 35   # Hard timeout per collection cycle
 retry_attempts: 3          # Max retries on transient failures
 debug_mode: false          # Enable verbose logging and disable gzip

@@ -464,7 +464,7 @@ rig_name: ""
 api_key: "PASTE_YOUR_API_KEY_HERE"
 server_endpoint: "http://localhost"
 expected_gpu_count: 0
-collection_timeout_s: 45
+collection_timeout_s: 35
 retry_attempts: 3
 debug_mode: true
 EOF
@@ -492,7 +492,7 @@ sudo chmod 600 /etc/monitoring-agent/config.yaml
 | `api_key` | Create this from the dashboard (Step 5). The key is shown only once. |
 | `server_endpoint` | `http://localhost` for local testing (no trailing slash). |
 | `expected_gpu_count` | `0` = auto-detect. Set to your actual GPU count to flag mismatches. |
-| `collection_timeout_s` | Hard limit in seconds for metric collection + upload. Default 45s leaves margin in the 60s cron cycle. |
+| `collection_timeout_s` | Hard limit in seconds for metric collection + upload. Default 35s leaves margin in the 60s cron cycle. |
 | `retry_attempts` | Retries on transient failures with exponential backoff (1s → 2s → 4s). |
 | `debug_mode` | `true` enables verbose logging and disables gzip compression. Use for troubleshooting. |
 

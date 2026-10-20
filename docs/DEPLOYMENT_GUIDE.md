@@ -693,7 +693,7 @@ rig_name: ""
 api_key: "PASTE_YOUR_API_KEY_HERE"
 server_endpoint: "https://monitor.example.com"
 expected_gpu_count: 0
-collection_timeout_s: 45
+collection_timeout_s: 35
 retry_attempts: 3
 debug_mode: false
 ```
@@ -707,7 +707,7 @@ debug_mode: false
 | `api_key` | The exact key copied from the server dashboard. No quotes needed unless the key contains special characters. |
 | `server_endpoint` | Your server's HTTPS URL **without** a trailing slash. |
 | `expected_gpu_count` | `0` for auto-detect. Set to your actual GPU count (e.g., `4`) to flag mismatches. |
-| `collection_timeout_s` | Hard limit in seconds for metric collection + upload. Default 45s leaves 15s buffer within the 60s cron cycle. |
+| `collection_timeout_s` | Hard limit in seconds for metric collection + upload. Default 35s leaves 25s buffer for jitter within the 60s cron cycle. |
 | `retry_attempts` | Retries on transient failures with exponential backoff (1s → 2s → 4s). |
 | `debug_mode` | `false` for production. Set `true` temporarily for troubleshooting (disables gzip, enables verbose logging). |
 

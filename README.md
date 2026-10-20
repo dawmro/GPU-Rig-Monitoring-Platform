@@ -398,7 +398,7 @@ rig_name: ""
 api_key: "PASTE_YOUR_API_KEY_HERE"
 server_endpoint: "https://monitor.example.com"
 expected_gpu_count: 0
-collection_timeout_s: 45
+collection_timeout_s: 35
 retry_attempts: 3
 debug_mode: false
 ```

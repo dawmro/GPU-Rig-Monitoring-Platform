@@ -72,7 +72,7 @@ rig_name: "gpu-server-01"
 api_key: "your-api-key-from-dashboard"
 server_endpoint: "https://monitor.example.com"
 expected_gpu_count: 0
-collection_timeout_s: 45
+collection_timeout_s: 35
 retry_attempts: 3
 debug_mode: false
 ```

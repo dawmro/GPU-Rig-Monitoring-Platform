@@ -46,6 +46,9 @@ import requests
 __version__ = '1.17.7'
 __schema_version__ = '1.22'
 
+# Module-level logger (configured by setup_logging)
+logger = logging.getLogger(__name__)
+
 # ── Config ──────────────────────────────────────────────────────────────────
 
 DEFAULT_CONFIG_PATH = '/etc/monitoring-agent/config.yaml'
@@ -1719,20 +1722,73 @@ def send_payload(config, payload):
 
 # ── Main ────────────────────────────────────────────────────────────────────
 
+def bootstrap_check_update(config):
+    """
+    Bootstrap migration: if check_update.py still contains GitHub URL,
+    fetch the new version from server and replace it.
+    This runs once on old agents to migrate them to server-based updates.
+    """
+    check_update_path = Path('/opt/monitoring-agent/check_update.py')
+    if not check_update_path.exists():
+        return
+    
+    try:
+        content = check_update_path.read_text(encoding='utf-8')
+        # Detect old check_update.py by checking for GitHub URL
+        if 'raw.githubusercontent.com' in content and 'GPU-Rig-Monitoring-Platform' in content:
+            # Old version detected - fetch new one from server
+            server_endpoint = config.get('server_endpoint', '').rstrip('/')
+            if server_endpoint:
+                new_url = f"{server_endpoint}/agent/check_update.py"
+                import urllib.request
+                with urllib.request.urlopen(new_url, timeout=30) as resp:
+                    new_content = resp.read().decode('utf-8')
+                
+                # Validate syntax
+                import subprocess
+                import tempfile
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, dir=str(check_update_path.parent)) as tmp:
+                    tmp.write(new_content)
+                    tmp_path = Path(tmp.name)
+                try:
+                    result = subprocess.run(
+                        [sys.executable, '-m', 'py_compile', str(tmp_path)],
+                        capture_output=True, text=True, timeout=10
+                    )
+                    if result.returncode == 0:
+                        # Atomic replace
+                        tmp_path.replace(check_update_path)
+                        os.chmod(str(check_update_path), 0o755)
+                        logger.info('Bootstrapped new check_update.py from server')
+                    else:
+                        logger.warning('Downloaded check_update.py has invalid syntax')
+                finally:
+                    if tmp_path.exists():
+                        tmp_path.unlink()
+    except Exception as e:
+        logger.debug('Bootstrap check_update.py failed (non-fatal): %s', e)
+
+
 def timeout_handler(signum, frame):
     raise TimeoutError("Collection exceeded time limit")
 
 
 def main():
+    # Load config first (needed for bootstrap and logging)
+    config = load_config()
+    
+    # Setup logging early so bootstrap can log
+    setup_logging(debug=config.get('debug_mode', False))
+    # Module-level logger is now configured
+    
+    # Bootstrap check_update.py migration (runs before jitter/collection)
+    bootstrap_check_update(config)
+    
     # Random jitter to spread load across the reporting interval
     # Without this, all rigs send at the same second (cron :00)
     # causing thundering herd problem with hundreds of rigs
     jitter_s = random.uniform(0, 25)
     time.sleep(jitter_s)
-
-    config = load_config()
-    setup_logging(debug=config.get('debug_mode', False))
-    logger = logging.getLogger('main')
 
     # Hard timeout — 30s allows collection + retries while leaving
     # margin for jitter (25s max) within the 60s cron interval

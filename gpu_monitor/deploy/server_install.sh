@@ -200,6 +200,23 @@ fi
 #   expected directories such as logs and staticfiles
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 
+# ── Agent directories for auto-update ──────────────────────────────────────
+# Create directories that nginx serves agent files from.
+# These must exist before nginx config is applied (nginx -t checks alias paths).
+# sync_to_opt.sh will populate them with actual agent files on each deploy.
+echo "==> Preparing agent directories..."
+mkdir -p /opt/monitoring-agent /opt/agent_windows
+chown -R root:root /opt/monitoring-agent /opt/agent_windows
+chmod 755 /opt/monitoring-agent /opt/agent_windows
+
+# Place placeholder files so nginx config validation passes on fresh install.
+    # sync_to_opt.sh will overwrite these with real agent files.
+    [ -f /opt/monitoring-agent/run.py ] || echo "# Placeholder — replaced by sync_to_opt.sh" > /opt/monitoring-agent/run.py
+    [ -f /opt/agent_windows/run.py ] || echo "# Placeholder — replaced by sync_to_opt.sh" > /opt/agent_windows/run.py
+    [ -f /opt/monitoring-agent/check_update.py ] || echo "# Placeholder — replaced by sync_to_opt.sh" > /opt/monitoring-agent/check_update.py
+    [ -f /opt/agent_windows/check_update.py ] || echo "# Placeholder — replaced by sync_to_opt.sh" > /opt/agent_windows/check_update.py
+    chmod 644 /opt/monitoring-agent/run.py /opt/agent_windows/run.py /opt/monitoring-agent/check_update.py /opt/agent_windows/check_update.py
+
 # ── Log directories and static directories ────────────────────────────────
 # Pre-create directories and files Django/Gunicorn will write to.
 # Why:

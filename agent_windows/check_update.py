@@ -2,7 +2,7 @@
 """
 GPU Rig Monitoring Agent - Auto-Update Checker (Windows)
 
-Checks GitHub for a newer agent version and updates if available.
+Checks server for a newer agent version and updates if available.
 Designed to run once daily via Windows Task Scheduler at a random time.
 
 Usage:
@@ -25,18 +25,17 @@ from pathlib import Path
 from urllib.request import urlopen
 from urllib.error import URLError, HTTPError
 
+__version__ = '1.0.0'
+
 # -- Configuration ------------------------------------------------------------
 
 AGENT_DIR = Path(__file__).resolve().parent
 RUN_PY = AGENT_DIR / "run.py"
 BACKUP_PY = AGENT_DIR / "run.py.bak"
+CHECK_UPDATE_PY = AGENT_DIR / "check_update.py"
+CHECK_UPDATE_BAK = AGENT_DIR / "check_update.py.bak"
 LOG_DIR = AGENT_DIR / "logs"
 LOG_FILE = LOG_DIR / "update.log"
-
-GITHUB_RAW_URL = (
-    "https://raw.githubusercontent.com/dawmro/GPU-Rig-Monitoring-Platform"
-    "/main/agent_windows/run.py"
-)
 
 # Only auto-update within same major version
 MAX_MAJOR_VERSION = 1
@@ -54,6 +53,7 @@ def setup_logging():
     root = logging.getLogger()
     root.setLevel(logging.INFO)
     root.addHandler(handler)
+    # Also log to stderr for Task Scheduler capture
     root.addHandler(logging.StreamHandler(sys.stderr))
 
 log = logging.getLogger(__name__)
@@ -63,6 +63,7 @@ log = logging.getLogger(__name__)
 
 def parse_version(version_str):
     """Parse version string like '1.2.0' or '1.2.0-win' into tuple (1, 2, 0)."""
+    # Strip platform suffix (-win, -linux, etc.)
     clean = re.split(r'[-_]', version_str.strip())[0]
     parts = clean.split(".")
     try:
@@ -71,11 +72,11 @@ def parse_version(version_str):
         return None
 
 
-def get_local_version():
-    """Extract __version__ from local run.py."""
-    if not RUN_PY.exists():
+def get_local_version(filepath):
+    """Extract __version__ from a Python file."""
+    if not filepath.exists():
         return None, None
-    content = RUN_PY.read_text(encoding="utf-8")
+    content = filepath.read_text(encoding="utf-8")
     match = re.search(r"__version__\s*=\s*['\"]([^'\"]+)['\"]", content)
     if match:
         ver_str = match.group(1)
@@ -83,10 +84,10 @@ def get_local_version():
     return None, None
 
 
-def fetch_remote_version():
-    """Fetch __version__ from GitHub raw run.py."""
+def fetch_remote_version(url, timeout=30):
+    """Fetch __version__ from a remote Python file URL."""
     try:
-        with urlopen(GITHUB_RAW_URL, timeout=30) as resp:
+        with urlopen(url, timeout=timeout) as resp:
             content = resp.read().decode("utf-8")
         match = re.search(r"__version__\s*=\s*['\"]([^'\"]+)['\"]", content)
         if match:
@@ -94,7 +95,7 @@ def fetch_remote_version():
             return ver_str, parse_version(ver_str), content
         return None, None, None
     except (URLError, HTTPError, OSError) as e:
-        log.warning("Failed to fetch remote version: %s", e)
+        log.warning("Failed to fetch remote version from %s: %s", url, e)
         return None, None, None
 
 
@@ -118,97 +119,157 @@ def validate_python_file(path):
 
 # -- Update Logic -------------------------------------------------------------
 
-def perform_update(new_content, new_version_str):
-    """Download, validate, backup, and replace run.py."""
-    # Write to temp file first
+def perform_update(filepath, backup_path, new_content, new_version_str, file_type):
+    """Download, validate, backup, and replace a Python file."""
+    # Write to temp file first (same directory as target for atomic replace on Windows)
     try:
         with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".py", dir=str(AGENT_DIR), delete=False,
+            mode="w", suffix=".py", dir=str(filepath.parent), delete=False,
             encoding="utf-8"
         ) as tmp:
             tmp.write(new_content)
             tmp_path = Path(tmp.name)
     except OSError as e:
-        log.error("Failed to write temp file: %s", e)
+        log.error("Failed to write temp file for %s: %s", file_type, e)
         return False
 
     try:
         # Validate syntax
         if not validate_python_file(tmp_path):
-            log.error("Downloaded file has invalid syntax - aborting update")
+            log.error("Downloaded %s has invalid syntax - aborting update", file_type)
             return False
 
-        # Verify version in downloaded file
-        downloaded_content = tmp_path.read_text(encoding="utf-8")
-        match = re.search(r"__version__\s*=\s*['\"]([^'\"]+)['\"]", downloaded_content)
-        if not match:
-            log.error("No version found in downloaded file - aborting")
-            return False
-        downloaded_ver = parse_version(match.group(1))
+        # Verify version in downloaded file matches expected
+        downloaded_ver_str, downloaded_ver = get_local_version_from_content(
+            tmp_path.read_text(encoding="utf-8")
+        )
         if downloaded_ver is None or downloaded_ver != parse_version(new_version_str):
-            log.error("Version mismatch in downloaded file - aborting")
+            log.error("Version mismatch in downloaded %s - aborting update", file_type)
             return False
 
-        # Backup current run.py
-        if RUN_PY.exists():
-            shutil.copy2(RUN_PY, BACKUP_PY)
-            log.info("Backed up current run.py to run.py.bak")
+        # Backup current file
+        if filepath.exists():
+            shutil.copy2(filepath, backup_path)
+            log.info("Backed up current %s to %s", file_type, backup_path.name)
 
         # Replace (Windows: use os.replace for atomic operation)
-        os.replace(str(tmp_path), str(RUN_PY))
-        log.info("Successfully updated to version %s", new_version_str)
+        os.replace(str(tmp_path), str(filepath))
+        log.info("Successfully updated %s to version %s", file_type, new_version_str)
         return True
 
     except OSError as e:
-        log.error("Failed to replace run.py: %s", e)
+        log.error("Failed to replace %s: %s", file_type, e)
         return False
     finally:
         if tmp_path.exists():
             tmp_path.unlink()
 
 
+def get_local_version_from_content(content):
+    """Extract version from file content string."""
+    match = re.search(r"__version__\s*=\s*['\"]([^'\"]+)['\"]", content)
+    if match:
+        ver_str = match.group(1)
+        return ver_str, parse_version(ver_str)
+    return None, None
+
+
+def update_single_file(filepath, backup_path, server_url, file_type, config):
+    """
+    Update a single file (run.py or check_update.py) from server.
+    Returns (success: bool, updated: bool)
+    """
+    # Get local version
+    local_ver_str, local_ver = get_local_version(filepath)
+    if local_ver is None:
+        log.error("Cannot determine local %s version - aborting", file_type)
+        return False, False
+    log.info("Local %s version: %s (%s)", file_type, local_ver_str, local_ver)
+
+    # Try server
+    server_ver_str, server_ver, server_content = fetch_remote_version(server_url)
+    if server_ver is None:
+        log.warning("Cannot determine server %s version", file_type)
+        return False, False
+
+    log.info("Server %s version: %s (%s)", file_type, server_ver_str, server_ver)
+
+    # Compare versions
+    if server_ver <= local_ver:
+        log.info("No %s update needed (local %s >= server %s)", file_type, local_ver, server_ver)
+        return True, False
+
+    # Check major version boundary
+    if server_ver[0] > MAX_MAJOR_VERSION:
+        log.info(
+            "Major version bump detected (%s -> %s) - manual update required for %s",
+            local_ver[0], server_ver[0], file_type
+        )
+        return True, False
+
+    # Update available
+    log.info("%s update available: %s -> %s", file_type.capitalize(), local_ver_str, server_ver_str)
+
+    if perform_update(filepath, backup_path, server_content, server_ver_str, file_type):
+        log.info("%s update complete. New version will be used on next scheduler cycle.", file_type.capitalize())
+        return True, True
+    else:
+        log.error("%s update failed - current version unchanged", file_type.capitalize())
+        return False, False
+
+
 # -- Main ---------------------------------------------------------------------
+
+def load_config():
+    """Load agent configuration from config.yaml in same directory"""
+    import yaml
+    config_path = AGENT_DIR / "config.yaml"
+    if not config_path.exists():
+        log.error("Config file not found: %s", config_path)
+        return {}
+    try:
+        with open(config_path, 'r') as f:
+            return yaml.safe_load(f) or {}
+    except Exception as e:
+        log.error("Failed to load config: %s", e)
+        return {}
+
 
 def main():
     setup_logging()
     log.info("Starting update check")
 
-    # Get local version
-    local_ver_str, local_ver = get_local_version()
-    if local_ver is None:
-        log.error("Cannot determine local version - aborting")
+    # Load config
+    config = load_config()
+    server_endpoint = config.get('server_endpoint', '').rstrip('/')
+    if not server_endpoint:
+        log.error("server_endpoint not configured - aborting")
         return 1
-    log.info("Local version: %s (%s)", local_ver_str, local_ver)
 
-    # Fetch remote version
-    remote_ver_str, remote_ver, remote_content = fetch_remote_version()
-    if remote_ver is None:
-        log.warning("Cannot determine remote version - skipping update check")
+    # Windows-specific paths
+    run_server_url = f"{server_endpoint}/agent_windows/run.py"
+    check_update_server_url = f"{server_endpoint}/agent_windows/check_update.py"
+
+    # Update run.py
+    run_ok, run_updated = update_single_file(
+        RUN_PY, BACKUP_PY, run_server_url, "run.py", config
+    )
+    if not run_ok:
         return 1
-    log.info("Remote version: %s (%s)", remote_ver_str, remote_ver)
 
-    # Compare versions
-    if remote_ver <= local_ver:
-        log.info("No update needed (local %s >= remote %s)", local_ver, remote_ver)
-        return 0
+    # Update check_update.py (self-update)
+    cu_ok, cu_updated = update_single_file(
+        CHECK_UPDATE_PY, CHECK_UPDATE_BAK, check_update_server_url, "check_update.py", config
+    )
+    if not cu_ok:
+        return 1
 
-    # Check major version boundary
-    if remote_ver[0] > MAX_MAJOR_VERSION:
-        log.info(
-            "Major version bump detected (%s -> %s) - manual update required",
-            local_ver[0], remote_ver[0]
-        )
-        return 0
-
-    # Update available
-    log.info("Update available: %s -> %s", local_ver_str, remote_ver_str)
-
-    if perform_update(remote_content, remote_ver_str):
-        log.info("Update complete. New version will be used on next scheduler cycle.")
-        return 0
+    if run_updated or cu_updated:
+        log.info("Update check complete: changes applied")
     else:
-        log.error("Update failed - current version unchanged")
-        return 1
+        log.info("Update check complete: no updates needed")
+
+    return 0
 
 
 if __name__ == "__main__":

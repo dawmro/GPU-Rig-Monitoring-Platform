@@ -1,5 +1,7 @@
 # Agent Auto-Update Implementation Plan
 
+> **⚠️ SUPERSEDED** — This document describes the old GitHub-based auto-update mechanism. The current implementation uses **server-hosted updates** (nginx serves agent files at `/agent/...` and `/agent_windows/...`). See `PLAN_agent_update_server_hosted.md` for the current design.
+
 ## 1. Version Detection
 
 ### Approach: Compare `__version__` from GitHub raw file

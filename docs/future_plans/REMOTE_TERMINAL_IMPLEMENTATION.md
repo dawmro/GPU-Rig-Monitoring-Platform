@@ -1067,6 +1067,8 @@ The terminal console operator (`rigshell`) **never has file-system access or vis
 
 ## 13. Hardened, Self-Updating Lifecycle Pipeline (`agent/check_update.py`)
 
+> **⚠️ SUPERSEDED** — This document describes the old GitHub-based auto-update mechanism. The current implementation uses **server-hosted updates** (nginx serves agent files at `/agent/...` and `/agent_windows/...`). See `PLAN_agent_update_server_hosted.md` for the current design.
+
 To ensure that future platform features, API optimizations, or terminal component patches deploy cleanly across all remote nodes, the update checker script must watch and update your entire component core in parallel. 
 
 This tracking script updates your telemetry loop (`run.py`), your interactive terminal server listener (`terminal_daemon.py`), and **itself** simultaneously using an atomic transaction pattern that preserves the `root:root` security boundaries.

@@ -99,20 +99,20 @@
 │  │  UPDATE CHECK (cron ~daily, independent)                                     │  │
 │  │  ┌────────────────────────────────────────────────────────────────────────┐  │  │
 │  │  │ check_update.py                                                        │  │  │
-│  │  │ • Queries GitHub API for latest release                                │  │  │
-│  │  │   https://github.com/dawmro/GPU-Rig-Monitoring-Platform                │  │  │
+│  │  │ • Queries monitoring server for latest agent version                   │  │  │
+│  │  │   {server_endpoint}/agent/run.py                                       │  │  │
 │  │  │ • Triggers self-update if newer version available                      │  │  │
 │  │  │ • Completely outbound, NOT in ingest path                              │  │  │
 │  │  └────────────────────────────────────────────────────────────────────────┘  │  │
 │  └──────────────────────────────────────────────────────────────────────────────┘  │
 │                                                                                    │
 │                              ┌────────────────────┐                                │
-│                              │   GitHub API       │                                │
-│                              │   (external)       │                                │
+│                              │  Monitoring Server │                                │
+│                              │   (nginx :80/443)  │                                │
 │                              └────────────────────┘                                │
 │                                    ▲                                               │
 │                                    │ HTTPS GET (outbound)                          │
-│                                    │ check_update.py → GitHub                      │
+│                                    │ check_update.py → Server                      │
 │                                                                                    │
 └────────────────────────────────────────────────────────────────────────────────────┘
                                             │
@@ -232,11 +232,11 @@ flowchart LR
     subgraph Rigs["Rig machines (N rigs)"]
         A1["agent/run.py (Linux) v1.9.1 / schema 1.14"]
         A2["agent_windows/run.py v1.9.1-win / schema 1.14"]
-        A3["check_update.py<br/>cron ~daily<br/>fetches run.py from GitHub main<br/>self-update if newer version"]
+        A3["check_update.py<br/>cron ~daily<br/>fetches run.py from server<br/>self-update if newer version"]
     end
 
     subgraph Edge["Server edge"]
-        NG["Nginx :80/443<br/>client_max_body_size 2m<br/>limit_req zone=rig burst=3 / zone=ip burst=50<br/>/static/ from staticfiles"]
+        NG["Nginx :80/443<br/>client_max_body_size 2m<br/>limit_req zone=rig burst=3 / zone=ip burst=50<br/>/static/ from staticfiles<br/>/agent/run.py, /agent/check_update.py<br/>/agent_windows/run.py, /agent_windows/check_update.py"]
     end
 
     subgraph App["Django app (Gunicorn systemd, /opt/gpu_monitor)"]
@@ -259,17 +259,13 @@ flowchart LR
     end
 
     subgraph Ops["Cron (server)"]
-        C1["*/2 min<br/>update_rig_status.sh<br/>→ stale >2min, offline >10min"]
-        C2["03:00<br/>data_retention.sh<br/>compact_data → cleanup_old_data(31d)<br/>→ VACUUM ANALYZE ×6 tables<br/>→ cleanup_audit_log(90d)"]
-    end
+            C1["*/2 min<br/>update_rig_status.sh<br/>→ stale >2min, offline >10min<br/>→ calls update_rig_status cmd"]
+            C2["03:00<br/>data_retention.sh<br/>compact_data → cleanup_old_data(31d)<br/>→ VACUUM ANALYZE ×6 tables<br/>→ cleanup_audit_log(90d)"]
+        end
 
-    subgraph GitHub["GitHub (external)"]
-        GH["GitHub raw content<br/>raw.githubusercontent.com<br/>/dawmro/GPU-Rig-Monitoring-Platform<br/>/main/agent/run.py"]
-    end
-
-    A1 -->|"HTTPS POST /api/v1/ingest/<br/>X-API-Key, X-Rig-UUID"| NG
-    A2 -->|"HTTPS POST /api/v1/ingest/<br/>X-API-Key, X-Rig-UUID"| NG
-    A3 -.->|"HTTPS GET (outbound)<br/>fetch latest run.py from main"| GH
+        A1 -->|"HTTPS POST /api/v1/ingest/<br/>X-API-Key, X-Rig-UUID"| NG
+        A2 -->|"HTTPS POST /api/v1/ingest/<br/>X-API-Key, X-Rig-UUID"| NG
+        A3 -.->|"HTTPS GET (outbound)<br/>fetch latest run.py from server"| NG
     
     NG --> ING --> SER
     SER --> TS

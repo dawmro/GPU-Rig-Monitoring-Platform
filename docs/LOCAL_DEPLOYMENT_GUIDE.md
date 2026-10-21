@@ -422,11 +422,11 @@ The agent runs on each machine you want to monitor. For local testing, install i
 sudo useradd --system --no-create-home --shell /usr/sbin/nologin monitoring-agent 2>/dev/null || true
 
 # Create required directories
-sudo mkdir -p /opt/monitoring-agent /etc/monitoring-agent /var/log/monitoring-agent
+sudo mkdir -p /opt/monitoring-agent /etc/monitoring-agent /opt/monitoring-agent/var/log
 
 # Log directory must be writable by the agent user
-sudo chown monitoring-agent:monitoring-agent /var/log/monitoring-agent
-sudo chmod 755 /var/log/monitoring-agent
+sudo chown monitoring-agent:monitoring-agent /opt/monitoring-agent/var/log
+sudo chmod 755 /opt/monitoring-agent/var/log
 
 # Install directory must be owned by the agent user
 sudo chown monitoring-agent:monitoring-agent /opt/monitoring-agent
@@ -464,7 +464,7 @@ rig_name: ""
 api_key: "PASTE_YOUR_API_KEY_HERE"
 server_endpoint: "http://localhost"
 expected_gpu_count: 0
-collection_timeout_s: 45
+collection_timeout_s: 35
 retry_attempts: 3
 debug_mode: true
 EOF
@@ -492,7 +492,7 @@ sudo chmod 600 /etc/monitoring-agent/config.yaml
 | `api_key` | Create this from the dashboard (Step 5). The key is shown only once. |
 | `server_endpoint` | `http://localhost` for local testing (no trailing slash). |
 | `expected_gpu_count` | `0` = auto-detect. Set to your actual GPU count to flag mismatches. |
-| `collection_timeout_s` | Hard limit in seconds for metric collection + upload. Default 45s leaves margin in the 60s cron cycle. |
+| `collection_timeout_s` | Hard limit in seconds for metric collection + upload. Default 35s leaves margin in the 60s cron cycle. |
 | `retry_attempts` | Retries on transient failures with exponential backoff (1s → 2s → 4s). |
 | `debug_mode` | `true` enables verbose logging and disables gzip compression. Use for troubleshooting. |
 
@@ -533,7 +533,7 @@ Should show the NOPASSWD rules without any password prompt.
 ### 4.6 Set Up Cron
 
 ```bash
-echo '* * * * * monitoring-agent flock -n /var/lock/monitoring-agent.lock /opt/monitoring-agent/venv/bin/python /opt/monitoring-agent/run.py >> /var/log/monitoring-agent/cron.log 2>&1' | sudo tee /etc/cron.d/monitoring-agent
+echo '* * * * * monitoring-agent flock -n /var/lock/monitoring-agent.lock /opt/monitoring-agent/venv/bin/python /opt/monitoring-agent/run.py >> /opt/monitoring-agent/var/log/cron.log 2>&1' | sudo tee /etc/cron.d/monitoring-agent
 sudo chmod 644 /etc/cron.d/monitoring-agent
 ```
 
@@ -644,7 +644,7 @@ Configure automated data compaction and cleanup:
 
 ```bash
 # Add cron job for daily data cleanup (runs at 3 AM as qrv user)
-echo '0 3 * * * qrv bash /opt/gpu_monitor/deploy/data_retention.sh >> /var/log/monitoring-agent/cleanup-cron.log 2>&1' | sudo tee /etc/cron.d/monitoring-data-cleanup
+echo '0 3 * * * qrv bash /opt/gpu_monitor/deploy/data_retention.sh >> /opt/monitoring-agent/var/log/cleanup-cron.log 2>&1' | sudo tee /etc/cron.d/monitoring-data-cleanup
 ```
 
 > **Note:** The cron job runs as `qrv` (not root). Ensure `/opt/gpu_monitor/logs/` is owned by `qrv`:
@@ -708,7 +708,7 @@ python manage.py cleanup_old_data --days=31 --verbose
 **Check cron job is running:**
 ```bash
 cat /etc/cron.d/monitoring-data-cleanup
-tail -f /var/log/monitoring-agent/cleanup-cron.log
+tail -f /opt/monitoring-agent/var/log/cleanup-cron.log
 ```
 
 **Check if data is being compacted:**
@@ -848,7 +848,7 @@ sudo logrotate -f /etc/logrotate.d/gpu-monitor  # force rotation now
 **Check current log sizes:**
 ```bash
 du -sh /opt/gpu_monitor/logs/
-du -sh /var/log/monitoring-agent/
+du -sh /opt/monitoring-agent/var/log/
 ```
 
 > **Note:** On a local test machine with a single rig, log growth is minimal (~100 KB/day). Log rotation becomes critical in production with 100+ rigs.
@@ -913,7 +913,7 @@ du -sh /var/log/monitoring-agent/
 /etc/monitoring-agent/
 └── config.yaml                 # Agent configuration (mode 600)
 
-/var/log/monitoring-agent/
+/opt/monitoring-agent/var/log/
 ├── agent.log                   # Structured JSON agent log (rotated 10MB x 3)
 ├── payload.json                # Latest full JSON payload sent to server (overwritten each run)
 └── cron.log                    # Cron output log
@@ -967,7 +967,7 @@ GPU-Rig-Monitoring-Platform/
 | Problem | Cause | Fix |
 |---------|-------|-----|
 || `PermissionError: config.yaml` | File owned by root | `sudo chown monitoring-agent:monitoring-agent /etc/monitoring-agent/config.yaml` |
-|| `PermissionError: update.log` or `PermissionError: cron.log` | Log directory not writable by agent | `sudo chown -R monitoring-agent:monitoring-agent /var/log/monitoring-agent/ && sudo chmod 755 /var/log/monitoring-agent/` |
+||| `PermissionError: update.log` or `PermissionError: cron.log` | Log directory not writable by agent | `sudo chown -R monitoring-agent:monitoring-agent /opt/monitoring-agent/var/log/ && sudo chmod 755 /opt/monitoring-agent/var/log/` |
 || `AttributeError: module 'logging' has no attribute 'handlers'` | Missing import in `run.py` | Ensure `import logging.handlers` is present after `import logging` |
 | `401 Unauthorized` | Invalid API key | Regenerate key on dashboard, update `config.yaml` |
 | `Connection refused` | Server not running | `curl -v http://localhost/api/v1/health/` |
@@ -983,13 +983,13 @@ Agent logs are structured JSON. Use `jq` for readable output:
 
 ```bash
 # Pretty-print agent logs
-tail -20 /var/log/monitoring-agent/agent.log | jq .
+tail -20 /opt/monitoring-agent/var/log/agent.log | jq .
 
 # Filter for errors only
-grep '"level":"WARNING"' /var/log/monitoring-agent/agent.log | jq .
+grep '"level":"WARNING"' /opt/monitoring-agent/var/log/agent.log | jq .
 
 # Watch live
-tail -f /var/log/monitoring-agent/agent.log | jq .
+tail -f /opt/monitoring-agent/var/log/agent.log | jq .
 ```
 
 ---
@@ -1046,8 +1046,8 @@ tail -f /opt/gpu_monitor/logs/gunicorn-access.log  # HTTP access log (requests, 
 tail -f /opt/gpu_monitor/logs/app.log               # Django structured JSON log
 
 # Agent logs
-tail -f /var/log/monitoring-agent/agent.log          # Structured JSON agent log
-tail -f /var/log/monitoring-agent/cron.log           # Cron output log
+tail -f /opt/monitoring-agent/var/log/agent.log          # Structured JSON agent log
+tail -f /opt/monitoring-agent/var/log/cron.log           # Cron output log
 
 # After pulling code changes, re-run migrations
 cd /opt/gpu_monitor

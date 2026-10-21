@@ -1149,11 +1149,11 @@ bash scripts/sync_to_opt.sh
 | Django app | `/opt/gpu_monitor/logs/app.log` | Structured JSON | 10 MB × 4 files |
 | Rig status | `/opt/gpu_monitor/logs/rig_status.log` | stdout | Weekly, 4 weeks |
 | Cleanup | `/opt/gpu_monitor/logs/cleanup.log` | stdout | Weekly, 8 weeks |
-| Agent (Linux) | `/var/log/monitoring-agent/agent.log` | Structured JSON | 10 MB × 4 files |
-| Agent cron | `/var/log/monitoring-agent/cron.log` | stdout | Weekly, 4 weeks |
-| Agent cleanup cron | `/var/log/monitoring-agent/cleanup-cron.log` | stdout | Weekly, 8 weeks |
-| Agent update | `/var/log/monitoring-agent/update.log` | stdout | Weekly, 4 weeks |
-| Agent payload (Linux) | `/var/log/monitoring-agent/payload.json` | Latest full JSON payload (overwritten each run) | — |
+|| Agent (Linux) | `/opt/monitoring-agent/var/log/agent.log` | Structured JSON | 10 MB × 4 files |
+|| Agent cron | `/opt/monitoring-agent/var/log/cron.log` | stdout | Weekly, 4 weeks |
+|| Agent cleanup cron | `/opt/monitoring-agent/var/log/cleanup-cron.log` | stdout | Weekly, 8 weeks |
+|| Agent update | `/opt/monitoring-agent/var/log/update.log` | stdout | Weekly, 4 weeks |
+|| Agent payload (Linux) | `/opt/monitoring-agent/var/log/payload.json` | Latest full JSON payload (overwritten each run) | — |
 | Agent payload (Windows) | `./logs/payload.json` (alongside agent) | Latest full JSON payload (overwritten each run) | — |
 
 **Log rotation:** Configured via `/etc/logrotate.d/gpu-monitor` (7 files). See `docs/LOG_ANALYSIS.md` for disk space analysis and `docs/LOG_ROTATION_EDGE_CASES.md` for edge case details. Without rotation, `gunicorn-access.log` alone can grow to ~3 GB/day at 1000 rigs.
@@ -1237,7 +1237,7 @@ Both commands run sequentially via `data_retention.sh` wrapper, called by cron a
 
 ```bash
 # /etc/cron.d/monitoring-data-cleanup
-0 3 * * * qrv bash /opt/gpu_monitor/deploy/data_retention.sh >> /var/log/monitoring-agent/cleanup-cron.log 2>&1
+0 3 * * * qrv bash /opt/gpu_monitor/deploy/data_retention.sh >> /opt/monitoring-agent/var/log/cleanup-cron.log 2>&1
 ```
 
 #### Verification
@@ -1251,7 +1251,7 @@ python manage.py cleanup_old_data --dry-run --days=31 --verbose
 
 #### Log Location
 
-Retention logs: `/var/log/monitoring-agent/cleanup-cron.log`
+Retention logs: `/opt/monitoring-agent/var/log/cleanup-cron.log`
 
 ---
 
@@ -1602,7 +1602,7 @@ journalctl -u gunicorn --since "1 hour ago" --no-pager
 tail -50 /opt/gpu_monitor/logs/gunicorn-error.log
 tail -50 /opt/gpu_monitor/logs/gunicorn-access.log
 tail -50 /opt/gpu_monitor/logs/app.log
-tail -50 /var/log/monitoring-agent/agent.log
+tail -50 /opt/monitoring-agent/var/log/agent.log
 
 # Verify HTMX is polling (watch access log for repeated requests)
 tail -f /opt/gpu_monitor/logs/gunicorn-access.log | grep "dashboard/rigs"
@@ -1654,9 +1654,9 @@ sudo -u postgres psql gpu_monitor
 | `/opt/monitoring-agent/venv/` | Agent Python virtual environment |
 | `/opt/agent_windows/run.py` | Windows agent script |
 | `/etc/monitoring-agent/config.yaml` | Agent configuration (mode 0600) |
-| `/var/log/monitoring-agent/agent.log` | Agent logs (JSON, rotated 10 MB × 3) |
-| `/var/log/monitoring-agent/payload.json` | Latest full JSON payload sent to server (overwritten each run) |
-| `/var/log/monitoring-agent/cron.log` | Cron output log |
+|| `/opt/monitoring-agent/var/log/agent.log` | Agent logs (JSON, rotated 10 MB × 3) |
+|| `/opt/monitoring-agent/var/log/payload.json` | Latest full JSON payload sent to server (overwritten each run) |
+|| `/opt/monitoring-agent/var/log/cron.log` | Cron output log |
 
 ### 13.3 System
 
@@ -1968,7 +1968,7 @@ WantedBy=multi-user.target
 # /etc/cron.d/monitoring-agent — Linux agent, every 60s
 * * * * * monitoring-agent flock -n /var/lock/monitoring-agent.lock \
     /opt/monitoring-agent/venv/bin/python /opt/monitoring-agent/run.py \
-    >> /var/log/monitoring-agent/cron.log 2>&1
+    >> /opt/monitoring-agent/var/log/cron.log 2>&1
 
 # /etc/cron.d/rig-status — Rig status update, every 2 min
 */2 * * * * root bash /opt/gpu_monitor/deploy/update_rig_status.sh

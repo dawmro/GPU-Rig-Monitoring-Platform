@@ -49,7 +49,7 @@ The installer performs these operations:
 | Step | What It Does |
 |------|-------------|
 | 1 | Creates `monitoring-agent` system user (no-login shell) |
-| 2 | Creates directories: `/opt/monitoring-agent/`, `/etc/monitoring-agent/`, `/var/log/monitoring-agent/` |
+| 2 | Creates directories: `/opt/monitoring-agent/`, `/etc/monitoring-agent/`, `/opt/monitoring-agent/var/log/` |
 | 3 | Creates Python virtualenv and installs dependencies (`psutil`, `py-cpuinfo`, `requests`, `pyyaml`, `pynvml`). Docker container monitoring uses the `docker` CLI via sudo — no Python SDK needed. |
 | 4 | Copies `run.py` and creates config template at `/etc/monitoring-agent/config.yaml` |
 | 5 | Configures sudoers (`/etc/sudoers.d/monitoring-agent`) for SMART disk queries, NVMe logs, journalctl, and docker (read-only, passwordless). Includes `Defaults:monitoring-agent !authenticate` (required for nologin shell users). |
@@ -72,7 +72,7 @@ rig_name: "gpu-server-01"
 api_key: "your-api-key-from-dashboard"
 server_endpoint: "https://monitor.example.com"
 expected_gpu_count: 0
-collection_timeout_s: 45
+collection_timeout_s: 35
 retry_attempts: 3
 debug_mode: false
 ```
@@ -119,7 +119,7 @@ The cron job will start automatically within 1 minute.
 /etc/monitoring-agent/
 └── config.yaml              # Agent config (mode 0600)
 
-/var/log/monitoring-agent/
+/opt/monitoring-agent/var/log/
 ├── agent.log                # Structured JSON log (rotated at 10 MB × 3 backups)
 ├── payload.json             # Latest payload sent to server (overwritten each run)
 ├── cron.log                 # Cron output log
@@ -230,7 +230,7 @@ Manual check:
 sudo /opt/monitoring-agent/venv/bin/python /opt/monitoring-agent/check_update.py
 ```
 
-Logs: `/var/log/monitoring-agent/update.log`
+Logs: `/opt/monitoring-agent/var/log/update.log`
 
 **Bootstrap migration:** On first run after server upgrade, `run.py` detects old `check_update.py` (containing GitHub URLs) and automatically fetches the new version from the server.
 
@@ -246,7 +246,7 @@ Logs: `/var/log/monitoring-agent/update.log`
 | **Disk SMART** | `sudo smartctl` / `nvme` | WMI `MSStorageDriver_FailurePredictStatus` |
 | **Network speed** | `/sys/class/net/*/speed` | WMI `Win32_NetworkAdapter.Speed` |
 | **Config path** | `/etc/monitoring-agent/config.yaml` | `./config.yaml` (alongside script) |
-| **Log path** | `/var/log/monitoring-agent/` | `./logs/` (alongside script) |
+|| **Log path** | `/opt/monitoring-agent/var/log/` | `./logs/` (alongside script) |
 | **Python deps** | `psutil py-cpuinfo requests pyyaml docker` | Same + `wmi` (+ `pynvml`, `docker` optional) |
 | **Installation** | `install.sh` (bash) | `--install-task` flag or manual Task Scheduler |
 | **Auto-update** | Separate `check_update.py` script via cron | Separate `check_update.py` script via Task Scheduler |
@@ -261,7 +261,7 @@ Logs: `/var/log/monitoring-agent/update.log`
 # Run with debug output
 sudo -u monitoring-agent /opt/monitoring-agent/venv/bin/python /opt/monitoring-agent/run.py
 # Check logs
-tail -50 /var/log/monitoring-agent/agent.log
+tail -50 /opt/monitoring-agent/var/log/agent.log
 ```
 
 ### API key errors (401)
@@ -300,7 +300,7 @@ If this fails, check:
 2. Sudoers entry includes docker: `cat /etc/sudoers.d/monitoring-agent`
    - Should contain: `/usr/bin/docker, /usr/local/bin/docker`
    - If not, re-run the installer: `sudo bash /tmp/agent/install.sh`
-3. Agent logs: `tail -50 /var/log/monitoring-agent/agent.log | grep docker`
+3. Agent logs: `tail -50 /opt/monitoring-agent/var/log/agent.log | grep docker`
 
 **Note:** If the agent was installed before the Docker collection fix, the sudoers
 file won't include docker. Re-run the installer to update it:
@@ -324,7 +324,7 @@ sudo -l -U monitoring-agent
 # Check cron is running
 systemctl status cron
 # Check cron log
-tail -50 /var/log/monitoring-agent/cron.log
+tail -50 /opt/monitoring-agent/var/log/cron.log
 # Verify cron file exists
 cat /etc/cron.d/monitoring-agent
 ```

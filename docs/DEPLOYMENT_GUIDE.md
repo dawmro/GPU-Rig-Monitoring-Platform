@@ -312,7 +312,7 @@ Configure automated data compaction and cleanup. This is essential for long-term
 
 ```bash
 # Add cron job for daily data cleanup (runs at 3 AM as qrv user)
-echo '0 3 * * * qrv bash /opt/gpu_monitor/deploy/data_retention.sh >> /var/log/monitoring-agent/cleanup-cron.log 2>&1' | sudo tee /etc/cron.d/monitoring-data-cleanup
+echo '0 3 * * * qrv bash /opt/gpu_monitor/deploy/data_retention.sh >> /opt/monitoring-agent/var/log/cleanup-cron.log 2>&1' | sudo tee /etc/cron.d/monitoring-data-cleanup
 ```
 
 The cron job runs `data_retention.sh` which executes three steps:
@@ -326,7 +326,7 @@ The cron job runs `data_retention.sh` which executes three steps:
 
 **Alternative using the Django management command directly** (not recommended for production — use `data_retention.sh` instead):
 ```bash
-echo '0 3 * * * qrv cd /opt/gpu_monitor && source venv/bin/activate && set -a && source .env && set +a && python manage.py daily_maintenance --verbose >> /var/log/monitoring-agent/cleanup-cron.log 2>&1' | sudo tee /etc/cron.d/monitoring-data-cleanup
+echo '0 3 * * * qrv cd /opt/gpu_monitor && source venv/bin/activate && set -a && source .env && set +a && python manage.py daily_maintenance --verbose >> /opt/monitoring-agent/var/log/cleanup-cron.log 2>&1' | sudo tee /etc/cron.d/monitoring-data-cleanup
 ```
 
 > **Note:** The cron job runs as `qrv` (not root). Ensure `/opt/gpu_monitor/logs/` is owned by `qrv`:
@@ -424,7 +424,7 @@ python manage.py cleanup_old_data --days=31 --verbose
 **Check cron job is running:**
 ```bash
 cat /etc/cron.d/monitoring-data-cleanup
-tail -f /var/log/monitoring-agent/cleanup-cron.log
+tail -f /opt/monitoring-agent/var/log/cleanup-cron.log
 ```
 
 **Check if data is being compacted:**
@@ -495,8 +495,8 @@ sudo chmod 664 /opt/gpu_monitor/logs/*.log
 **Agent update check fails with "Permission denied: update.log":**
 The `monitoring-agent` user needs write access to its log directory.
 ```bash
-sudo chown -R monitoring-agent:monitoring-agent /var/log/monitoring-agent/
-sudo chmod 755 /var/log/monitoring-agent/
+sudo chown -R monitoring-agent:monitoring-agent /opt/monitoring-agent/var/log/
+sudo chmod 755 /opt/monitoring-agent/var/log/
 ```
 
 **Agent cron job fails with "Permission denied" on run.py or check_update.py:**
@@ -629,7 +629,7 @@ chmod +x /tmp/agent/install.sh
 | Step | What It Does |
 |------|-------------|
 | 1 | Creates `monitoring-agent` system user (no-login shell) |
-| 2 | Creates directories: `/opt/monitoring-agent/`, `/etc/monitoring-agent/`, `/var/log/monitoring-agent/` |
+| 2 | Creates directories: `/opt/monitoring-agent/`, `/etc/monitoring-agent/`, `/opt/monitoring-agent/var/log/` |
 | 3 | Creates Python virtualenv and installs dependencies |
 | 4 | Copies `run.py` and creates config template |
 | 5 | Sets ownership of all agent files to `monitoring-agent` user |
@@ -693,7 +693,7 @@ rig_name: ""
 api_key: "PASTE_YOUR_API_KEY_HERE"
 server_endpoint: "https://monitor.example.com"
 expected_gpu_count: 0
-collection_timeout_s: 45
+collection_timeout_s: 35
 retry_attempts: 3
 debug_mode: false
 ```
@@ -707,7 +707,7 @@ debug_mode: false
 | `api_key` | The exact key copied from the server dashboard. No quotes needed unless the key contains special characters. |
 | `server_endpoint` | Your server's HTTPS URL **without** a trailing slash. |
 | `expected_gpu_count` | `0` for auto-detect. Set to your actual GPU count (e.g., `4`) to flag mismatches. |
-| `collection_timeout_s` | Hard limit in seconds for metric collection + upload. Default 45s leaves 15s buffer within the 60s cron cycle. |
+| `collection_timeout_s` | Hard limit in seconds for metric collection + upload. Default 35s leaves 25s buffer for jitter within the 60s cron cycle. |
 | `retry_attempts` | Retries on transient failures with exponential backoff (1s → 2s → 4s). |
 | `debug_mode` | `false` for production. Set `true` temporarily for troubleshooting (disables gzip, enables verbose logging). |
 
@@ -1060,9 +1060,9 @@ tail -50 /opt/gpu_monitor/logs/app.log
 | `run.py` | Agent script |
 | `venv/` | Python virtual environment |
 | `/etc/monitoring-agent/config.yaml` | Agent configuration — mode `0600`, owned by `monitoring-agent:monitoring-agent` |
-| `/var/log/monitoring-agent/agent.log` | Agent logs (JSON, rotated at 10 MB × 3 backups) |
-| `/var/log/monitoring-agent/payload.json` | Latest full JSON payload sent to server (overwritten each run) |
-| `/var/log/monitoring-agent/cron.log` | Cron output log |
+|| `/opt/monitoring-agent/var/log/agent.log` | Agent logs (JSON, rotated at 10 MB × 3 backups) |
+|| `/opt/monitoring-agent/var/log/payload.json` | Latest full JSON payload sent to server (overwritten each run) |
+|| `/opt/monitoring-agent/var/log/cron.log` | Cron output log |
 | `/etc/cron.d/monitoring-agent` | Cron job definition (every 60 seconds) |
 | `/etc/sudoers.d/monitoring-agent` | Sudo permissions for disk/log access |
 

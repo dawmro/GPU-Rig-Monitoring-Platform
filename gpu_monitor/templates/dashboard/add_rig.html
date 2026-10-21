@@ -67,7 +67,7 @@ sudo apt update && sudo apt install python3.10-venv -y && sudo rm -rf /opt/monit
                         </thead>
                         <tbody class="divide-y divide-gray-700/50">
                             <tr><td class="px-3 py-1">1</td><td class="px-3 py-1">Creates <code>monitoring-agent</code> system user (no-login shell)</td></tr>
-                            <tr><td class="px-3 py-1">2</td><td class="px-3 py-1">Creates directories: <code>/opt/monitoring-agent/</code>, <code>/etc/monitoring-agent/</code>, <code>/var/log/monitoring-agent/</code></td></tr>
+                            <tr><td class="px-3 py-1">2</td><td class="px-3 py-1">Creates directories: <code>/opt/monitoring-agent/</code>, <code>/etc/monitoring-agent/</code>, <code>/opt/monitoring-agent/var/log/</code></td></tr>
                             <tr><td class="px-3 py-1">3</td><td class="px-3 py-1">Creates Python virtualenv; installs <code>psutil</code>, <code>py-cpuinfo</code>, <code>requests</code>, <code>pyyaml</code>, <code>pynvml</code>; Docker via CLI (no Python SDK)</td></tr>
                             <tr><td class="px-3 py-1">4</td><td class="px-3 py-1">Copies <code>run.py</code>; creates config template at <code>/etc/monitoring-agent/config.yaml</code></td></tr>
                             <tr><td class="px-3 py-1">5</td><td class="px-3 py-1">Configures sudoers (<code>/etc/sudoers.d/monitoring-agent</code>) for SMART, NVMe, journalctl, docker (read-only, passwordless)</td></tr>
@@ -146,7 +146,7 @@ debug_mode: false</code></pre>
 {"ts":"2026-06-01T17:35:06","level":"INFO","module":"main","msg":"Payload accepted: new"}</code></pre>
                 </div>
 
-                <p class="text-gray-500 text-xs mt-2">The cron job starts automatically within 1 minute. Check <code class="font-mono">/var/log/monitoring-agent/agent.log</code> for ongoing logs.</p>
+                <p class="text-gray-500 text-xs mt-2">The cron job starts automatically within 1 minute. Check <code class="font-mono">/opt/monitoring-agent/var/log/agent.log</code> for ongoing logs.</p>
             </div>
         </div>
     </div>

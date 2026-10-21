@@ -268,7 +268,7 @@ Logs: `logs/update.log`
 | **Disk SMART** | `sudo smartctl` / `nvme` | WMI `MSStorageDriver_FailurePredictStatus` |
 | **Network speed** | `/sys/class/net/*/speed` | WMI `Win32_NetworkAdapter.Speed` |
 | **Config path** | `/etc/monitoring-agent/config.yaml` | `./config.yaml` (alongside script) |
-| **Log path** | `/var/log/monitoring-agent/` | `./logs/` (alongside script) |
+|| **Log path** | `/opt/monitoring-agent/var/log/` | `./logs/` (alongside script) |
 | **Python deps** | `psutil py-cpuinfo requests pyyaml docker` | Same + `wmi` (+ `pynvml`, `docker` optional) |
 | **Installation** | `install.sh` (bash) | `--install-task` flag or manual Task Scheduler |
 | **Auto-update** | Separate `check_update.py` script via cron | Separate `check_update.py` script via Task Scheduler |
@@ -373,7 +373,7 @@ sudo -u monitoring-agent sudo docker ps -a
 If containers still don't appear, check the agent logs:
 ```bash
 # Linux
-tail -50 /var/log/monitoring-agent/agent.log | grep docker
+tail -50 /opt/monitoring-agent/var/log/agent.log | grep docker
 
 # Windows
 type logs\agent.log | findstr docker

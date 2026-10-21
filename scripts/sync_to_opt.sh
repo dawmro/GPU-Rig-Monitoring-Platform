@@ -163,9 +163,9 @@ if [ -d "$OPT/monitoring-agent" ]; then
 fi
 
 # Agent log directory must be writable by monitoring-agent
-if [ -d "/var/log/monitoring-agent" ]; then
-    chown -R monitoring-agent:monitoring-agent /var/log/monitoring-agent/
-    chmod 755 /var/log/monitoring-agent/
+if [ -d "/opt/monitoring-agent/var/log" ]; then
+    chown -R monitoring-agent:monitoring-agent /opt/monitoring-agent/var/log/
+    chmod 755 /opt/monitoring-agent/var/log/
 fi
 
 # Clear stale .pyc cache (root-owned from gunicorn) to prevent migration loader issues

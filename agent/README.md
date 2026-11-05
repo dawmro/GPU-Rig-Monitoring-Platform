@@ -33,12 +33,74 @@ cd agent
 ```
 
 ### 2. Run the Installer
+
+UBUNTU 22.04
 ```
 sudo apt update && sudo apt install python3.10-venv -y && sudo rm -rf /opt/monitoring-agent/venv && sudo chmod +x install.sh && sudo ./install.sh
 ```
 If installing python3.10-venv not working, then use this fix for older python versions:
+
+UBUNTU 20.04
 ```
 sudo apt update && sudo apt install python3.8-venv -y && sudo apt install -y python3-venv && sudo rm -rf /opt/monitoring-agent/venv && sudo chmod +x install.sh && sudo ./install.sh
+```
+
+UBUNTU 24.04 TODO:
+```
+sudo -u monitoring-agent /opt/monitoring-agent/venv/bin/python -m pip uninstall pynvml  
+ 
+# Driver version (kernel module)
+cat /proc/driver/nvidia/version
+
+# Userspace library on disk
+ls -l /usr/lib/x86_64-linux-gnu/libnvidia-ml.so*
+
+# Python package version
+sudo -u monitoring-agent /opt/monitoring-agent/venv/bin/pip show nvidia-ml-py 
+
+sudo -u monitoring-agent /opt/monitoring-agent/venv/bin/python -m pip install nvidia-ml-py==13.595.45
+
+Option A — Pin the matching version (if a compatible one exists):
+
+# Example: if driver is 550.54
+sudo -u monitoring-agent /opt/monitoring-agent/venv/bin/pip install nvidia-ml-py==12.550.54
+
+Option B — Remove the two dangerous calls (safest, recommended):
+
+Replace the pstates and PciInfoExt blocks with nvidia-smi subprocess calls that can't segfault:
+
+# Replace the entire "2) Dynamic P-states" block with:
+gpu_pstates = None
+# P-states info is not available via safe pynvml calls on all driver versions.
+# If needed, parse: nvidia-smi --query-gpu=pstate --format=csv,noheader
+
+# Replace the "Extended PCI info (PciInfoExt)" block with:
+gpu_pci_subsystem = None
+# Already handled by the fallback below using pci_info (the safe v3 struct)
+
+And remove this block entirely:
+
+# DELETE THIS — causes segfault on version mismatch
+pci_info_ext = pynvml.nvmlPciInfoExt_v1_t()
+pci_info_ext.version = pynvml.nvmlPciInfoExt_v1
+pynvml.nvmlDeviceGetPciInfoExt(handle, pci_info_ext)
+...
+
+The fallback code right below it (pci_info.pciSubSystemId from the safe nvmlDeviceGetPciInfo call) already provides the same data.
+
+Option C — If you must keep pstates, use nvidia-smi via subprocess:
+
+def _get_pstates_subprocess():
+    try:
+        out = subprocess.run(
+            ['nvidia-smi', '--query-gpu=pstate', '--format=csv,noheader'],
+            capture_output=True, text=True, timeout=5
+        )
+        if out.returncode == 0:
+            return out.stdout.strip().split('\n')
+    except Exception:
+        pass
+    return None
 ```
 
 

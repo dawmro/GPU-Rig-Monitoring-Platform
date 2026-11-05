@@ -45,7 +45,7 @@ UBUNTU 20.04
 sudo apt update && sudo apt install python3.8-venv -y && sudo apt install -y python3-venv && sudo rm -rf /opt/monitoring-agent/venv && sudo chmod +x install.sh && sudo ./install.sh
 ```
 
-UBUNTU 24.04 TODO:
+UBUNTU 24.04, not working, TODO:
 ```
 sudo -u monitoring-agent /opt/monitoring-agent/venv/bin/python -m pip uninstall pynvml  
  

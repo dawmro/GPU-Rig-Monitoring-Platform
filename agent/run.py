@@ -43,7 +43,7 @@ from pathlib import Path
 import yaml
 import requests
 
-__version__ = '1.17.7'
+__version__ = '1.17.8'
 __schema_version__ = '1.22'
 
 # Module-level logger (configured by setup_logging)
@@ -832,8 +832,8 @@ def collect_gpus():
                 raw_name = raw_name.decode('utf-8')
 
             # Collect PCI info for subvendor identification
+            pci_info = None
             gpu_subvendor = None
-            gpu_board_part = None
             try:
                 pci_info = pynvml.nvmlDeviceGetPciInfo(handle)
                 if pci_info and hasattr(pci_info, 'pciSubSystemId'):
@@ -899,21 +899,9 @@ def collect_gpus():
             except pynvml.NVMLError:
                 pass
 
-            # Extended PCI info (PciInfoExt) - subsystem vendor:device
+            # Extended PCI info             
             gpu_pci_subsystem = None
-            try:
-                # nvmlDeviceGetPciInfoExt requires a structure with version field set
-                pci_info_ext = pynvml.nvmlPciInfoExt_v1_t()
-                pci_info_ext.version = pynvml.nvmlPciInfoExt_v1  # Must set version before call
-                pynvml.nvmlDeviceGetPciInfoExt(handle, pci_info_ext)
-                if pci_info_ext and hasattr(pci_info_ext, 'pciSubSystemId'):
-                    subsys_vendor = pci_info_ext.pciSubSystemId & 0xFFFF
-                    subsys_device = (pci_info_ext.pciSubSystemId >> 16) & 0xFFFF
-                    if subsys_vendor != 0 or subsys_device != 0:
-                        gpu_pci_subsystem = f"{subsys_vendor:04x}:{subsys_device:04x}"
-            except (pynvml.NVMLError_NotSupported, pynvml.NVMLError, AttributeError):
-                pass
-            # Fallback: use PciInfo (v3) subsystem ID if PciInfoExt failed or returned 0
+            # Use PciInfo (v3) subsystem ID 
             if gpu_pci_subsystem is None and pci_info and hasattr(pci_info, 'pciSubSystemId'):
                 subsys_vendor = pci_info.pciSubSystemId & 0xFFFF
                 subsys_device = (pci_info.pciSubSystemId >> 16) & 0xFFFF
@@ -977,27 +965,7 @@ def collect_gpus():
 
             # 2) Dynamic P-states (residency % + transition thresholds, P0..P7)
             gpu_pstates = None
-            
-            try:
-                pinfo = pynvml.c_nvmlDynamicPstatesInfo_t()
-                pynvml.nvmlDeviceGetDynamicPstatesInfo(handle, pinfo)
-            
-                gpu_pstates = {
-                    'flags': int(pinfo.flags),
-                    'util': [
-                        {
-                            'p': i,
-                            'present': bool(pinfo.utilization[i].bIsPresent),
-                            'pct': int(pinfo.utilization[i].percentage),
-                            'inc': int(pinfo.utilization[i].incThreshold),
-                            'dec': int(pinfo.utilization[i].decThreshold),
-                        }
-                        for i in range(len(pinfo.utilization))
-                    ],
-                }
-            
-            except (pynvml.NVMLError, AttributeError, TypeError):
-                gpu_pstates = None
+            # TODO: replace with nvidia-smi --query-gpu=pstate --format=csv,noheader
 
             # 3) Max clocks per domain (graphics/mem/sm/video)
             gpu_max_clocks = None

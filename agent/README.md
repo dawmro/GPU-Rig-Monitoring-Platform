@@ -47,7 +47,8 @@ sudo apt update && sudo apt install python3.8-venv -y && sudo apt install -y pyt
 
 UBUNTU 24.04, not working, TODO:
 ```
-sudo -u monitoring-agent /opt/monitoring-agent/venv/bin/python -m pip uninstall pynvml  
+sudo -u monitoring-agent /opt/monitoring-agent/venv/bin/python -m pip uninstall pynvml
+sudo -u monitoring-agent /opt/monitoring-agent/venv/bin/pip install nvidia-ml-py
  
 # Driver version (kernel module)
 cat /proc/driver/nvidia/version

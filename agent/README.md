@@ -101,6 +101,60 @@ def _get_pstates_subprocess():
     except Exception:
         pass
     return None
+
+1. Disable Dynamic P-states collection
+
+Current code uses c_nvmlDynamicPstatesInfo_t() and calls nvmlDeviceGetDynamicPstatesInfo(). Replace the entire collection block with:
+
+# 2) Dynamic P-states
+# Disabled due to potential NVML compatibility/stability issues.
+# Keep the payload field for backwards compatibility.
+gpu_pstates = None
+
+The existing payload entry remains untouched:
+
+'gpu_pstates_util': gpu_pstates,  # dict or None
+
+This preserves the field and its existing None fallback.
+
+2. Remove the Extended PCI call, retain the existing fallback
+
+You already collect pci_info earlier using nvmlDeviceGetPciInfo(). The code even has a fallback that extracts pciSubSystemId from it.
+
+Replace the entire Extended PCI block with:
+
+# Extended PCI info - use standard PciInfo only.
+# Avoid nvmlDeviceGetPciInfoExt due to potential compatibility issues.
+gpu_pci_subsystem = None
+
+if pci_info and hasattr(pci_info, 'pciSubSystemId'):
+    subsystem_id = pci_info.pciSubSystemId
+    subsys_vendor = subsystem_id & 0xFFFF
+    subsys_device = (subsystem_id >> 16) & 0xFFFF
+
+    if subsys_vendor != 0 or subsys_device != 0:
+        gpu_pci_subsystem = f"{subsys_vendor:04x}:{subsys_device:04x}"
+
+This retains the existing gpu_pci_subsystem field and still collects the value through the standard PCI call.
+
+3. One small defensive fix
+
+Initialize pci_info before its collection attempt:
+
+# Collect PCI info for subvendor identification
+gpu_subvendor = None
+gpu_board_part = None
+pci_info = None
+
+try:
+    pci_info = pynvml.nvmlDeviceGetPciInfo(handle)
+    if pci_info and hasattr(pci_info, 'pciSubSystemId'):
+        gpu_subvendor = _get_gpu_subvendor_name(pci_info.pciSubSystemId)
+except pynvml.NVMLError:
+    pass  # PCI info not available
+
+Currently, if nvmlDeviceGetPciInfo() raises an exception, later code can reference pci_info before it has been assigned.
+
 ```
 
 

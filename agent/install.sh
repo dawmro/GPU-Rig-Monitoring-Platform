@@ -52,9 +52,9 @@ fi
 "$INSTALL_DIR/venv/bin/pip" install --upgrade pip 2>/dev/null || true
 "$INSTALL_DIR/venv/bin/pip" install psutil py-cpuinfo requests pyyaml
 
-# Try to install pynvml (NVIDIA GPU monitoring)
-"$INSTALL_DIR/venv/bin/pip" install pynvml 2>/dev/null || \
-    echo "WARNING: pynvml not installed. GPU monitoring will be unavailable."
+# Try to install nvidia-ml-py (NVIDIA GPU monitoring)
+"$INSTALL_DIR/venv/bin/pip" install nvidia-ml-py 2>/dev/null || \
+    echo "WARNING: nvidia-ml-py not installed. GPU monitoring will be unavailable."
 
 # Copy agent files
 cp run.py "$INSTALL_DIR/run.py"

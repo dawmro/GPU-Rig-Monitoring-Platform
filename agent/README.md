@@ -6,8 +6,8 @@ Linux agent for the GPU Rig Monitoring Platform. Collects hardware/software metr
 
 ## Requirements
 
-- Linux (Ubuntu 20.04+, Debian 11+, or similar)
-- Python 3.10+
+- Linux (Ubuntu 20.04, 22.04)
+- Python 3.8, 3.10
 - Network access to the monitoring server
 - User with sudo permissions for installation
 

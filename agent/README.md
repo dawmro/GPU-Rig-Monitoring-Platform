@@ -1,6 +1,6 @@
 # GPU Rig Monitoring Agent — Linux
 
-**Version:** 1.14.0 | **Schema:** 1.19
+**Version:** 1.17.8 | **Schema:** 1.22
 
 Linux agent for the GPU Rig Monitoring Platform. Collects hardware/software metrics via `psutil`, `pynvml`, and system interfaces, then POSTs them to the monitoring server every 60 seconds via cron.
 
@@ -34,18 +34,22 @@ cd agent
 
 ### 2. Run the Installer
 
+UBUNTU 24.04
+```
+sudo apt update && sudo apt install python3.12-venv -y && sudo rm -rf /opt/monitoring-agent/venv && sudo chmod +x install.sh && sudo ./install.sh
+```
+
 UBUNTU 22.04
 ```
 sudo apt update && sudo apt install python3.10-venv -y && sudo rm -rf /opt/monitoring-agent/venv && sudo chmod +x install.sh && sudo ./install.sh
 ```
-If installing python3.10-venv not working, then use this fix for older python versions:
 
 UBUNTU 20.04
 ```
-sudo apt update && sudo apt install python3.8-venv -y && sudo apt install -y python3-venv && sudo rm -rf /opt/monitoring-agent/venv && sudo chmod +x install.sh && sudo ./install.sh
+sudo apt update && sudo apt install python3.8-venv -y && sudo rm -rf /opt/monitoring-agent/venv && sudo chmod +x install.sh && sudo ./install.sh
 ```
 
-UBUNTU 24.04, not working, TODO:
+WIP UBUNTU 24.04 TODO:
 ```
 sudo -u monitoring-agent /opt/monitoring-agent/venv/bin/python -m pip uninstall pynvml
 sudo -u monitoring-agent /opt/monitoring-agent/venv/bin/pip install nvidia-ml-py
